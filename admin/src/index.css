@@ -1,0 +1,109 @@
+@import "tailwindcss";
+
+/* ─── Theme (dark-only, matching existing dashboard) ─── */
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: "SF Mono", "Fira Code", "JetBrains Mono", monospace;
+
+  /* Base colors — dark mode always */
+  --background: oklch(60% 0.10763 250.447);
+  --foreground: oklch(0.93 0.01 270);
+
+  --card: oklch(45.098% 0.0965 268.459);
+  --card-foreground: oklch(0.93 0.01 270);
+  --card-hover: oklch(31.301% 0.04089 262.916);
+
+  --popover: oklch(45.475% 0.03397 269.908);
+  --popover-foreground: oklch(0.93 0.01 270);
+
+  --primary: oklch(0.65 0.17 250);
+  --primary-foreground: oklch(1 0 0);
+
+  --secondary: oklch(0.16 0.01 270);
+  --secondary-foreground: oklch(0.93 0.01 270);
+
+  --muted: oklch(44.662% 0.08966 266.232);
+  --muted-foreground: oklch(91.646% 0.01404 272.677);
+
+  --accent: oklch(0.16 0.01 270);
+  --accent-foreground: oklch(0.93 0.01 270);
+
+  --destructive: oklch(0.65 0.2 25);
+  --destructive-foreground: oklch(1 0 0);
+
+  --border: oklch(0.22 0.02 270);
+  --border-subtle: oklch(0.17 0.01 270);
+  --input: oklch(0.22 0.02 270);
+  --ring: oklch(0.65 0.17 250);
+
+  --radius: 0.875rem;
+
+  /* Semantic accent palette */
+  --accent-blue: #4a9eff;
+  --accent-green: #34d399;
+  --accent-amber: #fbbf24;
+  --accent-red: #f87171;
+  --accent-purple: #a78bfa;
+
+  --accent-blue-glow: rgba(74, 158, 255, 0.15);
+  --accent-green-glow: rgba(52, 211, 153, 0.15);
+  --accent-amber-glow: rgba(251, 191, 36, 0.15);
+  --accent-red-glow: rgba(248, 113, 113, 0.15);
+  --accent-purple-glow: rgba(167, 139, 250, 0.15);
+}
+
+body {
+  font-family: var(--font-sans);
+  background: var(--background);
+  color: var(--foreground);
+}
+
+/* ─── Scrollbar ─── */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+
+/* Hidden scrollbar — scrollable but no visible bar */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+/* ─── Animations ─── */
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+@keyframes spin-once {
+  to { transform: rotate(360deg); }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.3s ease;
+}
+
+.animate-pulse-dot {
+  animation: pulse-dot 2s infinite;
+}
+
+.animate-spin-once {
+  animation: spin-once 0.6s linear;
+}

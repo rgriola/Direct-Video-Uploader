@@ -1,0 +1,12 @@
+{
+  "name": "direct-video-uploader",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node scripts/dev.js",
+    "dev:server": "cd server && npm run dev",
+    "dev:admin": "cd admin && npm run dev",
+    "build:admin": "cd admin && npm run build",
+    "setup": "cd server && npm install && cd ../admin && npm install"
+  }
+}

@@ -1,0 +1,149 @@
+// Direct Video Uploader — Prisma Schema
+// PostgreSQL on Render
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─── Users ───────────────────────────────────────────────
+model User {
+  id          String     @id @default(uuid())
+  phoneNumber String     @unique @map("phone_number")
+  name        String
+  email       String?
+  team        String?
+  pinHash     String     @map("pin_hash")
+  status      UserStatus @default(ACTIVE)
+  lastLoginAt DateTime?  @map("last_login_at")
+  createdAt   DateTime   @default(now()) @map("created_at")
+  updatedAt   DateTime   @updatedAt @map("updated_at")
+
+  assets   Asset[]
+  messages ChatMessage[]
+
+  @@map("users")
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+}
+
+// ─── Assets (video upload groups) ────────────────────────
+model Asset {
+  id             String      @id @default(uuid())
+  slug           String      @unique
+  userId         String      @map("user_id")
+  mediasourceId  String?     @map("mediasource_id")
+  mediasourceUrl String?     @map("mediasource_url")
+  clipCount      Int         @default(0) @map("clip_count")
+  totalDuration  Int         @default(0) @map("total_duration_seconds")
+  status         AssetStatus @default(UPLOADING)
+  createdAt      DateTime    @default(now()) @map("created_at")
+  updatedAt      DateTime    @updatedAt @map("updated_at")
+
+  user         User          @relation(fields: [userId], references: [id])
+  clips        Clip[]
+  formResponse FormResponse?
+  messages     ChatMessage[]
+
+  @@map("assets")
+}
+
+enum AssetStatus {
+  UPLOADING
+  PROCESSING
+  READY
+  ERROR
+}
+
+// ─── Clips (individual video files) ──────────────────────
+model Clip {
+  id           String     @id @default(uuid())
+  assetId      String     @map("asset_id")
+  clipIndex    Int        @default(0) @map("clip_index")
+  storageUrl   String?    @map("storage_url")
+  streamUrl    String?    @map("stream_url")
+  thumbnailUrl String?    @map("thumbnail_url")
+  gpsLat       Float?     @map("gps_lat")
+  gpsLon       Float?     @map("gps_lon")
+  capturedAt   DateTime?  @map("captured_at")
+  deviceModel  String?    @map("device_model")
+  osVersion    String?    @map("os_version")
+  codec        String?
+  resolution   String?
+  orientation  String?    @default("landscape")
+  duration     Int?       @map("duration_seconds")
+  fileSize     BigInt?    @map("file_size_bytes")
+  status       ClipStatus @default(UPLOADING)
+  createdAt    DateTime   @default(now()) @map("created_at")
+
+  asset Asset @relation(fields: [assetId], references: [id])
+
+  @@map("clips")
+}
+
+enum ClipStatus {
+  UPLOADING
+  PROCESSING
+  READY
+  ERROR
+}
+
+// ─── Form Responses ──────────────────────────────────────
+model FormResponse {
+  id          String   @id @default(uuid())
+  assetId     String   @unique @map("asset_id")
+  slug        String?
+  type        String? // Raw, Interview, Standup, Other
+  description String?
+  priority    Priority @default(MEDIUM)
+  extra       Json?    @map("additional_data")
+  submittedAt DateTime @default(now()) @map("submitted_at")
+
+  asset Asset @relation(fields: [assetId], references: [id])
+
+  @@map("form_responses")
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+// ─── Chat Messages ───────────────────────────────────────
+model ChatMessage {
+  id          String      @id @default(uuid())
+  userId      String      @map("user_id")
+  assetId     String?     @map("asset_id")
+  direction   Direction
+  messageType MessageType @map("message_type")
+  content     Json
+  createdAt   DateTime    @default(now()) @map("created_at")
+
+  user  User   @relation(fields: [userId], references: [id])
+  asset Asset? @relation(fields: [assetId], references: [id])
+
+  @@map("chat_messages")
+}
+
+enum Direction {
+  OUTGOING
+  INCOMING
+}
+
+enum MessageType {
+  VIDEO
+  FORM_REQUEST
+  FORM_SUBMITTED
+  CONFIRMATION
+  SLACK_POST
+  TEXT
+  GREETING
+}

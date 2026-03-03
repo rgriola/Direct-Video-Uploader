@@ -1,0 +1,61 @@
+# Dependencies
+node_modules/
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Prisma generated
+server/generated/
+server/node_modules/.prisma/
+
+# Build output (admin dashboard → server/public/)
+server/public/
+
+# Uploaded media files
+server/uploads/*.mov
+server/uploads/*.mp4
+server/uploads/*.avi
+server/uploads/*.mkv
+
+# Xcode user data
+*.xcuserdata/
+xcuserdata/
+DerivedData/
+*.xcworkspacedata
+
+# Xcode build
+ios/build/
+ios/DirectVideoUploader.xcodeproj/project.xcworkspace/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Editor
+.vscode/
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+npm-debug.log*
+
+# Reference / design files (not source)
+FlipFlop - Raw Builder_files/
+Santana_Standup.JPG
+chat-demo.html
+demo-thumb.png
+SERVER_URL_PATTERN.md
+TRIAD.md
+example-mediasource/
+
+# Build cache
+admin/tsconfig.tsbuildinfo
+
+# Misc
+.idea/
+*.tgz
