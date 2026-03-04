@@ -124,84 +124,8 @@ export function setupWebSocket(io, fastify) {
             });
         });
 
-        /**
-         * slack:post — Client wants to post asset to Slack.
-         */
-        socket.on('slack:post', async (data) => {
-            const { assetId, channel, mention } = data;
-            console.log(`💬 Slack post requested by ${socket.userName}:`, data);
-
-            try {
-                const asset = await prisma.asset.findUnique({
-                    where: { id: assetId },
-                    include: {
-                        clips: true,
-                        user: { select: { name: true, phoneNumber: true } },
-                    },
-                });
-
-                if (!asset) {
-                    socket.emit('error', { message: 'Asset not found' });
-                    return;
-                }
-
-                // TODO: Phase 3 — Actually post to Slack webhook
-                // For now, simulate the Slack post
-                console.log(`📨 [DEMO] Would post to Slack #${channel}:`, {
-                    user: asset.user.name,
-                    mediasourceUrl: asset.mediasourceUrl,
-                    mention,
-                });
-
-                // Send confirmation back to client
-                socket.emit('slack:confirmed', {
-                    assetId,
-                    channel: channel || 'team-alerts',
-                    mention: mention || '',
-                    timestamp: new Date().toISOString(),
-                });
-
-                // Send confirmation chat message — shape matches REST /api/messages
-                socket.emit('message:new', {
-                    id: crypto.randomUUID(),
-                    userId: null,
-                    assetId: assetId || null,
-                    direction: 'INCOMING',
-                    messageType: 'SLACK_POST',
-                    content: {
-                        text: `✅ Posted to #${channel || 'team-alerts'} in Slack${mention ? ` (Mentioned @${mention})` : ''}`,
-                    },
-                    createdAt: new Date().toISOString(),
-                });
-
-                // Store the chat messages
-                await prisma.chatMessage.createMany({
-                    data: [
-                        {
-                            userId,
-                            assetId,
-                            direction: 'OUTGOING',
-                            messageType: 'SLACK_POST',
-                            content: {
-                                text: `#${channel || 'team-alerts'} @${mention || ''}`,
-                            },
-                        },
-                        {
-                            userId,
-                            assetId,
-                            direction: 'INCOMING',
-                            messageType: 'SLACK_POST',
-                            content: {
-                                text: `✅ Posted to #${channel || 'team-alerts'} in Slack${mention ? ` (Mentioned @${mention})` : ''}`,
-                            },
-                        },
-                    ],
-                });
-            } catch (err) {
-                console.error('Slack post error:', err);
-                socket.emit('error', { message: 'Failed to post to Slack' });
-            }
-        });
+        // NOTE: slack:post handler removed — Slack integration is Phase 3.
+        // The iOS app no longer sends this event.
 
         /**
          * message:send — Client sends a text message.
@@ -226,13 +150,8 @@ export function setupWebSocket(io, fastify) {
                     console.error('DB write failed (outgoing):', dbErr.message);
                 }
 
-                // Parse for Slack commands (e.g., "#team-alerts @carrie.smith")
-                const slackMatch = text.match(/#([\w-]+)\s*@([\w.]+)/);
-                if (slackMatch) {
-                    const [, channel, mention] = slackMatch;
-                    socket.emit('slack:post', { assetId, channel, mention });
-                } else {
-                    // Debounced auto-reply — tolerate rapid-fire texts, consolidate into one reply
+                // Debounced auto-reply — tolerate rapid-fire texts, consolidate into one reply
+                {
                     const DEBOUNCE_MS = 5000;
                     const existing = pendingReplies.get(userId);
 

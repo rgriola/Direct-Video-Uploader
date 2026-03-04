@@ -37,17 +37,29 @@ export function useTriadStatus() {
   return useQuery({
     queryKey: ["triad-status"],
     queryFn: fetchTriadStatus,
-    refetchInterval: 5_000,
+    refetchInterval: 15_000,
   });
 }
 
-/** Invalidate dashboard data (call after mutations or WS events) */
+/** Invalidate specific dashboard queries based on event type, or all if unspecified */
 export function useRefreshDashboard() {
   const qc = useQueryClient();
-  return () => {
-    void qc.invalidateQueries({ queryKey: ["stats"] });
-    void qc.invalidateQueries({ queryKey: ["users"] });
-    void qc.invalidateQueries({ queryKey: ["assets"] });
-    void qc.invalidateQueries({ queryKey: ["triad-status"] });
+  return (eventType?: string) => {
+    switch (eventType) {
+      case "upload:complete":
+        void qc.invalidateQueries({ queryKey: ["stats"] });
+        void qc.invalidateQueries({ queryKey: ["assets"] });
+        break;
+      case "user:connected":
+      case "user:disconnected":
+        void qc.invalidateQueries({ queryKey: ["users"] });
+        void qc.invalidateQueries({ queryKey: ["triad-status"] });
+        break;
+      default:
+        void qc.invalidateQueries({ queryKey: ["stats"] });
+        void qc.invalidateQueries({ queryKey: ["users"] });
+        void qc.invalidateQueries({ queryKey: ["assets"] });
+        void qc.invalidateQueries({ queryKey: ["triad-status"] });
+    }
   };
 }

@@ -10,7 +10,9 @@ export default async function adminRoutes(fastify) {
      * GET /api/admin/status
      * Triad health — database, server, WebSocket, iOS clients.
      */
-    fastify.get('/api/admin/status', async () => {
+    fastify.get('/api/admin/status', {
+        preHandler: [fastify.authenticate],
+    }, async () => {
         const triad = {
             database: { status: 'unknown', message: '' },
             server: { status: 'ok', uptime: Math.floor(process.uptime()) },
@@ -55,7 +57,9 @@ export default async function adminRoutes(fastify) {
      * GET /api/admin/stats
      * Returns aggregate stats for the dashboard — all live data.
      */
-    fastify.get('/api/admin/stats', async () => {
+    fastify.get('/api/admin/stats', {
+        preHandler: [fastify.authenticate],
+    }, async () => {
         const result = await prisma.$queryRawUnsafe(`
             SELECT 
                 (SELECT COUNT(*)::int FROM users) as users,
@@ -97,7 +101,9 @@ export default async function adminRoutes(fastify) {
      * GET /api/admin/users
      * List all registered users with live status.
      */
-    fastify.get('/api/admin/users', async () => {
+    fastify.get('/api/admin/users', {
+        preHandler: [fastify.authenticate],
+    }, async () => {
         const users = await prisma.$queryRawUnsafe(`
             SELECT u.id, u.phone_number AS "phoneNumber", u.name, u.email, u.team, u.status,
                    u.created_at AS "createdAt",
@@ -125,7 +131,9 @@ export default async function adminRoutes(fastify) {
      * GET /api/admin/assets
      * List all assets with user info and form responses.
      */
-    fastify.get('/api/admin/assets', async () => {
+    fastify.get('/api/admin/assets', {
+        preHandler: [fastify.authenticate],
+    }, async () => {
         // Single raw SQL query — avoids multiple Prisma ORM roundtrips that exhaust the pool
         const assets = await prisma.$queryRawUnsafe(`
             SELECT a.id, a.slug, a.mediasource_id AS "mediasourceId",
@@ -162,7 +170,9 @@ export default async function adminRoutes(fastify) {
      * POST /api/admin/cleanup-assets
      * Delete stale UPLOADING assets that have no clips (abandoned uploads).
      */
-    fastify.post('/api/admin/cleanup-assets', async () => {
+    fastify.post('/api/admin/cleanup-assets', {
+        preHandler: [fastify.authenticate],
+    }, async () => {
         // Find UPLOADING assets with 0 clips using Prisma ORM
         const staleAssets = await prisma.asset.findMany({
             where: {
@@ -201,7 +211,9 @@ export default async function adminRoutes(fastify) {
      * POST /api/admin/users
      * Add a new user (admin action).
      */
-    fastify.post('/api/admin/users', async (request, reply) => {
+    fastify.post('/api/admin/users', {
+        preHandler: [fastify.authenticate],
+    }, async (request, reply) => {
         const { phoneNumber, name, email, team, pin } = request.body || {};
 
         if (!phoneNumber || !name || !pin) {
@@ -243,7 +255,9 @@ export default async function adminRoutes(fastify) {
      * PATCH /api/admin/users/:id
      * Update a user's status (suspend/activate).
      */
-    fastify.patch('/api/admin/users/:id', async (request, reply) => {
+    fastify.patch('/api/admin/users/:id', {
+        preHandler: [fastify.authenticate],
+    }, async (request, reply) => {
         const { id } = request.params;
         const { status, team, email } = request.body || {};
 

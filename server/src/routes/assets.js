@@ -23,7 +23,7 @@ export default async function assetRoutes(fastify) {
             : 'upload';
 
         const slug = generateSlug(slugBase);
-        const mediasourceId = generateMediasourceId();
+        const mediasourceId = await generateMediasourceId(prisma);
 
         const asset = await dbRetry(() => prisma.asset.create({
             data: {
@@ -31,6 +31,7 @@ export default async function assetRoutes(fastify) {
                 userId: request.user.id,
                 mediasourceId,
                 mediasourceUrl: `https://mediasource.com/${mediasourceId}`,
+                originalFileName: fileName || null,
                 status: 'UPLOADING',
             },
         }));
@@ -60,6 +61,7 @@ export default async function assetRoutes(fastify) {
                 slug: asset.slug,
                 mediasourceId: asset.mediasourceId,
                 mediasourceUrl: asset.mediasourceUrl,
+                originalFileName: asset.originalFileName,
                 status: asset.status,
                 clipCount: asset.clipCount,
                 totalDuration: asset.totalDuration,
@@ -109,27 +111,7 @@ export default async function assetRoutes(fastify) {
         // Get file stats
         const stats = await fs.stat(filePath);
 
-        // Create clip record
-        const clip = await dbRetry(() => prisma.clip.create({
-            data: {
-                id: clipId,
-                assetId: id,
-                clipIndex: 0,
-                storageUrl: `/uploads/${fileName}`,
-                fileSize: BigInt(stats.size),
-                status: 'PROCESSING',
-            },
-        }));
-
-        // Update asset status
-        await dbRetry(() => prisma.asset.update({
-            where: { id },
-            data: {
-                status: 'PROCESSING',
-                clipCount: { increment: 1 },
-            },
-        }));
-
+        // Create clip record with original filename
         // Use client-provided metadata from iOS (fallback to defaults for missing fields)
         const metadata = {
             gpsLat: clientMeta.gpsLat ? parseFloat(clientMeta.gpsLat) : null,
@@ -144,20 +126,26 @@ export default async function assetRoutes(fastify) {
         };
         console.log(`📊 Metadata for ${asset.slug}:`, metadata);
 
-        // Update clip with extracted metadata
-        await dbRetry(() => prisma.clip.update({
-            where: { id: clipId },
+        // Create clip with metadata in one call (merged from 2 separate calls — #9)
+        const clip = await dbRetry(() => prisma.clip.create({
             data: {
+                id: clipId,
+                assetId: id,
+                clipIndex: 0,
+                originalFileName: data.filename || asset.originalFileName || null,
+                storageUrl: `/uploads/${fileName}`,
+                fileSize: BigInt(stats.size),
                 ...metadata,
                 status: 'READY',
             },
         }));
 
-        // Update asset to ready
+        // Single asset update (merged from 2 separate calls — #9)
         const updatedAsset = await dbRetry(() => prisma.asset.update({
             where: { id },
             data: {
                 status: 'READY',
+                clipCount: { increment: 1 },
                 totalDuration: metadata.duration,
             },
             include: { clips: true },
@@ -166,38 +154,65 @@ export default async function assetRoutes(fastify) {
         // Push metadata + form request via WebSocket
         const io = fastify.io;
         const userSockets = fastify.userSockets?.get(request.user.id);
+        const originalName = clip.originalFileName || asset.originalFileName || asset.slug;
+
+        // Determine if we have meaningful metadata beyond just timestamps
+        const hasRichMeta = metadata.gpsLat || metadata.codec !== 'Unknown' || metadata.deviceModel !== 'Unknown Device';
+
         if (userSockets) {
             for (const socketId of userSockets) {
-                // Send metadata message
+                // Send upload complete with full metadata for "Show Details" sheet
                 io.to(socketId).emit('upload:complete', {
                     assetId: id,
                     mediasourceId: asset.mediasourceId,
                     mediasourceUrl: asset.mediasourceUrl,
+                    originalFileName: originalName,
+                    userName: request.user.name,
+                    hasRichMeta,
                     metadata: metadata,
                     clip: {
                         id: clipId,
                         storageUrl: clip.storageUrl,
                         thumbnailUrl: clip.thumbnailUrl,
                         fileSize: stats.size.toString(),
+                        originalFileName: originalName,
                     },
                 });
 
-                // Send form request
+                // Send form:request chat message so it appears in live chat
+                io.to(socketId).emit('message:new', {
+                    id: randomUUID(),
+                    userId: null,
+                    assetId: id,
+                    direction: 'INCOMING',
+                    messageType: 'FORM_REQUEST',
+                    content: {
+                        text: `🎬 ${asset.slug} is being processed, here are the Mediasource details.`,
+                        mediasourceId: asset.mediasourceId,
+                        mediasourceUrl: asset.mediasourceUrl,
+                        originalFileName: originalName,
+                        userName: request.user.name,
+                        clipCount: 1,
+                        duration: metadata.duration || 0,
+                        gpsLat: metadata.gpsLat,
+                        gpsLon: metadata.gpsLon,
+                        capturedAt: metadata.capturedAt?.toISOString() || null,
+                        codec: metadata.codec !== 'Unknown' ? metadata.codec : null,
+                        resolution: metadata.resolution !== 'Unknown' ? metadata.resolution : null,
+                        hasRichMeta,
+                    },
+                    createdAt: new Date().toISOString(),
+                });
+
+                // Send form request event — opens the form sheet
                 io.to(socketId).emit('form:request', {
                     assetId: id,
+                    originalFileName: originalName,
+                    capturedAt: metadata.capturedAt,
+                    clipCount: 1,
+                    duration: metadata.duration,
                     prefilledData: {
-                        sender: request.user.name,
-                        phone: request.user.phoneNumber,
                         slug: asset.slug,
-                        gps: metadata.gpsLat && metadata.gpsLon
-                            ? `${metadata.gpsLat.toFixed(4)}, ${metadata.gpsLon.toFixed(4)}`
-                            : 'Not available',
-                        capturedAt: metadata.capturedAt,
-                        device: metadata.deviceModel,
-                        duration: `${metadata.duration}s`,
-                        codec: metadata.codec,
-                        resolution: metadata.resolution,
-                        orientation: metadata.orientation,
                     },
                 });
             }
@@ -216,7 +231,16 @@ export default async function assetRoutes(fastify) {
                             text: `🎬 ${asset.slug} is being processed, here are the Mediasource details.`,
                             mediasourceId: asset.mediasourceId,
                             mediasourceUrl: asset.mediasourceUrl,
-                            metadata: metadata,
+                            originalFileName: originalName,
+                            userName: request.user.name,
+                            clipCount: 1,
+                            duration: metadata.duration || 0,
+                            gpsLat: metadata.gpsLat,
+                            gpsLon: metadata.gpsLon,
+                            capturedAt: metadata.capturedAt?.toISOString() || null,
+                            codec: metadata.codec !== 'Unknown' ? metadata.codec : null,
+                            resolution: metadata.resolution !== 'Unknown' ? metadata.resolution : null,
+                            hasRichMeta,
                         },
                     },
                 ],
@@ -246,7 +270,9 @@ export default async function assetRoutes(fastify) {
      * GET /api/assets/:id
      * Get asset details with clips and form response.
      */
-    fastify.get('/api/assets/:id', async (request, reply) => {
+    fastify.get('/api/assets/:id', {
+        preHandler: [fastify.authenticate],
+    }, async (request, reply) => {
         const { id } = request.params;
 
         const asset = await prisma.asset.findUnique({

@@ -12,6 +12,7 @@ import fastifyJwt from '@fastify/jwt';
 import fastifyStatic from '@fastify/static';
 import { Server as SocketIOServer } from 'socket.io';
 import path from 'path';
+import crypto from 'crypto';
 import { fileURLToPath } from 'url';
 
 import authRoutes from './routes/auth.js';
@@ -47,8 +48,15 @@ await fastify.register(multipart, {
     },
 });
 
+// JWT secret — warn loudly if not configured (#6)
+const jwtSecret = process.env.JWT_SECRET || (() => {
+    const generated = crypto.randomBytes(64).toString('hex');
+    console.warn('\n⚠️  JWT_SECRET not set — using random secret. Sessions will reset on restart.\n');
+    return generated;
+})();
+
 await fastify.register(fastifyJwt, {
-    secret: process.env.JWT_SECRET || 'demo-secret-change-me',
+    secret: jwtSecret,
 });
 
 // Serve uploaded files statically (demo only — production uses R2/S3)
@@ -82,8 +90,8 @@ const io = new SocketIOServer(fastify.server, {
         methods: ['GET', 'POST'],
     },
     transports: ['websocket', 'polling'],
-    pingTimeout: 20000,
-    pingInterval: 25000,
+    pingTimeout: 25000,
+    pingInterval: 20000,
     connectTimeout: 10000,
 });
 
@@ -113,14 +121,14 @@ const start = async () => {
         await fastify.listen({ port: PORT, host: HOST });
 
         console.log(`
-╔══════════════════════════════════════════╗
-║  🎬 Direct Video Uploader Server        ║
-║                                          ║
-║  HTTP:   http://localhost:${PORT}           ║
-║  WS:     ws://localhost:${PORT}/socket.io/  ║
-║                                          ║
-║  Status: Running ✅                      ║
-╚══════════════════════════════════════════╝
+╔══════════════════════════════════════════  ╗
+║  🎬 Direct Video Uploader Server           ║
+║                                            ║
+║  HTTP:   http://localhost:${PORT}          ║
+║  WS:     ws://localhost:${PORT}/socket.io/ ║
+║                                            ║
+║  Status: Running ✅                         ║
+╚══════════════════════════════════════════  ╝
     `);
     } catch (err) {
         fastify.log.error(err);

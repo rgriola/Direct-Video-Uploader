@@ -168,3 +168,62 @@ This is iOS iPhone for now.
 > > > [SERVER] Texts back Mediasource Nummber in URL Link to Asset. note: The Media Source Sheet becomes the web interface for the Asset with the video asset in the a Window to be viewed. This should be handled by the Mediasource system but we can create a mock up in Admin
 > > > [USER] Optional > Texts @ or # to post Mediasource URL to their slack workspace - this assumes USER is logged into thier workspace. in the Context of this Text Chain the @ or # would use the Mediasource URL in the Chain. (SLACK INTEGRATION should add red/green light on iOS APP Slack is connected to avoid USER needing to do this Mid Text OR a NOTICE on LOGIN ASKING if they want to LOGIN to Slack)
 > > > [SERVER] TEXT RESPONSE With Full Picture FINAL Confirmation the Processing in Done.
+
+...
+
+**_ Task _**
+Review and Update >>>
+
+MetadataView sheet, ContextFormView, metadata extraction, and Slack button are all wired but untested on device.
+
+MetadataView sheet — After a video is uploaded, the server extracts technical details from the clip (GPS coordinates, capture date, device model, codec, resolution, orientation, duration, file size). In the iOS app, tapping "View Metadata" on a confirmation message slides up a dark-themed sheet (MetadataView.swift) displaying all of that as a formatted card — like a fact sheet for the video file itself. This is read-only; the user sees it but doesn't edit it.
+
+[SERVER TEXT] Should be sent with button to show Metadata VIDEO DETAILS (read-only).
+
+**_ Task _**
+
+- Update MetadataView sheet and ContextFormView
+
+** Instructions **
+
+- metadata extraction - get all the meta we can off of a file and save it to the database and populate the form.
+- Update to Metadata View - Screenshot 2026-03-03 at 5.08.43.png The Server Upload Response Look 1) USER Name 2 ) Original File Name (not processed UUID) 3) mediasource 9 digit number assigned incrementally. We should have on our DB a mediasourceID field where we pull this from when creating the video asset. Eventually this number will be populated from the company system 4) Highlight Metadata: GPS Coordinates, Created Date (date the file itself was created most likely always the production date), Video Codec ie; 4k, 1080p, 720p - Original File Metadata. But we should capture all available metadata on the video file.
+
+- The ADD DETAILS button Change that to SHOW DETAILS and show all Metadata Available. 99% of users will never look at it but its cool to have and add.
+- We need to have a plan for Video Files with no Metadata aside from Time Stamps and a Filename. In this case MetadataView should Say "No Meta Found" add in Mediasource.
+
+- ContextFormView — After the server processes the video and extracts metadata, it pushes a form:request event back to the iOS app. This triggers a slide-up form sheet (ContextFormView.swift) with two sections (kill the first section and simplify the second seciton. The Reason is the Metadata is more for backend use rather than the point the user is uploading)
+
+User Input [Editable] - This should be simple like Sceenshot 2026-03-03 at 5:10.14.png
+
+1. Layout like the attached png at the top: Thumbnail left - Original File Name - Created Date
+2. Slug Name
+3. Type of Video Raw or Cut
+4. Description
+5. Keep Priority for now.
+
+Slack Button
+Remove this feature. We will have the USER do this in the text.
+
+The user fills in the editable fields and taps Submit. This is the "context" the newsroom needs — what is this video, and how urgent is it?
+
+...
+
+**_ Task _**
+
+- review the project and develop tests for the project.
+
+**Context**
+
+- We have a working demo of the project. 
+- We have not run substantial testing any specific areas. 
+- I am looking for speed improvements for the Dashboard, Server i/o, and improving reliability. 
+
+**_ Instructions _**
+
+- Show me a plan for agent testing the project, place into a markdown. 
+- review copilot-instructions.md for technical guidence, 
+- Review TRIAD.md, PROJECT_SPEC.md, PROJECT_STATUS.md
+- We cannot make technical changes yet unless those would improve produciton. 
+- this target for concurrent users is 1000. 
+- I am open to suggestions

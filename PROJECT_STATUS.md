@@ -1,8 +1,8 @@
 # Direct Video Uploader — Project Status
 
-> **Last Updated:** March 3, 2026 · 3:10 PM MST
-> **Current Phase:** Phase 2 — iOS Demo App (in progress)
-> **Overall Progress:** ██████████████████░░ 85%
+> **Last Updated:** March 3, 2026 · 11:00 PM MST
+> **Current Phase:** Phase 2 — iOS Demo App (security audit complete)
+> **Overall Progress:** ████████████████████ 95%
 
 ---
 
@@ -10,7 +10,7 @@
 
 The **Direct Video Uploader** is a mobile-first video upload platform disguised as a text conversation. Field crew members "text" videos to the **Mediasource Fixer** server, which processes them the way a news assignment desk operates — fast, structured, and integrated with Slack.
 
-We've completed the **interactive chat demo** (HTML prototype), **project specification** (v4), the **Phase 1 server foundation** (Node.js API, WebSocket, PostgreSQL, auth, admin dashboard), and the **Phase 2 — iOS Demo App** core flow is fully verified end-to-end on physical device: login → chat → video upload (with real file size) → form popup → Slack notification → confirmation. Dashboard shows only live data with accurate WebSocket metrics.
+We've completed the **interactive chat demo** (HTML prototype), **project specification** (v4), the **Phase 1 server foundation** (Node.js API, WebSocket, PostgreSQL, auth, admin dashboard), the **Phase 2 — iOS Demo App** core flow (login → chat → video upload → form → confirmation), and the **Web Clip Viewer** (server-rendered at `/clips/:slug`). New this session: server response intelligence (time-of-day greetings, personalization, debounce), real metadata extraction via AVAsset on iOS, Slack gating with explicit "Post to Slack" button, restructured iOS forms (read-only metadata + editable fields), and git repo initialized.
 
 ---
 
@@ -143,6 +143,7 @@ cd ios && xcodegen generate && xcodebuild -project DirectVideoUploader.xcodeproj
 | `WS`   | `/socket.io/`               | ✅                     |
 | `POST` | `/api/admin/cleanup-assets` | ✅ Stale asset cleanup |
 | `GET`  | `/`                         | ✅ Dashboard           |
+| `GET`  | `/clips/:slug`              | ✅ Web clip viewer     |
 
 ---
 
@@ -165,6 +166,23 @@ cd ios && xcodegen generate && xcodebuild -project DirectVideoUploader.xcodeproj
 | Confirmation message               | ✅ Built           | `form:confirmed` → Mediasource link in chat    |
 | Slack post trigger                 | ✅ Built           | Auto-triggers after form submit, 1.5s delay    |
 | TestFlight build                   | 🔲 Not started     | For demo distribution                          |
+
+**Bugs Fixed (Mar 3 — Evening Session):**
+
+- **Xcode build: async UIDevice properties** — In Swift 6, `UIDevice.current.model` and `.systemVersion` are `@MainActor`-isolated. Added `await` in `VideoMetadataExtractor.swift`.
+- **Xcode build: FormField param order** — `FormField` init requires `value` before `options`. Fixed swapped arguments in `ChatViewModel.swift`.
+- **Clip viewer empty response** — `@fastify/static` with `prefix: '/'` was intercepting `/clips/:slug`. Fixed with `wildcard: false` on the static plugin.
+- **Prisma `include` timeout** — `findFirst` with `include: { clips, formResponse, user }` timed out (Prisma 7 + pg adapter issue). Split into separate sequential queries.
+
+**Features Added (Mar 3 — Evening Session):**
+
+- **Web clip viewer** — Server-rendered HTML at `GET /clips/:slug` with dark theme, video player, metadata grid, form response, priority badges. Route: `server/src/routes/clips.js`.
+- **Server response intelligence** — Time-of-day greeting on connect, debounce (suppresses auto-reply if upload starts within 3s), personalization (uses first name), greeting fires once per session.
+- **Real metadata extraction** — iOS `VideoMetadataExtractor` uses AVAsset to extract duration, resolution, codec, orientation, device model, OS version, GPS coordinates, capture date. Sent as multipart fields alongside video.
+- **iOS form restructuring** — `ContextFormView` now shows read-only metadata fields (device, resolution, duration, codec, GPS, captured date) above editable fields (slug, type, description, priority). `MetadataView` wired to display extracted metadata.
+- **Slack gating** — Removed auto-Slack post. Confirmation messages now include a "Post to Slack" button that the user explicitly taps.
+- **Admin asset → clip viewer links** — Asset list rows link to `/clips/:slug` (opens in new tab with ▸ indicator).
+- **Git repo initialized** — `.gitignore`, initial commit (68 files, 14,786 insertions).
 
 **Bugs Fixed (Mar 3 — Afternoon Session):**
 
@@ -198,17 +216,18 @@ cd ios && xcodegen generate && xcodebuild -project DirectVideoUploader.xcodeproj
 
 ---
 
-### 🔲 Milestone 5 — Web Clip Viewer (Phase 2)
+### ✅ Milestone 5 — Web Clip Viewer (Phase 2)
 
-**Target: Week of Mar 10, 2026**
+**Completed: Mar 3, 2026**
 
-| Deliverable                    | Status         | Notes                       |
-| ------------------------------ | -------------- | --------------------------- |
-| Clip viewer page               | 🔲 Not started | Video player + metadata     |
-| Responsive layout (dark theme) | 🔲 Not started | Match dashboard aesthetic   |
-| Public shareable links         | 🔲 Not started | `GET /clips/:slug`          |
-| Video playback                 | 🔲 Not started | Mux Player or `<video>` tag |
-| Host on Vercel                 | 🔲 Not started | Static site                 |
+| Deliverable                    | Status      | Notes                                              |
+| ------------------------------ | ----------- | -------------------------------------------------- |
+| Clip viewer page               | ✅ Done     | Server-rendered HTML, `server/src/routes/clips.js` |
+| Responsive layout (dark theme) | ✅ Done     | Dark theme with metadata grid, priority badges     |
+| Public shareable links         | ✅ Done     | `GET /clips/:slug` — works without auth            |
+| Video playback                 | ✅ Done     | `<video>` tag with local file serve (demo)         |
+| Admin links to clip viewer     | ✅ Done     | Asset list rows link to `/clips/:slug`             |
+| Host on Vercel                 | 🔲 Deferred | Server-rendered (not static); deploy with Render   |
 
 ---
 
@@ -216,14 +235,14 @@ cd ios && xcodegen generate && xcodebuild -project DirectVideoUploader.xcodeproj
 
 **Target: Week of Mar 17, 2026**
 
-| Deliverable                        | Status         | Notes                                                        |
-| ---------------------------------- | -------------- | ------------------------------------------------------------ |
-| Video streaming (Mux or CF Stream) | 🔲 Not started | Replace local file storage                                   |
-| Slack webhook (real)               | 🔲 Not started | Replace simulated posts                                      |
-| Cloud storage (R2 or B2)           | 🔲 Not started | Video file storage                                           |
-| Deploy server to Render            | 🔲 Not started | Production deployment                                        |
-| Admin UI (expanded)                | � Partial      | React dashboard running; needs asset detail, log persistence |
-| Real metadata extraction (ffprobe) | 🔲 Not started | Replace mock data                                            |
+| Deliverable                        | Status         | Notes                                                         |
+| ---------------------------------- | -------------- | ------------------------------------------------------------- |
+| Video streaming (Mux or CF Stream) | 🔲 Not started | Replace local file storage                                    |
+| Slack webhook (real)               | 🔲 Not started | Replace simulated posts                                       |
+| Cloud storage (R2 or B2)           | 🔲 Not started | Video file storage                                            |
+| Deploy server to Render            | 🔲 Not started | Production deployment                                         |
+| Admin UI (expanded)                | � Partial      | React dashboard running; needs asset detail, log persistence  |
+| Real metadata extraction           | ✅ Done        | iOS AVAsset extracts real metadata (not ffprobe — native iOS) |
 
 ---
 
@@ -242,6 +261,39 @@ cd ios && xcodegen generate && xcodebuild -project DirectVideoUploader.xcodeproj
 
 ---
 
+### 🔲 Milestone 8 — Onboarding & User Profile (Future)
+
+**Target: TBD — UX planning phase**
+
+#### Onboarding Flow
+
+First-launch experience for new field crew members. The app should guide the user from "I just installed this" to "I'm uploading my first video" with minimal friction.
+
+| Deliverable                         | Status         | Notes                                                                 |
+| ----------------------------------- | -------------- | --------------------------------------------------------------------- |
+| Welcome / splash screens            | 🔲 Not started | Brand intro, value prop ("Get your video to the newsroom in seconds") |
+| Phone + PIN registration            | 🔲 Not started | Self-serve or admin-provisioned credentials                           |
+| Permission grants (camera, photos)  | 🔲 Not started | iOS permission prompts with context ("we need this to send video")    |
+| Quick tutorial / first upload guide | 🔲 Not started | 3-4 swipeable cards showing the chat-based upload flow                |
+| Server handshake verification       | 🔲 Not started | Confirm device can reach server, show green/red status                |
+| Slack workspace connect prompt      | 🔲 Not started | Optional: "Connect Slack now?" during onboarding (skip for later)     |
+
+#### User Profile & Credentials
+
+A profile screen accessible from the chat header. Houses personal info, credentials, and third-party auth connections.
+
+| Deliverable                       | Status         | Notes                                                               |
+| --------------------------------- | -------------- | ------------------------------------------------------------------- |
+| Profile screen (view/edit)        | 🔲 Not started | Name, phone, email, team, avatar                                    |
+| Change PIN                        | 🔲 Not started | Requires current PIN to change                                      |
+| Slack OAuth integration           | 🔲 Not started | "Connect Slack" button → OAuth flow → store workspace + user tokens |
+| Slack connection status indicator | 🔲 Not started | Green/red dot on profile and chat header (is Slack connected?)      |
+| Slack workspace/channel picker    | 🔲 Not started | After auth, pick default #channel for posts                         |
+| Session management                | 🔲 Not started | View active sessions, logout from other devices                     |
+| Notification preferences          | 🔲 Not started | Toggle push notifications, email alerts                             |
+
+---
+
 ## Tech Stack (Current)
 
 | Layer                | Technology                                   | Status            |
@@ -253,8 +305,8 @@ cd ios && xcodegen generate && xcodebuild -project DirectVideoUploader.xcodeproj
 | **Auth**             | JWT (@fastify/jwt)                           | ✅ Running        |
 | **Dashboard**        | React 19 + Vite 6 + TypeScript + Tailwind v4 | ✅ Running        |
 | **Chat Demo**        | Vanilla HTML/CSS/JS                          | ✅ Complete       |
-| **iOS App**          | SwiftUI + `URLSessionWebSocketTask`          | 🟡 In progress    |
-| **Web Viewer**       | Vite or Next.js (planned)                    | 🔲 Not started    |
+| **iOS App**          | SwiftUI + `URLSessionWebSocketTask`          | ✅ Core complete  |
+| **Web Viewer**       | Server-rendered HTML at `/clips/:slug`       | ✅ Working        |
 | **Video Service**    | Mux or CF Stream (planned)                   | 🔲 Not started    |
 | **Storage**          | Cloudflare R2 or Backblaze B2 (planned)      | 🔲 Not started    |
 | **Hosting (Server)** | Render (planned)                             | 🔲 Local only     |
@@ -292,7 +344,7 @@ Direct-Video-Uploader/
 │ └── DirectVideoUploader/
 │ ├── App/ # SwiftUI app entry point
 │ ├── Models/ # User, Asset, ChatMessage, ServerConfig
-│ ├── Services/ # AuthService, ChatViewModel, WebSocketService, VideoUploadService
+│ ├── Services/ # AuthService, ChatViewModel, WebSocketService, VideoUploadService, VideoMetadataExtractor
 │ └── Views/ # Auth, Chat, Form, Metadata views
 ├── docs/
 │ ├── PROJECT_SPEC_v1.md # Spec v1 (MMS approach)
@@ -315,7 +367,8 @@ Direct-Video-Uploader/
 ├── routes/
 │ ├── auth.js # Login + profile + lastLoginAt tracking
 │ ├── assets.js # Asset CRUD + upload + form
-│ └── admin.js # Triad status, stats, user/asset lists
+│ ├── admin.js # Triad status, stats, user/asset lists
+│ └── clips.js # Web clip viewer (GET /clips/:slug)
 └── ws/
 └── handler.js # WebSocket + client type tracking
 
@@ -363,15 +416,53 @@ Direct-Video-Uploader/
 | Mar 3  | Admin uses Admin User credentials | Dashboard auto-logins as Admin User (`8001234567`) not David Burgess                        |
 | Mar 3  | Stale asset cleanup endpoint      | `POST /api/admin/cleanup-assets` — Prisma ORM delete of stuck UPLOADING assets              |
 | Mar 3  | Real file size in WS event        | iOS `FileManager.attributesOfItem` gets actual bytes before `sendVideoUpload`               |
+| Mar 3  | Server response intelligence      | Time-of-day greeting, debounce (3s window), personalization, fires once per session         |
+| Mar 3  | Remove auto-Slack post            | Replaced with explicit "Post to Slack" button — user controls when Slack is notified        |
+| Mar 3  | Real metadata via AVAsset         | iOS extracts duration, resolution, codec, GPS, device info natively — no ffprobe needed     |
+| Mar 3  | iOS form restructuring            | Read-only metadata fields above editable fields; MetadataView wired to show extracted data  |
+| Mar 3  | Web clip viewer (server-rendered) | `GET /clips/:slug` — dark theme, metadata grid, video player, no auth required              |
+| Mar 3  | Separate Prisma queries           | `findFirst` with `include` times out in Prisma 7 + pg adapter — split into sequential calls |
+| Mar 3  | `wildcard: false` on static       | `@fastify/static` was intercepting dynamic routes; fixed with wildcard option               |
+| Mar 3  | Admin links to clip viewer        | Asset list rows are `<a href="/clips/:slug">` opening in new tab                            |
+| Mar 3  | Git repo initialized              | `.gitignore` (68 files committed), reference/design files excluded                          |
+| Mar 3  | Full 25-issue security/perf audit | See `TODO.md` — 20 of 25 fixed. Covers auth, XSS, JWT, WS leaks, DB indexes, dead code      |
+| Mar 3  | Random JWT secret fallback        | `crypto.randomBytes(64)` when `JWT_SECRET` not set — warns in console                       |
+| Mar 3  | Admin route auth hardening        | All 7 admin routes now require JWT `preHandler`                                             |
+| Mar 3  | XSS escaping in clip viewer       | `escapeHtml()` on all user-controlled interpolations                                        |
+| Mar 3  | WS exponential backoff            | Max 10 retries, delay doubles each attempt (3s → 60s cap)                                   |
+| Mar 3  | URLSession leak fix               | `invalidateAndCancel()` on reconnect + cleanup                                              |
+| Mar 3  | Upload handler DB optimization    | Merged 6 sequential queries → 3 (clip create with metadata, single asset update)            |
+| Mar 3  | DB indexes on FK columns          | `@@index` on `assets.userId`, `clips.assetId`, `chat_messages.userId`                       |
+| Mar 3  | Dead code removal                 | Removed `slack:post` handler, `greeting` handler, `sendFormSubmit`, `sendSlackPost`         |
+| Mar 3  | Selective dashboard invalidation  | `refreshDashboard(eventType)` invalidates only relevant query keys per socket event         |
+
+---
+
+## Security & Performance Audit (Mar 3, 2026)
+
+**25 issues identified, 20 fixed, 5 deferred.** See `TODO.md` for full tracker.
+
+**Critical fixes (6):** fileSize type mismatch, WS reconnect backoff, URLSession leak, admin route auth, XSS in clip viewer, JWT secret randomization.
+
+**Performance fixes (5):** Selective query invalidation, 15s triad polling (was 5s), upload handler 6→3 DB calls, FK indexes added, mediasource ID sequence simplified.
+
+**Consistency fixes (5):** Removed all dead WS handlers (greeting, form:submit, slack:post), safe JSON serialization in WS sends, ping timeout/interval swap.
+
+**Lower priority fixes (4):** Temp file cleanup, pool error logging, asset detail auth, mediasource sequence.
+
+**Deferred (5):** VideoUploadService session leak (#19), upload progress polling (#20), rate limiting (#22), CORS config (#24), admin chat history (#25).
+
+**Files modified (16):** Asset.swift, MetadataView.swift, WebSocketService.swift, ChatViewModel.swift, ChatView.swift, admin.js, clips.js, index.js, use-dashboard.ts, App.tsx, use-socket.ts, assets.js, schema.prisma, utils.js, prisma.js, handler.js.
 
 ---
 
 ## Next Actions
 
-1. **Server response refinement** — Tolerance for odd texts (wait before auto-reply in case video follows), suppress "I can't text" if upload starts within N seconds. See `first-file.md` notes on response flow.
-2. **Metadata sheet verification** — `MetadataView` built but untested on physical device
-3. **Polish chat UI** — Video thumbnail preview, upload status indicators, error states
-4. **TestFlight build** — For demo distribution
-5. **Set up Render deployment** — Push server to Render with managed PostgreSQL
-6. **Build web clip viewer** — Vite + React, dark theme, video player
-7. **Admin dashboard polish** — Real-time upload progress, asset detail view, log persistence
+1. **iOS build verification** — Run XcodeGen + Xcode build to verify Swift changes compile
+2. **End-to-end test** — Login → upload → "Show Details" (fix #1 was biggest user-facing fix)
+3. **TestFlight build** — For demo distribution
+4. **Set up Render deployment** — Push server to Render with managed PostgreSQL, set `JWT_SECRET` env var
+5. **Real Slack webhooks** — Replace simulated posts with actual Slack Incoming Webhooks (Phase 3)
+6. **Cloud storage (R2/B2)** — Replace local file uploads with cloud storage
+7. **Video streaming (Mux/CF Stream)** — Replace `<video>` tag with adaptive streaming
+8. **Deferred security items** — Rate limiting (#22), CORS (#24) before production deploy

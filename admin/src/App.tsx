@@ -52,7 +52,7 @@ function Dashboard() {
   const refreshDashboard = useRefreshDashboard();
 
   const { connected, socketId, logs, addLog, clearLogs, connect } = useSocket(() => {
-    refreshDashboard();
+    refreshDashboard("upload:complete");
   });
 
   // Auto-login on mount (admin auth — uses Admin User credentials)

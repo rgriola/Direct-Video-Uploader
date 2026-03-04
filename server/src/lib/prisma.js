@@ -13,14 +13,14 @@ const pool = new pg.Pool({
 
 // Evict dead connections — test each connection before use
 pool.on('connect', (client) => {
-    client.on('error', () => {
-        // Silently handled — pool creates fresh connections automatically
+    client.on('error', (err) => {
+        console.error('🛢️ PG client error:', err.message);
     });
 });
 
 // Handle pool errors so they don't crash the process
-pool.on('error', () => {
-    // Silently handled — pool recovers on its own
+pool.on('error', (err) => {
+    console.error('🛢️ PG pool error:', err.message);
 });
 
 // Warm up the pool — flush any stale connections from a previous run

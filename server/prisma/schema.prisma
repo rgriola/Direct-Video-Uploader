@@ -35,22 +35,24 @@ enum UserStatus {
 
 // ─── Assets (video upload groups) ────────────────────────
 model Asset {
-  id             String      @id @default(uuid())
-  slug           String      @unique
-  userId         String      @map("user_id")
-  mediasourceId  String?     @map("mediasource_id")
-  mediasourceUrl String?     @map("mediasource_url")
-  clipCount      Int         @default(0) @map("clip_count")
-  totalDuration  Int         @default(0) @map("total_duration_seconds")
-  status         AssetStatus @default(UPLOADING)
-  createdAt      DateTime    @default(now()) @map("created_at")
-  updatedAt      DateTime    @updatedAt @map("updated_at")
+  id               String      @id @default(uuid())
+  slug             String      @unique
+  userId           String      @map("user_id")
+  mediasourceId    String?     @unique @map("mediasource_id")
+  mediasourceUrl   String?     @map("mediasource_url")
+  originalFileName String?     @map("original_file_name")
+  clipCount        Int         @default(0) @map("clip_count")
+  totalDuration    Int         @default(0) @map("total_duration_seconds")
+  status           AssetStatus @default(UPLOADING)
+  createdAt        DateTime    @default(now()) @map("created_at")
+  updatedAt        DateTime    @updatedAt @map("updated_at")
 
   user         User          @relation(fields: [userId], references: [id])
   clips        Clip[]
   formResponse FormResponse?
   messages     ChatMessage[]
 
+  @@index([userId])
   @@map("assets")
 }
 
@@ -63,27 +65,29 @@ enum AssetStatus {
 
 // ─── Clips (individual video files) ──────────────────────
 model Clip {
-  id           String     @id @default(uuid())
-  assetId      String     @map("asset_id")
-  clipIndex    Int        @default(0) @map("clip_index")
-  storageUrl   String?    @map("storage_url")
-  streamUrl    String?    @map("stream_url")
-  thumbnailUrl String?    @map("thumbnail_url")
-  gpsLat       Float?     @map("gps_lat")
-  gpsLon       Float?     @map("gps_lon")
-  capturedAt   DateTime?  @map("captured_at")
-  deviceModel  String?    @map("device_model")
-  osVersion    String?    @map("os_version")
-  codec        String?
-  resolution   String?
-  orientation  String?    @default("landscape")
-  duration     Int?       @map("duration_seconds")
-  fileSize     BigInt?    @map("file_size_bytes")
-  status       ClipStatus @default(UPLOADING)
-  createdAt    DateTime   @default(now()) @map("created_at")
+  id               String     @id @default(uuid())
+  assetId          String     @map("asset_id")
+  clipIndex        Int        @default(0) @map("clip_index")
+  originalFileName String?    @map("original_file_name")
+  storageUrl       String?    @map("storage_url")
+  streamUrl        String?    @map("stream_url")
+  thumbnailUrl     String?    @map("thumbnail_url")
+  gpsLat           Float?     @map("gps_lat")
+  gpsLon           Float?     @map("gps_lon")
+  capturedAt       DateTime?  @map("captured_at")
+  deviceModel      String?    @map("device_model")
+  osVersion        String?    @map("os_version")
+  codec            String?
+  resolution       String?
+  orientation      String?    @default("landscape")
+  duration         Int?       @map("duration_seconds")
+  fileSize         BigInt?    @map("file_size_bytes")
+  status           ClipStatus @default(UPLOADING)
+  createdAt        DateTime   @default(now()) @map("created_at")
 
   asset Asset @relation(fields: [assetId], references: [id])
 
+  @@index([assetId])
   @@map("clips")
 }
 
@@ -130,6 +134,7 @@ model ChatMessage {
   user  User   @relation(fields: [userId], references: [id])
   asset Asset? @relation(fields: [assetId], references: [id])
 
+  @@index([userId])
   @@map("chat_messages")
 }
 

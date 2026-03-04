@@ -29,10 +29,23 @@ export function generateSlug(name) {
 }
 
 /**
- * Generate a fake Mediasource ID (for demo purposes).
+ * Generate an incremental 9-digit Mediasource ID from DB sequence.
+ * Falls back to random if DB call fails.
  */
-export function generateMediasourceId() {
-    return Math.floor(100000000 + Math.random() * 900000000).toString();
+export async function generateMediasourceId(prismaClient) {
+    try {
+        // Ensure sequence exists, then get next value (#12)
+        await prismaClient.$executeRawUnsafe(
+            `CREATE SEQUENCE IF NOT EXISTS mediasource_id_seq START WITH 100000001 INCREMENT BY 1`
+        );
+        const result = await prismaClient.$queryRawUnsafe(
+            `SELECT nextval('mediasource_id_seq') AS val`
+        );
+        return result[0]?.val?.toString();
+    } catch {
+        // Final fallback: random 9-digit
+        return Math.floor(100000000 + Math.random() * 900000000).toString();
+    }
 }
 
 /**

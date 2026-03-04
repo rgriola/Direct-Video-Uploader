@@ -104,10 +104,6 @@ export function useSocket(onAssetChange?: () => void) {
     s.on("form:confirmed", (data: { message?: string }) => {
       addLog("ws", `Form confirmed: ${data.message}`);
     });
-
-    s.on("slack:confirmed", (data: { channel?: string }) => {
-      addLog("ws", `Slack posted to ${data.channel}`);
-    });
   }, [addLog]);
 
   const sendPing = useCallback(() => {

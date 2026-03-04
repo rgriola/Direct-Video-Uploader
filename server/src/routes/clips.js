@@ -4,6 +4,17 @@
  */
 import prisma from '../lib/prisma.js';
 
+/** Escape HTML special characters to prevent XSS (#5). */
+function escapeHtml(str) {
+    if (!str) return '';
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
 export default async function clipRoutes(fastify) {
     /**
      * GET /clips/:slug
@@ -43,7 +54,7 @@ export default async function clipRoutes(fastify) {
                 <html><head><title>Error</title>
                 <style>body{background:#0A0E1A;color:#fff;font-family:system-ui;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}
                 pre{font-size:0.9rem;opacity:0.7;max-width:600px;white-space:pre-wrap}</style></head>
-                <body><pre>DB Error: ${err.message}</pre></body></html>
+                <body><pre>DB Error: ${escapeHtml(err.message)}</pre></body></html>
             `);
             return;
         }
@@ -55,9 +66,9 @@ export default async function clipRoutes(fastify) {
         const metaRows = [];
         if (clip?.gpsLat && clip?.gpsLon) metaRows.push({ icon: '📍', label: 'GPS', value: `${clip.gpsLat.toFixed(4)}, ${clip.gpsLon.toFixed(4)}` });
         if (clip?.capturedAt) metaRows.push({ icon: '🕐', label: 'Captured', value: new Date(clip.capturedAt).toLocaleString() });
-        if (clip?.deviceModel) metaRows.push({ icon: '📱', label: 'Device', value: `${clip.deviceModel}${clip.osVersion ? ' · ' + clip.osVersion : ''}` });
-        if (clip?.codec) metaRows.push({ icon: '🎥', label: 'Video', value: `${clip.codec}${clip.resolution ? ' · ' + clip.resolution : ''}` });
-        if (clip?.orientation) metaRows.push({ icon: '↔️', label: 'Orientation', value: clip.orientation });
+        if (clip?.deviceModel) metaRows.push({ icon: '📱', label: 'Device', value: `${escapeHtml(clip.deviceModel)}${clip.osVersion ? ' · ' + escapeHtml(clip.osVersion) : ''}` });
+        if (clip?.codec) metaRows.push({ icon: '🎥', label: 'Video', value: `${escapeHtml(clip.codec)}${clip.resolution ? ' · ' + escapeHtml(clip.resolution) : ''}` });
+        if (clip?.orientation) metaRows.push({ icon: '↔️', label: 'Orientation', value: escapeHtml(clip.orientation) });
         if (clip?.duration) {
             const min = Math.floor(clip.duration / 60);
             const sec = clip.duration % 60;
@@ -69,7 +80,7 @@ export default async function clipRoutes(fastify) {
         }
 
         const metaHTML = metaRows.map(r =>
-            `<div class="meta-row"><span class="meta-icon">${r.icon}</span><span class="meta-label">${r.label}</span><span class="meta-value">${r.value}</span></div>`
+            `<div class="meta-row"><span class="meta-icon">${r.icon}</span><span class="meta-label">${escapeHtml(r.label)}</span><span class="meta-value">${escapeHtml(r.value)}</span></div>`
         ).join('\n');
 
         // Form response section
@@ -79,9 +90,9 @@ export default async function clipRoutes(fastify) {
                 <div class="section">
                     <h3>Context Form</h3>
                     <div class="meta-grid">
-                        ${form.type ? `<div class="meta-row"><span class="meta-icon">🏷</span><span class="meta-label">Type</span><span class="meta-value">${form.type}</span></div>` : ''}
-                        ${form.priority ? `<div class="meta-row"><span class="meta-icon">🔺</span><span class="meta-label">Priority</span><span class="meta-value priority-${form.priority.toLowerCase()}">${form.priority}</span></div>` : ''}
-                        ${form.description ? `<div class="meta-row"><span class="meta-icon">📝</span><span class="meta-label">Description</span><span class="meta-value">${form.description}</span></div>` : ''}
+                        ${form.type ? `<div class="meta-row"><span class="meta-icon">🏷</span><span class="meta-label">Type</span><span class="meta-value">${escapeHtml(form.type)}</span></div>` : ''}
+                        ${form.priority ? `<div class="meta-row"><span class="meta-icon">🔺</span><span class="meta-label">Priority</span><span class="meta-value priority-${escapeHtml(form.priority.toLowerCase())}">${escapeHtml(form.priority)}</span></div>` : ''}
+                        ${form.description ? `<div class="meta-row"><span class="meta-icon">📝</span><span class="meta-label">Description</span><span class="meta-value">${escapeHtml(form.description)}</span></div>` : ''}
                     </div>
                 </div>
             `;
@@ -95,7 +106,7 @@ export default async function clipRoutes(fastify) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>${asset.slug} — Mediasource Viewer</title>
+    <title>${escapeHtml(asset.slug)} — Mediasource Viewer</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
@@ -233,15 +244,15 @@ export default async function clipRoutes(fastify) {
     <div class="container">
         <div class="header">
             <div class="brand">Mediasource Viewer</div>
-            <h1>${asset.slug}</h1>
-            ${asset.mediasourceId ? `<div class="msid">#${asset.mediasourceId}</div>` : ''}
-            ${asset.user ? `<div class="uploader">Uploaded by ${asset.user.name}${asset.user.team ? ' · ' + asset.user.team : ''}</div>` : ''}
-            <span class="status status-${asset.status}">${asset.status}</span>
+            <h1>${escapeHtml(asset.slug)}</h1>
+            ${asset.mediasourceId ? `<div class="msid">#${escapeHtml(asset.mediasourceId)}</div>` : ''}
+            ${asset.user ? `<div class="uploader">Uploaded by ${escapeHtml(asset.user.name)}${asset.user.team ? ' · ' + escapeHtml(asset.user.team) : ''}</div>` : ''}
+            <span class="status status-${escapeHtml(asset.status)}">${escapeHtml(asset.status)}</span>
         </div>
 
         <div class="video-wrap">
             ${hasVideo
-                ? `<video controls preload="metadata" playsinline><source src="${videoURL}" type="video/quicktime"><source src="${videoURL}" type="video/mp4">Your browser does not support video playback.</video>`
+                ? `<video controls preload="metadata" playsinline><source src="${escapeHtml(videoURL)}" type="video/quicktime"><source src="${escapeHtml(videoURL)}" type="video/mp4">Your browser does not support video playback.</video>`
                 : `<div class="no-video">🎬 Video not yet available</div>`
             }
         </div>

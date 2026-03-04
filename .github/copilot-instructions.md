@@ -13,6 +13,10 @@
 
 ---
 
+## Gitbub
+
+- https://github.com/rgriola/Direct-Video-Uploader.git
+
 ## Prisma 7 — Key Gotchas
 
 1. **Database URL** must be in `prisma.config.ts`, NOT in the `schema.prisma` datasource block.
