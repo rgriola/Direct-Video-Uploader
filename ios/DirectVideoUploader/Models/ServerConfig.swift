@@ -41,7 +41,7 @@ enum ServerConfig {
         #if DEBUG
         // In Debug builds on a physical device, default to the LAN IP.
         // The user can change this via the server URL editor on the login screen.
-        return URL(string: "http://192.168.0.111:3000")!
+        return URL(string: "http://192.168.1.89:3000")!
         #else
         return URL(string: productionURL)!
         #endif

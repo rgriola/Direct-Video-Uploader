@@ -18,6 +18,12 @@ final class ChatViewModel {
     var lastClip: Clip?
     var lastAsset: Asset?
     
+    // Form context (passed to ContextFormView header)
+    var formOriginalFileName: String?
+    var formCapturedAt: String?
+    var formClipCount: Int?
+    var formDuration: Int?
+    
     // MARK: - Dependencies
     
     let auth: AuthService
@@ -37,22 +43,9 @@ final class ChatViewModel {
             self?.messages.append(message)
         }
         
-        ws.onGreeting = { [weak self] text in
+        ws.onUploadComplete = { [weak self] data in
             guard let self else { return }
-            let greeting = ChatMessage(
-                id: UUID().uuidString,
-                userId: nil,
-                assetId: nil,
-                direction: .incoming,
-                messageType: .greeting,
-                content: MessageContent(text: text),
-                createdAt: ISO8601DateFormatter().string(from: Date())
-            )
-            self.messages.append(greeting)
-        }
-        
-        ws.onUploadComplete = { [weak self] assetId in
-            guard let self else { return }
+            let assetId = data["assetId"] as? String ?? ""
             print("✅ Upload complete for asset: \(assetId)")
             
             // Fetch the full asset (with clips) so MetadataView can display it
@@ -65,37 +58,33 @@ final class ChatViewModel {
             guard let self else { return }
             self.currentAssetId = data["assetId"] as? String
             
-            var fields: [FormField] = []
-            
-            // Server sends prefilledData as key-value pairs
-            if let prefilled = data["prefilledData"] as? [String: Any] {
-                // Read-only metadata display rows
-                let metadataKeys = ["sender", "phone", "gps", "capturedAt", "device", "duration", "codec", "resolution", "orientation"]
-                for key in metadataKeys {
-                    if let value = prefilled[key] {
-                        fields.append(FormField(
-                            id: key,
-                            label: key.capitalized,
-                            type: "text",
-                            value: "\(value)",
-                            isReadOnly: true
-                        ))
-                    }
-                }
-                
-                // Editable slug (prefilled from server)
-                let prefillSlug = prefilled["slug"] as? String
-                fields.append(FormField(id: "slug", label: "Slug / Title", type: "text", value: prefillSlug))
+            // Store form context for ContextFormView header
+            self.formOriginalFileName = data["originalFileName"] as? String
+            self.formClipCount = data["clipCount"] as? Int
+            self.formDuration = data["duration"] as? Int
+            if let dateVal = data["capturedAt"] as? String {
+                self.formCapturedAt = dateVal
             }
             
-            // Editable fields the server expects
+            // Build only editable fields
+            var fields: [FormField] = []
+            
+            // Slug (prefilled from server)
+            let prefillSlug = (data["prefilledData"] as? [String: Any])?["slug"] as? String
+            fields.append(FormField(id: "slug", label: "Slug / Title", type: "text", value: prefillSlug))
+            
+            // Type (Raw or Cut)
             fields.append(FormField(
                 id: "type",
                 label: "Content Type",
                 type: "select",
-                options: ["Raw", "Interview", "Standup", "B-Roll", "Live Shot", "Other"]
+                options: ["Raw", "Cut"]
             ))
+            
+            // Description
             fields.append(FormField(id: "description", label: "Description / Notes", type: "textarea"))
+            
+            // Priority
             fields.append(FormField(
                 id: "priority",
                 label: "Priority",
@@ -130,20 +119,6 @@ final class ChatViewModel {
             self.messages.append(confirmation)
         }
         
-        ws.onSlackConfirmed = { [weak self] data in
-            guard let self else { return }
-            let channel = data["channel"] as? String ?? "#team-alerts"
-            let slackMsg = ChatMessage(
-                id: UUID().uuidString,
-                userId: nil,
-                assetId: data["assetId"] as? String,
-                direction: .incoming,
-                messageType: .text,
-                content: MessageContent(text: "📡 Posted to Slack \(channel)"),
-                createdAt: ISO8601DateFormatter().string(from: Date())
-            )
-            self.messages.append(slackMsg)
-        }
     }
     
     // MARK: - Load History
@@ -288,9 +263,6 @@ final class ChatViewModel {
                 createdAt: ISO8601DateFormatter().string(from: Date())
             )
             messages.append(formMessage)
-            
-            // Notify via WebSocket
-            ws.sendFormSubmit(assetId: assetId, formData: formData)
             
             showFormSheet = false
         } catch {

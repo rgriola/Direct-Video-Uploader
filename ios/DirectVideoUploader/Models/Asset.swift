@@ -7,6 +7,7 @@ struct Asset: Codable, Identifiable {
     let slug: String
     let mediasourceId: String?
     let mediasourceUrl: String?
+    let originalFileName: String?
     let status: AssetStatus
     let clipCount: Int?
     let totalDuration: Int?
@@ -51,6 +52,7 @@ enum AssetStatus: String, Codable {
 struct Clip: Codable, Identifiable {
     let id: String
     let clipIndex: Int?
+    let originalFileName: String?
     let gpsLat: Double?
     let gpsLon: Double?
     let capturedAt: String?
@@ -60,7 +62,7 @@ struct Clip: Codable, Identifiable {
     let resolution: String?
     let orientation: String?
     let duration: Int?
-    let fileSize: Int64?
+    let fileSize: String?
     let status: String?
     let storageUrl: String?
     let streamUrl: String?

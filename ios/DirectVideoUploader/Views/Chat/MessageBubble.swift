@@ -4,7 +4,7 @@ import SwiftUI
 struct MessageBubble: View {
     let message: ChatMessage
     var onTapMetadata: (() -> Void)?
-    var onPostToSlack: (() -> Void)?
+    var onTapForm: (() -> Void)?
     
     private var isOutgoing: Bool { message.isOutgoing }
     
@@ -85,56 +85,135 @@ struct MessageBubble: View {
                     .foregroundStyle(Color(hex: "007AFF"))
                 }
             }
-            
-            if onPostToSlack != nil {
-                Button {
-                    onPostToSlack?()
-                } label: {
-                    HStack(spacing: 4) {
-                        Text("📡")
-                            .font(.system(size: 11))
-                        Text("Post to Slack")
-                            .font(.system(size: 12, weight: .medium))
-                    }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(Color(hex: "4A154B").opacity(0.3))
-                    .foregroundStyle(Color(hex: "E5E5EA"))
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                }
-            }
         }
     }
     
     private var formRequestContent: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 6) {
-                Image(systemName: "doc.text.fill")
-                    .font(.system(size: 13))
-                    .foregroundStyle(Color(hex: "30D158"))
-                Text("Context Form")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(Color(hex: "E5E5EA"))
+            // Header — User name
+            if let userName = message.content.userName {
+                Text(userName)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(.white)
             }
             
-            Text(message.content.text ?? "Please fill out the form")
-                .font(.system(size: 14))
-                .foregroundStyle(Color(hex: "98989D"))
+            // Original filename
+            if let fileName = message.content.originalFileName {
+                Text(fileName)
+                    .font(.system(size: 13, design: .monospaced))
+                    .foregroundStyle(Color(hex: "98989D"))
+                    .lineLimit(1)
+            }
             
-            if onTapMetadata != nil {
-                Button {
-                    onTapMetadata?()
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "info.circle")
-                            .font(.system(size: 11))
-                        Text("View Metadata")
-                            .font(.system(size: 12, weight: .medium))
+            // Mediasource ID
+            if let msId = message.content.mediasourceId {
+                HStack(spacing: 4) {
+                    Text("🔗")
+                        .font(.system(size: 12))
+                    Text(msId)
+                        .font(.system(size: 14, weight: .bold, design: .monospaced))
+                        .foregroundStyle(Color(hex: "007AFF"))
+                }
+            }
+            
+            Divider()
+                .background(Color.white.opacity(0.1))
+            
+            // Metadata summary rows
+            VStack(alignment: .leading, spacing: 4) {
+                // GPS
+                if let lat = message.content.gpsLat, let lon = message.content.gpsLon {
+                    metaSummaryRow(icon: "📍", text: String(format: "%.4f, %.4f", lat, lon))
+                }
+                
+                // Captured date
+                if let dateStr = message.content.capturedAt {
+                    metaSummaryRow(icon: "🕐", text: formatShortDate(dateStr))
+                }
+                
+                // Codec · Resolution · Duration
+                let codecParts = [
+                    message.content.codec,
+                    message.content.resolution,
+                    message.content.duration.map { formatDuration($0) }
+                ].compactMap { $0 }
+                
+                if !codecParts.isEmpty {
+                    metaSummaryRow(icon: "🎬", text: codecParts.joined(separator: " · "))
+                }
+            }
+            
+            Divider()
+                .background(Color.white.opacity(0.1))
+            
+            // Action buttons
+            HStack(spacing: 12) {
+                // Show Details → (opens MetadataView)
+                if onTapMetadata != nil {
+                    Button {
+                        onTapMetadata?()
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "info.circle")
+                                .font(.system(size: 11))
+                            Text("Show Details")
+                                .font(.system(size: 12, weight: .medium))
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 9))
+                        }
+                        .foregroundStyle(Color(hex: "007AFF"))
                     }
-                    .foregroundStyle(Color(hex: "007AFF"))
+                }
+                
+                Spacer()
+                
+                // Tap to add details → (opens ContextFormView)
+                if onTapForm != nil {
+                    Button {
+                        onTapForm?()
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "square.and.pencil")
+                                .font(.system(size: 11))
+                            Text("Add Details")
+                                .font(.system(size: 12, weight: .medium))
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 9))
+                        }
+                        .foregroundStyle(Color(hex: "30D158"))
+                    }
                 }
             }
         }
+    }
+    
+    // MARK: - Helpers
+    
+    private func metaSummaryRow(icon: String, text: String) -> some View {
+        HStack(spacing: 6) {
+            Text(icon)
+                .font(.system(size: 12))
+            Text(text)
+                .font(.system(size: 13))
+                .foregroundStyle(Color(hex: "98989D"))
+        }
+    }
+    
+    private func formatDuration(_ seconds: Int) -> String {
+        let min = seconds / 60
+        let sec = seconds % 60
+        return String(format: "%d:%02d", min, sec)
+    }
+    
+    private func formatShortDate(_ isoString: String) -> String {
+        let iso = ISO8601DateFormatter()
+        iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        guard let date = iso.date(from: isoString) ?? ISO8601DateFormatter().date(from: isoString) else {
+            return isoString
+        }
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMM d, yyyy h:mm a"
+        return formatter.string(from: date)
     }
     
     private var slackContent: some View {

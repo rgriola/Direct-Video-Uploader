@@ -23,11 +23,9 @@ final class WebSocketService {
     // MARK: - Callbacks
     
     var onMessage: (@MainActor (ChatMessage) -> Void)?
-    var onUploadComplete: (@MainActor (String) -> Void)?
+    var onUploadComplete: (@MainActor ([String: Any]) -> Void)?
     var onFormRequest: (@MainActor ([String: Any]) -> Void)?
     var onFormConfirmed: (@MainActor ([String: Any]) -> Void)?
-    var onSlackConfirmed: (@MainActor ([String: Any]) -> Void)?
-    var onGreeting: (@MainActor (String) -> Void)?
     
     // MARK: - Private
     
@@ -36,6 +34,8 @@ final class WebSocketService {
     private var token: String?
     private var sid: String?
     private var isUpgraded = false
+    private var reconnectAttempt = 0
+    private let maxReconnectAttempts = 10
     
     // MARK: - Connect
     
@@ -112,6 +112,8 @@ final class WebSocketService {
         var request = URLRequest(url: components.url!)
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         
+        // Invalidate previous session to prevent leak (#3)
+        session?.invalidateAndCancel()
         session = URLSession(configuration: .default)
         webSocket = session?.webSocketTask(with: request)
         webSocket?.resume()
@@ -148,8 +150,16 @@ final class WebSocketService {
                 case .failure(let error):
                     print("❌ WebSocket receive error:", error)
                     self.cleanupConnection()
-                    // Auto-reconnect after 3 seconds
-                    try? await Task.sleep(for: .seconds(3))
+                    
+                    // Exponential backoff reconnect (3s → 6s → 12s … max 60s)
+                    self.reconnectAttempt += 1
+                    guard self.reconnectAttempt <= self.maxReconnectAttempts else {
+                        print("🛑 [WS] Max reconnect attempts (\(self.maxReconnectAttempts)) reached — giving up")
+                        return
+                    }
+                    let delay = min(3.0 * pow(2.0, Double(self.reconnectAttempt - 1)), 60.0)
+                    print("🔄 [WS] Reconnect attempt \(self.reconnectAttempt)/\(self.maxReconnectAttempts) in \(delay)s")
+                    try? await Task.sleep(for: .seconds(delay))
                     if let token = self.token {
                         self.connect(token: token)
                     }
@@ -209,6 +219,7 @@ final class WebSocketService {
         switch firstChar {
         case "0": // Connect
             state = .connected
+            reconnectAttempt = 0  // Reset backoff on successful connect
             let rest = String(raw.dropFirst())
             if let data = rest.data(using: .utf8),
                let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -250,9 +261,8 @@ final class WebSocketService {
             }
             
         case "upload:complete":
-            if let dict = payload as? [String: Any],
-               let assetId = dict["assetId"] as? String {
-                onUploadComplete?(assetId)
+            if let dict = payload as? [String: Any] {
+                onUploadComplete?(dict)
             }
             
         case "form:request":
@@ -263,17 +273,6 @@ final class WebSocketService {
         case "form:confirmed":
             if let dict = payload as? [String: Any] {
                 onFormConfirmed?(dict)
-            }
-            
-        case "slack:confirmed":
-            if let dict = payload as? [String: Any] {
-                onSlackConfirmed?(dict)
-            }
-            
-        case "greeting":
-            if let dict = payload as? [String: Any],
-               let text = dict["text"] as? String {
-                onGreeting?(text)
             }
             
         default:
@@ -292,25 +291,11 @@ final class WebSocketService {
     }
     
     func sendVideoUpload(assetId: String, fileName: String, fileSize: Int64) {
-        let json = "{\"assetId\":\"\(assetId)\",\"fileName\":\"\(fileName)\",\"fileSize\":\(fileSize)}"
-        let payload = "42[\"video:upload\",\(json)]"
-        sendRaw(payload)
-    }
-    
-    func sendFormSubmit(assetId: String, formData: [String: String]) {
-        if let jsonData = try? JSONSerialization.data(withJSONObject: formData),
-           let jsonString = String(data: jsonData, encoding: .utf8) {
-            let payload = "42[\"form:submit\",{\"assetId\":\"\(assetId)\",\"formData\":\(jsonString)}]"
-            sendRaw(payload)
-        }
-    }
-    
-    func sendSlackPost(assetId: String, channel: String, mention: String? = nil) {
-        var json = "{\"assetId\":\"\(assetId)\",\"channel\":\"\(channel)\""
-        if let mention { json += ",\"mention\":\"\(mention)\"" }
-        json += "}"
-        let payload = "42[\"slack:post\",\(json)]"
-        sendRaw(payload)
+        // Use JSONSerialization for safe escaping (#16)
+        let payload: [String: Any] = ["assetId": assetId, "fileName": fileName, "fileSize": fileSize]
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: payload),
+              let jsonString = String(data: jsonData, encoding: .utf8) else { return }
+        sendRaw("42[\"video:upload\",\(jsonString)]")
     }
     
     // MARK: - Raw Send
@@ -329,6 +314,7 @@ final class WebSocketService {
     private func cleanupConnection() {
         webSocket?.cancel(with: .goingAway, reason: nil)
         webSocket = nil
+        session?.invalidateAndCancel()  // Prevent URLSession leak (#3)
         session = nil
         sid = nil
         isUpgraded = false
@@ -338,8 +324,10 @@ final class WebSocketService {
     // MARK: - Disconnect
     
     func disconnect() {
+        reconnectAttempt = maxReconnectAttempts + 1  // Prevent auto-reconnect
         cleanupConnection()
         token = nil
+        reconnectAttempt = 0
     }
 }
 

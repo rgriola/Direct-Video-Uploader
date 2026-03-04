@@ -45,6 +45,18 @@ struct MessageContent: Codable {
     let channel: String?
     let mention: String?
     
+    // Metadata summary fields (populated on upload response / form request bubbles)
+    let originalFileName: String?
+    let userName: String?
+    let clipCount: Int?
+    let duration: Int?
+    let gpsLat: Double?
+    let gpsLon: Double?
+    let capturedAt: String?
+    let codec: String?
+    let resolution: String?
+    let hasRichMeta: Bool?
+    
     init(
         text: String? = nil,
         fileName: String? = nil,
@@ -52,7 +64,17 @@ struct MessageContent: Codable {
         mediasourceUrl: String? = nil,
         formFields: [FormField]? = nil,
         channel: String? = nil,
-        mention: String? = nil
+        mention: String? = nil,
+        originalFileName: String? = nil,
+        userName: String? = nil,
+        clipCount: Int? = nil,
+        duration: Int? = nil,
+        gpsLat: Double? = nil,
+        gpsLon: Double? = nil,
+        capturedAt: String? = nil,
+        codec: String? = nil,
+        resolution: String? = nil,
+        hasRichMeta: Bool? = nil
     ) {
         self.text = text
         self.fileName = fileName
@@ -61,6 +83,16 @@ struct MessageContent: Codable {
         self.formFields = formFields
         self.channel = channel
         self.mention = mention
+        self.originalFileName = originalFileName
+        self.userName = userName
+        self.clipCount = clipCount
+        self.duration = duration
+        self.gpsLat = gpsLat
+        self.gpsLon = gpsLon
+        self.capturedAt = capturedAt
+        self.codec = codec
+        self.resolution = resolution
+        self.hasRichMeta = hasRichMeta
     }
     
     /// Display text for the chat bubble

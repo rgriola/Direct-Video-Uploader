@@ -32,11 +32,7 @@ struct ChatView: View {
                                     MessageBubble(
                                         message: message,
                                         onTapMetadata: message.messageType == .formRequest ? { vm.showMetadata() } : nil,
-                                        onPostToSlack: message.messageType == .confirmation ? {
-                                            if let assetId = message.assetId {
-                                                ws.sendSlackPost(assetId: assetId, channel: "team-alerts")
-                                            }
-                                        } : nil
+                                        onTapForm: message.messageType == .formRequest ? { vm.showFormSheet = true } : nil
                                     )
                                     .id(message.id)
                                 }
@@ -104,6 +100,10 @@ struct ChatView: View {
             if let vm = viewModel, let assetId = vm.currentAssetId {
                 ContextFormView(
                     fields: vm.formFields,
+                    originalFileName: vm.formOriginalFileName,
+                    capturedAt: vm.formCapturedAt,
+                    clipCount: vm.formClipCount,
+                    duration: vm.formDuration,
                     onSubmit: { formData in
                         Task { await vm.submitForm(assetId: assetId, formData: formData) }
                     }
@@ -169,6 +169,9 @@ struct ChatView: View {
             print("📊 [Metadata] duration=\(metadata.duration)s resolution=\(metadata.resolution) codec=\(metadata.codec)")
             
             await viewModel?.uploadVideo(assetId: asset.id, fileURL: movie.url, metadata: metadata)
+            
+            // Clean up temp video file after upload (#18)
+            try? FileManager.default.removeItem(at: movie.url)
         }
     }
 }
