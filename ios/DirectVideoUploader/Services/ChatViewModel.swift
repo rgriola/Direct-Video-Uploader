@@ -489,14 +489,7 @@ final class ChatViewModel {
         // Format creation date for display
         let createdDate: String? = {
             guard let capturedAt = metadata.capturedAt else { return nil }
-            let iso = ISO8601DateFormatter()
-            iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-            guard let date = iso.date(from: capturedAt) ?? ISO8601DateFormatter().date(from: capturedAt) else {
-                return capturedAt
-            }
-            let formatter = DateFormatter()
-            formatter.dateFormat = "MMM d, yyyy h:mm a"
-            return formatter.string(from: date)
+            return DVUDateFormatting.longDate(capturedAt)
         }()
         
         stagedVideo = StagedVideo(

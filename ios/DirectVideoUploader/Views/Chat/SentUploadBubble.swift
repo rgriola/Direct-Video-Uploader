@@ -49,7 +49,7 @@ struct SentUploadBubble: View {
                                     Text("Location included")
                                         .font(.system(size: 11))
                                 }
-                                .foregroundStyle(Color(hex: "30D158"))
+                                .foregroundStyle(Theme.green)
                             }
                         }
                         
@@ -58,14 +58,14 @@ struct SentUploadBubble: View {
                         // Green checkmark — sent
                         Image(systemName: "checkmark.circle.fill")
                             .font(.system(size: 34))
-                            .foregroundStyle(Color(hex: "30D158"))
+                            .foregroundStyle(Theme.green)
                     }
                     .padding(.horizontal, 12)
                     .padding(.vertical, 10)
                 }
                 .background(
                     LinearGradient(
-                        colors: [Color(hex: "1C3A5F"), Color(hex: "0A1E3D")],
+                        colors: [Theme.videoBubbleHi, Theme.videoBubbleLo],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     )
@@ -73,7 +73,7 @@ struct SentUploadBubble: View {
                 .clipShape(RoundedRectangle(cornerRadius: 18))
                 .overlay(
                     RoundedRectangle(cornerRadius: 18)
-                        .stroke(Color(hex: "30D158").opacity(0.3), lineWidth: 1)
+                        .stroke(Theme.green.opacity(0.3), lineWidth: 1)
                 )
                 
                 // Label

@@ -71,7 +71,7 @@ struct VideoPreviewBubble: View {
                                     Text("Location included")
                                         .font(.system(size: 11))
                                 }
-                                .foregroundStyle(Color(hex: "30D158"))
+                                .foregroundStyle(Theme.green)
                             }
                         }
 
@@ -83,7 +83,7 @@ struct VideoPreviewBubble: View {
                         } label: {
                             Image(systemName: "arrow.up.circle.fill")
                                 .font(.system(size: 34))
-                                .foregroundStyle(Color(hex: "007AFF"))
+                                .foregroundStyle(Theme.blue)
                         }
                     }
                     .padding(.horizontal, 12)
@@ -91,7 +91,7 @@ struct VideoPreviewBubble: View {
                 }
                 .background(
                     LinearGradient(
-                        colors: [Color(hex: "1C3A5F"), Color(hex: "0A1E3D")],
+                        colors: [Theme.videoBubbleHi, Theme.videoBubbleLo],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     )
@@ -99,7 +99,7 @@ struct VideoPreviewBubble: View {
                 .clipShape(RoundedRectangle(cornerRadius: 18))
                 .overlay(
                     RoundedRectangle(cornerRadius: 18)
-                        .stroke(Color(hex: "007AFF").opacity(0.3), lineWidth: 1)
+                        .stroke(Theme.blue.opacity(0.3), lineWidth: 1)
                 )
 
                 // Label

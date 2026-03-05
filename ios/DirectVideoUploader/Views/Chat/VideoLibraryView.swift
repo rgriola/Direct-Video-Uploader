@@ -40,7 +40,7 @@ struct VideoLibraryView: View {
             .navigationTitle("Library")
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(.visible, for: .navigationBar)
-            .toolbarBackground(Color(hex: "1C1C1E"), for: .navigationBar)
+            .toolbarBackground(Theme.darkBg, for: .navigationBar)
             .toolbarColorScheme(.dark, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
@@ -57,14 +57,14 @@ struct VideoLibraryView: View {
                     } label: {
                         if pendingConfirm {
                             ProgressView()
-                                .tint(Color(hex: "007AFF"))
+                                .tint(Theme.blue)
                                 .scaleEffect(0.8)
                         } else {
                             Image(systemName: "checkmark")
                                 .fontWeight(.semibold)
                         }
                     }
-                    .foregroundStyle(Color(hex: "007AFF"))
+                    .foregroundStyle(Theme.blue)
                 }
             }
             .onChange(of: selectedItems) { _, newItems in
@@ -100,7 +100,7 @@ struct VideoLibraryView: View {
                     if meta.gpsLat != nil {
                         Label("Location", systemImage: "location.fill")
                             .font(.system(size: 13))
-                            .foregroundStyle(Color(hex: "30D158"))
+                            .foregroundStyle(Theme.green)
                     } else {
                         Label("No Location", systemImage: "location.slash")
                             .font(.system(size: 13))
@@ -110,7 +110,7 @@ struct VideoLibraryView: View {
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
-            .background(Color(hex: "1C1C1E"))
+            .background(Theme.darkBg)
         }
     }
 

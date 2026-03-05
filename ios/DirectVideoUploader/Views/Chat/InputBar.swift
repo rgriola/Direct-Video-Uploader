@@ -22,7 +22,7 @@ struct InputBar: View {
                 } label: {
                     Image(systemName: "plus.circle.fill")
                         .font(.system(size: 28))
-                        .foregroundStyle(Color(hex: "007AFF"))
+                        .foregroundStyle(Theme.blue)
                 }
                 
                 // Text field
@@ -46,7 +46,7 @@ struct InputBar: View {
                 }
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
-                .background(Color(hex: "1C1C1E"))
+                .background(Theme.darkBg)
                 .clipShape(Capsule())
                 
                 // Send button
@@ -58,7 +58,7 @@ struct InputBar: View {
                         .foregroundStyle(
                             text.isEmpty
                             ? Color.white.opacity(0.2)
-                            : Color(hex: "007AFF")
+                            : Theme.blue
                         )
                 }
                 .disabled(text.isEmpty)

@@ -290,3 +290,31 @@ error handling
 - The server message "Got It! Processing ..." should show some basic Metadata like the mediasource number and link, file name, Creation Data. Again a confirmation of the process working. This should only be trigged once the Form is submitted.
 
 In the Text Flow Right After the greeting my Upload should be in the Text Chain. This shows the upload at least was started. -> then once the upload and form are submitted >> Got It!!! Message.
+
+**_ TASK _**
+
+- iOS App add 2 buttons to the High Five last message "View" and "Metadata" Green and blue.
+
+**_ INSTRUCTION _**
+
+- View button should link redirect to the asset to the browser viewer ie; http://localhost:3000/clips/img-6278-f11519 rather than mediasource.com (which is not affiliated with this project) localhost:3000/ << this is dev only not production >>
+- Metadata Button should show a form woth all the Meta for the clip starting with slug, type, description.
+
+.....
+
+**_ Issue _**
+
+- iOS URL on final text confirmation chat is incorrect.
+
+**_ Context _**
+
+- This is iOS url and is incorrect. Found on "High Five" bubble
+  > > > https://rodgriola.com/clips/Spill%20
+- Url in the dashboard which is correct and resolves
+  > > > https://rodgriola.com/clips/img-6278-eec88a
+
+**_ Instructions _**
+
+- Find the root of the issue
+- I think for the iOS app these url's are hard coded by view or function. These paths and how they are appended need to be in a unified location and imported properly - reused.
+- Doing this will make maintenence easier

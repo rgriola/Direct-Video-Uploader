@@ -19,7 +19,7 @@ struct MetadataView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                Color(hex: "0A0E1A").ignoresSafeArea()
+                Theme.deepBg.ignoresSafeArea()
                 
                 ScrollView {
                     VStack(spacing: 0) {
@@ -54,7 +54,7 @@ struct MetadataView: View {
                                         .font(.system(size: 13))
                                     Text(id)
                                         .font(.system(size: 15, weight: .bold, design: .monospaced))
-                                        .foregroundStyle(Color(hex: "007AFF"))
+                                        .foregroundStyle(Theme.blue)
                                 }
                             }
                         }
@@ -70,7 +70,7 @@ struct MetadataView: View {
                                 
                                 // Capture date
                                 if let captured = clip.capturedAt {
-                                    metadataRow(icon: "🕐", label: "Captured", value: formatDate(captured))
+                                    metadataRow(icon: "🕐", label: "Captured", value: DVUDateFormatting.longDate(captured))
                                 }
                                 
                                 // Device
@@ -102,7 +102,7 @@ struct MetadataView: View {
                                 if let duration = clip.duration {
                                     let min = duration / 60
                                     let sec = duration % 60
-                                    metadataRow(icon: "⏱", label: "Duration", value: String(format: "%d:%02d", min, sec))
+                                    metadataRow(icon: "⏱", label: "Duration", value: DVUDateFormatting.duration(duration))
                                 }
                                 
                                 // File size
@@ -153,7 +153,7 @@ struct MetadataView: View {
                         
                         // View clip link
                         if let slug = asset?.slug,
-                           let url = URL(string: "\(ServerConfig.baseURL)/clips/\(slug)") {
+                           let url = ServerConfig.clipURL(slug) {
                             Link(destination: url) {
                                 HStack {
                                     Image(systemName: "play.circle.fill")
@@ -162,8 +162,8 @@ struct MetadataView: View {
                                 }
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 14)
-                                .background(Color(hex: "34C759").opacity(0.15))
-                                .foregroundStyle(Color(hex: "34C759"))
+                                .background(Theme.viewGreen.opacity(0.15))
+                                .foregroundStyle(Theme.viewGreen)
                                 .clipShape(RoundedRectangle(cornerRadius: 12))
                             }
                             .padding(.horizontal, 16)
@@ -176,7 +176,7 @@ struct MetadataView: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Done") { dismiss() }
-                        .foregroundStyle(Color(hex: "007AFF"))
+                        .foregroundStyle(Theme.blue)
                 }
             }
         }
@@ -209,15 +209,6 @@ struct MetadataView: View {
     // MARK: - Date Formatting
     
     private func formatDate(_ isoString: String) -> String {
-        let iso = ISO8601DateFormatter()
-        iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        
-        guard let date = iso.date(from: isoString) ?? ISO8601DateFormatter().date(from: isoString) else {
-            return isoString
-        }
-        
-        let formatter = DateFormatter()
-        formatter.dateFormat = "MMM d, yyyy h:mm a"
-        return formatter.string(from: date)
+        DVUDateFormatting.longDate(isoString)
     }
 }

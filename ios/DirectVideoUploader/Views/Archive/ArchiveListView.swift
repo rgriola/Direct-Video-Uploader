@@ -21,7 +21,7 @@ struct ArchiveListView: View {
                             .foregroundStyle(.white)
                         Text("\(assets.count) upload\(assets.count == 1 ? "" : "s")")
                             .font(.system(size: 13))
-                            .foregroundStyle(Color(hex: "98989D"))
+                            .foregroundStyle(Theme.secondaryText)
                     }
                     Spacer()
                     
@@ -30,14 +30,14 @@ struct ArchiveListView: View {
                     } label: {
                         Image(systemName: "arrow.clockwise")
                             .font(.system(size: 16, weight: .medium))
-                            .foregroundStyle(Color(hex: "0A84FF"))
+                            .foregroundStyle(Theme.tint)
                     }
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
-                .background(Color(hex: "1C1C1E"))
+                .background(Theme.darkBg)
                 
-                Divider().background(Color(hex: "38383A"))
+                Divider().background(Theme.separator)
                 
                 // Content
                 if isLoading && assets.isEmpty {
@@ -52,13 +52,13 @@ struct ArchiveListView: View {
                             .font(.system(size: 32))
                         Text(error)
                             .font(.system(size: 14))
-                            .foregroundStyle(Color(hex: "98989D"))
+                            .foregroundStyle(Theme.secondaryText)
                             .multilineTextAlignment(.center)
                         Button("Retry") {
                             Task { await fetchAssets() }
                         }
                         .font(.system(size: 14, weight: .medium))
-                        .foregroundStyle(Color(hex: "0A84FF"))
+                        .foregroundStyle(Theme.tint)
                     }
                     .padding()
                     Spacer()
@@ -72,7 +72,7 @@ struct ArchiveListView: View {
                             .foregroundStyle(.white)
                         Text("Your completed uploads will appear here.")
                             .font(.system(size: 13))
-                            .foregroundStyle(Color(hex: "98989D"))
+                            .foregroundStyle(Theme.secondaryText)
                     }
                     Spacer()
                 } else {

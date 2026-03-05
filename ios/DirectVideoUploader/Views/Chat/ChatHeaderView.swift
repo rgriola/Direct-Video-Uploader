@@ -24,9 +24,9 @@ struct ChatHeaderView: View {
     
     private var statusColor: Color {
         switch connectionState {
-        case .connected:    return Color(hex: "30D158")   // green
-        case .connecting:   return Color(hex: "FFD60A")   // yellow
-        case .disconnected: return Color(hex: "FF453A")   // red
+        case .connected:    return Theme.green
+        case .connecting:   return Theme.yellow
+        case .disconnected: return Theme.red
         }
     }
     
@@ -46,7 +46,7 @@ struct ChatHeaderView: View {
                     Circle()
                         .fill(
                             LinearGradient(
-                                colors: [Color(hex: "007AFF"), Color(hex: "5856D6")],
+                                colors: [Theme.blue, Theme.purple],
                                 startPoint: .topLeading,
                                 endPoint: .bottomTrailing
                             )
@@ -89,7 +89,7 @@ struct ChatHeaderView: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
             .background(
-                Color(hex: "1C1C1E")
+                Theme.darkBg
                     .opacity(0.94)
             )
             

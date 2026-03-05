@@ -1,8 +1,8 @@
 # Direct Video Uploader — Project Status
 
-> **Last Updated:** March 4, 2026 · Evening MST
-> **Current Phase:** Phase 2 complete → Phase 3 (Render + Cloud + Mux) starting
-> **Overall Progress:** ████████████████████ 100% (Phase 2) · Phase 3 in planning
+> **Last Updated:** March 5, 2026 · MST
+> **Current Phase:** Phase 3 (Render + Cloud + Mux) — Mux direct upload complete
+> **Overall Progress:** ████████████████████ 100% (Phase 2) · Phase 3 ~65%
 
 ---
 
@@ -10,7 +10,7 @@
 
 The **Direct Video Uploader** is a mobile-first video upload platform disguised as a text conversation. Field crew members "text" videos to the **Mediasource Fixer** server, which processes them the way a news assignment desk operates — fast, structured, and integrated with Slack.
 
-We've completed the **interactive chat demo** (HTML prototype), **project specification** (v4), the **Phase 1 server foundation** (Node.js API, WebSocket, PostgreSQL, auth, admin dashboard), the **Phase 2 — iOS Demo App** core flow (login → chat → video upload → form → confirmation → archive), and the **Web Clip Viewer** (server-rendered at `/clips/:slug`). Latest session (Mar 4): client-side error logging to the DB, View/Metadata buttons on High Five confirmation, Archive tab with bottom tab bar, follow-up message with 10 random funny phrases, and URL fixes for the clip viewer button.
+We've completed the **interactive chat demo** (HTML prototype), **project specification** (v4), the **Phase 1 server foundation** (Node.js API, WebSocket, PostgreSQL, auth, admin dashboard), the **Phase 2 — iOS Demo App** core flow (login → chat → video upload → form → confirmation → archive), and the **Web Clip Viewer** (server-rendered at `/clips/:slug`). Latest session (Mar 5): Xcode automatic code signing, clip URL bug fix (server was sending user-typed slug instead of auto-generated slug), and comprehensive iOS codebase refactoring — centralized Theme.swift (20 color constants), DVUDateFormatting.swift (cached formatters), and UserDefaultsKeys enum.
 
 ---
 
@@ -126,27 +126,29 @@ cd ios && xcodegen generate && xcodebuild -project DirectVideoUploader.xcodeproj
 
 **Server Endpoints Verified:**
 
-| Method | Path                        | Status                 |
-| ------ | --------------------------- | ---------------------- |
-| `GET`  | `/api/health`               | ✅                     |
-| `POST` | `/api/auth/login`           | ✅                     |
-| `GET`  | `/api/auth/me`              | ✅                     |
-| `POST` | `/api/assets`               | ✅                     |
-| `POST` | `/api/assets/:id/upload`    | ✅                     |
-| `GET`  | `/api/assets/:id`           | ✅                     |
-| `POST` | `/api/assets/:id/form`      | ✅                     |
-| `GET`  | `/api/messages`             | ✅                     |
-| `GET`  | `/api/admin/stats`          | ✅                     |
-| `GET`  | `/api/admin/users`          | ✅                     |
-| `GET`  | `/api/admin/assets`         | ✅                     |
-| `GET`  | `/api/admin/status`         | ✅ Triad health        |
-| `WS`   | `/socket.io/`               | ✅                     |
-| `POST` | `/api/admin/cleanup-assets` | ✅ Stale asset cleanup |
-| `GET`  | `/api/assets/mine`          | ✅ User's assets list  |
-| `POST` | `/api/errors`               | ✅ Client error log    |
-| `GET`  | `/api/admin/errors`         | ✅ Retrieve errors     |
-| `GET`  | `/`                         | ✅ Dashboard           |
-| `GET`  | `/clips/:slug`              | ✅ Web clip viewer     |
+| Method | Path                         | Status                 |
+| ------ | ---------------------------- | ---------------------- |
+| `GET`  | `/api/health`                | ✅                     |
+| `POST` | `/api/auth/login`            | ✅                     |
+| `GET`  | `/api/auth/me`               | ✅                     |
+| `POST` | `/api/assets`                | ✅                     |
+| `POST` | `/api/assets/:id/upload`     | ✅                     |
+| `GET`  | `/api/assets/:id`            | ✅                     |
+| `POST` | `/api/assets/:id/form`       | ✅                     |
+| `GET`  | `/api/messages`              | ✅                     |
+| `GET`  | `/api/admin/stats`           | ✅                     |
+| `GET`  | `/api/admin/users`           | ✅                     |
+| `GET`  | `/api/admin/assets`          | ✅                     |
+| `GET`  | `/api/admin/status`          | ✅ Triad health        |
+| `WS`   | `/socket.io/`                | ✅                     |
+| `POST` | `/api/admin/cleanup-assets`  | ✅ Stale asset cleanup |
+| `GET`  | `/api/assets/mine`           | ✅ User's assets list  |
+| `POST` | `/api/errors`                | ✅ Client error log    |
+| `GET`  | `/api/admin/errors`          | ✅ Retrieve errors     |
+| `POST` | `/api/assets/:id/mux-upload` | ✅ Mux direct upload   |
+| `POST` | `/api/webhooks/mux`          | ✅ Mux webhook handler |
+| `GET`  | `/`                          | ✅ Dashboard           |
+| `GET`  | `/clips/:slug`               | ✅ Web clip viewer     |
 
 ---
 
@@ -169,6 +171,17 @@ cd ios && xcodegen generate && xcodebuild -project DirectVideoUploader.xcodeproj
 | Confirmation message               | ✅ Built           | `form:confirmed` → Mediasource link in chat    |
 | Slack post trigger                 | ✅ Built           | Auto-triggers after form submit, 1.5s delay    |
 | TestFlight build                   | 🔲 Not started     | For demo distribution                          |
+| Xcode automatic code signing       | ✅ Done            | Team `LW5P4PVL96`, auto signing in project.yml |
+| Centralized Theme + Formatting     | ✅ Done            | Theme.swift, DVUDateFormatting.swift, UserDefaultsKeys |
+
+**Features Added (Mar 5 — Session):**
+
+- **Xcode automatic code signing** — Configured `DEVELOPMENT_TEAM: LW5P4PVL96`, `CODE_SIGN_STYLE: Automatic`, `CODE_SIGN_IDENTITY: "Apple Development"` in `project.yml`. Enables direct device install from Xcode without TestFlight.
+- **Clip URL bug fix** — Server `form:confirmed` event was sending `formResponse.slug` (user-typed text like "Spill ") instead of `asset.slug` (URL-safe auto-generated like `img-6278-eec88a`). Fixed in `server/src/routes/assets.js`. Added `ServerConfig.clipURL(_:)` centralized helper for consistent URL construction.
+- **iOS codebase pattern unification** — Comprehensive refactoring across 15+ Swift files:
+  - **Theme.swift** (NEW) — 20 named color constants (`Theme.blue`, `Theme.cardBg`, etc.) + `Color(hex:)` extension. Eliminated 100+ duplicated hex color strings across 13 files.
+  - **DVUDateFormatting.swift** (NEW) — Cached date/time formatters (`longDate`, `shortDate`, `timeOnly`, `duration`, `fileSize`, `parseISO`). Replaced 40+ inline formatter creations and 5 duplicate formatting functions. Uses `nonisolated(unsafe)` for Swift 6 concurrency.
+  - **UserDefaultsKeys enum** (in ServerConfig.swift) — Centralized `"serverURL"` and `"authToken"` key constants. Replaces scattered hardcoded strings.
 
 **Features Added (Mar 4 — Session):**
 
@@ -253,11 +266,14 @@ Render is the preview environment (stand-in for eventual company production syst
 | Deliverable              | Status           | Notes                                                                                                              |
 | ------------------------ | ---------------- | ------------------------------------------------------------------------------------------------------------------ |
 | Render deployment prep   | ✅ Done          | `render.yaml`, `render-build.sh`, SSL-aware pg pool, `trustProxy`, conditional pino-pretty, `NODE_ENV` detection   |
-| Deploy server to Render  | 🔲 Ready to push | Push to GitHub → Render auto-deploys via `render.yaml` blueprint. Env vars auto-configured.                        |
+| Deploy server to Render  | ✅ Live          | Auto-deploys from `main`. Custom domain `rodgriola.com`. Managed PostgreSQL.                                       |
+| Mux SDK + service        | ✅ Done          | `@mux/mux-node`, `server/src/lib/mux.js` — createDirectUpload, ingestVideo, status helpers                         |
+| Mux direct upload (iOS)  | ✅ Done          | iOS uploads directly to Mux CDN (bypasses server). `uploadViaMux()` in `VideoUploadService`, fallback to multipart |
+| Mux webhooks             | ✅ Done          | `server/src/routes/mux-webhooks.js` — handles upload.asset_created, asset.ready, asset.errored                     |
+| Mux Player (clip viewer) | ✅ Done          | `<mux-player>` web component in clip viewer when muxPlaybackId exists, `<video>` fallback                          |
 | Cloud storage (R2 or B2) | 🔲 Not started   | Replace local `uploads/` with Cloudflare R2 or Backblaze B2. Presigned URLs for upload + playback.                 |
-| Video streaming (Mux)    | 🔲 Not started   | Mux ingestion after upload, adaptive HLS playback in clip viewer. Replace `<video src="local">`.                   |
 | Slack webhook (real)     | 🔲 Not started   | Replace simulated posts with Incoming Webhook to real workspace                                                    |
-| TestFlight build         | 🔲 Not started   | Couples with live Render + Cloud + Mux — needs real backend URL in `ServerConfig`                                  |
+| TestFlight build         | ⚠️ Needs rebuild | Production URL changed to `rodgriola.com`. New archive + upload to App Store Connect needed.                       |
 | Admin UI (expanded)      | ⚠️ Partial       | React dashboard running; needs asset detail, log persistence                                                       |
 | Real metadata extraction | ✅ Done          | iOS AVAsset extracts real metadata (not ffprobe — native iOS)                                                      |
 | Parallel form + upload   | 🔲 Not started   | Show form at upload start (not after); wait for both to finalize asset. Needed when real transcoding adds latency. |
@@ -326,9 +342,9 @@ A profile screen accessible from the chat header. Houses personal info, credenti
 | **Chat Demo**        | Vanilla HTML/CSS/JS                          | ✅ Complete       |
 | **iOS App**          | SwiftUI + `URLSessionWebSocketTask`          | ✅ Core complete  |
 | **Web Viewer**       | Server-rendered HTML at `/clips/:slug`       | ✅ Working        |
-| **Video Service**    | Mux or CF Stream (planned)                   | 🔲 Not started    |
+| **Video Service**    | Mux (direct upload + HLS playback)           | ✅ Integrated     |
 | **Storage**          | Cloudflare R2 or Backblaze B2 (planned)      | 🔲 Not started    |
-| **Hosting (Server)** | Render (planned)                             | 🔲 Local only     |
+| **Hosting (Server)** | Render (rodgriola.com)                       | ✅ Live           |
 | **Hosting (Web)**    | Vercel (planned)                             | 🔲 Not started    |
 | **Slack**            | Incoming Webhooks (planned)                  | 🔲 Simulated only |
 
@@ -361,7 +377,7 @@ Direct-Video-Uploader/
 ├── ios/
 │ ├── project.yml # XcodeGen project definition
 │ └── DirectVideoUploader/
-│ ├── App/ # SwiftUI app entry point
+│ ├── App/ # SwiftUI app entry, Theme.swift, DVUDateFormatting.swift
 │ ├── Models/ # User, Asset, ChatMessage, ServerConfig
 │ ├── Services/ # AuthService, ChatViewModel, WebSocketService, VideoUploadService, VideoMetadataExtractor
 │ └── Views/ # Auth, Chat, Form, Metadata, Archive views

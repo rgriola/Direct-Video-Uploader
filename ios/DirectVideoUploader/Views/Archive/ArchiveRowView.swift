@@ -17,7 +17,7 @@ struct ArchiveRowView: View {
                     // Thumbnail placeholder
                     ZStack {
                         RoundedRectangle(cornerRadius: 8)
-                            .fill(Color(hex: "2C2C2E"))
+                            .fill(Theme.cardBg)
                             .frame(width: 50, height: 50)
                         Text("🎬")
                             .font(.system(size: 22))
@@ -33,15 +33,15 @@ struct ArchiveRowView: View {
                         HStack(spacing: 6) {
                             Text(asset.slug)
                                 .font(.system(size: 12, design: .monospaced))
-                                .foregroundStyle(Color(hex: "98989D"))
+                                .foregroundStyle(Theme.secondaryText)
                                 .lineLimit(1)
                             
                             if let type = asset.formResponse?.type {
                                 Text("·")
-                                    .foregroundStyle(Color(hex: "636366"))
+                                    .foregroundStyle(Theme.tertiaryText)
                                 Text(type)
                                     .font(.system(size: 12))
-                                    .foregroundStyle(Color(hex: "98989D"))
+                                    .foregroundStyle(Theme.secondaryText)
                             }
                             
                             Text(asset.status.icon)
@@ -55,11 +55,11 @@ struct ArchiveRowView: View {
                     VStack(alignment: .trailing, spacing: 3) {
                         Text(formatShortDate(asset.createdAt))
                             .font(.system(size: 12))
-                            .foregroundStyle(Color(hex: "98989D"))
+                            .foregroundStyle(Theme.secondaryText)
                         
                         Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
                             .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(Color(hex: "636366"))
+                            .foregroundStyle(Theme.tertiaryText)
                     }
                 }
                 .padding(.vertical, 12)
@@ -71,7 +71,7 @@ struct ArchiveRowView: View {
             if isExpanded {
                 VStack(alignment: .leading, spacing: 10) {
                     Divider()
-                        .background(Color(hex: "38383A"))
+                        .background(Theme.separator)
                     
                     // Metadata grid
                     VStack(alignment: .leading, spacing: 6) {
@@ -94,10 +94,10 @@ struct ArchiveRowView: View {
                                 metadataRow(label: "Codec", value: codec)
                             }
                             if let dur = clip.duration {
-                                metadataRow(label: "Duration", value: formatDuration(dur))
+                                metadataRow(label: "Duration", value: DVUDateFormatting.duration(dur))
                             }
                             if let size = clip.fileSize {
-                                metadataRow(label: "File Size", value: formatFileSize(size))
+                                metadataRow(label: "File Size", value: DVUDateFormatting.fileSize(size))
                             }
                             if let device = clip.deviceModel {
                                 metadataRow(label: "Device", value: device)
@@ -115,7 +115,7 @@ struct ArchiveRowView: View {
                     HStack(spacing: 12) {
                         // View button — open in browser
                         Button {
-                            if let url = URL(string: "\(ServerConfig.baseURL)/clips/\(asset.slug)") {
+                            if let url = ServerConfig.clipURL(asset.slug) {
                                 UIApplication.shared.open(url)
                             }
                         } label: {
@@ -127,7 +127,7 @@ struct ArchiveRowView: View {
                             }
                             .padding(.horizontal, 14)
                             .padding(.vertical, 8)
-                            .background(Color(hex: "30D158"))
+                            .background(Theme.green)
                             .foregroundStyle(.white)
                             .clipShape(Capsule())
                         }
@@ -135,10 +135,10 @@ struct ArchiveRowView: View {
                         // Status pill
                         Text("\(asset.status.icon) \(asset.status.displayName)")
                             .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(Color(hex: "98989D"))
+                            .foregroundStyle(Theme.secondaryText)
                             .padding(.horizontal, 10)
                             .padding(.vertical, 6)
-                            .background(Color(hex: "2C2C2E"))
+                            .background(Theme.cardBg)
                             .clipShape(Capsule())
                         
                         Spacer()
@@ -149,7 +149,7 @@ struct ArchiveRowView: View {
                 .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
-        .background(Color(hex: "1C1C1E"))
+        .background(Theme.darkBg)
         .clipShape(RoundedRectangle(cornerRadius: 12))
     }
     
@@ -160,40 +160,17 @@ struct ArchiveRowView: View {
         HStack(alignment: .top, spacing: 8) {
             Text(label)
                 .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(Color(hex: "636366"))
+                .foregroundStyle(Theme.tertiaryText)
                 .frame(width: 80, alignment: .trailing)
             Text(value)
                 .font(.system(size: 12))
-                .foregroundStyle(Color(hex: "EBEBF5"))
+                .foregroundStyle(Theme.metaText)
                 .lineLimit(3)
         }
     }
     
     private func formatShortDate(_ dateStr: String?) -> String {
         guard let dateStr else { return "" }
-        let iso = ISO8601DateFormatter()
-        iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        let date = iso.date(from: dateStr) ?? ISO8601DateFormatter().date(from: dateStr) ?? Date()
-        let fmt = DateFormatter()
-        fmt.dateFormat = "MM/dd/yy"
-        return fmt.string(from: date)
-    }
-    
-    private func formatDuration(_ seconds: Int) -> String {
-        let m = seconds / 60
-        let s = seconds % 60
-        return String(format: "%d:%02d", m, s)
-    }
-    
-    private func formatFileSize(_ sizeStr: String) -> String {
-        guard let bytes = Double(sizeStr) else { return sizeStr }
-        if bytes > 1_000_000_000 {
-            return String(format: "%.1f GB", bytes / 1_000_000_000)
-        } else if bytes > 1_000_000 {
-            return String(format: "%.1f MB", bytes / 1_000_000)
-        } else if bytes > 1_000 {
-            return String(format: "%.0f KB", bytes / 1_000)
-        }
-        return "\(Int(bytes)) B"
+        return DVUDateFormatting.shortDate(dateStr)
     }
 }

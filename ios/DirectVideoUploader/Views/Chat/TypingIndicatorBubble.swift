@@ -10,7 +10,7 @@ struct TypingIndicatorBubble: View {
             HStack(spacing: 5) {
                 ForEach(0..<3) { index in
                     Circle()
-                        .fill(Color(hex: "A0A0A0"))
+                        .fill(Theme.typingDot)
                         .frame(width: 8, height: 8)
                         .scaleEffect(dotScale(for: index))
                         .opacity(dotOpacity(for: index))
@@ -18,7 +18,7 @@ struct TypingIndicatorBubble: View {
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 14)
-            .background(Color(hex: "2C2C2E"))
+            .background(Theme.cardBg)
             .clipShape(ChatBubbleShape(isOutgoing: false))
             
             Spacer(minLength: 60)

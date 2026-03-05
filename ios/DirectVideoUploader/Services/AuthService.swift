@@ -15,7 +15,7 @@ final class AuthService {
     
     // MARK: - Keychain key
     
-    private let tokenKey = "dvu_auth_token"
+    private let tokenKey = UserDefaultsKeys.authToken
     
     init() {
         // Try to restore token from UserDefaults (use Keychain in production)

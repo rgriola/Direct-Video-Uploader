@@ -1,5 +1,11 @@
 import Foundation
 
+/// Centralized UserDefaults keys.
+enum UserDefaultsKeys {
+    static let serverURL = "dvu_server_url"
+    static let authToken = "dvu_auth_token"
+}
+
 /// Central configuration for server connection.
 ///
 /// Priority order for resolving the server URL:
@@ -15,7 +21,7 @@ enum ServerConfig {
     private static let productionURL = "https://rodgriola.com"
     
     /// UserDefaults key for the user-saved server URL override
-    private static let serverURLKey = "dvu_server_url"
+    private static let serverURLKey = UserDefaultsKeys.serverURL
     
     // MARK: - Server URLs
     
@@ -108,4 +114,11 @@ enum ServerConfig {
     
     // Health
     static var healthURL: URL { url(for: "/api/health") }
+    
+    // Clip viewer (public)
+    static func clipURL(_ slug: String) -> URL? {
+        let trimmed = slug.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        return URL(string: "\(baseURL.absoluteString)/clips/\(trimmed)")
+    }
 }

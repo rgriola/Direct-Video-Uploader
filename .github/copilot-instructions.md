@@ -72,6 +72,10 @@ const result = await prisma.$queryRawUnsafe(
 7. **Build with Xcode CLI** — `xcodebuild -project DirectVideoUploader.xcodeproj -scheme DirectVideoUploader -destination 'platform=iOS Simulator,name=iPhone 17 Pro' build`
 8. **PhotosPicker** — SwiftUI-native `PhotosPicker` with `.videos` filter and `Transferable` protocol. Reset `selectedPhotoItem` to `nil` after processing.
 9. **Video uploads** — `VideoUploadService` streams multipart body to temp file (1MB chunks) to avoid memory pressure. Uses delegate-based `URLSession.uploadTask` for progress.
+10. **Theme.swift** — All colors centralized in `Theme` enum (`Theme.blue`, `Theme.cardBg`, etc.). Never use `Color(hex: "...")` directly in views — add a constant to Theme.swift instead.
+11. **DVUDateFormatting.swift** — Cached date/time formatters. Use `DVUDateFormatting.longDate(_:)`, `.duration(_:)`, `.fileSize(_:)`, etc. Never create inline `DateFormatter` or `ISO8601DateFormatter` instances.
+12. **UserDefaultsKeys** — Enum in `ServerConfig.swift`. Use `UserDefaultsKeys.authToken` / `.serverURL` instead of hardcoded strings.
+13. **Clip URLs** — Use `ServerConfig.clipURL(_:slug)` to build clip viewer URLs. Never hand-build `/clips/` URLs inline.
 
 ---
 

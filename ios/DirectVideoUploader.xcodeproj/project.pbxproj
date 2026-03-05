@@ -3,7 +3,7 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 63;
+	objectVersion = 77;
 	objects = {
 
 /* Begin PBXBuildFile section */
@@ -21,9 +21,11 @@
 		8942F3630BCFD538BAE544E5 /* Asset.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F9DE735EEFFFCC798CA054C /* Asset.swift */; };
 		90441C6428F48C99FEC945E7 /* SentUploadBubble.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8F7A0FE6F16D77BFEF57574 /* SentUploadBubble.swift */; };
 		94EB8482D6F7158958A03393 /* InputBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF5B8A623A0F5AA9CA07EA1A /* InputBar.swift */; };
+		958C853DDA42C7E81E258AC7 /* DVUDateFormatting.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4DBB133385999B4E09A826F7 /* DVUDateFormatting.swift */; };
 		A9F088643DC2986469FFC84B /* ContextFormView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3899E53553FC5E50293A8E8 /* ContextFormView.swift */; };
 		B23CA5DB5C7678A863AC8029 /* VideoMetadataExtractor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E996DE4500DDFF0790F62F0 /* VideoMetadataExtractor.swift */; };
 		BB8D6AF27EE9A0B211E28483 /* ArchiveListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7A81292325663F81C4B8772 /* ArchiveListView.swift */; };
+		CC1C0E76EF9FE58674443EC5 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A7F3BED43E9CB3FFE330020 /* Theme.swift */; };
 		CE6C303AB52C17CF99EFD315 /* User.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A0611DEBA9BE67788466164 /* User.swift */; };
 		D683D53CD3990DC7DE74FBC0 /* AuthService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86A11FF4693D09E9320E8C07 /* AuthService.swift */; };
 		DA8E0A9A28C2799F1F5027FD /* VideoPreviewBubble.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6996828CB03A6EABFF3C473B /* VideoPreviewBubble.swift */; };
@@ -42,7 +44,9 @@
 		2B7EEEC345EAFF2EE3EFD9CA /* MessageBubble.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageBubble.swift; sourceTree = "<group>"; };
 		2F9DE735EEFFFCC798CA054C /* Asset.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Asset.swift; sourceTree = "<group>"; };
 		3A0611DEBA9BE67788466164 /* User.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = User.swift; sourceTree = "<group>"; };
+		3A7F3BED43E9CB3FFE330020 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		49E974DDC963928102FA291B /* ChatHeaderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatHeaderView.swift; sourceTree = "<group>"; };
+		4DBB133385999B4E09A826F7 /* DVUDateFormatting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DVUDateFormatting.swift; sourceTree = "<group>"; };
 		5BE16E72579F144A61F60847 /* ArchiveRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArchiveRowView.swift; sourceTree = "<group>"; };
 		66AE6120B342F8FBF6D9F832 /* ChatViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatViewModel.swift; sourceTree = "<group>"; };
 		6996828CB03A6EABFF3C473B /* VideoPreviewBubble.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoPreviewBubble.swift; sourceTree = "<group>"; };
@@ -60,7 +64,7 @@
 		EA58877C26F0C09FF7DFA4DC /* VideoUploadService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoUploadService.swift; sourceTree = "<group>"; };
 		EF5B8A623A0F5AA9CA07EA1A /* InputBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InputBar.swift; sourceTree = "<group>"; };
 		F1FF094BA3F6CC3D1003E121 /* ChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatView.swift; sourceTree = "<group>"; };
-		FF11D8E240B8AF1F2DFFB68B /* DirectVideoUploader.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = DirectVideoUploader.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		FF11D8E240B8AF1F2DFFB68B /* DirectVideoUploader.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = DirectVideoUploader.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -149,6 +153,8 @@
 			children = (
 				894318625F91A1D2462249FE /* ContentView.swift */,
 				CE10509FD1B4B7983FB58B3D /* DirectVideoUploaderApp.swift */,
+				4DBB133385999B4E09A826F7 /* DVUDateFormatting.swift */,
+				3A7F3BED43E9CB3FFE330020 /* Theme.swift */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -213,6 +219,12 @@
 			attributes = {
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1600;
+				TargetAttributes = {
+					49FA393813097910E5C66B21 = {
+						DevelopmentTeam = LW5P4PVL96;
+						ProvisioningStyle = Automatic;
+					};
+				};
 			};
 			buildConfigurationList = 8E8628C98F1888075F9AD2C7 /* Build configuration list for PBXProject "DirectVideoUploader" */;
 			compatibilityVersion = "Xcode 14.0";
@@ -224,6 +236,7 @@
 			);
 			mainGroup = 3366E68B20E69DE20BB15FCB;
 			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
@@ -258,6 +271,7 @@
 				6D33A3123AE13D1CADF387DC /* ChatViewModel.swift in Sources */,
 				F35DE01BD68A069A3CB04989 /* ContentView.swift in Sources */,
 				A9F088643DC2986469FFC84B /* ContextFormView.swift in Sources */,
+				958C853DDA42C7E81E258AC7 /* DVUDateFormatting.swift in Sources */,
 				8479D08EF2DC76BFF0C2BDCF /* DirectVideoUploaderApp.swift in Sources */,
 				94EB8482D6F7158958A03393 /* InputBar.swift in Sources */,
 				2F5EB0FE2B5962DCCF6BCD5B /* LoginView.swift in Sources */,
@@ -265,6 +279,7 @@
 				37912629DFC4719F11FEB3F5 /* MetadataView.swift in Sources */,
 				90441C6428F48C99FEC945E7 /* SentUploadBubble.swift in Sources */,
 				889C07C34F8BFC90EF7CB2CE /* ServerConfig.swift in Sources */,
+				CC1C0E76EF9FE58674443EC5 /* Theme.swift in Sources */,
 				16B9E9AFFE09EAA4C36F2A04 /* TypingIndicatorBubble.swift in Sources */,
 				CE6C303AB52C17CF99EFD315 /* User.swift in Sources */,
 				257DDBB48613A0897D5754F0 /* VideoLibraryView.swift in Sources */,
@@ -311,10 +326,11 @@
 				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
 				CURRENT_PROJECT_VERSION = 1;
 				DEBUG_INFORMATION_FORMAT = dwarf;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = LW5P4PVL96;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
@@ -348,10 +364,8 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				CODE_SIGN_IDENTITY = "iPhone Developer";
-				DEVELOPMENT_TEAM = LW5P4PVL96;
+				CODE_SIGN_IDENTITY = "Apple Development";
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.entertainment";
 				INFOPLIST_KEY_NSAppTransportSecurity_AllowsArbitraryLoads = YES;
 				INFOPLIST_KEY_NSCameraUsageDescription = "Record video to upload to the newsroom server.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Attach GPS coordinates to your video upload.";
@@ -375,10 +389,8 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				CODE_SIGN_IDENTITY = "iPhone Developer";
-				DEVELOPMENT_TEAM = LW5P4PVL96;
+				CODE_SIGN_IDENTITY = "Apple Development";
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.entertainment";
 				INFOPLIST_KEY_NSAppTransportSecurity_AllowsArbitraryLoads = YES;
 				INFOPLIST_KEY_NSCameraUsageDescription = "Record video to upload to the newsroom server.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Attach GPS coordinates to your video upload.";
@@ -431,10 +443,11 @@
 				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
 				CURRENT_PROJECT_VERSION = 1;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = LW5P4PVL96;
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;

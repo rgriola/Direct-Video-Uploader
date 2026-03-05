@@ -476,7 +476,7 @@ export default async function assetRoutes(fastify) {
             for (const socketId of userSockets) {
                 io.to(socketId).emit('form:confirmed', {
                     assetId: id,
-                    slug: formResponse.slug || asset.slug,
+                    slug: asset.slug,
                     mediasourceId: asset.mediasourceId,
                     mediasourceUrl: asset.mediasourceUrl,
                     originalFileName: asset.originalFileName ?? clip?.originalFileName,

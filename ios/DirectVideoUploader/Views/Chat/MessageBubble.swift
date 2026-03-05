@@ -56,7 +56,7 @@ struct MessageBubble: View {
     private var textContent: some View {
         Text(message.content.displayText)
             .font(.system(size: 16))
-            .foregroundStyle(isOutgoing ? .white : Color(hex: "E5E5EA"))
+            .foregroundStyle(isOutgoing ? .white : Theme.lightText)
     }
     
     private var videoContent: some View {
@@ -66,7 +66,7 @@ struct MessageBubble: View {
             Text(message.content.displayText)
                 .font(.system(size: 15, weight: .medium))
         }
-        .foregroundStyle(isOutgoing ? .white : Color(hex: "E5E5EA"))
+        .foregroundStyle(isOutgoing ? .white : Theme.lightText)
     }
     
     private var confirmationContent: some View {
@@ -74,7 +74,7 @@ struct MessageBubble: View {
             // Main confirmation text
             Text(message.content.text ?? "Upload confirmed")
                 .font(.system(size: 15))
-                .foregroundStyle(Color(hex: "E5E5EA"))
+                .foregroundStyle(Theme.lightText)
             
             // Metadata details — mediasource ID, filename, date
             VStack(alignment: .leading, spacing: 4) {
@@ -84,7 +84,7 @@ struct MessageBubble: View {
                             .font(.system(size: 12))
                         Text(msId)
                             .font(.system(size: 14, weight: .bold, design: .monospaced))
-                            .foregroundStyle(Color(hex: "007AFF"))
+                            .foregroundStyle(Theme.blue)
                     }
                 }
                 
@@ -94,7 +94,7 @@ struct MessageBubble: View {
                             .font(.system(size: 12))
                         Text(fileName)
                             .font(.system(size: 13, design: .monospaced))
-                            .foregroundStyle(Color(hex: "98989D"))
+                            .foregroundStyle(Theme.secondaryText)
                             .lineLimit(1)
                     }
                 }
@@ -103,9 +103,9 @@ struct MessageBubble: View {
                     HStack(spacing: 4) {
                         Text("🕐")
                             .font(.system(size: 12))
-                        Text(formatShortDate(dateStr))
+                        Text(DVUDateFormatting.longDate(dateStr))
                             .font(.system(size: 13))
-                            .foregroundStyle(Color(hex: "98989D"))
+                            .foregroundStyle(Theme.secondaryText)
                     }
                 }
             }
@@ -114,7 +114,7 @@ struct MessageBubble: View {
             HStack(spacing: 12) {
                 // View button — opens clip in browser
                 if let slug = message.content.slug,
-                   let clipURL = URL(string: "\(ServerConfig.baseURL)/clips/\(slug)") {
+                   let clipURL = ServerConfig.clipURL(slug) {
                     Button {
                         UIApplication.shared.open(clipURL)
                     } label: {
@@ -126,7 +126,7 @@ struct MessageBubble: View {
                         }
                         .padding(.horizontal, 14)
                         .padding(.vertical, 8)
-                        .background(Color(hex: "30D158"))
+                        .background(Theme.green)
                         .foregroundStyle(.white)
                         .clipShape(RoundedRectangle(cornerRadius: 8))
                     }
@@ -145,7 +145,7 @@ struct MessageBubble: View {
                         }
                         .padding(.horizontal, 14)
                         .padding(.vertical, 8)
-                        .background(Color(hex: "007AFF"))
+                        .background(Theme.blue)
                         .foregroundStyle(.white)
                         .clipShape(RoundedRectangle(cornerRadius: 8))
                     }
@@ -167,7 +167,7 @@ struct MessageBubble: View {
             if let fileName = message.content.originalFileName {
                 Text(fileName)
                     .font(.system(size: 13, design: .monospaced))
-                    .foregroundStyle(Color(hex: "98989D"))
+                    .foregroundStyle(Theme.secondaryText)
                     .lineLimit(1)
             }
             
@@ -178,7 +178,7 @@ struct MessageBubble: View {
                         .font(.system(size: 12))
                     Text(msId)
                         .font(.system(size: 14, weight: .bold, design: .monospaced))
-                        .foregroundStyle(Color(hex: "007AFF"))
+                        .foregroundStyle(Theme.blue)
                 }
             }
             
@@ -194,14 +194,14 @@ struct MessageBubble: View {
                 
                 // Captured date
                 if let dateStr = message.content.capturedAt {
-                    metaSummaryRow(icon: "🕐", text: formatShortDate(dateStr))
+                    metaSummaryRow(icon: "🕐", text: DVUDateFormatting.longDate(dateStr))
                 }
                 
                 // Codec · Resolution · Duration
                 let codecParts = [
                     message.content.codec,
                     message.content.resolution,
-                    message.content.duration.map { formatDuration($0) }
+                    message.content.duration.map { DVUDateFormatting.duration($0) }
                 ].compactMap { $0 }
                 
                 if !codecParts.isEmpty {
@@ -227,7 +227,7 @@ struct MessageBubble: View {
                             Image(systemName: "chevron.right")
                                 .font(.system(size: 9))
                         }
-                        .foregroundStyle(Color(hex: "007AFF"))
+                        .foregroundStyle(Theme.blue)
                     }
                 }
                 
@@ -246,7 +246,7 @@ struct MessageBubble: View {
                             Image(systemName: "chevron.right")
                                 .font(.system(size: 9))
                         }
-                        .foregroundStyle(Color(hex: "30D158"))
+                        .foregroundStyle(Theme.green)
                     }
                 }
             }
@@ -261,25 +261,12 @@ struct MessageBubble: View {
                 .font(.system(size: 12))
             Text(text)
                 .font(.system(size: 13))
-                .foregroundStyle(Color(hex: "98989D"))
+                .foregroundStyle(Theme.secondaryText)
         }
-    }
-    
-    private func formatDuration(_ seconds: Int) -> String {
-        let min = seconds / 60
-        let sec = seconds % 60
-        return String(format: "%d:%02d", min, sec)
     }
     
     private func formatShortDate(_ isoString: String) -> String {
-        let iso = ISO8601DateFormatter()
-        iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        guard let date = iso.date(from: isoString) ?? ISO8601DateFormatter().date(from: isoString) else {
-            return isoString
-        }
-        let formatter = DateFormatter()
-        formatter.dateFormat = "MMM d, yyyy h:mm a"
-        return formatter.string(from: date)
+        DVUDateFormatting.longDate(isoString)
     }
     
     private var slackContent: some View {
@@ -288,7 +275,7 @@ struct MessageBubble: View {
                 .font(.system(size: 14))
             Text(message.content.text ?? "Posted to Slack")
                 .font(.system(size: 15))
-                .foregroundStyle(Color(hex: "E5E5EA"))
+                .foregroundStyle(Theme.lightText)
         }
     }
     
@@ -298,12 +285,12 @@ struct MessageBubble: View {
         Group {
             if isOutgoing {
                 LinearGradient(
-                    colors: [Color(hex: "007AFF"), Color(hex: "0063D1")],
+                    colors: [Theme.bubbleBlueHi, Theme.bubbleBlueLo],
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
                 )
             } else {
-                Color(hex: "2C2C2E")
+                Theme.cardBg
             }
         }
     }
@@ -312,17 +299,7 @@ struct MessageBubble: View {
     
     private var formattedTime: String? {
         guard let dateStr = message.createdAt else { return nil }
-        
-        let iso = ISO8601DateFormatter()
-        iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        
-        guard let date = iso.date(from: dateStr) ?? ISO8601DateFormatter().date(from: dateStr) else {
-            return nil
-        }
-        
-        let formatter = DateFormatter()
-        formatter.dateFormat = "h:mm a"
-        return formatter.string(from: date)
+        return DVUDateFormatting.timeOnly(dateStr)
     }
 }
 

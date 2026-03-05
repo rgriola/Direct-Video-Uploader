@@ -42,7 +42,7 @@ struct ContextFormView: View {
         NavigationStack {
             ZStack {
                 // 50% lighter background — visually distinct from chat area
-                Color(hex: "1A2544").ignoresSafeArea()
+                Theme.formBg.ignoresSafeArea()
                 
                 ScrollView {
                     VStack(spacing: 20) {
@@ -74,7 +74,7 @@ struct ContextFormView: View {
                                         .font(.system(size: 15, weight: .semibold))
                                         .foregroundStyle(.white)
                                     if let dur = duration, dur > 0 {
-                                        Text("· \(formatDuration(dur))")
+                                        Text("· \(DVUDateFormatting.duration(dur))")
                                             .font(.system(size: 15, weight: .semibold))
                                             .foregroundStyle(.white)
                                     }
@@ -90,7 +90,7 @@ struct ContextFormView: View {
                                 
                                 // Captured date
                                 if let dateStr = capturedAt {
-                                    Text("🕐 \(formatDate(dateStr))")
+                                    Text("🕐 \(DVUDateFormatting.longDate(dateStr))")
                                         .font(.system(size: 12))
                                         .foregroundStyle(.white.opacity(0.4))
                                 }
@@ -185,19 +185,19 @@ struct ContextFormView: View {
                                                 .padding(.vertical, 10)
                                                 .background(
                                                     isSelected
-                                                        ? Color(hex: "007AFF").opacity(0.25)
+                                                        ? Theme.blue.opacity(0.25)
                                                         : Color.white.opacity(0.06)
                                                 )
                                                 .foregroundStyle(
                                                     isSelected
-                                                        ? Color(hex: "007AFF")
+                                                        ? Theme.blue
                                                         : .white.opacity(0.5)
                                                 )
                                                 .clipShape(RoundedRectangle(cornerRadius: 10))
                                                 .overlay(
                                                     RoundedRectangle(cornerRadius: 10)
                                                         .strokeBorder(
-                                                            isSelected ? Color(hex: "007AFF") : Color.clear,
+                                                            isSelected ? Theme.blue : Color.clear,
                                                             lineWidth: 1.5
                                                         )
                                                 )
@@ -211,14 +211,14 @@ struct ContextFormView: View {
                         if let error = submitError {
                             HStack(spacing: 8) {
                                 Image(systemName: "exclamationmark.triangle.fill")
-                                    .foregroundStyle(Color(hex: "FF453A"))
+                                    .foregroundStyle(Theme.red)
                                 Text(error)
                                     .font(.system(size: 14))
                                     .foregroundStyle(.white)
                             }
                             .padding(12)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(Color(hex: "FF453A").opacity(0.15))
+                            .background(Theme.red.opacity(0.15))
                             .clipShape(RoundedRectangle(cornerRadius: 10))
                         }
                         
@@ -236,7 +236,7 @@ struct ContextFormView: View {
                             }
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 16)
-                            .background(canSubmit ? Color(hex: "007AFF") : Color(hex: "007AFF").opacity(0.35))
+                            .background(canSubmit ? Theme.blue : Theme.blue.opacity(0.35))
                             .foregroundStyle(.white)
                             .clipShape(RoundedRectangle(cornerRadius: 14))
                         }
@@ -294,19 +294,10 @@ struct ContextFormView: View {
     }
     
     private func formatDuration(_ seconds: Int) -> String {
-        let min = seconds / 60
-        let sec = seconds % 60
-        return String(format: "%d:%02d", min, sec)
+        DVUDateFormatting.duration(seconds)
     }
     
     private func formatDate(_ isoString: String) -> String {
-        let iso = ISO8601DateFormatter()
-        iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        guard let date = iso.date(from: isoString) ?? ISO8601DateFormatter().date(from: isoString) else {
-            return isoString
-        }
-        let formatter = DateFormatter()
-        formatter.dateFormat = "MMM d, yyyy h:mm a"
-        return formatter.string(from: date)
+        DVUDateFormatting.longDate(isoString)
     }
 }

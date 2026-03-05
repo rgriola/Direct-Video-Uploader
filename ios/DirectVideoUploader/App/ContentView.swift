@@ -21,7 +21,7 @@ struct ContentView: View {
                             Text("Archive")
                         }
                 }
-                .tint(Color(hex: "0A84FF"))
+                .tint(Theme.tint)
             } else {
                 LoginView()
             }
