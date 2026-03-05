@@ -4,7 +4,6 @@
  */
 import prisma from '../lib/prisma.js';
 import { MUX_ENV_KEY } from '../lib/mux.js';
-import { MUX_ENV_KEY } from '../lib/mux.js';
 
 /** Escape HTML special characters to prevent XSS (#5). */
 function escapeHtml(str) {
@@ -105,8 +104,6 @@ export default async function clipRoutes(fastify) {
         const hasMuxPlayback = !!(clip?.muxPlaybackId);
         const muxPlaybackId = clip?.muxPlaybackId || '';
         const muxEnvKey = MUX_ENV_KEY || '';
-        const hasMuxPlayback = !!clip?.muxPlaybackId;
-        const muxPlaybackId = clip?.muxPlaybackId || '';
 
         // Mux Player uses a web component — only load when we have a playback ID
         const muxPlayerScript = hasMuxPlayback
