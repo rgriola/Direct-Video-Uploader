@@ -8,8 +8,13 @@
  *   https://your-domain.onrender.com/api/webhooks/mux
  */
 import prisma from '../lib/prisma.js';
+import Mux from '@mux/mux-node';
 import { getMuxAsset, MUX_ENV_KEY } from '../lib/mux.js';
 import { dbRetry } from '../lib/utils.js';
+import fs from 'fs/promises';
+import path from 'path';
+
+const MUX_WEBHOOK_SECRET = process.env.MUX_WEBHOOK_SECRET || '';
 
 export default async function muxWebhookRoutes(fastify) {
     /**
@@ -25,6 +30,25 @@ export default async function muxWebhookRoutes(fastify) {
             rawBody: true,
         },
     }, async (request, reply) => {
+        // ─── Signature Verification ───────────────────────────────
+        if (MUX_WEBHOOK_SECRET) {
+            const signature = request.headers['mux-signature'];
+            if (!signature) {
+                console.warn('🎬 Mux webhook missing Mux-Signature header — rejected');
+                return reply.status(401).send({ error: 'Missing signature' });
+            }
+            try {
+                // rawBody is available because of the rawBody config above
+                const rawBody = typeof request.body === 'string' ? request.body : JSON.stringify(request.body);
+                Mux.Webhooks.verifySignature(rawBody, { 'mux-signature': signature }, MUX_WEBHOOK_SECRET);
+            } catch (err) {
+                console.warn('🎬 Mux webhook signature verification failed:', err.message);
+                return reply.status(401).send({ error: 'Invalid signature' });
+            }
+        } else if (process.env.NODE_ENV === 'production') {
+            console.warn('⚠️  MUX_WEBHOOK_SECRET not set — webhook signatures are NOT verified');
+        }
+
         const event = request.body;
         const eventType = event?.type;
         const eventData = event?.data;
@@ -104,6 +128,21 @@ export default async function muxWebhookRoutes(fastify) {
                     }));
 
                     console.log(`🎬 Mux ready: clip ${clip.id} → playbackId ${muxPlaybackId}`);
+
+                    // ─── Temp file cleanup ────────────────────────────────
+                    // Delete local file now that Mux has the video
+                    if (clip.storageUrl?.startsWith('/uploads/')) {
+                        const localPath = path.resolve(process.cwd(), clip.storageUrl.slice(1));
+                        try {
+                            await fs.unlink(localPath);
+                            console.log(`🗑️ Deleted local file: ${clip.storageUrl}`);
+                        } catch (unlinkErr) {
+                            // File may already be gone (Render ephemeral disk) — that's OK
+                            if (unlinkErr.code !== 'ENOENT') {
+                                console.warn(`🗑️ Failed to delete ${clip.storageUrl}:`, unlinkErr.message);
+                            }
+                        }
+                    }
 
                     // Notify connected clients via WebSocket
                     const asset = await prisma.asset.findUnique({ where: { id: clip.assetId } });
