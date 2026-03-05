@@ -321,7 +321,7 @@ export default async function assetRoutes(fastify) {
                     slug: { type: 'string' },
                     type: { type: 'string' },
                     description: { type: 'string' },
-                    priority: { type: 'string', enum: ['low', 'medium', 'high', 'critical', 'LOW', 'MEDIUM', 'HIGH', 'CRITICAL'] },
+                    priority: { type: 'string', enum: ['Low', 'Medium', 'High', 'Critical', 'low', 'medium', 'high', 'critical', 'LOW', 'MEDIUM', 'HIGH', 'CRITICAL'] },
                 },
             },
         },
