@@ -63,41 +63,79 @@ export default async function clipRoutes(fastify) {
         const clip = asset.clips?.[0];
         const form = asset.formResponse;
 
-        // Build metadata rows
-        const metaRows = [];
-        if (clip?.gpsLat && clip?.gpsLon) metaRows.push({ icon: '📍', label: 'GPS', value: `${clip.gpsLat.toFixed(4)}, ${clip.gpsLon.toFixed(4)}` });
-        if (clip?.capturedAt) metaRows.push({ icon: '🕐', label: 'Captured', value: new Date(clip.capturedAt).toLocaleString() });
-        if (clip?.deviceModel) metaRows.push({ icon: '📱', label: 'Device', value: `${escapeHtml(clip.deviceModel)}${clip.osVersion ? ' · ' + escapeHtml(clip.osVersion) : ''}` });
-        if (clip?.codec) metaRows.push({ icon: '🎥', label: 'Video', value: `${escapeHtml(clip.codec)}${clip.resolution ? ' · ' + escapeHtml(clip.resolution) : ''}` });
-        if (clip?.orientation) metaRows.push({ icon: '↔️', label: 'Orientation', value: escapeHtml(clip.orientation) });
-        if (clip?.duration) {
-            const min = Math.floor(clip.duration / 60);
-            const sec = clip.duration % 60;
-            metaRows.push({ icon: '⏱', label: 'Duration', value: `${min}:${String(sec).padStart(2, '0')}` });
+        // ── Asset-level metadata ──
+        const assetRows = [];
+        assetRows.push({ icon: '🆔', label: 'Asset ID', value: asset.id });
+        assetRows.push({ icon: '🔗', label: 'Slug', value: asset.slug });
+        if (asset.mediasourceId) assetRows.push({ icon: '📡', label: 'Mediasource ID', value: asset.mediasourceId });
+        if (asset.mediasourceUrl) assetRows.push({ icon: '🌐', label: 'Mediasource URL', value: asset.mediasourceUrl });
+        if (asset.originalFileName) assetRows.push({ icon: '📄', label: 'Original File', value: asset.originalFileName });
+        if (asset.user) assetRows.push({ icon: '👤', label: 'Uploaded By', value: `${asset.user.name}${asset.user.team ? ' · ' + asset.user.team : ''}` });
+        assetRows.push({ icon: '📊', label: 'Status', value: asset.status });
+        if (asset.clipCount) assetRows.push({ icon: '🎞', label: 'Clip Count', value: String(asset.clipCount) });
+        if (asset.totalDuration) {
+            const m = Math.floor(asset.totalDuration / 60);
+            const s = asset.totalDuration % 60;
+            assetRows.push({ icon: '⏱', label: 'Total Duration', value: `${m}:${String(s).padStart(2, '0')}` });
         }
-        if (clip?.fileSize) {
-            const mb = Number(clip.fileSize) / 1_000_000;
-            metaRows.push({ icon: '📁', label: 'File Size', value: `${mb.toFixed(1)} MB` });
+        assetRows.push({ icon: '📅', label: 'Created', value: new Date(asset.createdAt).toLocaleString() });
+        assetRows.push({ icon: '🔄', label: 'Updated', value: new Date(asset.updatedAt).toLocaleString() });
+
+        // ── Clip-level metadata (video technical) ──
+        const clipRows = [];
+        if (clip) {
+            clipRows.push({ icon: '🆔', label: 'Clip ID', value: clip.id });
+            if (clip.originalFileName) clipRows.push({ icon: '📄', label: 'Original File', value: clip.originalFileName });
+            if (clip.codec) clipRows.push({ icon: '🎥', label: 'Codec', value: clip.codec });
+            if (clip.resolution) clipRows.push({ icon: '📐', label: 'Resolution', value: clip.resolution });
+            if (clip.orientation) clipRows.push({ icon: '↔️', label: 'Orientation', value: clip.orientation });
+            if (clip.duration) {
+                const min = Math.floor(clip.duration / 60);
+                const sec = clip.duration % 60;
+                clipRows.push({ icon: '⏱', label: 'Duration', value: `${min}:${String(sec).padStart(2, '0')}` });
+            }
+            if (clip.fileSize) {
+                const bytes = Number(clip.fileSize);
+                const mb = bytes / 1_000_000;
+                clipRows.push({ icon: '📁', label: 'File Size', value: mb >= 1000 ? `${(mb / 1000).toFixed(2)} GB` : `${mb.toFixed(1)} MB` });
+            }
+            if (clip.deviceModel) clipRows.push({ icon: '📱', label: 'Device', value: clip.deviceModel });
+            if (clip.osVersion) clipRows.push({ icon: '⚙️', label: 'OS Version', value: clip.osVersion });
+            if (clip.capturedAt) clipRows.push({ icon: '🕐', label: 'Captured At', value: new Date(clip.capturedAt).toLocaleString() });
+            if (clip.gpsLat && clip.gpsLon) {
+                const lat = clip.gpsLat.toFixed(6);
+                const lon = clip.gpsLon.toFixed(6);
+                clipRows.push({ icon: '📍', label: 'GPS', value: `${lat}, ${lon}`, link: `https://maps.google.com/?q=${lat},${lon}` });
+            }
+            if (clip.gpsAltitude != null) clipRows.push({ icon: '⛰️', label: 'Altitude', value: `${clip.gpsAltitude.toFixed(1)} m` });
+            clipRows.push({ icon: '📊', label: 'Clip Status', value: clip.status });
+            if (clip.storageUrl) clipRows.push({ icon: '💾', label: 'Storage URL', value: clip.storageUrl });
+            if (clip.streamUrl) clipRows.push({ icon: '📺', label: 'Stream URL', value: clip.streamUrl });
+            if (clip.muxAssetId) clipRows.push({ icon: '🎬', label: 'Mux Asset ID', value: clip.muxAssetId });
+            if (clip.muxPlaybackId) clipRows.push({ icon: '▶️', label: 'Mux Playback ID', value: clip.muxPlaybackId });
+            if (clip.muxUploadId) clipRows.push({ icon: '📤', label: 'Mux Upload ID', value: clip.muxUploadId });
+            clipRows.push({ icon: '📅', label: 'Clip Created', value: new Date(clip.createdAt).toLocaleString() });
         }
 
-        const metaHTML = metaRows.map(r =>
-            `<div class="meta-row"><span class="meta-icon">${r.icon}</span><span class="meta-label">${escapeHtml(r.label)}</span><span class="meta-value">${escapeHtml(r.value)}</span></div>`
-        ).join('\n');
-
-        // Form response section
-        let formHTML = '';
+        // ── Form response metadata ──
+        const formRows = [];
         if (form) {
-            formHTML = `
-                <div class="section">
-                    <h3>Context Form</h3>
-                    <div class="meta-grid">
-                        ${form.type ? `<div class="meta-row"><span class="meta-icon">🏷</span><span class="meta-label">Type</span><span class="meta-value">${escapeHtml(form.type)}</span></div>` : ''}
-                        ${form.priority ? `<div class="meta-row"><span class="meta-icon">🔺</span><span class="meta-label">Priority</span><span class="meta-value priority-${escapeHtml(form.priority.toLowerCase())}">${escapeHtml(form.priority)}</span></div>` : ''}
-                        ${form.description ? `<div class="meta-row"><span class="meta-icon">📝</span><span class="meta-label">Description</span><span class="meta-value">${escapeHtml(form.description)}</span></div>` : ''}
-                    </div>
-                </div>
-            `;
+            formRows.push({ icon: '🆔', label: 'Form ID', value: form.id });
+            if (form.slug) formRows.push({ icon: '🏷', label: 'Slug / Title', value: form.slug });
+            if (form.type) formRows.push({ icon: '📋', label: 'Type', value: form.type });
+            if (form.priority) formRows.push({ icon: '🔺', label: 'Priority', value: form.priority });
+            if (form.description) formRows.push({ icon: '📝', label: 'Description', value: form.description });
+            if (form.extra) formRows.push({ icon: '📦', label: 'Extra Data', value: JSON.stringify(form.extra) });
+            formRows.push({ icon: '📅', label: 'Submitted', value: new Date(form.submittedAt).toLocaleString() });
         }
+
+        // Build HTML helper
+        const renderRows = (rows) => rows.map(r => {
+            const val = r.link
+                ? `<a href="${escapeHtml(r.link)}" target="_blank" rel="noopener" style="color:#007AFF;text-decoration:none">${escapeHtml(r.value)} ↗</a>`
+                : escapeHtml(r.value);
+            return `<div class="meta-row"><span class="meta-icon">${r.icon}</span><span class="meta-label">${escapeHtml(r.label)}</span><span class="meta-value">${val}</span></div>`;
+        }).join('\n');
 
         const videoURL = clip?.storageUrl || '';
         const hasVideo = videoURL && clip?.status === 'READY';
@@ -213,7 +251,7 @@ export default async function clipRoutes(fastify) {
         }
         .meta-row {
             display: grid;
-            grid-template-columns: 28px 90px 1fr;
+            grid-template-columns: 28px 120px 1fr;
             align-items: center;
             gap: 0 8px;
             padding: 12px 16px;
@@ -342,14 +380,26 @@ export default async function clipRoutes(fastify) {
             }
         </div>
 
-        ${metaRows.length > 0 ? `
+        ${clipRows.length > 0 ? `
         <div class="section">
-            <h3>Video Metadata</h3>
-            <div class="meta-grid">${metaHTML}</div>
+            <h3>Video / Clip</h3>
+            <div class="meta-grid">${renderRows(clipRows)}</div>
         </div>
         ` : ''}
 
-        ${formHTML}
+        ${formRows.length > 0 ? `
+        <div class="section">
+            <h3>Context Form</h3>
+            <div class="meta-grid">${renderRows(formRows)}</div>
+        </div>
+        ` : ''}
+
+        ${assetRows.length > 0 ? `
+        <div class="section">
+            <h3>Asset</h3>
+            <div class="meta-grid">${renderRows(assetRows)}</div>
+        </div>
+        ` : ''}
 
         <div class="footer">
             <div class="logo">MEDIASOURCE FIXER</div>

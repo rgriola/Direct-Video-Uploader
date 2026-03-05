@@ -97,6 +97,7 @@ final class VideoUploadService: NSObject {
             if let capturedAt = meta.capturedAt { metaDict["capturedAt"] = capturedAt }
             if let lat = meta.gpsLat { metaDict["gpsLat"] = lat }
             if let lon = meta.gpsLon { metaDict["gpsLon"] = lon }
+            if let alt = meta.gpsAltitude { metaDict["gpsAltitude"] = alt }
             
             // File size
             if let attrs = try? FileManager.default.attributesOfItem(atPath: fileURL.path),
@@ -172,6 +173,7 @@ final class VideoUploadService: NSObject {
                 ("capturedAt", meta.capturedAt ?? ""),
                 ("gpsLat", meta.gpsLat.map { "\($0)" } ?? ""),
                 ("gpsLon", meta.gpsLon.map { "\($0)" } ?? ""),
+                ("gpsAltitude", meta.gpsAltitude.map { "\($0)" } ?? ""),
             ]
             for (name, value) in fields where !value.isEmpty {
                 let part = "--\(boundary)\r\n"

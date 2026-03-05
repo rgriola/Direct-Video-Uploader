@@ -77,6 +77,7 @@ model Clip {
   muxUploadId      String?    @map("mux_upload_id")
   gpsLat           Float?     @map("gps_lat")
   gpsLon           Float?     @map("gps_lon")
+  gpsAltitude      Float?     @map("gps_altitude")
   capturedAt       DateTime?  @map("captured_at")
   deviceModel      String?    @map("device_model")
   osVersion        String?    @map("os_version")

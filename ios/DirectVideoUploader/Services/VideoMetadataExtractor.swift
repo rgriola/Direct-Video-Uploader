@@ -12,6 +12,7 @@ struct VideoMetadata: Codable {
     let capturedAt: String?    // ISO 8601
     let gpsLat: Double?
     let gpsLon: Double?
+    let gpsAltitude: Double?
 }
 
 enum VideoMetadataExtractor {
@@ -65,14 +66,16 @@ enum VideoMetadataExtractor {
         // GPS from common metadata
         var gpsLat: Double?
         var gpsLon: Double?
+        var gpsAltitude: Double?
         if let metadata = try? await asset.load(.metadata) {
             for item in metadata {
                 if let key = item.commonKey {
                     if key == .commonKeyLocation, let loc = try? await item.load(.stringValue) {
-                        // Location format: "+40.7128-074.0060/" (ISO 6709)
+                        // Location format: "+40.7128-074.0060/" or "+40.9088-073.8290+042.291/"
                         let parts = parseISO6709(loc)
                         gpsLat = parts.lat
                         gpsLon = parts.lon
+                        gpsAltitude = parts.alt
                     }
                 }
             }
@@ -91,7 +94,8 @@ enum VideoMetadataExtractor {
             osVersion: osVersion,
             capturedAt: capturedAt,
             gpsLat: gpsLat,
-            gpsLon: gpsLon
+            gpsLon: gpsLon,
+            gpsAltitude: gpsAltitude
         )
     }
     
@@ -120,12 +124,12 @@ enum VideoMetadataExtractor {
         }
     }
     
-    /// Parse ISO 6709 location string like "+40.7128-074.0060/"
-    private static func parseISO6709(_ raw: String) -> (lat: Double?, lon: Double?) {
+    /// Parse ISO 6709 location string like "+40.7128-074.0060/" or "+40.9088-073.8290+042.291/"
+    private static func parseISO6709(_ raw: String) -> (lat: Double?, lon: Double?, alt: Double?) {
         // Remove trailing /
         let clean = raw.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         
-        // Find the second +/- that starts the longitude
+        // Find all +/- signs after position 0 (latitude starts at index 0)
         var signPositions: [String.Index] = []
         for (i, char) in clean.enumerated() {
             if (char == "+" || char == "-") && i > 0 {
@@ -134,12 +138,22 @@ enum VideoMetadataExtractor {
         }
         
         guard let lonStart = signPositions.first else {
-            return (nil, nil)
+            return (nil, nil, nil)
         }
         
         let latStr = String(clean[clean.startIndex..<lonStart])
-        let lonStr = String(clean[lonStart...])
         
-        return (Double(latStr), Double(lonStr))
+        // If there's a third sign (altitude), stop longitude before it
+        let lonEnd = signPositions.count >= 2 ? signPositions[1] : clean.endIndex
+        let lonStr = String(clean[lonStart..<lonEnd])
+        
+        // Altitude is everything after the second sign
+        var altitude: Double? = nil
+        if signPositions.count >= 2 {
+            let altStr = String(clean[signPositions[1]...])
+            altitude = Double(altStr)
+        }
+        
+        return (Double(latStr), Double(lonStr), altitude)
     }
 }

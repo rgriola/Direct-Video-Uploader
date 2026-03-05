@@ -56,6 +56,7 @@ struct Clip: Codable, Identifiable {
     let originalFileName: String?
     let gpsLat: Double?
     let gpsLon: Double?
+    let gpsAltitude: Double?
     let capturedAt: String?
     let deviceModel: String?
     let osVersion: String?

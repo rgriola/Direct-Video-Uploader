@@ -75,6 +75,7 @@ export function parseClientMetadata(raw = {}) {
     return {
         gpsLat: raw.gpsLat ? parseFloat(raw.gpsLat) : null,
         gpsLon: raw.gpsLon ? parseFloat(raw.gpsLon) : null,
+        gpsAltitude: raw.gpsAltitude ? parseFloat(raw.gpsAltitude) : null,
         capturedAt: raw.capturedAt ? new Date(raw.capturedAt) : new Date(),
         deviceModel: raw.deviceModel || 'Unknown Device',
         osVersion: raw.osVersion || 'Unknown OS',
