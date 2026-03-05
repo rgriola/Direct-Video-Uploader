@@ -43,7 +43,11 @@ struct LoginView: View {
                         .foregroundStyle(.white.opacity(0.4))
                         .padding(.top, 4)
                 }
-                .padding(.bottom, 48)
+                .padding(.bottom, 24)
+                
+                // Server URL indicator — tap to edit (above form so keyboard doesn't cover it)
+                serverURLIndicator
+                    .padding(.bottom, 24)
                 
                 // Form
                 VStack(spacing: 16) {
@@ -156,11 +160,7 @@ struct LoginView: View {
                         .font(.system(size: 12, weight: .medium, design: .monospaced))
                         .foregroundStyle(.white.opacity(0.25))
                 }
-                .padding(.bottom, 12)
-                
-                // Server URL indicator — tap to edit
-                serverURLIndicator
-                    .padding(.bottom, 32)
+                .padding(.bottom, 32)
             }
         }
         .onSubmit {
