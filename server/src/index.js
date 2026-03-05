@@ -10,6 +10,7 @@ import cors from '@fastify/cors';
 import multipart from '@fastify/multipart';
 import fastifyJwt from '@fastify/jwt';
 import fastifyStatic from '@fastify/static';
+import rateLimit from '@fastify/rate-limit';
 import { Server as SocketIOServer } from 'socket.io';
 import path from 'path';
 import crypto from 'crypto';
@@ -56,8 +57,14 @@ const fastify = Fastify({
 
 // ─── Plugins ─────────────────────────────────────────────
 await fastify.register(cors, {
-    origin: true, // Allow all origins for demo
+    origin: isProduction
+        ? ['https://rodgriola.com', 'https://www.rodgriola.com']
+        : true,
     credentials: true,
+});
+
+await fastify.register(rateLimit, {
+    global: false, // Don't rate-limit all routes — applied per-route where needed
 });
 
 await fastify.register(multipart, {

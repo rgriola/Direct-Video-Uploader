@@ -10,7 +10,14 @@ export default async function authRoutes(fastify) {
      * Body: { phoneNumber: string, pin: string }
      * Returns: { token: string, user: { id, name, phoneNumber, team } }
      */
-    fastify.post('/api/auth/login', async (request, reply) => {
+    fastify.post('/api/auth/login', {
+        config: {
+            rateLimit: {
+                max: 5,
+                timeWindow: '1 minute',
+            },
+        },
+    }, async (request, reply) => {
         const { phoneNumber, pin } = request.body || {};
 
         if (!phoneNumber || !pin) {
