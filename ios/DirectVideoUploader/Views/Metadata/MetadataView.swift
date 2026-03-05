@@ -100,8 +100,6 @@ struct MetadataView: View {
                                 
                                 // Duration
                                 if let duration = clip.duration {
-                                    let min = duration / 60
-                                    let sec = duration % 60
                                     metadataRow(icon: "⏱", label: "Duration", value: DVUDateFormatting.duration(duration))
                                 }
                                 

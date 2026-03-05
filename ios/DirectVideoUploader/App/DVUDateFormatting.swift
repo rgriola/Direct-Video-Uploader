@@ -12,19 +12,19 @@ enum DVUDateFormatting {
 
     nonisolated(unsafe) private static let isoBasic = ISO8601DateFormatter()
 
-    nonisolated(unsafe) private static let longFormatter: DateFormatter = {
+    private static let longFormatter: DateFormatter = {
         let f = DateFormatter()
         f.dateFormat = "MMM d, yyyy h:mm a"
         return f
     }()
 
-    nonisolated(unsafe) private static let shortFormatter: DateFormatter = {
+    private static let shortFormatter: DateFormatter = {
         let f = DateFormatter()
         f.dateFormat = "MM/dd/yy"
         return f
     }()
 
-    nonisolated(unsafe) private static let timeFormatter: DateFormatter = {
+    private static let timeFormatter: DateFormatter = {
         let f = DateFormatter()
         f.dateFormat = "h:mm a"
         return f

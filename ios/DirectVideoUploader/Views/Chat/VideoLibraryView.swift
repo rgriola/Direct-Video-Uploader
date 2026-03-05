@@ -11,6 +11,7 @@ struct VideoLibraryView: View {
     @State private var loadedFileName: String?
     @State private var isLoadingMetadata = false
     @State private var pendingConfirm = false
+    @State private var loadError: String?
 
     /// Called when user taps ✓ with a video selected.
     var onConfirm: (URL, String, VideoMetadata) -> Void
@@ -33,7 +34,7 @@ struct VideoLibraryView: View {
                 .photosPickerStyle(.inline)
                 .photosPickerDisabledCapabilities(.selectionActions)
 
-                // Footer bar — video count + location status
+                // Footer bar — video count + location status + confirm button
                 footerBar
             }
             .background(Color.black)
@@ -53,18 +54,12 @@ struct VideoLibraryView: View {
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
-                        handleConfirm()
+                        onDismiss()
                     } label: {
-                        if pendingConfirm {
-                            ProgressView()
-                                .tint(Theme.blue)
-                                .scaleEffect(0.8)
-                        } else {
-                            Image(systemName: "checkmark")
-                                .fontWeight(.semibold)
-                        }
+                        Image(systemName: "xmark")
+                            .fontWeight(.semibold)
                     }
-                    .foregroundStyle(Theme.blue)
+                    .foregroundStyle(.gray)
                 }
             }
             .onChange(of: selectedItems) { _, newItems in
@@ -80,36 +75,78 @@ struct VideoLibraryView: View {
     @ViewBuilder
     private var footerBar: some View {
         if !selectedItems.isEmpty {
-            HStack(spacing: 12) {
-                // Video count
-                Label(
-                    "\(selectedItems.count) video selected",
-                    systemImage: "video.fill"
-                )
-                .font(.system(size: 14, weight: .medium))
-                .foregroundStyle(.white)
-
-                Spacer()
-
-                // Location info
-                if isLoadingMetadata {
-                    ProgressView()
-                        .tint(.gray)
-                        .scaleEffect(0.8)
-                } else if let meta = loadedMetadata {
-                    if meta.gpsLat != nil {
-                        Label("Location", systemImage: "location.fill")
-                            .font(.system(size: 13))
-                            .foregroundStyle(Theme.green)
-                    } else {
-                        Label("No Location", systemImage: "location.slash")
-                            .font(.system(size: 13))
-                            .foregroundStyle(.gray)
-                    }
+            VStack(spacing: 0) {
+                // Error banner
+                if let error = loadError {
+                    Text(error)
+                        .font(.system(size: 13))
+                        .foregroundStyle(Theme.red)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Theme.red.opacity(0.15))
                 }
+
+                HStack(spacing: 12) {
+                    // Video info
+                    if isLoadingMetadata {
+                        ProgressView()
+                            .tint(.gray)
+                            .scaleEffect(0.8)
+                        Text("Loading video...")
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundStyle(.gray)
+                    } else if let meta = loadedMetadata {
+                        Label(
+                            "\(selectedItems.count) video selected",
+                            systemImage: "video.fill"
+                        )
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(.white)
+
+                        if meta.gpsLat != nil {
+                            Label("Location", systemImage: "location.fill")
+                                .font(.system(size: 13))
+                                .foregroundStyle(Theme.green)
+                        }
+                    } else {
+                        Label(
+                            "\(selectedItems.count) video selected",
+                            systemImage: "video.fill"
+                        )
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(.white)
+                    }
+
+                    Spacer()
+
+                    // Confirm button — outside PhotosPicker touch zone
+                    Button {
+                        handleConfirm()
+                    } label: {
+                        if pendingConfirm {
+                            ProgressView()
+                                .tint(.white)
+                                .scaleEffect(0.8)
+                                .frame(width: 80, height: 36)
+                        } else {
+                            Text("Use Video")
+                                .font(.system(size: 15, weight: .semibold))
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 8)
+                        }
+                    }
+                    .background(
+                        (loadedVideoURL != nil && loadedMetadata != nil)
+                            ? Theme.blue : Theme.blue.opacity(0.4)
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .disabled(isLoadingMetadata && !pendingConfirm)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
             .background(Theme.darkBg)
         }
     }
@@ -122,15 +159,21 @@ struct VideoLibraryView: View {
         } else if let url = loadedVideoURL, let metadata = loadedMetadata {
             let fileName = loadedFileName ?? url.lastPathComponent
             onConfirm(url, fileName, metadata)
-        } else if isLoadingMetadata {
-            // Video still loading — auto-confirm when ready
+        } else if isLoadingMetadata || loadedVideoURL == nil {
+            // Video still loading or load failed — set pending so it auto-confirms when ready
             pendingConfirm = true
+            // If not currently loading, retry the load
+            if !isLoadingMetadata, let item = selectedItems.first {
+                loadError = nil
+                handleSelectionChange([item])
+            }
         }
     }
 
     private func handleSelectionChange(_ newItems: [PhotosPickerItem]) {
         // Clean up previous loaded video (if user re-selects)
         cleanUpLoadedVideo()
+        loadError = nil
 
         guard let item = newItems.first else { return }
 
@@ -141,7 +184,9 @@ struct VideoLibraryView: View {
             
             do {
                 guard let movie = try await item.loadTransferable(type: VideoTransferable.self) else {
+                    loadError = "Could not load video from library"
                     isLoadingMetadata = false
+                    if pendingConfirm { pendingConfirm = false }
                     return
                 }
                 loadedVideoURL = movie.url
@@ -150,6 +195,7 @@ struct VideoLibraryView: View {
                 loadedMetadata = await VideoMetadataExtractor.extract(from: movie.url)
             } catch {
                 print("❌ [Library] Failed to load video: \(error)")
+                loadError = "Failed to load video: \(error.localizedDescription)"
             }
             isLoadingMetadata = false
             
