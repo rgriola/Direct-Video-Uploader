@@ -3,6 +3,8 @@
  * Accessible at GET /clips/:slug
  */
 import prisma from '../lib/prisma.js';
+import { MUX_ENV_KEY } from '../lib/mux.js';
+import { MUX_ENV_KEY } from '../lib/mux.js';
 
 /** Escape HTML special characters to prevent XSS (#5). */
 function escapeHtml(str) {
@@ -100,6 +102,16 @@ export default async function clipRoutes(fastify) {
 
         const videoURL = clip?.storageUrl || '';
         const hasVideo = videoURL && clip?.status === 'READY';
+        const hasMuxPlayback = !!(clip?.muxPlaybackId);
+        const muxPlaybackId = clip?.muxPlaybackId || '';
+        const muxEnvKey = MUX_ENV_KEY || '';
+        const hasMuxPlayback = !!clip?.muxPlaybackId;
+        const muxPlaybackId = clip?.muxPlaybackId || '';
+
+        // Mux Player uses a web component — only load when we have a playback ID
+        const muxPlayerScript = hasMuxPlayback
+            ? `<script src="https://cdn.jsdelivr.net/npm/@mux/mux-player@latest"></script>`
+            : '';
 
         const html = `<!DOCTYPE html>
 <html lang="en">
@@ -107,6 +119,7 @@ export default async function clipRoutes(fastify) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>${escapeHtml(asset.slug)} — Mediasource Viewer</title>
+    ${muxPlayerScript}
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
@@ -159,9 +172,14 @@ export default async function clipRoutes(fastify) {
             margin-bottom: 24px;
             position: relative;
         }
-        .video-wrap video {
+        .video-wrap video, .video-wrap mux-player {
             width: 100%;
             display: block;
+            aspect-ratio: 16/9;
+        }
+        mux-player {
+            --media-object-fit: contain;
+            --controls: auto;
         }
         .no-video {
             padding: 60px 20px;
@@ -251,9 +269,19 @@ export default async function clipRoutes(fastify) {
         </div>
 
         <div class="video-wrap">
-            ${hasVideo
-                ? `<video controls preload="metadata" playsinline><source src="${escapeHtml(videoURL)}" type="video/quicktime"><source src="${escapeHtml(videoURL)}" type="video/mp4">Your browser does not support video playback.</video>`
-                : `<div class="no-video">🎬 Video not yet available</div>`
+            ${hasMuxPlayback
+                ? `<mux-player
+                    stream-type="on-demand"
+                    playback-id="${escapeHtml(muxPlaybackId)}"
+                    ${MUX_ENV_KEY ? `env-key="${escapeHtml(MUX_ENV_KEY)}"` : ''}
+                    metadata-video-title="${escapeHtml(asset.slug)}"
+                    accent-color="#007AFF"
+                    style="width:100%;aspect-ratio:16/9;--media-object-fit:contain;border-radius:14px"
+                    preload="auto"
+                  ></mux-player>`
+                : hasVideo
+                    ? `<video controls preload="metadata" playsinline><source src="${escapeHtml(videoURL)}" type="video/quicktime"><source src="${escapeHtml(videoURL)}" type="video/mp4">Your browser does not support video playback.</video>`
+                    : `<div class="no-video">🎬 Video not yet available</div>`
             }
         </div>
 

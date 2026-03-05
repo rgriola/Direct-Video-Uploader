@@ -28,10 +28,11 @@ services:
         fromDatabase:
           name: directvideo-db
           property: connectionString
-      # Phase 3 — uncomment when ready
-      # - key: MUX_TOKEN_ID
-      #   sync: false
-      # - key: MUX_TOKEN_SECRET
-      #   sync: false
+      - key: MUX_TOKEN_ID
+        sync: false
+      - key: MUX_TOKEN_SECRET
+        sync: false
+      - key: MUX_ENV_KEY
+        sync: false
       # - key: SLACK_WEBHOOK_URL
       #   sync: false

@@ -61,3 +61,4 @@ admin/tsconfig.tsbuildinfo
 *.tgz
 conversation-list.png
 text-flow.png
+mux-mediasource-fixer.env

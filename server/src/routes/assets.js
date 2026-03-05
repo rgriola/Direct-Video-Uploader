@@ -7,6 +7,7 @@ import fs from 'fs/promises';
 import { pipeline } from 'stream/promises';
 import prisma from '../lib/prisma.js';
 import { generateSlug, generateMediasourceId, dbRetry } from '../lib/utils.js';
+import { ingestVideo, isMuxEnabled } from '../lib/mux.js';
 
 export default async function assetRoutes(fastify) {
     /**
@@ -202,6 +203,25 @@ export default async function assetRoutes(fastify) {
         }
 
         // FORM_REQUEST is ephemeral — sent via WebSocket only, not persisted (Option B)
+
+        // ─── Mux Video Ingestion (fire-and-forget) ──────────────────
+        // Don't await — let Mux process in the background. Webhook updates the clip when ready.
+        if (isMuxEnabled) {
+            ingestVideo(filePath, { clipId, assetId: id }).then(async (result) => {
+                if (result?.muxUploadId) {
+                    await dbRetry(() => prisma.clip.update({
+                        where: { id: clipId },
+                        data: {
+                            muxUploadId: result.muxUploadId,
+                            status: 'PROCESSING',
+                        },
+                    }));
+                    console.log(`🎬 Mux ingestion queued for clip ${clipId}`);
+                }
+            }).catch(err => {
+                console.error(`🎬 Mux ingestion failed for clip ${clipId}:`, err.message);
+            });
+        }
 
         return {
             clip: {

@@ -20,6 +20,7 @@ import assetRoutes from './routes/assets.js';
 import adminRoutes from './routes/admin.js';
 import clipRoutes from './routes/clips.js';
 import errorRoutes from './routes/errors.js';
+import muxWebhookRoutes from './routes/mux-webhooks.js';
 import { setupWebSocket } from './ws/handler.js';
 
 // ─── Global Crash Protection ─────────────────────────────
@@ -125,6 +126,7 @@ await fastify.register(adminRoutes);
 
 await fastify.register(clipRoutes);
 await fastify.register(errorRoutes);
+await fastify.register(muxWebhookRoutes);
 
 // Health check
 fastify.get('/api/health', async () => ({
