@@ -6,7 +6,7 @@ import path from 'path';
 import fs from 'fs/promises';
 import { pipeline } from 'stream/promises';
 import prisma from '../lib/prisma.js';
-import { generateSlug, generateMediasourceId, dbRetry } from '../lib/utils.js';
+import { generateSlug, generateMediasourceId, dbRetry, parseClientMetadata, serializeClip, notifyUserSockets } from '../lib/utils.js';
 import { ingestVideo, isMuxEnabled, createDirectUpload } from '../lib/mux.js';
 
 export default async function assetRoutes(fastify) {
@@ -93,23 +93,7 @@ export default async function assetRoutes(fastify) {
         // Get file stats
         const stats = await fs.stat(filePath);
 
-        // io + userSockets used later for form:request and upload:complete events
-        const io = fastify.io;
-        const userSockets = fastify.userSockets?.get(request.user.id);
-
-        // Create clip record with original filename
-        // Use client-provided metadata from iOS (fallback to defaults for missing fields)
-        const metadata = {
-            gpsLat: clientMeta.gpsLat ? parseFloat(clientMeta.gpsLat) : null,
-            gpsLon: clientMeta.gpsLon ? parseFloat(clientMeta.gpsLon) : null,
-            capturedAt: clientMeta.capturedAt ? new Date(clientMeta.capturedAt) : new Date(),
-            deviceModel: clientMeta.deviceModel || 'Unknown Device',
-            osVersion: clientMeta.osVersion || 'Unknown OS',
-            codec: clientMeta.codec || 'Unknown',
-            resolution: clientMeta.resolution || 'Unknown',
-            orientation: clientMeta.orientation || 'landscape',
-            duration: clientMeta.duration ? parseInt(clientMeta.duration, 10) : 0,
-        };
+        const metadata = parseClientMetadata(clientMeta);
         console.log(`📊 Metadata for ${asset.slug}:`, metadata);
 
         // Create clip with metadata in one call (merged from 2 separate calls — #9)
@@ -140,67 +124,14 @@ export default async function assetRoutes(fastify) {
         // Push metadata + form request via WebSocket
         const originalName = clip.originalFileName || asset.originalFileName || asset.slug;
 
-        // Determine if we have meaningful metadata beyond just timestamps
-        const hasRichMeta = metadata.gpsLat || metadata.codec !== 'Unknown' || metadata.deviceModel !== 'Unknown Device';
-
-        if (userSockets) {
-            for (const socketId of userSockets) {
-                // Send upload complete with full metadata for "Show Details" sheet
-                io.to(socketId).emit('upload:complete', {
-                    assetId: id,
-                    mediasourceId: asset.mediasourceId,
-                    mediasourceUrl: asset.mediasourceUrl,
-                    originalFileName: originalName,
-                    userName: request.user.name,
-                    hasRichMeta,
-                    metadata: metadata,
-                    clip: {
-                        id: clipId,
-                        storageUrl: clip.storageUrl,
-                        thumbnailUrl: clip.thumbnailUrl,
-                        fileSize: stats.size.toString(),
-                        originalFileName: originalName,
-                    },
-                });
-
-                // Send form:request chat message so it appears in live chat
-                io.to(socketId).emit('message:new', {
-                    id: randomUUID(),
-                    userId: null,
-                    assetId: id,
-                    direction: 'INCOMING',
-                    messageType: 'FORM_REQUEST',
-                    content: {
-                        text: `🎬 ${asset.slug} is being processed, here are the Mediasource details.`,
-                        mediasourceId: asset.mediasourceId,
-                        mediasourceUrl: asset.mediasourceUrl,
-                        originalFileName: originalName,
-                        userName: request.user.name,
-                        clipCount: 1,
-                        duration: metadata.duration || 0,
-                        gpsLat: metadata.gpsLat,
-                        gpsLon: metadata.gpsLon,
-                        capturedAt: metadata.capturedAt?.toISOString() || null,
-                        codec: metadata.codec !== 'Unknown' ? metadata.codec : null,
-                        resolution: metadata.resolution !== 'Unknown' ? metadata.resolution : null,
-                        hasRichMeta,
-                    },
-                    createdAt: new Date().toISOString(),
-                });
-
-                // Send form request event — opens the form sheet
-                io.to(socketId).emit('form:request', {
-                    assetId: id,
-                    originalFileName: originalName,
-                    capturedAt: metadata.capturedAt,
-                    clipCount: 1,
-                    duration: metadata.duration,
-                    prefilledData: {
-                        slug: asset.slug,
-                    },
-                });
-            }
-        }
+        notifyUserSockets(fastify.io, fastify.userSockets?.get(request.user.id), {
+            assetId: id,
+            asset: { slug: asset.slug, mediasourceId: asset.mediasourceId, mediasourceUrl: asset.mediasourceUrl, originalFileName: originalName },
+            userName: request.user.name,
+            metadata,
+            clip: { id: clipId, storageUrl: clip.storageUrl, fileSize: stats.size.toString() },
+            messageText: `🎬 ${asset.slug} is being processed, here are the Mediasource details.`,
+        });
 
         // FORM_REQUEST is ephemeral — sent via WebSocket only, not persisted (Option B)
 
@@ -271,18 +202,7 @@ export default async function assetRoutes(fastify) {
             return reply.status(500).send({ error: 'Failed to create Mux upload' });
         }
 
-        // Parse metadata
-        const metadata = {
-            gpsLat: clientMeta.gpsLat ? parseFloat(clientMeta.gpsLat) : null,
-            gpsLon: clientMeta.gpsLon ? parseFloat(clientMeta.gpsLon) : null,
-            capturedAt: clientMeta.capturedAt ? new Date(clientMeta.capturedAt) : new Date(),
-            deviceModel: clientMeta.deviceModel || 'Unknown Device',
-            osVersion: clientMeta.osVersion || 'Unknown OS',
-            codec: clientMeta.codec || 'Unknown',
-            resolution: clientMeta.resolution || 'Unknown',
-            orientation: clientMeta.orientation || 'landscape',
-            duration: clientMeta.duration ? parseInt(clientMeta.duration, 10) : 0,
-        };
+        const metadata = parseClientMetadata(clientMeta);
 
         // Create clip record in PROCESSING state (Mux webhook will mark READY)
         await dbRetry(() => prisma.clip.create({
@@ -311,53 +231,16 @@ export default async function assetRoutes(fastify) {
         console.log(`🎬 Mux direct upload created for clip ${clipId}, asset ${asset.slug}`);
 
         // Push form request via WebSocket
-        const io = fastify.io;
-        const userSockets = fastify.userSockets?.get(request.user.id);
         const originalName = clientMeta.fileName || asset.originalFileName || asset.slug;
-        const hasRichMeta = metadata.gpsLat || metadata.codec !== 'Unknown' || metadata.deviceModel !== 'Unknown Device';
 
-        if (userSockets) {
-            for (const socketId of userSockets) {
-                io.to(socketId).emit('upload:complete', {
-                    assetId: id,
-                    mediasourceId: asset.mediasourceId,
-                    mediasourceUrl: asset.mediasourceUrl,
-                    originalFileName: originalName,
-                    userName: request.user.name,
-                    hasRichMeta,
-                    metadata,
-                    clip: { id: clipId, fileSize: clientMeta.fileSize || '0', originalFileName: originalName },
-                });
-
-                io.to(socketId).emit('message:new', {
-                    id: randomUUID(),
-                    userId: null,
-                    assetId: id,
-                    direction: 'INCOMING',
-                    messageType: 'FORM_REQUEST',
-                    content: {
-                        text: `🎬 ${asset.slug} is uploading to Mux, here are the Mediasource details.`,
-                        mediasourceId: asset.mediasourceId,
-                        mediasourceUrl: asset.mediasourceUrl,
-                        originalFileName: originalName,
-                        userName: request.user.name,
-                        clipCount: 1,
-                        duration: metadata.duration || 0,
-                        hasRichMeta,
-                    },
-                    createdAt: new Date().toISOString(),
-                });
-
-                io.to(socketId).emit('form:request', {
-                    assetId: id,
-                    originalFileName: originalName,
-                    capturedAt: metadata.capturedAt,
-                    clipCount: 1,
-                    duration: metadata.duration,
-                    prefilledData: { slug: asset.slug },
-                });
-            }
-        }
+        notifyUserSockets(fastify.io, fastify.userSockets?.get(request.user.id), {
+            assetId: id,
+            asset: { slug: asset.slug, mediasourceId: asset.mediasourceId, mediasourceUrl: asset.mediasourceUrl, originalFileName: originalName },
+            userName: request.user.name,
+            metadata,
+            clip: { id: clipId, fileSize: clientMeta.fileSize || '0' },
+            messageText: `🎬 ${asset.slug} is uploading to Mux, here are the Mediasource details.`,
+        });
 
         return {
             uploadUrl: muxResult.uploadUrl,
@@ -385,10 +268,7 @@ export default async function assetRoutes(fastify) {
         // Convert BigInt to string for JSON serialization
         const serialized = assets.map((a) => ({
             ...a,
-            clips: a.clips.map((c) => ({
-                ...c,
-                fileSize: c.fileSize?.toString() || null,
-            })),
+            clips: a.clips.map(serializeClip),
         }));
 
         return { assets: serialized };
@@ -419,10 +299,7 @@ export default async function assetRoutes(fastify) {
         }
 
         // Convert BigInt to string for JSON serialization
-        const clips = asset.clips.map((c) => ({
-            ...c,
-            fileSize: c.fileSize?.toString() || null,
-        }));
+        const clips = asset.clips.map(serializeClip);
 
         return {
             asset: {
