@@ -156,22 +156,22 @@ cd ios && xcodegen generate && xcodebuild -project DirectVideoUploader.xcodeproj
 
 **In Progress: Mar 2–14, 2026**
 
-| Deliverable                        | Status             | Notes                                          |
-| ---------------------------------- | ------------------ | ---------------------------------------------- |
-| Xcode project setup (SwiftUI)      | ✅ Done            | iOS 17+ target, XcodeGen `project.yml`         |
-| Login / Auth (Phone + PIN → JWT)   | ✅ Working         | Tested on Simulator + physical iPhone          |
-| Chat UI (messages, bubbles, input) | ✅ Working         | `ChatView`, `MessageBubble`, `InputBar`        |
-| WebSocket client (native)          | ✅ Connected       | `URLSessionWebSocketTask` + Socket.IO protocol |
-| Text message send + auto-reply     | ✅ Working         | Server replies "send me your videos!"          |
-| Video picker (PhotosPicker)        | ✅ Working         | SwiftUI `PhotosPicker` with `.videos` filter   |
-| Video upload (multipart)           | ✅ Built           | `VideoUploadService` with progress tracking    |
-| Upload progress bar                | ✅ Built           | Inline progress bar in chat view               |
-| Metadata display (slide-up sheet)  | 🟡 Built, untested | `MetadataView` SwiftUI sheet                   |
-| Context form (slide-up sheet)      | 🟡 Built, untested | `ContextFormView` SwiftUI sheet                |
-| Confirmation message               | ✅ Built           | `form:confirmed` → Mediasource link in chat    |
-| Slack post trigger                 | ✅ Built           | Auto-triggers after form submit, 1.5s delay    |
-| TestFlight build                   | 🔲 Not started     | For demo distribution                          |
-| Xcode automatic code signing       | ✅ Done            | Team `LW5P4PVL96`, auto signing in project.yml |
+| Deliverable                        | Status             | Notes                                                  |
+| ---------------------------------- | ------------------ | ------------------------------------------------------ |
+| Xcode project setup (SwiftUI)      | ✅ Done            | iOS 17+ target, XcodeGen `project.yml`                 |
+| Login / Auth (Phone + PIN → JWT)   | ✅ Working         | Tested on Simulator + physical iPhone                  |
+| Chat UI (messages, bubbles, input) | ✅ Working         | `ChatView`, `MessageBubble`, `InputBar`                |
+| WebSocket client (native)          | ✅ Connected       | `URLSessionWebSocketTask` + Socket.IO protocol         |
+| Text message send + auto-reply     | ✅ Working         | Server replies "send me your videos!"                  |
+| Video picker (PhotosPicker)        | ✅ Working         | SwiftUI `PhotosPicker` with `.videos` filter           |
+| Video upload (multipart)           | ✅ Built           | `VideoUploadService` with progress tracking            |
+| Upload progress bar                | ✅ Built           | Inline progress bar in chat view                       |
+| Metadata display (slide-up sheet)  | 🟡 Built, untested | `MetadataView` SwiftUI sheet                           |
+| Context form (slide-up sheet)      | 🟡 Built, untested | `ContextFormView` SwiftUI sheet                        |
+| Confirmation message               | ✅ Built           | `form:confirmed` → Mediasource link in chat            |
+| Slack post trigger                 | ✅ Built           | Auto-triggers after form submit, 1.5s delay            |
+| TestFlight build                   | 🔲 Not started     | For demo distribution                                  |
+| Xcode automatic code signing       | ✅ Done            | Team `LW5P4PVL96`, auto signing in project.yml         |
 | Centralized Theme + Formatting     | ✅ Done            | Theme.swift, DVUDateFormatting.swift, UserDefaultsKeys |
 
 **Features Added (Mar 5 — Session):**

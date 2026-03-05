@@ -30,7 +30,7 @@ export default async function clipRoutes(fastify) {
                 where: { slug },
             });
 
-        // Clean up the 404 message
+            // Clean up the 404 message
             if (!asset) {
                 reply.status(404).type('text/html').send(`
                     <!DOCTYPE html>
@@ -124,11 +124,12 @@ export default async function clipRoutes(fastify) {
             color: #E5E5EA;
             font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', system-ui, sans-serif;
             min-height: 100vh;
+            -webkit-text-size-adjust: 100%;
         }
         .container {
             max-width: 800px;
             margin: 0 auto;
-            padding: 24px 16px 64px;
+            padding: 24px 20px 64px;
         }
         /* Header */
         .header {
@@ -149,17 +150,20 @@ export default async function clipRoutes(fastify) {
             font-size: 24px;
             font-weight: 700;
             color: #fff;
-            margin-bottom: 4px;
+            margin-bottom: 6px;
+            word-break: break-word;
+            overflow-wrap: break-word;
         }
         .header .msid {
             font-family: 'SF Mono', ui-monospace, monospace;
             font-size: 13px;
             color: #007AFF;
+            word-break: break-all;
         }
         .header .uploader {
             font-size: 13px;
             color: rgba(255,255,255,0.4);
-            margin-top: 6px;
+            margin-top: 8px;
         }
         /* Video */
         .video-wrap {
@@ -204,23 +208,25 @@ export default async function clipRoutes(fastify) {
             overflow: hidden;
         }
         .meta-row {
-            display: flex;
+            display: grid;
+            grid-template-columns: 28px 90px 1fr;
             align-items: center;
+            gap: 0 8px;
             padding: 12px 16px;
             border-bottom: 1px solid rgba(255,255,255,0.04);
         }
         .meta-row:last-child { border-bottom: none; }
-        .meta-icon { font-size: 15px; width: 28px; flex-shrink: 0; }
+        .meta-icon { font-size: 15px; line-height: 1; }
         .meta-label {
             font-size: 13px;
             color: rgba(255,255,255,0.45);
-            width: 90px;
-            flex-shrink: 0;
         }
         .meta-value {
             font-size: 13px;
             font-weight: 500;
             color: #fff;
+            min-width: 0;
+            overflow-wrap: break-word;
         }
         /* Priority badges */
         .priority-critical { color: #FF453A; }
@@ -230,11 +236,12 @@ export default async function clipRoutes(fastify) {
         /* Status pill */
         .status {
             display: inline-block;
-            padding: 4px 12px;
+            padding: 4px 14px;
             border-radius: 20px;
             font-size: 12px;
             font-weight: 600;
-            margin-top: 8px;
+            margin-top: 10px;
+            vertical-align: middle;
         }
         .status-READY { background: rgba(48,209,88,0.15); color: #30D158; }
         .status-PROCESSING { background: rgba(255,159,10,0.15); color: #FF9F0A; }
@@ -252,6 +259,31 @@ export default async function clipRoutes(fastify) {
             font-weight: 600;
             color: rgba(255,255,255,0.25);
             letter-spacing: 1px;
+        }
+        /* ── Mobile ── */
+        @media (max-width: 480px) {
+            .container { padding: 16px 14px 48px; }
+            .header { padding: 20px 0 18px; margin-bottom: 18px; }
+            .header h1 { font-size: 20px; }
+            .video-wrap { border-radius: 10px; margin-bottom: 18px; }
+            .meta-row {
+                grid-template-columns: 28px 1fr;
+                gap: 2px 8px;
+                padding: 10px 12px;
+            }
+            .meta-label {
+                grid-column: 2;
+                font-size: 11px;
+                text-transform: uppercase;
+                letter-spacing: 0.5px;
+            }
+            .meta-value {
+                grid-column: 2;
+                font-size: 13px;
+            }
+            .meta-icon { grid-row: span 2; align-self: start; padding-top: 2px; }
+            .meta-grid { border-radius: 10px; }
+            .section h3 { margin-bottom: 8px; }
         }
     </style>
 </head>

@@ -318,3 +318,4 @@ In the Text Flow Right After the greeting my Upload should be in the Text Chain.
 - Find the root of the issue
 - I think for the iOS app these url's are hard coded by view or function. These paths and how they are appended need to be in a unified location and imported properly - reused.
 - Doing this will make maintenence easier
+  .....
