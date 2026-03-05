@@ -8,8 +8,8 @@ const isProduction = process.env.NODE_ENV === 'production';
 const pool = new pg.Pool({
     connectionString: process.env.DATABASE_URL,
     max: 20,                   // Enough for concurrent dashboard + WS + API
-    idleTimeoutMillis: 10000,  // Close idle connections after 10s (evict stale faster)
-    connectionTimeoutMillis: 10000, // 10s to acquire a connection
+    idleTimeoutMillis: isProduction ? 30000 : 10000,  // Keep connections alive longer in prod
+    connectionTimeoutMillis: 15000, // 15s to acquire a connection (Render DB can be slow to wake)
     allowExitOnIdle: true,     // Don't block process exit
     // Render managed PostgreSQL requires SSL
     ...(isProduction && { ssl: { rejectUnauthorized: false } }),
@@ -32,7 +32,9 @@ try {
     const client = await pool.connect();
     await client.query('SELECT 1');
     client.release();
-} catch {
+    console.log('🛢️ Database pool connected successfully');
+} catch (err) {
+    console.error('🛢️ Database pool warmup failed:', err.message);
     // Pool will recover on its own — this just speeds it up
 }
 

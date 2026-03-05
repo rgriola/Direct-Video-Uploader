@@ -22,6 +22,17 @@ import clipRoutes from './routes/clips.js';
 import errorRoutes from './routes/errors.js';
 import { setupWebSocket } from './ws/handler.js';
 
+// ─── Global Crash Protection ─────────────────────────────
+// Prevent the process from dying on unhandled errors (Render shows 502 when this happens)
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('⚠️ Unhandled Rejection:', reason);
+});
+process.on('uncaughtException', (err) => {
+    console.error('🔥 Uncaught Exception:', err);
+    // Give the logger time to flush, then exit so Render restarts us
+    setTimeout(() => process.exit(1), 1000);
+});
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = parseInt(process.env.PORT || '3000', 10);
 const HOST = process.env.HOST || '0.0.0.0';
