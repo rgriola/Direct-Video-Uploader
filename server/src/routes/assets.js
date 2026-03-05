@@ -317,11 +317,12 @@ export default async function assetRoutes(fastify) {
         schema: {
             body: {
                 type: 'object',
+                required: ['slug', 'description'],
                 properties: {
-                    slug: { type: 'string' },
-                    type: { type: 'string' },
-                    description: { type: 'string' },
-                    priority: { type: 'string', enum: ['Low', 'Medium', 'High', 'Critical', 'low', 'medium', 'high', 'critical', 'LOW', 'MEDIUM', 'HIGH', 'CRITICAL'] },
+                    slug: { type: 'string', minLength: 1 },
+                    type: { type: 'string', default: 'Raw' },
+                    description: { type: 'string', minLength: 1 },
+                    priority: { type: 'string', default: 'Low', enum: ['Low', 'Medium', 'High', 'Critical', 'low', 'medium', 'high', 'critical', 'LOW', 'MEDIUM', 'HIGH', 'CRITICAL'] },
                 },
             },
         },
