@@ -8,12 +8,14 @@ echo "  🎬 Direct Video Uploader — Render Build"
 echo "══════════════════════════════════════════"
 
 # 1. Install dependencies (both server + admin)
+# --include=dev is required because Render sets NODE_ENV=production,
+# which skips devDependencies (prisma, vite, typescript, @types/*).
 echo "📦 Installing server dependencies..."
-cd server && npm ci
+cd server && npm ci --include=dev
 cd ..
 
 echo "📦 Installing admin dependencies..."
-cd admin && npm ci
+cd admin && npm ci --include=dev
 cd ..
 
 # 2. Build admin dashboard → server/public/
