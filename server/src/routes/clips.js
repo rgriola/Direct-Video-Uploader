@@ -118,7 +118,8 @@ export default async function clipRoutes(fastify) {
     <title>${escapeHtml(asset.slug)} — Mediasource Viewer</title>
     ${muxPlayerScript}
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
+        *, *::before, *::after { box-sizing: border-box; }
+        body, h1, h2, h3, p, div, span { margin: 0; padding: 0; }
         body {
             background: #0A0E1A;
             color: #E5E5EA;
@@ -173,14 +174,17 @@ export default async function clipRoutes(fastify) {
             margin-bottom: 24px;
             position: relative;
         }
-        .video-wrap video, .video-wrap mux-player {
+        .video-wrap video {
             width: 100%;
             display: block;
             aspect-ratio: 16/9;
         }
-        mux-player {
+        .video-wrap mux-player {
+            width: 100%;
+            display: block;
+            aspect-ratio: 16/9;
             --media-object-fit: contain;
-            --controls: auto;
+            --media-object-position: center;
         }
         .no-video {
             padding: 60px 20px;
@@ -305,7 +309,6 @@ export default async function clipRoutes(fastify) {
                     ${MUX_ENV_KEY ? `env-key="${escapeHtml(MUX_ENV_KEY)}"` : ''}
                     metadata-video-title="${escapeHtml(asset.slug)}"
                     accent-color="#007AFF"
-                    style="width:100%;aspect-ratio:16/9;--media-object-fit:contain;border-radius:14px"
                     preload="auto"
                   ></mux-player>`
                 : hasVideo
