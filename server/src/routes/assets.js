@@ -7,7 +7,7 @@ import fs from 'fs/promises';
 import { pipeline } from 'stream/promises';
 import prisma from '../lib/prisma.js';
 import { generateSlug, generateMediasourceId, dbRetry } from '../lib/utils.js';
-import { ingestVideo, isMuxEnabled } from '../lib/mux.js';
+import { ingestVideo, isMuxEnabled, createDirectUpload } from '../lib/mux.js';
 
 export default async function assetRoutes(fastify) {
     /**
@@ -237,6 +237,132 @@ export default async function assetRoutes(fastify) {
                 mediasourceUrl: updatedAsset.mediasourceUrl,
                 status: updatedAsset.status,
             },
+        };
+    });
+
+    /**
+     * POST /api/assets/:id/mux-upload
+     * Create a Mux direct upload URL. iOS uploads directly to Mux's CDN,
+     * bypassing the server (avoids Render's 30s request timeout for large files).
+     *
+     * Body: { metadata?: { duration, resolution, codec, ... } }
+     * Returns: { uploadUrl, clipId, muxUploadId }
+     */
+    fastify.post('/api/assets/:id/mux-upload', {
+        preHandler: [fastify.authenticate],
+    }, async (request, reply) => {
+        const { id } = request.params;
+
+        if (!isMuxEnabled) {
+            return reply.status(503).send({ error: 'Mux not configured' });
+        }
+
+        const asset = await dbRetry(() => prisma.asset.findUnique({ where: { id } }));
+        if (!asset || asset.userId !== request.user.id) {
+            return reply.status(404).send({ error: 'Asset not found' });
+        }
+
+        const clientMeta = request.body?.metadata || {};
+        const clipId = randomUUID();
+
+        // Create the Mux direct upload URL
+        const muxResult = await createDirectUpload({ clipId, assetId: id });
+        if (!muxResult) {
+            return reply.status(500).send({ error: 'Failed to create Mux upload' });
+        }
+
+        // Parse metadata
+        const metadata = {
+            gpsLat: clientMeta.gpsLat ? parseFloat(clientMeta.gpsLat) : null,
+            gpsLon: clientMeta.gpsLon ? parseFloat(clientMeta.gpsLon) : null,
+            capturedAt: clientMeta.capturedAt ? new Date(clientMeta.capturedAt) : new Date(),
+            deviceModel: clientMeta.deviceModel || 'Unknown Device',
+            osVersion: clientMeta.osVersion || 'Unknown OS',
+            codec: clientMeta.codec || 'Unknown',
+            resolution: clientMeta.resolution || 'Unknown',
+            orientation: clientMeta.orientation || 'landscape',
+            duration: clientMeta.duration ? parseInt(clientMeta.duration, 10) : 0,
+        };
+
+        // Create clip record in PROCESSING state (Mux webhook will mark READY)
+        await dbRetry(() => prisma.clip.create({
+            data: {
+                id: clipId,
+                assetId: id,
+                clipIndex: 0,
+                originalFileName: clientMeta.fileName || asset.originalFileName || null,
+                fileSize: clientMeta.fileSize ? BigInt(clientMeta.fileSize) : null,
+                muxUploadId: muxResult.muxUploadId,
+                ...metadata,
+                status: 'PROCESSING',
+            },
+        }));
+
+        // Update asset status
+        await dbRetry(() => prisma.asset.update({
+            where: { id },
+            data: {
+                status: 'PROCESSING',
+                clipCount: { increment: 1 },
+                totalDuration: metadata.duration,
+            },
+        }));
+
+        console.log(`🎬 Mux direct upload created for clip ${clipId}, asset ${asset.slug}`);
+
+        // Push form request via WebSocket
+        const io = fastify.io;
+        const userSockets = fastify.userSockets?.get(request.user.id);
+        const originalName = clientMeta.fileName || asset.originalFileName || asset.slug;
+        const hasRichMeta = metadata.gpsLat || metadata.codec !== 'Unknown' || metadata.deviceModel !== 'Unknown Device';
+
+        if (userSockets) {
+            for (const socketId of userSockets) {
+                io.to(socketId).emit('upload:complete', {
+                    assetId: id,
+                    mediasourceId: asset.mediasourceId,
+                    mediasourceUrl: asset.mediasourceUrl,
+                    originalFileName: originalName,
+                    userName: request.user.name,
+                    hasRichMeta,
+                    metadata,
+                    clip: { id: clipId, fileSize: clientMeta.fileSize || '0', originalFileName: originalName },
+                });
+
+                io.to(socketId).emit('message:new', {
+                    id: randomUUID(),
+                    userId: null,
+                    assetId: id,
+                    direction: 'INCOMING',
+                    messageType: 'FORM_REQUEST',
+                    content: {
+                        text: `🎬 ${asset.slug} is uploading to Mux, here are the Mediasource details.`,
+                        mediasourceId: asset.mediasourceId,
+                        mediasourceUrl: asset.mediasourceUrl,
+                        originalFileName: originalName,
+                        userName: request.user.name,
+                        clipCount: 1,
+                        duration: metadata.duration || 0,
+                        hasRichMeta,
+                    },
+                    createdAt: new Date().toISOString(),
+                });
+
+                io.to(socketId).emit('form:request', {
+                    assetId: id,
+                    originalFileName: originalName,
+                    capturedAt: metadata.capturedAt,
+                    clipCount: 1,
+                    duration: metadata.duration,
+                    prefilledData: { slug: asset.slug },
+                });
+            }
+        }
+
+        return {
+            uploadUrl: muxResult.uploadUrl,
+            clipId,
+            muxUploadId: muxResult.muxUploadId,
         };
     });
 

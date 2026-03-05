@@ -381,8 +381,16 @@ final class ChatViewModel {
         }
         
         do {
-            let _ = try await uploader.upload(assetId: assetId, fileURL: fileURL, token: token, metadata: metadata)
-            print("✅ [Upload] Completed successfully for asset: \(assetId)")
+            // Try Mux direct upload first (iOS → Mux CDN, bypasses server for large files)
+            do {
+                let muxResult = try await uploader.uploadViaMux(assetId: assetId, fileURL: fileURL, token: token, metadata: metadata)
+                print("✅ [Upload] Mux direct upload completed for asset: \(assetId), clipId: \(muxResult.clipId)")
+            } catch {
+                // Mux not available (503) or failed — fall back to server multipart upload
+                print("⚠️ [Upload] Mux direct upload failed (\(error.localizedDescription)), falling back to server upload")
+                let _ = try await uploader.upload(assetId: assetId, fileURL: fileURL, token: token, metadata: metadata)
+                print("✅ [Upload] Server upload completed for asset: \(assetId)")
+            }
         } catch {
             print("❌ [Upload] Failed for asset \(assetId): \(error)")
             print("❌ [Upload] Error details: \(error.localizedDescription)")

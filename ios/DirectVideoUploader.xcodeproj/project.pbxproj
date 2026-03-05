@@ -351,6 +351,7 @@
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				DEVELOPMENT_TEAM = LW5P4PVL96;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.entertainment";
 				INFOPLIST_KEY_NSAppTransportSecurity_AllowsArbitraryLoads = YES;
 				INFOPLIST_KEY_NSCameraUsageDescription = "Record video to upload to the newsroom server.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Attach GPS coordinates to your video upload.";
@@ -377,6 +378,7 @@
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				DEVELOPMENT_TEAM = LW5P4PVL96;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.entertainment";
 				INFOPLIST_KEY_NSAppTransportSecurity_AllowsArbitraryLoads = YES;
 				INFOPLIST_KEY_NSCameraUsageDescription = "Record video to upload to the newsroom server.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Attach GPS coordinates to your video upload.";

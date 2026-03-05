@@ -36,6 +36,38 @@ if (isMuxEnabled) {
 }
 
 /**
+ * Create a Mux direct upload URL for iOS to upload to directly.
+ * Returns the upload URL and upload ID. iOS PUTs the video file to this URL.
+ *
+ * @param {object} opts
+ * @param {string} opts.clipId — Our clip ID
+ * @param {string} opts.assetId — Our asset ID
+ * @returns {Promise<{uploadUrl: string, muxUploadId: string} | null>}
+ */
+export async function createDirectUpload(opts = {}) {
+    if (!isMuxEnabled || !muxClient) {
+        return null;
+    }
+
+    const upload = await muxClient.video.uploads.create({
+        new_asset_settings: {
+            playback_policy: ['public'],
+            passthrough: JSON.stringify({
+                clipId: opts.clipId,
+                assetId: opts.assetId,
+            }),
+        },
+        cors_origin: '*',
+        timeout: 3600, // 1 hour expiry for the upload URL
+    });
+
+    return {
+        uploadUrl: upload.url,
+        muxUploadId: upload.id,
+    };
+}
+
+/**
  * Ingest a local video file into Mux.
  *
  * Flow:

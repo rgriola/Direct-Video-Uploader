@@ -12,7 +12,7 @@ enum ServerConfig {
     // MARK: - Production URL (update when deployed to Render)
     
     /// The production server URL. Used as the default for physical devices in Release builds.
-    private static let productionURL = "https://direct-video-uploader.onrender.com"
+    private static let productionURL = "https://rodgriola.com"
     
     /// UserDefaults key for the user-saved server URL override
     private static let serverURLKey = "dvu_server_url"
@@ -97,6 +97,7 @@ enum ServerConfig {
     static var myAssetsURL: URL { url(for: "/api/assets/mine") }
     static func assetURL(_ id: String) -> URL { url(for: "/api/assets/\(id)") }
     static func uploadURL(_ id: String) -> URL { url(for: "/api/assets/\(id)/upload") }
+    static func muxUploadURL(_ id: String) -> URL { url(for: "/api/assets/\(id)/mux-upload") }
     static func formURL(_ id: String) -> URL { url(for: "/api/assets/\(id)/form") }
     
     // Messages

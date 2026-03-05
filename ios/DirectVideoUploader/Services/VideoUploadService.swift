@@ -63,6 +63,90 @@ final class VideoUploadService: NSObject {
         return data
     }
     
+    // MARK: - Mux Direct Upload
+    
+    /// Upload via Mux direct upload: ask server for a Mux upload URL, then PUT file directly to Mux CDN.
+    /// This bypasses the server for the large file transfer — only metadata goes through the server.
+    func uploadViaMux(assetId: String, fileURL: URL, token: String, metadata: VideoMetadata? = nil) async throws -> MuxUploadResponse {
+        isUploading = true
+        uploadProgress = 0
+        error = nil
+        defer { isUploading = false }
+        
+        print("📤 [Mux] Requesting direct upload URL for asset: \(assetId)")
+        
+        // Step 1: Ask server for a Mux direct upload URL (fast — just metadata)
+        let muxURL = ServerConfig.muxUploadURL(assetId)
+        var createRequest = URLRequest(url: muxURL)
+        createRequest.httpMethod = "POST"
+        createRequest.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        createRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        
+        // Send metadata + file info as JSON
+        var metaDict: [String: Any] = [:]
+        if let meta = metadata {
+            metaDict = [
+                "fileName": fileURL.lastPathComponent,
+                "duration": meta.duration,
+                "resolution": meta.resolution,
+                "codec": meta.codec,
+                "orientation": meta.orientation,
+                "deviceModel": meta.deviceModel,
+                "osVersion": meta.osVersion,
+            ]
+            if let capturedAt = meta.capturedAt { metaDict["capturedAt"] = capturedAt }
+            if let lat = meta.gpsLat { metaDict["gpsLat"] = lat }
+            if let lon = meta.gpsLon { metaDict["gpsLon"] = lon }
+            
+            // File size
+            if let attrs = try? FileManager.default.attributesOfItem(atPath: fileURL.path),
+               let size = attrs[.size] as? Int64 {
+                metaDict["fileSize"] = size
+            }
+        }
+        createRequest.httpBody = try JSONSerialization.data(withJSONObject: ["metadata": metaDict])
+        
+        let (createData, createResponse) = try await URLSession.shared.data(for: createRequest)
+        
+        guard let httpResp = createResponse as? HTTPURLResponse, httpResp.statusCode == 200 else {
+            let body = String(data: createData, encoding: .utf8) ?? "Unknown"
+            print("📤 [Mux] ❌ Failed to get upload URL: \(body)")
+            throw UploadError.serverError((createResponse as? HTTPURLResponse)?.statusCode ?? 0, body)
+        }
+        
+        guard let json = try JSONSerialization.jsonObject(with: createData) as? [String: Any],
+              let uploadUrlString = json["uploadUrl"] as? String,
+              let uploadUrl = URL(string: uploadUrlString),
+              let clipId = json["clipId"] as? String else {
+            throw UploadError.invalidResponse
+        }
+        
+        print("📤 [Mux] Got upload URL, uploading directly to Mux CDN...")
+        
+        // Step 2: PUT the raw video file directly to Mux's upload URL
+        var putRequest = URLRequest(url: uploadUrl)
+        putRequest.httpMethod = "PUT"
+        putRequest.setValue("application/octet-stream", forHTTPHeaderField: "Content-Type")
+        
+        if let attrs = try? FileManager.default.attributesOfItem(atPath: fileURL.path),
+           let size = attrs[.size] as? Int64 {
+            putRequest.setValue("\(size)", forHTTPHeaderField: "Content-Length")
+        }
+        
+        let (_, putResponse) = try await uploadWithProgress(request: putRequest, fileURL: fileURL)
+        
+        guard let putHttp = putResponse as? HTTPURLResponse, putHttp.statusCode == 200 else {
+            let code = (putResponse as? HTTPURLResponse)?.statusCode ?? 0
+            print("📤 [Mux] ❌ PUT to Mux failed with status \(code)")
+            throw UploadError.serverError(code, "Mux upload failed")
+        }
+        
+        uploadProgress = 1.0
+        print("📤 [Mux] ✅ Direct upload complete! Mux will process and notify via webhook.")
+        
+        return MuxUploadResponse(clipId: clipId, muxUploadId: json["muxUploadId"] as? String ?? "")
+    }
+    
     // MARK: - Multipart Body Builder
     
     /// Writes multipart form data to a temp file (avoids loading entire video into memory).
@@ -184,6 +268,13 @@ private final class UploadDelegate: NSObject, URLSessionTaskDelegate, URLSession
             onComplete(responseData, task.response, nil)
         }
     }
+}
+
+// MARK: - Mux Upload Response
+
+struct MuxUploadResponse {
+    let clipId: String
+    let muxUploadId: String
 }
 
 // MARK: - Errors

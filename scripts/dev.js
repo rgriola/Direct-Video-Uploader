@@ -227,6 +227,8 @@ async function main() {
     const pushResult = runSync('npx prisma db push 2>&1', SERVER_DIR);
     if (pushResult.ok) {
         logDB('Schema synced ✅');
+    } else if (pushResult.output.includes('already in sync')) {
+        logDB('Schema already in sync ✅');
     } else {
         logErr('Schema push had issues (may be OK if no changes)');
         // Don't exit — often just "already in sync"
