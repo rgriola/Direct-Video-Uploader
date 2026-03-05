@@ -138,7 +138,7 @@ export default async function clipRoutes(fastify) {
         }).join('\n');
 
         const videoURL = clip?.storageUrl || '';
-        const hasVideo = videoURL && clip?.status === 'READY';
+        const hasVideo = !!videoURL;
         const hasMuxPlayback = !!(clip?.muxPlaybackId);
         const muxPlaybackId = clip?.muxPlaybackId || '';
         const muxEnvKey = MUX_ENV_KEY || '';

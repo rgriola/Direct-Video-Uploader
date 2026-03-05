@@ -144,7 +144,8 @@ export default async function assetRoutes(fastify) {
                         where: { id: clipId },
                         data: {
                             muxUploadId: result.muxUploadId,
-                            status: 'PROCESSING',
+                            // Don't change status — local file is already READY and playable.
+                            // Mux webhook will add muxPlaybackId when processing completes.
                         },
                     }));
                     console.log(`🎬 Mux ingestion queued for clip ${clipId}`);
