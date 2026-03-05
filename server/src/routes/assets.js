@@ -314,6 +314,17 @@ export default async function assetRoutes(fastify) {
      * Submit the context form for an asset.
      */
     fastify.post('/api/assets/:id/form', {
+        schema: {
+            body: {
+                type: 'object',
+                properties: {
+                    slug: { type: 'string' },
+                    type: { type: 'string' },
+                    description: { type: 'string' },
+                    priority: { type: 'string', enum: ['low', 'medium', 'high', 'critical', 'LOW', 'MEDIUM', 'HIGH', 'CRITICAL'] },
+                },
+            },
+        },
         preHandler: [fastify.authenticate],
     }, async (request, reply) => {
         const { id } = request.params;

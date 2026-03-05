@@ -172,4 +172,20 @@ const start = async () => {
     }
 };
 
+// ─── Graceful Shutdown ───────────────────────────────────
+// Clean up connections when Render sends SIGTERM during deploys
+const shutdown = async (signal) => {
+    console.log(`\n🛑 ${signal} received — shutting down gracefully...`);
+    try {
+        io.close();       // Close WebSocket connections
+        await fastify.close(); // Stop accepting HTTP, finish in-flight requests
+        console.log('👋 Server stopped cleanly');
+    } catch (err) {
+        console.error('Shutdown error:', err.message);
+    }
+    process.exit(0);
+};
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
+
 start();

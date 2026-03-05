@@ -11,6 +11,17 @@ export default async function authRoutes(fastify) {
      * Returns: { token: string, user: { id, name, phoneNumber, team } }
      */
     fastify.post('/api/auth/login', {
+        schema: {
+            body: {
+                type: 'object',
+                required: ['phoneNumber', 'pin'],
+                properties: {
+                    phoneNumber: { type: 'string' },
+                    pin: { type: 'string' },
+                    clientType: { type: 'string' },
+                },
+            },
+        },
         config: {
             rateLimit: {
                 max: 5,
@@ -18,13 +29,7 @@ export default async function authRoutes(fastify) {
             },
         },
     }, async (request, reply) => {
-        const { phoneNumber, pin } = request.body || {};
-
-        if (!phoneNumber || !pin) {
-            return reply.status(400).send({
-                error: 'Phone number and PIN are required',
-            });
-        }
+        const { phoneNumber, pin } = request.body;
 
         // Look up user by phone number
         const user = await dbRetry(() => prisma.user.findUnique({
