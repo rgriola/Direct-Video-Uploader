@@ -59,3 +59,5 @@ admin/tsconfig.tsbuildinfo
 # Misc
 .idea/
 *.tgz
+conversation-list.png
+text-flow.png

@@ -183,7 +183,7 @@ struct LoginView: View {
                         .foregroundStyle(.white.opacity(0.4))
                         .font(.system(size: 11))
                     
-                    TextField("http://192.168.0.111:3000", text: $serverURLDraft)
+            TextField("http://192.168.0.111:3000", text: $serverURLDraft)
                         .font(.system(size: 12, weight: .medium, design: .monospaced))
                         .foregroundStyle(.white.opacity(0.7))
                         .keyboardType(.URL)

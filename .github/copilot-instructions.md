@@ -13,7 +13,7 @@
 
 ---
 
-## Gitbub
+## Github
 
 - https://github.com/rgriola/Direct-Video-Uploader.git
 
@@ -22,7 +22,7 @@
 1. **Database URL** must be in `prisma.config.ts`, NOT in the `schema.prisma` datasource block.
 2. **Driver adapter** is required — we use `@prisma/adapter-pg` with the `pg` library.
 3. **Constructor** uses `new PrismaClient({ adapter })` — no `datasourceUrl` in constructor.
-4. **Local dev database**: run `npx prisma dev` (auto-manages a local PostgreSQL instance).
+4. **Local dev database**: Homebrew PostgreSQL (`postgresql://rodczaro@localhost:5432/directvideo`). Do NOT use PGlite (`npx prisma dev`) — it breaks Prisma Studio introspection.
 
 ---
 
@@ -55,7 +55,7 @@ const result = await prisma.$queryRawUnsafe(
 - **BigInt serialization** — call `fileSize?.toString()` before including in JSON responses.
 - **Socket.IO push** — look up `fastify.userSockets?.get(userId)` to push events to connected clients.
 - **WS auth** — JWT token from `socket.handshake.auth?.token`, same secret as HTTP routes.
-- **Chat persistence** — both `OUTGOING` and `INCOMING` messages stored via `prisma.chatMessage.createMany()`.
+- **Chat persistence (Option B)** — only persist meaningful events: user `TEXT` (outgoing), `FORM_SUBMITTED`. Ephemeral messages (greeting, auto-reply, form-request, confirmation) are sent via WebSocket only — never written to `chat_messages`.
 - **DB pool** — `pg.Pool` with `max: 20` connections. Pool was 5, caused timeouts on concurrent requests.
 - **Server auto-reply** — `message:send` handler replies to plain text with "send me your videos!"; Slack commands (e.g., `#team-alerts @carrie`) trigger `slack:post`.
 

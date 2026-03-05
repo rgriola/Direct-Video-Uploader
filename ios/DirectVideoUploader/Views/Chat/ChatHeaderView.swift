@@ -4,8 +4,39 @@ import SwiftUI
 struct ChatHeaderView: View {
     let userName: String
     let subtitle: String
-    let isConnected: Bool
+    let connectionState: WebSocketService.ConnectionState
     var onLogout: (() -> Void)?
+    
+    /// Convenience backward-compat init
+    init(userName: String, subtitle: String, isConnected: Bool, onLogout: (() -> Void)? = nil) {
+        self.userName = userName
+        self.subtitle = subtitle
+        self.connectionState = isConnected ? .connected : .disconnected
+        self.onLogout = onLogout
+    }
+    
+    init(userName: String, subtitle: String, connectionState: WebSocketService.ConnectionState, onLogout: (() -> Void)? = nil) {
+        self.userName = userName
+        self.subtitle = subtitle
+        self.connectionState = connectionState
+        self.onLogout = onLogout
+    }
+    
+    private var statusColor: Color {
+        switch connectionState {
+        case .connected:    return Color(hex: "30D158")   // green
+        case .connecting:   return Color(hex: "FFD60A")   // yellow
+        case .disconnected: return Color(hex: "FF453A")   // red
+        }
+    }
+    
+    private var statusText: String {
+        switch connectionState {
+        case .connected:    return subtitle
+        case .connecting:   return "Reconnecting..."
+        case .disconnected: return "Disconnected"
+        }
+    }
     
     var body: some View {
         VStack(spacing: 0) {
@@ -35,10 +66,10 @@ struct ChatHeaderView: View {
                     
                     HStack(spacing: 4) {
                         Circle()
-                            .fill(isConnected ? Color(hex: "30D158") : Color(hex: "FF453A"))
+                            .fill(statusColor)
                             .frame(width: 6, height: 6)
                         
-                        Text(isConnected ? subtitle : "Connecting...")
+                        Text(statusText)
                             .font(.system(size: 12))
                             .foregroundStyle(.white.opacity(0.6))
                     }

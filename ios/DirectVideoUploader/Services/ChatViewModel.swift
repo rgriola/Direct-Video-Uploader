@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 import Observation
 
 /// Central chat view model — manages messages, assets, and coordinates services.
@@ -9,6 +10,7 @@ final class ChatViewModel {
     
     var messages: [ChatMessage] = []
     var isLoadingHistory = false
+    var isAwaitingGreeting = false
     var currentAssetId: String?
     var showFormSheet = false
     var showMetadataSheet = false
@@ -18,11 +20,27 @@ final class ChatViewModel {
     var lastClip: Clip?
     var lastAsset: Asset?
     
+    // Staged video — preview before upload (iOS 26.3 flow)
+    var stagedVideo: StagedVideo?
+    var isProcessingVideo = false
+    
     // Form context (passed to ContextFormView header)
     var formOriginalFileName: String?
     var formCapturedAt: String?
     var formClipCount: Int?
     var formDuration: Int?
+    var formThumbnail: UIImage?
+    var formSubmitError: String?
+    
+    /// Thumbnails + metadata for sent-upload cards keyed by message ID
+    var sentUploadThumbnails: [String: UIImage] = [:]
+    var sentUploadFileNames: [String: String] = [:]
+    var sentUploadDates: [String: String] = [:]
+    var sentUploadHasLocation: [String: Bool] = [:]
+    
+    /// Temp staging data preserved across confirmStagedUpload → createAsset
+    private var lastStagedCreatedDate: String?
+    private var lastStagedHasLocation: Bool = false
     
     // MARK: - Dependencies
     
@@ -34,12 +52,16 @@ final class ChatViewModel {
         self.auth = auth
         self.ws = ws
         setupWebSocketHandlers()
+        setupConnectionHandlers()
     }
     
     // MARK: - WebSocket Handlers
     
     private func setupWebSocketHandlers() {
         ws.onMessage = { [weak self] message in
+            if message.messageType == .greeting {
+                self?.isAwaitingGreeting = false
+            }
             self?.messages.append(message)
         }
         
@@ -89,7 +111,7 @@ final class ChatViewModel {
                 id: "priority",
                 label: "Priority",
                 type: "select",
-                value: "Medium",
+                value: "Low",
                 options: ["Low", "Medium", "High", "Critical"]
             ))
             
@@ -100,8 +122,14 @@ final class ChatViewModel {
         ws.onFormConfirmed = { [weak self] data in
             guard let self else { return }
             let text = data["message"] as? String ?? "🙌 High Five! Form received."
+            let slug = data["slug"] as? String
             let mediasourceId = data["mediasourceId"] as? String
             let mediasourceUrl = data["mediasourceUrl"] as? String
+            let originalFileName = data["originalFileName"] as? String
+            let capturedAt = data["capturedAt"] as? String
+            let formType = data["formType"] as? String
+            let formDescription = data["formDescription"] as? String
+            let formPriority = data["formPriority"] as? String
             
             let confirmation = ChatMessage(
                 id: UUID().uuidString,
@@ -111,14 +139,122 @@ final class ChatViewModel {
                 messageType: .confirmation,
                 content: MessageContent(
                     text: text,
+                    slug: slug,
                     mediasourceId: mediasourceId,
-                    mediasourceUrl: mediasourceUrl
+                    mediasourceUrl: mediasourceUrl,
+                    originalFileName: originalFileName,
+                    capturedAt: capturedAt,
+                    formType: formType,
+                    formDescription: formDescription,
+                    formPriority: formPriority
                 ),
                 createdAt: ISO8601DateFormatter().string(from: Date())
             )
             self.messages.append(confirmation)
+            
+            // After 1 second, append a random fun follow-up message
+            let firstName = self.auth.currentUser?.name.components(separatedBy: " ").first ?? "Friend"
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(1))
+                let phrases = [
+                    "\(firstName), you are working hard today, but I am here when your next video is ready.",
+                    "\(firstName), that upload was smoother than a dolly shot. Send another whenever you're ready.",
+                    "\(firstName), another one in the can! I'll be here when the next masterpiece drops.",
+                    "\(firstName), that's a wrap! Take five — or send five more videos, I don't judge.",
+                    "\(firstName), you're on fire today 🔥 I'll keep the upload lane open for you.",
+                    "\(firstName), video received and locked. I'm basically your cloud butler — at your service.",
+                    "\(firstName), if uploads were Olympic events, you'd be on the podium right now 🥇",
+                    "\(firstName), that one's safe with me. Go grab coffee — I'll hold down the fort.",
+                    "\(firstName), filed and processed! You make this look easy. Ready when you are.",
+                    "\(firstName), boom — done! I'll just be here, staring at the upload button, waiting for you."
+                ]
+                let message = phrases.randomElement()!
+                let followUp = ChatMessage(
+                    id: UUID().uuidString,
+                    userId: nil,
+                    assetId: nil,
+                    direction: .incoming,
+                    messageType: .greeting,
+                    content: MessageContent(text: message),
+                    createdAt: ISO8601DateFormatter().string(from: Date())
+                )
+                self.messages.append(followUp)
+            }
         }
         
+    }
+    
+    // MARK: - Connection State Handlers
+    
+    private func setupConnectionHandlers() {
+        ws.onReconnecting = { [weak self] attempt, maxAttempts in
+            guard let self else { return }
+            // Only show a bubble on the first reconnect attempt (avoid spam)
+            if attempt == 1 {
+                self.appendErrorBubble("⚠️ Connection lost. Reconnecting...")
+            }
+            // Report to server DB (best-effort — may fail if offline)
+            Task {
+                await self.reportError(
+                    category: "websocket",
+                    message: "WebSocket reconnecting (attempt \(attempt)/\(maxAttempts))",
+                    severity: "WARNING"
+                )
+            }
+        }
+        
+        ws.onConnectionLost = { [weak self] in
+            guard let self else { return }
+            self.appendErrorBubble("🔴 Connection lost. Please check your network and restart the app.")
+            Task {
+                await self.reportError(
+                    category: "websocket",
+                    message: "WebSocket max reconnect attempts exhausted — connection lost",
+                    severity: "CRITICAL"
+                )
+            }
+        }
+    }
+    
+    // MARK: - Error Helpers
+    
+    /// Show an error message to the user as a chat bubble.
+    private func appendErrorBubble(_ text: String, assetId: String? = nil) {
+        let errorMsg = ChatMessage(
+            id: UUID().uuidString,
+            userId: nil,
+            assetId: assetId,
+            direction: .incoming,
+            messageType: .text,
+            content: MessageContent(text: text),
+            createdAt: ISO8601DateFormatter().string(from: Date())
+        )
+        messages.append(errorMsg)
+    }
+    
+    /// Report an error to the server's error_logs table (best-effort, fire-and-forget).
+    /// Future: server will send text/email for CRITICAL errors.
+    func reportError(
+        category: String,
+        message: String,
+        severity: String = "WARNING",
+        assetId: String? = nil,
+        details: [String: String]? = nil
+    ) async {
+        guard auth.isAuthenticated else { return }
+        var request = auth.authenticatedRequest(for: ServerConfig.errorsURL, method: "POST")
+        var body: [String: Any] = [
+            "source": "ios",
+            "category": category,
+            "message": message,
+            "severity": severity,
+        ]
+        if let assetId { body["assetId"] = assetId }
+        if let details { body["details"] = details }
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        
+        // Fire-and-forget — don't let logging failures cascade
+        _ = try? await URLSession.shared.data(for: request)
     }
     
     // MARK: - Load History
@@ -136,6 +272,7 @@ final class ChatViewModel {
             messages = response.messages
         } catch {
             print("❌ Failed to load messages:", error)
+            appendErrorBubble("⚠️ Could not load message history.")
         }
     }
     
@@ -178,9 +315,10 @@ final class ChatViewModel {
             let response = try JSONDecoder().decode(CreateAssetResponse.self, from: data)
             currentAssetId = response.asset.id
             
-            // Add outgoing video message locally
+            // Add outgoing video message locally — also cache thumbnail for SentUploadBubble
+            let msgId = UUID().uuidString
             let videoMessage = ChatMessage(
-                id: UUID().uuidString,
+                id: msgId,
                 userId: auth.currentUser?.id,
                 assetId: response.asset.id,
                 direction: .outgoing,
@@ -189,6 +327,18 @@ final class ChatViewModel {
                 createdAt: ISO8601DateFormatter().string(from: Date())
             )
             messages.append(videoMessage)
+            
+            // Cache thumbnail + metadata so SentUploadBubble can render the card
+            if let thumb = formThumbnail {
+                sentUploadThumbnails[msgId] = thumb
+            }
+            sentUploadFileNames[msgId] = fileName
+            sentUploadDates[msgId] = lastStagedCreatedDate ?? {
+                let formatter = DateFormatter()
+                formatter.dateFormat = "MMM d, yyyy h:mm a"
+                return formatter.string(from: Date())
+            }()
+            sentUploadHasLocation[msgId] = lastStagedHasLocation
             
             // Notify WebSocket with real file size
             ws.sendVideoUpload(
@@ -200,6 +350,15 @@ final class ChatViewModel {
             return response.asset
         } catch {
             print("❌ Failed to create asset:", error)
+            appendErrorBubble("⚠️ Could not start upload. Please try again.")
+            Task {
+                await reportError(
+                    category: "upload",
+                    message: "Asset creation failed: \(error.localizedDescription)",
+                    severity: "ERROR",
+                    details: ["fileName": fileName]
+                )
+            }
             return nil
         }
     }
@@ -228,16 +387,15 @@ final class ChatViewModel {
             print("❌ [Upload] Failed for asset \(assetId): \(error)")
             print("❌ [Upload] Error details: \(error.localizedDescription)")
             // Show error in chat
-            let errorMsg = ChatMessage(
-                id: UUID().uuidString,
-                userId: nil,
-                assetId: assetId,
-                direction: .incoming,
-                messageType: .text,
-                content: MessageContent(text: "⚠️ Upload failed: \(error.localizedDescription)"),
-                createdAt: ISO8601DateFormatter().string(from: Date())
-            )
-            messages.append(errorMsg)
+            appendErrorBubble("⚠️ Upload failed: \(error.localizedDescription)", assetId: assetId)
+            Task {
+                await reportError(
+                    category: "upload",
+                    message: "File upload failed: \(error.localizedDescription)",
+                    severity: "ERROR",
+                    assetId: assetId
+                )
+            }
         }
         
         progressTask.cancel()
@@ -250,23 +408,29 @@ final class ChatViewModel {
         request.httpBody = try? JSONSerialization.data(withJSONObject: formData)
         
         do {
-            let (_, _) = try await URLSession.shared.data(for: request)
+            let (_, response) = try await URLSession.shared.data(for: request)
             
-            // Add local confirmation
-            let formMessage = ChatMessage(
-                id: UUID().uuidString,
-                userId: auth.currentUser?.id,
-                assetId: assetId,
-                direction: .outgoing,
-                messageType: .formSubmitted,
-                content: MessageContent(text: "📋 Form submitted"),
-                createdAt: ISO8601DateFormatter().string(from: Date())
-            )
-            messages.append(formMessage)
+            // Check HTTP status code
+            if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode >= 400 {
+                throw URLError(.badServerResponse)
+            }
             
+            // Form sheet closes — server will push form:confirmed via WS
+            // with the "High Five!" confirmation bubble + metadata
             showFormSheet = false
         } catch {
             print("❌ Failed to submit form:", error)
+            // Keep form open so user can retry — show error in chat too
+            formSubmitError = "Failed to send form. Please try again."
+            appendErrorBubble("⚠️ Form submission failed. The form is still open — please retry.", assetId: assetId)
+            Task {
+                await reportError(
+                    category: "form",
+                    message: "Form submission failed: \(error.localizedDescription)",
+                    severity: "ERROR",
+                    assetId: assetId
+                )
+            }
         }
     }
     
@@ -274,6 +438,9 @@ final class ChatViewModel {
     
     func connectWebSocket() {
         guard let token = auth.token else { return }
+        // Fresh conversation — clear old messages, show typing indicator
+        messages.removeAll()
+        isAwaitingGreeting = true
         ws.connect(token: token)
     }
     
@@ -292,11 +459,75 @@ final class ChatViewModel {
             self.lastClip = response.asset.clips?.first
         } catch {
             print("❌ Failed to fetch asset detail:", error)
+            appendErrorBubble("⚠️ Could not load video details.", assetId: assetId)
         }
     }
     
     func showMetadata() {
         guard lastClip != nil else { return }
         showMetadataSheet = true
+    }
+    
+    // MARK: - Video Staging (iOS 26.3 Flow)
+    
+    /// Stage a video for preview in chat — called after user confirms in the library picker.
+    func stageVideo(fileURL: URL, fileName: String, metadata: VideoMetadata) async {
+        isProcessingVideo = true
+        defer { isProcessingVideo = false }
+        
+        // Generate thumbnail from video
+        let thumbnail = await StagedVideo.generateThumbnail(from: fileURL)
+        
+        // Format creation date for display
+        let createdDate: String? = {
+            guard let capturedAt = metadata.capturedAt else { return nil }
+            let iso = ISO8601DateFormatter()
+            iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            guard let date = iso.date(from: capturedAt) ?? ISO8601DateFormatter().date(from: capturedAt) else {
+                return capturedAt
+            }
+            let formatter = DateFormatter()
+            formatter.dateFormat = "MMM d, yyyy h:mm a"
+            return formatter.string(from: date)
+        }()
+        
+        stagedVideo = StagedVideo(
+            tempFileURL: fileURL,
+            fileName: fileName,
+            createdDate: createdDate,
+            thumbnail: thumbnail,
+            metadata: metadata
+        )
+    }
+    
+    /// User confirmed upload — proceed with create asset + upload.
+    func confirmStagedUpload() async {
+        guard let staged = stagedVideo else { return }
+        
+        // Clear staged preview immediately — save thumbnail + metadata for form & sent card
+        let fileURL = staged.tempFileURL
+        let fileName = staged.fileName
+        let metadata = staged.metadata
+        formThumbnail = staged.thumbnail
+        lastStagedCreatedDate = staged.createdDate
+        lastStagedHasLocation = metadata.gpsLat != nil
+        stagedVideo = nil
+        
+        // Create asset on server
+        if let asset = await createAsset(fileName: fileName, fileURL: fileURL) {
+            print("✅ Asset created: \(asset.slug)")
+            await uploadVideo(assetId: asset.id, fileURL: fileURL, metadata: metadata)
+            
+            // Clean up temp video file after upload (#18)
+            try? FileManager.default.removeItem(at: fileURL)
+        }
+    }
+    
+    /// User cancelled staged video — discard and clean up.
+    func cancelStagedVideo() {
+        if let staged = stagedVideo {
+            try? FileManager.default.removeItem(at: staged.tempFileURL)
+        }
+        stagedVideo = nil
     }
 }

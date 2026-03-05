@@ -3,12 +3,16 @@ import pg from 'pg';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '@prisma/client';
 
+const isProduction = process.env.NODE_ENV === 'production';
+
 const pool = new pg.Pool({
     connectionString: process.env.DATABASE_URL,
     max: 20,                   // Enough for concurrent dashboard + WS + API
     idleTimeoutMillis: 10000,  // Close idle connections after 10s (evict stale faster)
     connectionTimeoutMillis: 10000, // 10s to acquire a connection
     allowExitOnIdle: true,     // Don't block process exit
+    // Render managed PostgreSQL requires SSL
+    ...(isProduction && { ssl: { rejectUnauthorized: false } }),
 });
 
 // Evict dead connections — test each connection before use

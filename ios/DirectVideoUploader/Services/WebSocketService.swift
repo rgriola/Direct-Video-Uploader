@@ -26,6 +26,8 @@ final class WebSocketService {
     var onUploadComplete: (@MainActor ([String: Any]) -> Void)?
     var onFormRequest: (@MainActor ([String: Any]) -> Void)?
     var onFormConfirmed: (@MainActor ([String: Any]) -> Void)?
+    var onReconnecting: (@MainActor (Int, Int) -> Void)?       // (attempt, maxAttempts)
+    var onConnectionLost: (@MainActor () -> Void)?              // max retries exhausted
     
     // MARK: - Private
     
@@ -56,6 +58,17 @@ final class WebSocketService {
             } catch {
                 print("❌ [WS] Handshake failed:", error)
                 state = .disconnected
+                // Attempt reconnect on handshake failure too
+                reconnectAttempt += 1
+                guard reconnectAttempt <= maxReconnectAttempts else {
+                    onConnectionLost?()
+                    return
+                }
+                let delay = min(3.0 * pow(2.0, Double(reconnectAttempt - 1)), 60.0)
+                print("🔄 [WS] Reconnect attempt \(reconnectAttempt)/\(maxReconnectAttempts) in \(delay)s")
+                onReconnecting?(reconnectAttempt, maxReconnectAttempts)
+                try? await Task.sleep(for: .seconds(delay))
+                connect(token: token)
             }
         }
     }
@@ -155,10 +168,12 @@ final class WebSocketService {
                     self.reconnectAttempt += 1
                     guard self.reconnectAttempt <= self.maxReconnectAttempts else {
                         print("🛑 [WS] Max reconnect attempts (\(self.maxReconnectAttempts)) reached — giving up")
+                        self.onConnectionLost?()
                         return
                     }
                     let delay = min(3.0 * pow(2.0, Double(self.reconnectAttempt - 1)), 60.0)
                     print("🔄 [WS] Reconnect attempt \(self.reconnectAttempt)/\(self.maxReconnectAttempts) in \(delay)s")
+                    self.onReconnecting?(self.reconnectAttempt, self.maxReconnectAttempts)
                     try? await Task.sleep(for: .seconds(delay))
                     if let token = self.token {
                         self.connect(token: token)

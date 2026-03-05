@@ -1,5 +1,4 @@
 import SwiftUI
-import PhotosUI
 
 /// Main chat view — mirrors the `chat-demo.html` layout.
 struct ChatView: View {
@@ -7,8 +6,7 @@ struct ChatView: View {
     @Environment(WebSocketService.self) private var ws
     
     @State private var viewModel: ChatViewModel?
-    @State private var showPhotoPicker = false
-    @State private var selectedPhotoItem: PhotosPickerItem?
+    @State private var showVideoLibrary = false
     
     var body: some View {
         ZStack {
@@ -19,7 +17,7 @@ struct ChatView: View {
                 ChatHeaderView(
                     userName: "Mediasource Fixer",
                     subtitle: auth.currentUser?.team ?? "Newsroom",
-                    isConnected: ws.isConnected,
+                    connectionState: ws.state,
                     onLogout: { auth.logout(); ws.disconnect() }
                 )
                 
@@ -28,13 +26,51 @@ struct ChatView: View {
                     ScrollView {
                         LazyVStack(spacing: 2) {
                             if let vm = viewModel {
+                                // Typing indicator while awaiting server greeting
+                                if vm.isAwaitingGreeting {
+                                    TypingIndicatorBubble()
+                                        .id("typing-indicator")
+                                }
+                                
                                 ForEach(vm.messages) { message in
-                                    MessageBubble(
-                                        message: message,
-                                        onTapMetadata: message.messageType == .formRequest ? { vm.showMetadata() } : nil,
-                                        onTapForm: message.messageType == .formRequest ? { vm.showFormSheet = true } : nil
+                                    // Outgoing video → show sent upload card with thumbnail
+                                    if message.messageType == .video && message.isOutgoing,
+                                       vm.sentUploadThumbnails[message.id] != nil || vm.sentUploadFileNames[message.id] != nil {
+                                        SentUploadBubble(
+                                            thumbnail: vm.sentUploadThumbnails[message.id],
+                                            fileName: vm.sentUploadFileNames[message.id] ?? message.content.fileName ?? "Video",
+                                            createdDate: vm.sentUploadDates[message.id],
+                                            hasLocation: vm.sentUploadHasLocation[message.id] ?? false
+                                        )
+                                        .id(message.id)
+                                    } else {
+                                        MessageBubble(
+                                            message: message,
+                                            onTapMetadata: (message.messageType == .formRequest || message.messageType == .confirmation) ? { vm.showMetadata() } : nil,
+                                            onTapForm: message.messageType == .formRequest ? { vm.showFormSheet = true } : nil
+                                        )
+                                        .id(message.id)
+                                    }
+                                }
+                                
+                                // Staged video preview — user must confirm before upload
+                                if let staged = vm.stagedVideo {
+                                    VideoPreviewBubble(
+                                        stagedVideo: staged,
+                                        onSend: {
+                                            Task { await vm.confirmStagedUpload() }
+                                        },
+                                        onCancel: {
+                                            vm.cancelStagedVideo()
+                                        }
                                     )
-                                    .id(message.id)
+                                    .id("staged-video-preview")
+                                }
+                                
+                                // Processing indicator while loading video from library
+                                if vm.isProcessingVideo {
+                                    TypingIndicatorBubble()
+                                        .id("processing-indicator")
                                 }
                             }
                         }
@@ -80,18 +116,23 @@ struct ChatView: View {
                         viewModel?.sendTextMessage(text)
                     },
                     onAttach: {
-                        showPhotoPicker = true
+                        showVideoLibrary = true
                     }
                 )
             }
         }
-        .photosPicker(isPresented: $showPhotoPicker, selection: $selectedPhotoItem, matching: .videos)
-        .onChange(of: selectedPhotoItem) { _, newItem in
-            guard newItem != nil else { return }
-            Task {
-                await handleVideoPick(newItem)
-                selectedPhotoItem = nil  // Reset so same video can be picked again
-            }
+        .sheet(isPresented: $showVideoLibrary) {
+            VideoLibraryView(
+                onConfirm: { fileURL, fileName, metadata in
+                    showVideoLibrary = false
+                    Task {
+                        await viewModel?.stageVideo(fileURL: fileURL, fileName: fileName, metadata: metadata)
+                    }
+                },
+                onDismiss: {
+                    showVideoLibrary = false
+                }
+            )
         }
         .sheet(isPresented: Binding(
             get: { viewModel?.showFormSheet ?? false },
@@ -104,7 +145,10 @@ struct ChatView: View {
                     capturedAt: vm.formCapturedAt,
                     clipCount: vm.formClipCount,
                     duration: vm.formDuration,
+                    thumbnail: vm.formThumbnail,
+                    submitError: vm.formSubmitError,
                     onSubmit: { formData in
+                        vm.formSubmitError = nil  // Clear previous error
                         Task { await vm.submitForm(assetId: assetId, formData: formData) }
                     }
                 )
@@ -115,7 +159,7 @@ struct ChatView: View {
             set: { viewModel?.showMetadataSheet = $0 }
         )) {
             if let vm = viewModel, let clip = vm.lastClip {
-                MetadataView(clip: clip, asset: vm.lastAsset)
+                MetadataView(clip: clip, asset: vm.lastAsset, thumbnail: vm.formThumbnail)
             }
         }
         .task {
@@ -123,73 +167,8 @@ struct ChatView: View {
             let vm = ChatViewModel(auth: auth, ws: ws)
             viewModel = vm
             
-            // Load message history
-            await vm.loadMessageHistory()
-            
-            // Connect WebSocket
+            // Fresh conversation — skip history, connect immediately
             vm.connectWebSocket()
-        }
-    }
-    
-    // MARK: - Video Picker Handler
-    
-    private func handleVideoPick(_ item: PhotosPickerItem?) async {
-        guard let item else { return }
-        
-        print("📹 [Picker] Video selected, loading transferable...")
-        
-        // Get video data reference
-        let movie: VideoTransferable
-        do {
-            guard let loaded = try await item.loadTransferable(type: VideoTransferable.self) else {
-                print("❌ [Picker] loadTransferable returned nil")
-                return
-            }
-            movie = loaded
-        } catch {
-            print("❌ [Picker] loadTransferable failed: \(error)")
-            return
-        }
-        
-        let fileName = movie.url.lastPathComponent
-        print("📹 [Picker] Video ready: \(fileName) at \(movie.url.path)")
-        
-        // Verify file exists
-        guard FileManager.default.fileExists(atPath: movie.url.path) else {
-            print("❌ [Picker] Video file not found at: \(movie.url.path)")
-            return
-        }
-        
-        // Create asset on server
-        if let asset = await viewModel?.createAsset(fileName: fileName, fileURL: movie.url) {
-            print("✅ Asset created: \(asset.slug)")
-            
-            // Extract real metadata from the video file
-            let metadata = await VideoMetadataExtractor.extract(from: movie.url)
-            print("📊 [Metadata] duration=\(metadata.duration)s resolution=\(metadata.resolution) codec=\(metadata.codec)")
-            
-            await viewModel?.uploadVideo(assetId: asset.id, fileURL: movie.url, metadata: metadata)
-            
-            // Clean up temp video file after upload (#18)
-            try? FileManager.default.removeItem(at: movie.url)
-        }
-    }
-}
-
-// MARK: - Video Transferable
-
-struct VideoTransferable: Transferable {
-    let url: URL
-    
-    static var transferRepresentation: some TransferRepresentation {
-        FileRepresentation(contentType: .movie) { movie in
-            SentTransferredFile(movie.url)
-        } importing: { received in
-            let tempURL = FileManager.default.temporaryDirectory
-                .appendingPathComponent(UUID().uuidString)
-                .appendingPathExtension("mov")
-            try FileManager.default.copyItem(at: received.file, to: tempURL)
-            return Self(url: tempURL)
         }
     }
 }

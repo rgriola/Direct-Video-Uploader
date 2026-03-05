@@ -68,35 +68,25 @@ export function setupWebSocket(io, fastify) {
         }
         userSockets.get(userId).add(socket.id);
 
-        // Only greet iOS users, and only once per session (skip admin & reconnects)
-        const isFirstConnect = !connectedUsers.has(userId);
+        // Track user for disconnect cleanup
         connectedUsers.add(userId);
 
         if (clientType === 'ios') {
             console.log(`✅ IOS connected: ${socket.userName} — iOS: ${iosSockets.size}`);
 
-            if (isFirstConnect) {
-                const greetingText = getGreeting(socket.userName);
-                socket.emit('message:new', {
-                    id: crypto.randomUUID(),
-                    userId: null,
-                    assetId: null,
-                    direction: 'INCOMING',
-                    messageType: 'GREETING',
-                    content: { text: greetingText },
-                    createdAt: new Date().toISOString(),
-                });
+            // Always send greeting — each app open = fresh conversation
+            const greetingText = getGreeting(socket.userName);
+            socket.emit('message:new', {
+                id: crypto.randomUUID(),
+                userId: null,
+                assetId: null,
+                direction: 'INCOMING',
+                messageType: 'GREETING',
+                content: { text: greetingText },
+                createdAt: new Date().toISOString(),
+            });
 
-                // Persist greeting (best-effort — don't block connection)
-                prisma.chatMessage.create({
-                    data: {
-                        userId,
-                        direction: 'INCOMING',
-                        messageType: 'GREETING',
-                        content: { text: greetingText },
-                    },
-                }).catch(err => console.error('Failed to persist greeting:', err.message));
-            }
+            // Greeting is ephemeral — not persisted (Option B: only persist meaningful events)
         }
 
         // ─── Client Events ─────────────────────────────────────
@@ -169,25 +159,11 @@ export function setupWebSocket(io, fastify) {
                         const replyText = `📱 Hey ${socket.userName}, I can't text just yet — send me your videos! Tap the ＋ button to pick a video from your camera roll.`;
                         const now = new Date().toISOString();
 
-                        // Store reply (best-effort)
-                        let replyId;
-                        try {
-                            const saved = await prisma.chatMessage.create({
-                                data: {
-                                    userId,
-                                    direction: 'INCOMING',
-                                    messageType: 'TEXT',
-                                    content: { text: replyText },
-                                },
-                            });
-                            replyId = saved.id;
-                        } catch (dbErr) {
-                            console.error('DB write failed (reply):', dbErr.message);
-                        }
+                        // Auto-reply is ephemeral — not persisted (Option B)
 
-                        // Always send reply — shape matches REST /api/messages so iOS can decode
+                        // Send reply — shape matches REST /api/messages so iOS can decode
                         socket.emit('message:new', {
-                            id: replyId || crypto.randomUUID(),
+                            id: crypto.randomUUID(),
                             userId: null,
                             assetId: assetId || null,
                             direction: 'INCOMING',

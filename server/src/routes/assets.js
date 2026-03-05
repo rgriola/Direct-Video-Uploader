@@ -30,30 +30,11 @@ export default async function assetRoutes(fastify) {
                 slug,
                 userId: request.user.id,
                 mediasourceId,
-                mediasourceUrl: `https://mediasource.com/${mediasourceId}`,
+                mediasourceUrl: `/clips/${slug}`,
                 originalFileName: fileName || null,
                 status: 'UPLOADING',
             },
         }));
-
-        // Send a WebSocket message to the user about asset creation
-        const io = fastify.io;
-        const userSockets = fastify.userSockets?.get(request.user.id);
-        if (userSockets) {
-            for (const socketId of userSockets) {
-                io.to(socketId).emit('message:new', {
-                    id: randomUUID(),
-                    userId: null,
-                    assetId: asset.id,
-                    direction: 'INCOMING',
-                    messageType: 'TEXT',
-                    content: {
-                        text: `🎬 Got it! Processing your upload...`,
-                    },
-                    createdAt: new Date().toISOString(),
-                });
-            }
-        }
 
         return {
             asset: {
@@ -111,6 +92,10 @@ export default async function assetRoutes(fastify) {
         // Get file stats
         const stats = await fs.stat(filePath);
 
+        // io + userSockets used later for form:request and upload:complete events
+        const io = fastify.io;
+        const userSockets = fastify.userSockets?.get(request.user.id);
+
         // Create clip record with original filename
         // Use client-provided metadata from iOS (fallback to defaults for missing fields)
         const metadata = {
@@ -152,8 +137,6 @@ export default async function assetRoutes(fastify) {
         }));
 
         // Push metadata + form request via WebSocket
-        const io = fastify.io;
-        const userSockets = fastify.userSockets?.get(request.user.id);
         const originalName = clip.originalFileName || asset.originalFileName || asset.slug;
 
         // Determine if we have meaningful metadata beyond just timestamps
@@ -218,36 +201,7 @@ export default async function assetRoutes(fastify) {
             }
         }
 
-        // Store chat messages (best-effort — don't fail upload over this)
-        try {
-            await prisma.chatMessage.createMany({
-                data: [
-                    {
-                        userId: request.user.id,
-                        assetId: id,
-                        direction: 'INCOMING',
-                        messageType: 'FORM_REQUEST',
-                        content: {
-                            text: `🎬 ${asset.slug} is being processed, here are the Mediasource details.`,
-                            mediasourceId: asset.mediasourceId,
-                            mediasourceUrl: asset.mediasourceUrl,
-                            originalFileName: originalName,
-                            userName: request.user.name,
-                            clipCount: 1,
-                            duration: metadata.duration || 0,
-                            gpsLat: metadata.gpsLat,
-                            gpsLon: metadata.gpsLon,
-                            capturedAt: metadata.capturedAt?.toISOString() || null,
-                            codec: metadata.codec !== 'Unknown' ? metadata.codec : null,
-                            resolution: metadata.resolution !== 'Unknown' ? metadata.resolution : null,
-                            hasRichMeta,
-                        },
-                    },
-                ],
-            });
-        } catch (err) {
-            console.error('Chat message store failed:', err.message);
-        }
+        // FORM_REQUEST is ephemeral — sent via WebSocket only, not persisted (Option B)
 
         return {
             clip: {
@@ -264,6 +218,34 @@ export default async function assetRoutes(fastify) {
                 status: updatedAsset.status,
             },
         };
+    });
+
+    /**
+     * GET /api/assets/mine
+     * Get all assets for the authenticated user (for archive list).
+     */
+    fastify.get('/api/assets/mine', {
+        preHandler: [fastify.authenticate],
+    }, async (request) => {
+        const assets = await prisma.asset.findMany({
+            where: { userId: request.user.id },
+            orderBy: { createdAt: 'desc' },
+            include: {
+                clips: { take: 1 },
+                formResponse: true,
+            },
+        });
+
+        // Convert BigInt to string for JSON serialization
+        const serialized = assets.map((a) => ({
+            ...a,
+            clips: a.clips.map((c) => ({
+                ...c,
+                fileSize: c.fileSize?.toString() || null,
+            })),
+        }));
+
+        return { assets: serialized };
     });
 
     /**
@@ -314,7 +296,10 @@ export default async function assetRoutes(fastify) {
         const { id } = request.params;
         const { slug, type, description, priority } = request.body || {};
 
-        const asset = await prisma.asset.findUnique({ where: { id } });
+        const asset = await prisma.asset.findUnique({
+            where: { id },
+            include: { clips: { take: 1 } },
+        });
         if (!asset || asset.userId !== request.user.id) {
             return reply.status(404).send({ error: 'Asset not found' });
         }
@@ -337,47 +322,41 @@ export default async function assetRoutes(fastify) {
             },
         });
 
-        // Push confirmation via WebSocket
+        // Push confirmation via WebSocket — include metadata for rich confirmation card
         const io = fastify.io;
         const userSockets = fastify.userSockets?.get(request.user.id);
+        const clip = asset.clips?.[0];
         if (userSockets) {
             for (const socketId of userSockets) {
                 io.to(socketId).emit('form:confirmed', {
                     assetId: id,
+                    slug: formResponse.slug || asset.slug,
                     mediasourceId: asset.mediasourceId,
                     mediasourceUrl: asset.mediasourceUrl,
+                    originalFileName: asset.originalFileName ?? clip?.originalFileName,
+                    capturedAt: clip?.capturedAt?.toISOString(),
+                    formType: formResponse.type,
+                    formDescription: formResponse.description,
+                    formPriority: formResponse.priority,
                     message: `🙌 High Five! I received your sheet, thank you. I'll text when the video is done.`,
                 });
             }
         }
 
-        // Store chat messages
-        await prisma.chatMessage.createMany({
-            data: [
-                {
-                    userId: request.user.id,
-                    assetId: id,
-                    direction: 'OUTGOING',
-                    messageType: 'FORM_SUBMITTED',
-                    content: {
-                        text: '✅ Form submitted',
-                        slug: formResponse.slug,
-                        type: formResponse.type,
-                        priority: formResponse.priority,
-                    },
+        // Persist user's form submission (meaningful event); confirmation is ephemeral (Option B)
+        await prisma.chatMessage.create({
+            data: {
+                userId: request.user.id,
+                assetId: id,
+                direction: 'OUTGOING',
+                messageType: 'FORM_SUBMITTED',
+                content: {
+                    text: '✅ Form submitted',
+                    slug: formResponse.slug,
+                    type: formResponse.type,
+                    priority: formResponse.priority,
                 },
-                {
-                    userId: request.user.id,
-                    assetId: id,
-                    direction: 'INCOMING',
-                    messageType: 'CONFIRMATION',
-                    content: {
-                        text: `🙌 High Five! I received your sheet, thank you. I'll text when the video is done.`,
-                        mediasourceId: asset.mediasourceId,
-                        mediasourceUrl: asset.mediasourceUrl,
-                    },
-                },
-            ],
+            },
         });
 
         return { formResponse };

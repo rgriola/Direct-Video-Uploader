@@ -152,3 +152,28 @@ enum MessageType {
   TEXT
   GREETING
 }
+
+// ─── Error Log (for future text/email notifications) ─────
+model ErrorLog {
+  id        String        @id @default(uuid())
+  userId    String?       @map("user_id")
+  assetId   String?       @map("asset_id")
+  source    String // "ios", "server", "dashboard"
+  category  String // "upload", "form", "websocket", "auth"
+  message   String
+  details   Json? // stack trace, request info, etc.
+  severity  ErrorSeverity @default(WARNING)
+  notified  Boolean       @default(false) // future: set true after text/email sent
+  createdAt DateTime      @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@index([createdAt])
+  @@map("error_logs")
+}
+
+enum ErrorSeverity {
+  INFO
+  WARNING
+  ERROR
+  CRITICAL
+}

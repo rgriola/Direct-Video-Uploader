@@ -1,0 +1,88 @@
+import SwiftUI
+
+/// Sent-upload card — stays in the chat thread after the user taps Send.
+/// Shows thumbnail, filename, date, location badge and a green checkmark.
+struct SentUploadBubble: View {
+    let thumbnail: UIImage?
+    let fileName: String
+    let createdDate: String?
+    let hasLocation: Bool
+    
+    var body: some View {
+        HStack {
+            Spacer(minLength: 60)
+            
+            VStack(alignment: .trailing, spacing: 4) {
+                // Bubble content
+                VStack(alignment: .leading, spacing: 0) {
+                    // Thumbnail
+                    if let thumb = thumbnail {
+                        Image(uiImage: thumb)
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 160)
+                            .clipped()
+                    }
+                    
+                    // File info + green checkmark
+                    HStack(spacing: 10) {
+                        VStack(alignment: .leading, spacing: 3) {
+                            // Filename
+                            Text(fileName)
+                                .font(.system(size: 13, weight: .medium, design: .monospaced))
+                                .foregroundStyle(.white)
+                                .lineLimit(1)
+                            
+                            // Created date
+                            if let date = createdDate {
+                                Text(date)
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(.white.opacity(0.6))
+                            }
+                            
+                            // Location badge
+                            if hasLocation {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "location.fill")
+                                        .font(.system(size: 10))
+                                    Text("Location included")
+                                        .font(.system(size: 11))
+                                }
+                                .foregroundStyle(Color(hex: "30D158"))
+                            }
+                        }
+                        
+                        Spacer()
+                        
+                        // Green checkmark — sent
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 34))
+                            .foregroundStyle(Color(hex: "30D158"))
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+                }
+                .background(
+                    LinearGradient(
+                        colors: [Color(hex: "1C3A5F"), Color(hex: "0A1E3D")],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .clipShape(RoundedRectangle(cornerRadius: 18))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 18)
+                        .stroke(Color(hex: "30D158").opacity(0.3), lineWidth: 1)
+                )
+                
+                // Label
+                Text("Sent")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.white.opacity(0.3))
+                    .padding(.horizontal, 4)
+            }
+        }
+        .padding(.vertical, 2)
+    }
+}

@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Root view — shows Login or Chat depending on auth state.
+/// Root view — shows Login or Chat/Archive tabs depending on auth state.
 struct ContentView: View {
     @Environment(AuthService.self) private var auth
     @Environment(WebSocketService.self) private var ws
@@ -8,7 +8,20 @@ struct ContentView: View {
     var body: some View {
         Group {
             if auth.isAuthenticated {
-                ChatView()
+                TabView {
+                    ChatView()
+                        .tabItem {
+                            Image(systemName: "bubble.left.fill")
+                            Text("Chat")
+                        }
+                    
+                    ArchiveListView()
+                        .tabItem {
+                            Image(systemName: "archivebox.fill")
+                            Text("Archive")
+                        }
+                }
+                .tint(Color(hex: "0A84FF"))
             } else {
                 LoginView()
             }

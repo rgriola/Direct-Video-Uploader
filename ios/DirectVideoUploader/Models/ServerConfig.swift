@@ -41,7 +41,7 @@ enum ServerConfig {
         #if DEBUG
         // In Debug builds on a physical device, default to the LAN IP.
         // The user can change this via the server URL editor on the login screen.
-        return URL(string: "http://192.168.1.89:3000")!
+        return URL(string: "http://192.168.0.107:3000")!
         #else
         return URL(string: productionURL)!
         #endif
@@ -82,8 +82,10 @@ enum ServerConfig {
     
     // MARK: - API Endpoints
     
+    /// Build a full URL from a path. Uses string interpolation (not appendingPathComponent)
+    /// to avoid percent-encoding issues with slashes.
     static func url(for path: String) -> URL {
-        baseURL.appendingPathComponent(path)
+        URL(string: "\(baseURL.absoluteString)\(path)")!
     }
     
     // Auth
@@ -92,12 +94,16 @@ enum ServerConfig {
     
     // Assets
     static var assetsURL: URL { url(for: "/api/assets") }
+    static var myAssetsURL: URL { url(for: "/api/assets/mine") }
     static func assetURL(_ id: String) -> URL { url(for: "/api/assets/\(id)") }
     static func uploadURL(_ id: String) -> URL { url(for: "/api/assets/\(id)/upload") }
     static func formURL(_ id: String) -> URL { url(for: "/api/assets/\(id)/form") }
     
     // Messages
     static var messagesURL: URL { url(for: "/api/messages") }
+    
+    // Error logging
+    static var errorsURL: URL { url(for: "/api/errors") }
     
     // Health
     static var healthURL: URL { url(for: "/api/health") }

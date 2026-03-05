@@ -5,6 +5,7 @@ struct MessageBubble: View {
     let message: ChatMessage
     var onTapMetadata: (() -> Void)?
     var onTapForm: (() -> Void)?
+    var onTapViewClip: (() -> Void)?
     
     private var isOutgoing: Bool { message.isOutgoing }
     
@@ -69,20 +70,85 @@ struct MessageBubble: View {
     }
     
     private var confirmationContent: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 8) {
+            // Main confirmation text
             Text(message.content.text ?? "Upload confirmed")
                 .font(.system(size: 15))
                 .foregroundStyle(Color(hex: "E5E5EA"))
             
-            if let url = message.content.mediasourceUrl {
-                Link(destination: URL(string: url) ?? URL(string: "https://mediasource.com")!) {
+            // Metadata details — mediasource ID, filename, date
+            VStack(alignment: .leading, spacing: 4) {
+                if let msId = message.content.mediasourceId {
                     HStack(spacing: 4) {
-                        Image(systemName: "link")
-                            .font(.system(size: 11))
-                        Text("Open in Mediasource")
-                            .font(.system(size: 12, weight: .medium))
+                        Text("🔗")
+                            .font(.system(size: 12))
+                        Text(msId)
+                            .font(.system(size: 14, weight: .bold, design: .monospaced))
+                            .foregroundStyle(Color(hex: "007AFF"))
                     }
-                    .foregroundStyle(Color(hex: "007AFF"))
+                }
+                
+                if let fileName = message.content.originalFileName {
+                    HStack(spacing: 4) {
+                        Text("📄")
+                            .font(.system(size: 12))
+                        Text(fileName)
+                            .font(.system(size: 13, design: .monospaced))
+                            .foregroundStyle(Color(hex: "98989D"))
+                            .lineLimit(1)
+                    }
+                }
+                
+                if let dateStr = message.content.capturedAt {
+                    HStack(spacing: 4) {
+                        Text("🕐")
+                            .font(.system(size: 12))
+                        Text(formatShortDate(dateStr))
+                            .font(.system(size: 13))
+                            .foregroundStyle(Color(hex: "98989D"))
+                    }
+                }
+            }
+            
+            // Action buttons — View (green) + Metadata (blue)
+            HStack(spacing: 12) {
+                // View button — opens clip in browser
+                if let slug = message.content.slug,
+                   let clipURL = URL(string: "\(ServerConfig.baseURL)/clips/\(slug)") {
+                    Button {
+                        UIApplication.shared.open(clipURL)
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "play.circle.fill")
+                                .font(.system(size: 13))
+                            Text("View")
+                                .font(.system(size: 13, weight: .semibold))
+                        }
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .background(Color(hex: "30D158"))
+                        .foregroundStyle(.white)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                    }
+                }
+                
+                // Metadata button — opens metadata sheet
+                if onTapMetadata != nil {
+                    Button {
+                        onTapMetadata?()
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "info.circle.fill")
+                                .font(.system(size: 13))
+                            Text("Metadata")
+                                .font(.system(size: 13, weight: .semibold))
+                        }
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .background(Color(hex: "007AFF"))
+                        .foregroundStyle(.white)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                    }
                 }
             }
         }

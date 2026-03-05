@@ -7,6 +7,8 @@
     "dev:server": "cd server && npm run dev",
     "dev:admin": "cd admin && npm run dev",
     "build:admin": "cd admin && npm run build",
-    "setup": "cd server && npm install && cd ../admin && npm install"
+    "setup": "cd server && npm install && cd ../admin && npm install",
+    "render:build": "./scripts/render-build.sh",
+    "start": "cd server && node src/index.js"
   }
 }

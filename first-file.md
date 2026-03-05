@@ -209,21 +209,84 @@ The user fills in the editable fields and taps Submit. This is the "context" the
 
 ...
 
-**_ Task _**
+**_ Task _** (done )
 
 - review the project and develop tests for the project.
 
 **Context**
 
-- We have a working demo of the project. 
-- We have not run substantial testing any specific areas. 
-- I am looking for speed improvements for the Dashboard, Server i/o, and improving reliability. 
+- We have a working demo of the project.
+- We have not run substantial testing any specific areas.
+- I am looking for speed improvements for the Dashboard, Server i/o, and improving reliability.
 
 **_ Instructions _**
 
-- Show me a plan for agent testing the project, place into a markdown. 
-- review copilot-instructions.md for technical guidence, 
+- Show me a plan for agent testing the project, place into a markdown, no coding.
+- review copilot-instructions.md for technical guidence,
 - Review TRIAD.md, PROJECT_SPEC.md, PROJECT_STATUS.md
-- We cannot make technical changes yet unless those would improve produciton. 
-- this target for concurrent users is 1000. 
-- I am open to suggestions
+- We cannot make technical changes yet unless those would improve produciton.
+- this target for concurrent users is 1000.
+- I am open to suggestions.
+
+....
+**_ TASK _** (done)
+
+- Change default iOS Text-Area Behavior when user opens iOS.
+
+**_ Context _**
+
+- Default Text Area, Conversation is too busy with old text messages.
+
+**_ Instructions _**
+
+- One Conversation = One Upload (for now)
+- Always open to new conversation (since this is one server)
+- When user opens App - Conversation UI should have 1 message. "Good Morning [User First Name]..." This is continget with iOS and Server handshake. - if waiting for connection use "..." Icon - then Change to Greeting like a actual text message.
+- Previous Messages should be removed - One conversation = One Upload.
+
+... actual flow Needs to flip
+
+1. User picks video in iOS app
+2. iOS → POST /api/assets → Server creates Asset (UPLOADING) + Clip shell
+3. iOS → POST /api/assets/:id/upload → Server saves file, creates Clip (READY),
+   marks Asset = READY
+4. Server → WS upload:complete → iOS shows metadata
+5. Server → WS form:request → iOS opens the form sheet
+6. iOS → POST /api/assets/:id/form → Server saves FormResponse, confirms
+7. Server → WS form:confirmed → iOS shows "High Five" confirmation
+
+Actuall Form
+Upload starts → Form shown immediately (parallel)
+↓ ↓
+Video processing User fills form
+↓ ↓
+Both complete → Asset finalized
+error handling
+...
+
+**_ TASK _**
+
+- Changes to iOS Add Details Form
+
+  **_*CONTEXT*_**
+
+- Add Detail User Form is Almost Ready
+
+  **_ Instructions _**
+
+- Change all text to white on form.
+- Form background can be 50% lighter in color. - looks like chat area, need to visially show state change.
+- Add thumbnail image to clip detail - should come from video info - i believe or apple process.
+- Slug and Description are requried fields. The Form should not submit without these fields being validated.
+
+- add a red asterisk to SLUG* and DESCRIPTION*
+- Slug and Description must be sanitized only allowing Letters Numbers - .
+- Priority should default to Low.
+
+.. add
+**_ TASK _**
+
+- User Upload Card should stay in the Text Chain Flow as confirmation to the user and action has taken place, the Up Arrow can be a "Sent" or Green Check Mark.
+- The server message "Got It! Processing ..." should show some basic Metadata like the mediasource number and link, file name, Creation Data. Again a confirmation of the process working. This should only be trigged once the Form is submitted.
+
+In the Text Flow Right After the greeting my Upload should be in the Text Chain. This shows the upload at least was started. -> then once the upload and form are submitted >> Got It!!! Message.

@@ -1,8 +1,8 @@
 # Direct Video Uploader — Project Status
 
-> **Last Updated:** March 3, 2026 · 11:00 PM MST
-> **Current Phase:** Phase 2 — iOS Demo App (security audit complete)
-> **Overall Progress:** ████████████████████ 95%
+> **Last Updated:** March 4, 2026 · Evening MST
+> **Current Phase:** Phase 2 complete → Phase 3 (Render + Cloud + Mux) starting
+> **Overall Progress:** ████████████████████ 100% (Phase 2) · Phase 3 in planning
 
 ---
 
@@ -10,7 +10,7 @@
 
 The **Direct Video Uploader** is a mobile-first video upload platform disguised as a text conversation. Field crew members "text" videos to the **Mediasource Fixer** server, which processes them the way a news assignment desk operates — fast, structured, and integrated with Slack.
 
-We've completed the **interactive chat demo** (HTML prototype), **project specification** (v4), the **Phase 1 server foundation** (Node.js API, WebSocket, PostgreSQL, auth, admin dashboard), the **Phase 2 — iOS Demo App** core flow (login → chat → video upload → form → confirmation), and the **Web Clip Viewer** (server-rendered at `/clips/:slug`). New this session: server response intelligence (time-of-day greetings, personalization, debounce), real metadata extraction via AVAsset on iOS, Slack gating with explicit "Post to Slack" button, restructured iOS forms (read-only metadata + editable fields), and git repo initialized.
+We've completed the **interactive chat demo** (HTML prototype), **project specification** (v4), the **Phase 1 server foundation** (Node.js API, WebSocket, PostgreSQL, auth, admin dashboard), the **Phase 2 — iOS Demo App** core flow (login → chat → video upload → form → confirmation → archive), and the **Web Clip Viewer** (server-rendered at `/clips/:slug`). Latest session (Mar 4): client-side error logging to the DB, View/Metadata buttons on High Five confirmation, Archive tab with bottom tab bar, follow-up message with 10 random funny phrases, and URL fixes for the clip viewer button.
 
 ---
 
@@ -142,6 +142,9 @@ cd ios && xcodegen generate && xcodebuild -project DirectVideoUploader.xcodeproj
 | `GET`  | `/api/admin/status`         | ✅ Triad health        |
 | `WS`   | `/socket.io/`               | ✅                     |
 | `POST` | `/api/admin/cleanup-assets` | ✅ Stale asset cleanup |
+| `GET`  | `/api/assets/mine`          | ✅ User's assets list  |
+| `POST` | `/api/errors`               | ✅ Client error log    |
+| `GET`  | `/api/admin/errors`         | ✅ Retrieve errors     |
 | `GET`  | `/`                         | ✅ Dashboard           |
 | `GET`  | `/clips/:slug`              | ✅ Web clip viewer     |
 
@@ -166,6 +169,16 @@ cd ios && xcodegen generate && xcodebuild -project DirectVideoUploader.xcodeproj
 | Confirmation message               | ✅ Built           | `form:confirmed` → Mediasource link in chat    |
 | Slack post trigger                 | ✅ Built           | Auto-triggers after form submit, 1.5s delay    |
 | TestFlight build                   | 🔲 Not started     | For demo distribution                          |
+
+**Features Added (Mar 4 — Session):**
+
+- **Client error logging** — `POST /api/errors` endpoint persists iOS errors to `client_errors` DB table (source, category, message, severity, metadata, userId, deviceInfo). `reportError()` utility in `ChatViewModel` calls the endpoint on failures.
+- **View & Metadata buttons on High Five** — Confirmation bubble now has green "View" button (opens `/clips/:slug` in browser) and blue "Metadata" button (opens MetadataView sheet).
+- **View button URL fix** — Was using `appendingPathComponent("/clips/...")` which percent-encoded slashes. Switched to string interpolation matching MetadataView's working approach.
+- **Follow-up message with random phrases** — 1 second after High Five, a `.greeting` bubble appears with one of 10 random phrases (e.g., "smoother than a dolly shot", "fastest upload this side of the Mississippi", "cloud butler just filed your clip").
+- **Archive tab (bottom tab bar)** — New `TabView` in `ContentView` with Chat and Archive tabs. Archive fetches from `GET /api/assets/mine` and shows expandable rows with metadata, form response fields, status pills, and a View button.
+- **`GET /api/assets/mine` endpoint** — Returns authenticated user's assets ordered by `createdAt` desc, includes first clip and form response. BigInt `fileSize` converted to string.
+- **`FormResponse` model** — New Codable struct in `Asset.swift` (id, assetId, slug, type, description, priority, submittedAt). `Asset` now includes optional `formResponse` field.
 
 **Bugs Fixed (Mar 3 — Evening Session):**
 
@@ -231,18 +244,24 @@ cd ios && xcodegen generate && xcodebuild -project DirectVideoUploader.xcodeproj
 
 ---
 
-### 🔲 Milestone 6 — Integrations & Polish (Phase 3)
+### ⚡ Milestone 6 — Live Demo Stack (Phase 3) ← **IN PROGRESS**
 
-**Target: Week of Mar 17, 2026**
+**Started: Mar 4, 2026**
 
-| Deliverable                        | Status         | Notes                                                         |
-| ---------------------------------- | -------------- | ------------------------------------------------------------- |
-| Video streaming (Mux or CF Stream) | 🔲 Not started | Replace local file storage                                    |
-| Slack webhook (real)               | 🔲 Not started | Replace simulated posts                                       |
-| Cloud storage (R2 or B2)           | 🔲 Not started | Video file storage                                            |
-| Deploy server to Render            | 🔲 Not started | Production deployment                                         |
-| Admin UI (expanded)                | � Partial      | React dashboard running; needs asset detail, log persistence  |
-| Real metadata extraction           | ✅ Done        | iOS AVAsset extracts real metadata (not ffprobe — native iOS) |
+Render is the preview environment (stand-in for eventual company production system). TestFlight couples with live Render + Cloud + Mux.
+
+| Deliverable              | Status           | Notes                                                                                                              |
+| ------------------------ | ---------------- | ------------------------------------------------------------------------------------------------------------------ |
+| Render deployment prep   | ✅ Done          | `render.yaml`, `render-build.sh`, SSL-aware pg pool, `trustProxy`, conditional pino-pretty, `NODE_ENV` detection   |
+| Deploy server to Render  | 🔲 Ready to push | Push to GitHub → Render auto-deploys via `render.yaml` blueprint. Env vars auto-configured.                        |
+| Cloud storage (R2 or B2) | 🔲 Not started   | Replace local `uploads/` with Cloudflare R2 or Backblaze B2. Presigned URLs for upload + playback.                 |
+| Video streaming (Mux)    | 🔲 Not started   | Mux ingestion after upload, adaptive HLS playback in clip viewer. Replace `<video src="local">`.                   |
+| Slack webhook (real)     | 🔲 Not started   | Replace simulated posts with Incoming Webhook to real workspace                                                    |
+| TestFlight build         | 🔲 Not started   | Couples with live Render + Cloud + Mux — needs real backend URL in `ServerConfig`                                  |
+| Admin UI (expanded)      | ⚠️ Partial       | React dashboard running; needs asset detail, log persistence                                                       |
+| Real metadata extraction | ✅ Done          | iOS AVAsset extracts real metadata (not ffprobe — native iOS)                                                      |
+| Parallel form + upload   | 🔲 Not started   | Show form at upload start (not after); wait for both to finalize asset. Needed when real transcoding adds latency. |
+| Ephemeral chat cleanup   | ✅ Done          | Option B: greeting, auto-reply, form-request, confirmation no longer persisted to DB — sent via WS only.           |
 
 ---
 
@@ -345,7 +364,7 @@ Direct-Video-Uploader/
 │ ├── App/ # SwiftUI app entry point
 │ ├── Models/ # User, Asset, ChatMessage, ServerConfig
 │ ├── Services/ # AuthService, ChatViewModel, WebSocketService, VideoUploadService, VideoMetadataExtractor
-│ └── Views/ # Auth, Chat, Form, Metadata views
+│ └── Views/ # Auth, Chat, Form, Metadata, Archive views
 ├── docs/
 │ ├── PROJECT_SPEC_v1.md # Spec v1 (MMS approach)
 │ └── PROJECT_SPEC_v2.md # Spec v2 (Direct Upload pivot)
@@ -366,9 +385,10 @@ Direct-Video-Uploader/
 │ └── utils.js # PIN hashing, slug gen, ID gen
 ├── routes/
 │ ├── auth.js # Login + profile + lastLoginAt tracking
-│ ├── assets.js # Asset CRUD + upload + form
+│ ├── assets.js # Asset CRUD + upload + form + /mine
 │ ├── admin.js # Triad status, stats, user/asset lists
-│ └── clips.js # Web clip viewer (GET /clips/:slug)
+│ ├── clips.js # Web clip viewer (GET /clips/:slug)
+│ └── errors.js # Client error logging (POST + GET)
 └── ws/
 └── handler.js # WebSocket + client type tracking
 
@@ -388,53 +408,67 @@ Direct-Video-Uploader/
 
 ## Decision Log
 
-| Date   | Decision                          | Rationale                                                                                   |
-| ------ | --------------------------------- | ------------------------------------------------------------------------------------------- |
-| Feb 28 | Pivot from MMS to Direct Upload   | MMS caps at 3.5 MB; direct upload gives full resolution + richer UX                         |
-| Mar 1  | "App IS a text conversation"      | Simplest mental model for field crew; reduces training friction                             |
-| Mar 1  | Mediasource Fixer branding        | Familiar identity for newsroom users                                                        |
-| Mar 2  | WebSocket (Socket.IO)             | Real-time bidirectional messaging; no polling overhead                                      |
-| Mar 2  | Fastify over Express              | Faster, better plugin system, async-first                                                   |
-| Mar 2  | Prisma 7 with pg adapter          | Type-safe ORM, great migrations, Prisma 7 requires driver adapters                          |
-| Mar 2  | Render for hosting                | WebSocket support, managed PostgreSQL, persistent services (vs Vercel serverless)           |
-| Mar 2  | Simple auth (Phone# + PIN)        | Demo-appropriate; no SMS verification overhead                                              |
-| Mar 2  | Local file uploads (demo)         | Production will use R2/B2; no cloud setup needed for Phase 1                                |
-| Mar 2  | Mock metadata (demo)              | Production will use ffprobe; keeps Phase 1 simple                                           |
-| Mar 2  | Native WS over Socket.IO Swift    | `URLSessionWebSocketTask` with manual Socket.IO protocol framing; no third-party dependency |
-| Mar 2  | `127.0.0.1` not `localhost`       | iOS Simulator resolves `localhost` to IPv6 `::1`; Node server binds IPv4 only               |
-| Mar 2  | Copilot instructions file         | Moved from `agent-guide.md` to `.github/copilot-instructions.md` (auto-loaded)              |
-| Mar 2  | DB pool size 5 → 20               | Concurrent dashboard + WS queries exhausted small pool, causing 5s timeouts                 |
-| Mar 2  | `PhotosPicker` not `PHPicker`     | SwiftUI-native picker avoids UIKit bridging; `.videos` filter, `Transferable` protocol      |
-| Mar 2  | Stream multipart to temp file     | `VideoUploadService` writes multipart body to disk in 1MB chunks — avoids memory pressure   |
-| Mar 2  | Codable fields must be optional   | Server responses vary by endpoint; non-optional fields cause silent `JSONDecoder` failures  |
-| Mar 3  | React admin dashboard             | Replaced vanilla HTML with React 19 + Vite 6 + TypeScript + Tailwind v4 + TanStack Query    |
-| Mar 3  | Triad launcher (`scripts/dev.js`) | Single `npm run dev` command orchestrates DB + Server + Admin with smart log filtering      |
-| Mar 3  | Live-only dashboard               | Removed all simulated actions; dashboard shows only real data with neutral fallback states  |
-| Mar 3  | WS client type tracking           | Socket.IO connections tagged as `ios` or `admin`; enables accurate triad status reporting   |
-| Mar 3  | Remove client-side WS ping        | Engine.IO 4 uses server-initiated pings; client ping timer caused 25s disconnect loop       |
-| Mar 3  | `io.of('/').sockets.size` metric  | Replaced `engine.clientsCount` — gives accurate authenticated socket count, not transports  |
-| Mar 3  | Admin uses Admin User credentials | Dashboard auto-logins as Admin User (`8001234567`) not David Burgess                        |
-| Mar 3  | Stale asset cleanup endpoint      | `POST /api/admin/cleanup-assets` — Prisma ORM delete of stuck UPLOADING assets              |
-| Mar 3  | Real file size in WS event        | iOS `FileManager.attributesOfItem` gets actual bytes before `sendVideoUpload`               |
-| Mar 3  | Server response intelligence      | Time-of-day greeting, debounce (3s window), personalization, fires once per session         |
-| Mar 3  | Remove auto-Slack post            | Replaced with explicit "Post to Slack" button — user controls when Slack is notified        |
-| Mar 3  | Real metadata via AVAsset         | iOS extracts duration, resolution, codec, GPS, device info natively — no ffprobe needed     |
-| Mar 3  | iOS form restructuring            | Read-only metadata fields above editable fields; MetadataView wired to show extracted data  |
-| Mar 3  | Web clip viewer (server-rendered) | `GET /clips/:slug` — dark theme, metadata grid, video player, no auth required              |
-| Mar 3  | Separate Prisma queries           | `findFirst` with `include` times out in Prisma 7 + pg adapter — split into sequential calls |
-| Mar 3  | `wildcard: false` on static       | `@fastify/static` was intercepting dynamic routes; fixed with wildcard option               |
-| Mar 3  | Admin links to clip viewer        | Asset list rows are `<a href="/clips/:slug">` opening in new tab                            |
-| Mar 3  | Git repo initialized              | `.gitignore` (68 files committed), reference/design files excluded                          |
-| Mar 3  | Full 25-issue security/perf audit | See `TODO.md` — 20 of 25 fixed. Covers auth, XSS, JWT, WS leaks, DB indexes, dead code      |
-| Mar 3  | Random JWT secret fallback        | `crypto.randomBytes(64)` when `JWT_SECRET` not set — warns in console                       |
-| Mar 3  | Admin route auth hardening        | All 7 admin routes now require JWT `preHandler`                                             |
-| Mar 3  | XSS escaping in clip viewer       | `escapeHtml()` on all user-controlled interpolations                                        |
-| Mar 3  | WS exponential backoff            | Max 10 retries, delay doubles each attempt (3s → 60s cap)                                   |
-| Mar 3  | URLSession leak fix               | `invalidateAndCancel()` on reconnect + cleanup                                              |
-| Mar 3  | Upload handler DB optimization    | Merged 6 sequential queries → 3 (clip create with metadata, single asset update)            |
-| Mar 3  | DB indexes on FK columns          | `@@index` on `assets.userId`, `clips.assetId`, `chat_messages.userId`                       |
-| Mar 3  | Dead code removal                 | Removed `slack:post` handler, `greeting` handler, `sendFormSubmit`, `sendSlackPost`         |
-| Mar 3  | Selective dashboard invalidation  | `refreshDashboard(eventType)` invalidates only relevant query keys per socket event         |
+| Date   | Decision                             | Rationale                                                                                   |
+| ------ | ------------------------------------ | ------------------------------------------------------------------------------------------- |
+| Feb 28 | Pivot from MMS to Direct Upload      | MMS caps at 3.5 MB; direct upload gives full resolution + richer UX                         |
+| Mar 1  | "App IS a text conversation"         | Simplest mental model for field crew; reduces training friction                             |
+| Mar 1  | Mediasource Fixer branding           | Familiar identity for newsroom users                                                        |
+| Mar 2  | WebSocket (Socket.IO)                | Real-time bidirectional messaging; no polling overhead                                      |
+| Mar 2  | Fastify over Express                 | Faster, better plugin system, async-first                                                   |
+| Mar 2  | Prisma 7 with pg adapter             | Type-safe ORM, great migrations, Prisma 7 requires driver adapters                          |
+| Mar 2  | Render for hosting                   | WebSocket support, managed PostgreSQL, persistent services (vs Vercel serverless)           |
+| Mar 2  | Simple auth (Phone# + PIN)           | Demo-appropriate; no SMS verification overhead                                              |
+| Mar 2  | Local file uploads (demo)            | Production will use R2/B2; no cloud setup needed for Phase 1                                |
+| Mar 2  | Mock metadata (demo)                 | Production will use ffprobe; keeps Phase 1 simple                                           |
+| Mar 2  | Native WS over Socket.IO Swift       | `URLSessionWebSocketTask` with manual Socket.IO protocol framing; no third-party dependency |
+| Mar 2  | `127.0.0.1` not `localhost`          | iOS Simulator resolves `localhost` to IPv6 `::1`; Node server binds IPv4 only               |
+| Mar 2  | Copilot instructions file            | Moved from `agent-guide.md` to `.github/copilot-instructions.md` (auto-loaded)              |
+| Mar 2  | DB pool size 5 → 20                  | Concurrent dashboard + WS queries exhausted small pool, causing 5s timeouts                 |
+| Mar 2  | `PhotosPicker` not `PHPicker`        | SwiftUI-native picker avoids UIKit bridging; `.videos` filter, `Transferable` protocol      |
+| Mar 2  | Stream multipart to temp file        | `VideoUploadService` writes multipart body to disk in 1MB chunks — avoids memory pressure   |
+| Mar 2  | Codable fields must be optional      | Server responses vary by endpoint; non-optional fields cause silent `JSONDecoder` failures  |
+| Mar 3  | React admin dashboard                | Replaced vanilla HTML with React 19 + Vite 6 + TypeScript + Tailwind v4 + TanStack Query    |
+| Mar 3  | Triad launcher (`scripts/dev.js`)    | Single `npm run dev` command orchestrates DB + Server + Admin with smart log filtering      |
+| Mar 3  | Live-only dashboard                  | Removed all simulated actions; dashboard shows only real data with neutral fallback states  |
+| Mar 3  | WS client type tracking              | Socket.IO connections tagged as `ios` or `admin`; enables accurate triad status reporting   |
+| Mar 3  | Remove client-side WS ping           | Engine.IO 4 uses server-initiated pings; client ping timer caused 25s disconnect loop       |
+| Mar 3  | `io.of('/').sockets.size` metric     | Replaced `engine.clientsCount` — gives accurate authenticated socket count, not transports  |
+| Mar 3  | Admin uses Admin User credentials    | Dashboard auto-logins as Admin User (`8001234567`) not David Burgess                        |
+| Mar 3  | Stale asset cleanup endpoint         | `POST /api/admin/cleanup-assets` — Prisma ORM delete of stuck UPLOADING assets              |
+| Mar 3  | Real file size in WS event           | iOS `FileManager.attributesOfItem` gets actual bytes before `sendVideoUpload`               |
+| Mar 3  | Server response intelligence         | Time-of-day greeting, debounce (3s window), personalization, fires once per session         |
+| Mar 3  | Remove auto-Slack post               | Replaced with explicit "Post to Slack" button — user controls when Slack is notified        |
+| Mar 3  | Real metadata via AVAsset            | iOS extracts duration, resolution, codec, GPS, device info natively — no ffprobe needed     |
+| Mar 3  | iOS form restructuring               | Read-only metadata fields above editable fields; MetadataView wired to show extracted data  |
+| Mar 3  | Web clip viewer (server-rendered)    | `GET /clips/:slug` — dark theme, metadata grid, video player, no auth required              |
+| Mar 3  | Separate Prisma queries              | `findFirst` with `include` times out in Prisma 7 + pg adapter — split into sequential calls |
+| Mar 3  | `wildcard: false` on static          | `@fastify/static` was intercepting dynamic routes; fixed with wildcard option               |
+| Mar 3  | Admin links to clip viewer           | Asset list rows are `<a href="/clips/:slug">` opening in new tab                            |
+| Mar 3  | Git repo initialized                 | `.gitignore` (68 files committed), reference/design files excluded                          |
+| Mar 3  | Full 25-issue security/perf audit    | See `TODO.md` — 20 of 25 fixed. Covers auth, XSS, JWT, WS leaks, DB indexes, dead code      |
+| Mar 3  | Random JWT secret fallback           | `crypto.randomBytes(64)` when `JWT_SECRET` not set — warns in console                       |
+| Mar 3  | Admin route auth hardening           | All 7 admin routes now require JWT `preHandler`                                             |
+| Mar 3  | XSS escaping in clip viewer          | `escapeHtml()` on all user-controlled interpolations                                        |
+| Mar 3  | WS exponential backoff               | Max 10 retries, delay doubles each attempt (3s → 60s cap)                                   |
+| Mar 3  | URLSession leak fix                  | `invalidateAndCancel()` on reconnect + cleanup                                              |
+| Mar 3  | Upload handler DB optimization       | Merged 6 sequential queries → 3 (clip create with metadata, single asset update)            |
+| Mar 3  | DB indexes on FK columns             | `@@index` on `assets.userId`, `clips.assetId`, `chat_messages.userId`                       |
+| Mar 3  | Dead code removal                    | Removed `slack:post` handler, `greeting` handler, `sendFormSubmit`, `sendSlackPost`         |
+| Mar 3  | Selective dashboard invalidation     | `refreshDashboard(eventType)` invalidates only relevant query keys per socket event         |
+| Mar 4  | Client error logging to DB           | `POST /api/errors` persists iOS errors to `client_errors` table; `reportError()` utility    |
+| Mar 4  | View + Metadata buttons on High Five | Confirmation bubble has green View (opens clip) and blue Metadata (opens sheet) buttons     |
+| Mar 4  | View button URL string interpolation | `appendingPathComponent` percent-encodes slashes; switched to `URL(string:)` interpolation  |
+| Mar 4  | Random follow-up phrases (10)        | 1s after High Five, random `.greeting` bubble from 10 funny phrases using `randomElement()` |
+| Mar 4  | Bottom tab bar (Chat \| Archive)     | `TabView` in `ContentView`; Archive fetches `GET /api/assets/mine` with expandable rows     |
+| Mar 4  | `FormResponse` model on Asset        | Codable struct for form response data; `Asset.formResponse` optional field for archive rows |
+| Mar 4  | Render = preview environment         | Render deployment is a stand-in for company production; TestFlight couples with live stack  |
+| Mar 4  | `render.yaml` Blueprint              | Defines web service + PostgreSQL DB; auto-deploys from GitHub `main` branch                 |
+| Mar 4  | `render-build.sh` script             | Build: install deps, build admin, generate Prisma, push schema, seed DB — all in one        |
+| Mar 4  | SSL-aware pg Pool                    | `ssl: { rejectUnauthorized: false }` when `NODE_ENV=production` (Render managed PG)         |
+| Mar 4  | Conditional pino-pretty              | Pretty logs in dev, raw JSON in production (Render captures structured logs)                |
+| Mar 4  | `trustProxy` in production           | Fastify trusts Render's reverse proxy for correct client IP headers                         |
+| Mar 4  | `url(for:)` string interpolation     | ServerConfig.url(for:) switched from `appendingPathComponent` to `URL(string:)` for safety  |
+| Mar 4  | `.env.example` for documentation     | Template with all env vars (DB, auth, Slack, Mux, R2) — gitignored `.env` stays local       |
 
 ---
 
@@ -458,11 +492,22 @@ Direct-Video-Uploader/
 
 ## Next Actions
 
-1. **iOS build verification** — Run XcodeGen + Xcode build to verify Swift changes compile
-2. **End-to-end test** — Login → upload → "Show Details" (fix #1 was biggest user-facing fix)
-3. **TestFlight build** — For demo distribution
-4. **Set up Render deployment** — Push server to Render with managed PostgreSQL, set `JWT_SECRET` env var
-5. **Real Slack webhooks** — Replace simulated posts with actual Slack Incoming Webhooks (Phase 3)
-6. **Cloud storage (R2/B2)** — Replace local file uploads with cloud storage
-7. **Video streaming (Mux/CF Stream)** — Replace `<video>` tag with adaptive streaming
-8. **Deferred security items** — Rate limiting (#22), CORS (#24) before production deploy
+### Now — Phase 3: Live Demo Stack
+
+1. ~~**Deploy server to Render**~~ — ✅ Prep done (`render.yaml`, build script, SSL, env detection). **Next: push to GitHub and connect Render.**
+2. **Cloud storage (Cloudflare R2 or Backblaze B2)** — Replace local `uploads/` directory. Implement presigned upload URLs so iOS uploads directly to cloud. Presigned read URLs for clip viewer playback.
+3. **Mux video streaming** — After upload lands in cloud storage, trigger Mux ingestion. Replace `<video src="local">` with Mux HLS player in clip viewer. Adaptive bitrate for any network.
+4. ~~**Update iOS `ServerConfig` for Render**~~ — ✅ Done. `productionURL` + simulator/device/debug/release detection already in place.
+5. **TestFlight build** — With live Render backend, cloud storage, and Mux streaming all wired up.
+
+### Soon — Polish & Integrations
+
+6. **Real Slack webhooks** — Replace simulated posts with actual Slack Incoming Webhooks
+7. **End-to-end testing** — Full flow on live stack (login → upload → form → clip viewer → Slack)
+8. **Deferred security items** — Rate limiting (#22), CORS (#24) before wider distribution
+
+### Later — Production Hardening
+
+9. **Parallel form + upload** — Show form at upload start, finalize when both complete (needed with real transcoding latency)
+10. **Push notifications** — Upload status, form reminders
+11. **Onboarding flow** — First-launch experience (Milestone 8)

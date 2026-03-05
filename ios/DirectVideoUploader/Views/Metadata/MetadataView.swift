@@ -1,10 +1,12 @@
 import SwiftUI
+import UIKit
 
 /// Metadata detail view — read-only sheet showing ALL available metadata for a clip.
 /// "Show Details" button opens this. 99% of users won't look, but it validates the file.
 struct MetadataView: View {
     let clip: Clip
     let asset: Asset?
+    var thumbnail: UIImage? = nil
     
     @Environment(\.dismiss) private var dismiss
     
@@ -23,6 +25,19 @@ struct MetadataView: View {
                     VStack(spacing: 0) {
                         // Hero — file identity
                         VStack(spacing: 8) {
+                            // Thumbnail
+                            if let thumb = thumbnail {
+                                Image(uiImage: thumb)
+                                    .resizable()
+                                    .aspectRatio(contentMode: .fill)
+                                    .frame(height: 120)
+                                    .frame(maxWidth: .infinity)
+                                    .clipped()
+                                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                                    .padding(.horizontal, 16)
+                                    .padding(.bottom, 4)
+                            }
+                            
                             Text("📄 File Metadata")
                                 .font(.system(size: 20, weight: .bold))
                                 .foregroundStyle(.white)
@@ -136,19 +151,19 @@ struct MetadataView: View {
                             .padding(.vertical, 24)
                         }
                         
-                        // Mediasource link
-                        if let urlString = asset?.mediasourceUrl,
-                           let url = URL(string: urlString) {
+                        // View clip link
+                        if let slug = asset?.slug,
+                           let url = URL(string: "\(ServerConfig.baseURL)/clips/\(slug)") {
                             Link(destination: url) {
                                 HStack {
-                                    Image(systemName: "link")
-                                    Text("Open in Mediasource")
+                                    Image(systemName: "play.circle.fill")
+                                    Text("View Clip")
                                         .font(.system(size: 15, weight: .medium))
                                 }
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 14)
-                                .background(Color(hex: "007AFF").opacity(0.15))
-                                .foregroundStyle(Color(hex: "007AFF"))
+                                .background(Color(hex: "34C759").opacity(0.15))
+                                .foregroundStyle(Color(hex: "34C759"))
                                 .clipShape(RoundedRectangle(cornerRadius: 12))
                             }
                             .padding(.horizontal, 16)

@@ -14,6 +14,7 @@ struct Asset: Codable, Identifiable {
     let createdAt: String?
     let user: AssetUser?
     let clips: [Clip]?
+    let formResponse: FormResponse?
 }
 
 struct AssetUser: Codable {
@@ -81,4 +82,22 @@ struct CreateAssetResponse: Codable {
 
 struct AssetDetailResponse: Codable {
     let asset: Asset
+}
+
+// MARK: - Form Response
+
+struct FormResponse: Codable {
+    let id: String
+    let assetId: String?
+    let slug: String?
+    let type: String?
+    let description: String?
+    let priority: String?
+    let submittedAt: String?
+}
+
+// MARK: - My Assets Response
+
+struct MyAssetsResponse: Codable {
+    let assets: [Asset]
 }

@@ -1,37 +1,70 @@
 import SwiftUI
 
 /// Context form sheet — simplified "Add Details" form.
-/// Layout: Header (filename + date) → Slug → Type → Description → Priority → Send
+/// Layout: Header (thumbnail + filename + date) → Slug → Type → Description → Priority → Send
 struct ContextFormView: View {
     let fields: [FormField]
     let originalFileName: String?
     let capturedAt: String?
     let clipCount: Int?
     let duration: Int?
+    let thumbnail: UIImage?
+    var submitError: String?
     var onSubmit: ([String: String]) -> Void
     
     @Environment(\.dismiss) private var dismiss
     @State private var formValues: [String: String] = [:]
-    @State private var selectedPriority: String = "Medium"
+    @State private var selectedPriority: String = "Low"
+    @State private var hasAttemptedSubmit = false
+    
+    /// Only letters, numbers, dashes, and periods allowed
+    private static let allowedCharacters = CharacterSet.alphanumerics
+        .union(CharacterSet(charactersIn: "-. "))
+    
+    /// Sanitize input: strip anything not in the allowed set
+    private func sanitize(_ input: String) -> String {
+        String(input.unicodeScalars.filter { Self.allowedCharacters.contains($0) })
+    }
+    
+    private var isSlugValid: Bool {
+        let slug = formValues["slug"]?.trimmingCharacters(in: .whitespaces) ?? ""
+        return !slug.isEmpty
+    }
+    
+    private var isDescriptionValid: Bool {
+        let desc = formValues["description"]?.trimmingCharacters(in: .whitespaces) ?? ""
+        return !desc.isEmpty
+    }
+    
+    private var canSubmit: Bool { isSlugValid && isDescriptionValid }
     
     var body: some View {
         NavigationStack {
             ZStack {
-                Color(hex: "0A0E1A").ignoresSafeArea()
+                // 50% lighter background — visually distinct from chat area
+                Color(hex: "1A2544").ignoresSafeArea()
                 
                 ScrollView {
                     VStack(spacing: 20) {
-                        // Clip header — thumbnail area + filename + date
+                        // Clip header — thumbnail + filename + date
                         HStack(spacing: 14) {
-                            // Thumbnail placeholder
-                            RoundedRectangle(cornerRadius: 8)
-                                .fill(Color.white.opacity(0.08))
-                                .frame(width: 80, height: 60)
-                                .overlay {
-                                    Image(systemName: "video.fill")
-                                        .font(.system(size: 20))
-                                        .foregroundStyle(.white.opacity(0.3))
-                                }
+                            // Video thumbnail (real image or placeholder)
+                            if let thumb = thumbnail {
+                                Image(uiImage: thumb)
+                                    .resizable()
+                                    .aspectRatio(contentMode: .fill)
+                                    .frame(width: 80, height: 60)
+                                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                            } else {
+                                RoundedRectangle(cornerRadius: 8)
+                                    .fill(Color.white.opacity(0.08))
+                                    .frame(width: 80, height: 60)
+                                    .overlay {
+                                        Image(systemName: "video.fill")
+                                            .font(.system(size: 20))
+                                            .foregroundStyle(.white.opacity(0.3))
+                                    }
+                            }
                             
                             VStack(alignment: .leading, spacing: 4) {
                                 // Clip count + duration
@@ -71,11 +104,11 @@ struct ContextFormView: View {
                         
                         // Editable fields
                         VStack(spacing: 16) {
-                            // Slug
-                            fieldSection(label: "SLUG") {
-                                TextField("Slug name", text: Binding(
+                            // Slug (required)
+                            fieldSection(label: "SLUG", required: true) {
+                                TextField("", text: Binding(
                                     get: { formValues["slug"] ?? "" },
-                                    set: { formValues["slug"] = $0 }
+                                    set: { formValues["slug"] = sanitize($0) }
                                 ))
                                 .font(.system(size: 15))
                                 .foregroundStyle(.white)
@@ -83,6 +116,13 @@ struct ContextFormView: View {
                                 .padding(.vertical, 14)
                                 .background(Color.white.opacity(0.08))
                                 .clipShape(RoundedRectangle(cornerRadius: 12))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 12)
+                                        .strokeBorder(
+                                            hasAttemptedSubmit && !isSlugValid ? Color.red : Color.clear,
+                                            lineWidth: 1.5
+                                        )
+                                )
                             }
                             
                             // Type
@@ -107,11 +147,11 @@ struct ContextFormView: View {
                                 }
                             }
                             
-                            // Description
-                            fieldSection(label: "DESCRIPTION") {
+                            // Description (required)
+                            fieldSection(label: "DESCRIPTION", required: true) {
                                 TextEditor(text: Binding(
                                     get: { formValues["description"] ?? "" },
-                                    set: { formValues["description"] = $0 }
+                                    set: { formValues["description"] = sanitize($0) }
                                 ))
                                 .font(.system(size: 15))
                                 .foregroundStyle(.white)
@@ -120,6 +160,13 @@ struct ContextFormView: View {
                                 .padding(12)
                                 .background(Color.white.opacity(0.08))
                                 .clipShape(RoundedRectangle(cornerRadius: 12))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 12)
+                                        .strokeBorder(
+                                            hasAttemptedSubmit && !isDescriptionValid ? Color.red : Color.clear,
+                                            lineWidth: 1.5
+                                        )
+                                )
                             }
                             
                             // Priority (segmented)
@@ -160,8 +207,25 @@ struct ContextFormView: View {
                             }
                         }
                         
-                        // Send button
+                        // Error banner (shown if form submission failed)
+                        if let error = submitError {
+                            HStack(spacing: 8) {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .foregroundStyle(Color(hex: "FF453A"))
+                                Text(error)
+                                    .font(.system(size: 14))
+                                    .foregroundStyle(.white)
+                            }
+                            .padding(12)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Color(hex: "FF453A").opacity(0.15))
+                            .clipShape(RoundedRectangle(cornerRadius: 10))
+                        }
+                        
+                        // Send button — disabled when required fields are empty
                         Button {
+                            hasAttemptedSubmit = true
+                            guard canSubmit else { return }
                             onSubmit(formValues)
                         } label: {
                             HStack(spacing: 6) {
@@ -172,7 +236,7 @@ struct ContextFormView: View {
                             }
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 16)
-                            .background(Color(hex: "007AFF"))
+                            .background(canSubmit ? Color(hex: "007AFF") : Color(hex: "007AFF").opacity(0.35))
                             .foregroundStyle(.white)
                             .clipShape(RoundedRectangle(cornerRadius: 14))
                         }
@@ -183,6 +247,7 @@ struct ContextFormView: View {
             }
             .navigationTitle("Add Details")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbarColorScheme(.dark, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button { dismiss() } label: {
@@ -193,26 +258,37 @@ struct ContextFormView: View {
             }
         }
         .onAppear {
-            // Initialize form values from field defaults
+            // Initialize form values from field defaults — slug starts empty
             for field in fields {
+                // Skip slug prefill — always start clean
+                if field.id == "slug" { continue }
                 if let value = field.value {
                     formValues[field.id] = value
                 }
             }
             // Default type
             if formValues["type"] == nil { formValues["type"] = "Raw" }
-            if formValues["priority"] == nil { formValues["priority"] = "Medium" }
+            // Default priority to Low
+            if formValues["priority"] == nil { formValues["priority"] = "Low" }
         }
     }
     
     // MARK: - Helpers
     
-    private func fieldSection<Content: View>(label: String, @ViewBuilder content: () -> Content) -> some View {
+    /// Section label — shows red asterisk for required fields
+    private func fieldSection<Content: View>(label: String, required: Bool = false, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(label)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(.white.opacity(0.3))
-                .tracking(0.8)
+            HStack(spacing: 2) {
+                Text(label)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.3))
+                    .tracking(0.8)
+                if required {
+                    Text("*")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(.red)
+                }
+            }
             content()
         }
     }

@@ -39,11 +39,17 @@ enum MessageType: String, Codable {
 struct MessageContent: Codable {
     let text: String?
     let fileName: String?
+    let slug: String?
     let mediasourceId: String?
     let mediasourceUrl: String?
     let formFields: [FormField]?
     let channel: String?
     let mention: String?
+    
+    // Form response data (populated on confirmation bubbles)
+    let formType: String?
+    let formDescription: String?
+    let formPriority: String?
     
     // Metadata summary fields (populated on upload response / form request bubbles)
     let originalFileName: String?
@@ -60,6 +66,7 @@ struct MessageContent: Codable {
     init(
         text: String? = nil,
         fileName: String? = nil,
+        slug: String? = nil,
         mediasourceId: String? = nil,
         mediasourceUrl: String? = nil,
         formFields: [FormField]? = nil,
@@ -74,10 +81,14 @@ struct MessageContent: Codable {
         capturedAt: String? = nil,
         codec: String? = nil,
         resolution: String? = nil,
-        hasRichMeta: Bool? = nil
+        hasRichMeta: Bool? = nil,
+        formType: String? = nil,
+        formDescription: String? = nil,
+        formPriority: String? = nil
     ) {
         self.text = text
         self.fileName = fileName
+        self.slug = slug
         self.mediasourceId = mediasourceId
         self.mediasourceUrl = mediasourceUrl
         self.formFields = formFields
@@ -93,6 +104,9 @@ struct MessageContent: Codable {
         self.codec = codec
         self.resolution = resolution
         self.hasRichMeta = hasRichMeta
+        self.formType = formType
+        self.formDescription = formDescription
+        self.formPriority = formPriority
     }
     
     /// Display text for the chat bubble

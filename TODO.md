@@ -55,3 +55,74 @@
 | **23** | GET /api/assets/:id no auth                 | DONE     |
 | **24** | CORS origin: true in production             | DEFERRED |
 | **25** | Admin ChatHistory shows only own messages   | DEFERRED |
+
+## USER TODO do not modify below this line >>>>>>>>>>>>>>>>>>>>>>>>>
+
+iOS APP
+
+- Add Chat Icon, Profile Icon, Settings Icon at the bottom of the UI
+
+- Conversation Button - List of Previous Conversations [see image conversation-list.png]
+  - Should show Video Thumnail - Upload Date - Time - Location ie Boston, MA; Syracuse, NY
+
+- [] When opening app + server not available need app messaging to notiffy user.
+  - iOS should know if its connectivity or server issue or credentials
+
+**_ TASK _**
+
+- Change default iOS Text-Area Behavior when user opens iOS.
+
+**_ Context _**
+
+- Default Text Area, Conversation is too busy with old text messages.
+
+**_ Instructions _**
+
+- One Conversation = One Upload (for now)
+- Always open to new conversation (since this is one server)
+- When user opens App - Conversation UI should have 1 message. "Good Morning [User First Name]..." This is continget with iOS and Server handshake. - if waiting for connection use "..." Icon - then Change to Greeting like a actual text message.
+- Previous Messages should be removed - One conversation = One Upload.
+
+- [] When iOS opens the chat-view should be clear of previous texts - this keeps chat-area UI clean/focused.
+- always starts with > "Good [Morning] [David]. I'm ready for your video" {Greeting}
+
+- Names of Specific Server Chats and User Response. {Name of Text Type}
+  Text Flow
+
+- Updates to User Video Choice in Library View - Similar to iOS 26.3
+
+**_ TASK _**
+
+- Add iOS 26.3 UX to Library View when user chooses video.
+  **_ CONTEXT _**
+- User needs a familiar UX and UI for choosing videos. Currently we are missing some UI buttons and UX.
+
+**_ INSTUCTIONS _**
+
+- Library UI needs a "Clear" and "Confirm" (check) Buttons at top of Panel. Similar to iOS 26
+  - add a "Clear" Button; action should clear video choices from Library UI allowing user to start again. a reset.
+  - add Confirm "Check Icon" Button; action should 1) Add Video to Text Chat for Preview (remove auto send to server) 2. Close the Library, return to chat, if No Video is Selected. Similar to iOS 26 UX.
+  - User will confirm upload to server in text message, like a actual text flow.
+  - Bottom of Library UI should note the # of Videos Selected and if locations are included in the video.
+  - Text Preview should show Video Thumbnail + Original File name and Created Date.
+
+- User
+
+"Good [Morning] [David]. I'm ready for your video" {Greeting}
+
+                                   [USER ACTION] {User Clicks + Chooses Video}
+                                                       {Upload}
+                                   [TEXT VIEW] User should see video send preview with universal cancel "X" button
+
+"Got it!! Processing your upload..." {Confirm 1}
+
+                                                  [USER GETS METAFORM] {Sheet}
+
+"Here are your Video Details"
+[Shows Metadata]
+
+- [x] User should see a clear Blue Check on the Video Thumnail > then use Confirm Button to start the upload (this is currently a select and shoot method)
+
+- [x] Between "Good Morning... " and "Got it!" ... The user needs to See their upload Thumbnail and Metadata. The User always needs to know where they are in the communication chain.
+
+- [x] Selecting a Video in the Library should show Video Only for now.

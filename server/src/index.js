@@ -19,21 +19,27 @@ import authRoutes from './routes/auth.js';
 import assetRoutes from './routes/assets.js';
 import adminRoutes from './routes/admin.js';
 import clipRoutes from './routes/clips.js';
+import errorRoutes from './routes/errors.js';
 import { setupWebSocket } from './ws/handler.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = parseInt(process.env.PORT || '3000', 10);
 const HOST = process.env.HOST || '0.0.0.0';
+const isProduction = process.env.NODE_ENV === 'production';
 
 // ─── Create Fastify Server ──────────────────────────────
 const fastify = Fastify({
     logger: {
         level: 'info',
-        transport: {
-            target: 'pino-pretty',
-            options: { colorize: true },
-        },
+        // Pretty logs in dev, raw JSON in production (Render captures structured logs)
+        ...(isProduction ? {} : {
+            transport: {
+                target: 'pino-pretty',
+                options: { colorize: true },
+            },
+        }),
     },
+    trustProxy: isProduction, // Trust Render's reverse proxy for correct client IPs
 });
 
 // ─── Plugins ─────────────────────────────────────────────
@@ -58,6 +64,10 @@ const jwtSecret = process.env.JWT_SECRET || (() => {
 await fastify.register(fastifyJwt, {
     secret: jwtSecret,
 });
+
+// Ensure uploads directory exists (ephemeral on Render — cloud storage replaces this)
+import { mkdirSync } from 'fs';
+mkdirSync(path.resolve(process.cwd(), 'uploads'), { recursive: true });
 
 // Serve uploaded files statically (demo only — production uses R2/S3)
 await fastify.register(fastifyStatic, {
@@ -103,6 +113,7 @@ await fastify.register(assetRoutes);
 await fastify.register(adminRoutes);
 
 await fastify.register(clipRoutes);
+await fastify.register(errorRoutes);
 
 // Health check
 fastify.get('/api/health', async () => ({
@@ -110,6 +121,7 @@ fastify.get('/api/health', async () => ({
     timestamp: new Date().toISOString(),
     service: 'Direct Video Uploader',
     version: '1.0.0',
+    env: isProduction ? 'production' : 'development',
 }));
 
 // ─── Start Server ────────────────────────────────────────
@@ -120,12 +132,16 @@ const start = async () => {
 
         await fastify.listen({ port: PORT, host: HOST });
 
+        const baseUrl = isProduction
+            ? `https://${process.env.RENDER_EXTERNAL_HOSTNAME || 'your-app.onrender.com'}`
+            : `http://localhost:${PORT}`;
+
         console.log(`
-╔══════════════════════════════════════════  ╗
+╔════════════════════════════════════════════╗
 ║  🎬 Direct Video Uploader Server           ║
 ║                                            ║
-║  HTTP:   http://localhost:${PORT}          ║
-║  WS:     ws://localhost:${PORT}/socket.io/ ║
+║  URL:    ${baseUrl.padEnd(33)}║
+║  Env:    ${(isProduction ? 'production' : 'development').padEnd(33)}║
 ║                                            ║
 ║  Status: Running ✅                         ║
 ╚══════════════════════════════════════════  ╝
