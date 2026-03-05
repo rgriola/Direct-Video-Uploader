@@ -15,6 +15,7 @@ import { AssetList } from "@/components/AssetList";
 import { ActivityLog } from "@/components/ActivityLog";
 import { EndpointTable } from "@/components/EndpointTable";
 import { ChatHistory } from "@/components/ChatHistory";
+import { ErrorLog } from "@/components/ErrorLog";
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 10_000, retry: 1 } },
@@ -145,10 +146,12 @@ function Dashboard() {
         <AssetList assets={assets} isLoading={assetsLoading} />
       </div>
 
-      <div className="grid grid-cols-2 gap-6 max-[900px]:grid-cols-1">
+      <div className="grid grid-cols-2 gap-6 mb-8 max-[900px]:grid-cols-1">
         <ActivityLog logs={logs} onClear={clearLogs} />
-        <EndpointTable />
+        <ErrorLog />
       </div>
+
+      <EndpointTable />
     </div>
   );
 }

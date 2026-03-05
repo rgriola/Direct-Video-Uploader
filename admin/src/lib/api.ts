@@ -67,3 +67,7 @@ export async function fetchTriadStatus() {
 export async function cleanupAssets() {
   return api<{ cleaned: number; message: string; assetIds?: string[] }>("POST", "/api/admin/cleanup-assets");
 }
+
+export async function fetchErrors() {
+  return api<{ errors: Array<{ id: string; source: string; category: string; message: string; severity: string; createdAt: string; userId?: string | null }> }>("GET", "/api/admin/errors");
+}

@@ -251,6 +251,30 @@ export default async function clipRoutes(fastify) {
         .status-PROCESSING { background: rgba(255,159,10,0.15); color: #FF9F0A; }
         .status-UPLOADING { background: rgba(0,122,255,0.15); color: #007AFF; }
         .status-ERROR { background: rgba(255,69,58,0.15); color: #FF453A; }
+        /* Copy link button */
+        .copy-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: rgba(0,122,255,0.12);
+            color: #007AFF;
+            border: 1px solid rgba(0,122,255,0.25);
+            border-radius: 8px;
+            padding: 6px 14px;
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            margin-top: 12px;
+            transition: all 0.2s;
+            font-family: inherit;
+        }
+        .copy-link:hover { background: rgba(0,122,255,0.2); }
+        .copy-link:active { transform: scale(0.96); }
+        .copy-link.copied {
+            background: rgba(48,209,88,0.15);
+            color: #30D158;
+            border-color: rgba(48,209,88,0.3);
+        }
         /* Footer */
         .footer {
             text-align: center;
@@ -299,6 +323,7 @@ export default async function clipRoutes(fastify) {
             ${asset.mediasourceId ? `<div class="msid">#${escapeHtml(asset.mediasourceId)}</div>` : ''}
             ${asset.user ? `<div class="uploader">Uploaded by ${escapeHtml(asset.user.name)}${asset.user.team ? ' · ' + escapeHtml(asset.user.team) : ''}</div>` : ''}
             <span class="status status-${escapeHtml(asset.status)}">${escapeHtml(asset.status)}</span>
+            <div><button class="copy-link" onclick="copyLink(this)">📋 Copy Link</button></div>
         </div>
 
         <div class="video-wrap">
@@ -330,6 +355,32 @@ export default async function clipRoutes(fastify) {
             <div class="logo">MEDIASOURCE FIXER</div>
         </div>
     </div>
+    <script>
+    function copyLink(btn) {
+        navigator.clipboard.writeText(window.location.href).then(() => {
+            btn.textContent = '✅ Copied!';
+            btn.classList.add('copied');
+            setTimeout(() => {
+                btn.textContent = '📋 Copy Link';
+                btn.classList.remove('copied');
+            }, 2000);
+        }).catch(() => {
+            // Fallback for older browsers
+            const tmp = document.createElement('input');
+            tmp.value = window.location.href;
+            document.body.appendChild(tmp);
+            tmp.select();
+            document.execCommand('copy');
+            document.body.removeChild(tmp);
+            btn.textContent = '✅ Copied!';
+            btn.classList.add('copied');
+            setTimeout(() => {
+                btn.textContent = '📋 Copy Link';
+                btn.classList.remove('copied');
+            }, 2000);
+        });
+    }
+    </script>
 </body>
 </html>`;
 
