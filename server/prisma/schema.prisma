@@ -88,7 +88,7 @@ model Clip {
   status           ClipStatus @default(UPLOADING)
   createdAt        DateTime   @default(now()) @map("created_at")
 
-  asset Asset @relation(fields: [assetId], references: [id])
+  asset Asset @relation(fields: [assetId], references: [id], onDelete: Cascade)
 
   @@index([assetId])
   @@map("clips")
@@ -112,7 +112,7 @@ model FormResponse {
   extra       Json?    @map("additional_data")
   submittedAt DateTime @default(now()) @map("submitted_at")
 
-  asset Asset @relation(fields: [assetId], references: [id])
+  asset Asset @relation(fields: [assetId], references: [id], onDelete: Cascade)
 
   @@map("form_responses")
 }
@@ -135,7 +135,7 @@ model ChatMessage {
   createdAt   DateTime    @default(now()) @map("created_at")
 
   user  User   @relation(fields: [userId], references: [id])
-  asset Asset? @relation(fields: [assetId], references: [id])
+  asset Asset? @relation(fields: [assetId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@map("chat_messages")
