@@ -12,7 +12,7 @@ enum ServerConfig {
     // MARK: - Production URL (update when deployed to Render)
     
     /// The production server URL. Used as the default for physical devices in Release builds.
-    private static let productionURL = "https://dvu-server.onrender.com"
+    private static let productionURL = "https://direct-video-uploader.onrender.com"
     
     /// UserDefaults key for the user-saved server URL override
     private static let serverURLKey = "dvu_server_url"
