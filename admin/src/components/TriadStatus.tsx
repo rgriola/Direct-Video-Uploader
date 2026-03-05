@@ -63,7 +63,7 @@ export function TriadStatusPanel({ triad, isLoading }: TriadStatusProps) {
         </span>
       </div>
 
-      <div className="grid grid-cols-4 gap-0 max-[900px]:grid-cols-2">
+      <div className="grid grid-cols-4 gap-0 max-[900px]:grid-cols-2 max-[600px]:grid-cols-1">
         {serviceConfig.map((svc) => {
           const data = triad?.triad?.[svc.key];
           const status = data?.status ?? "unknown";

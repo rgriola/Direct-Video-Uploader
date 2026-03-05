@@ -30,22 +30,24 @@ export function EndpointTable() {
         </span>
       </div>
 
-      <div className="grid grid-cols-[80px_1fr_1fr] text-[13px]">
-        {endpoints.map((ep) => (
-          <div key={ep.path} className="contents group">
-            <div className="px-5.5 py-2.75 border-b border-(--border-subtle) flex items-center group-last:border-b-0 group-hover:bg-(--card-hover)">
-              <span className={`font-bold text-[11px] tracking-wide ${methodClasses[ep.method] ?? ""}`}>
-                {ep.method}
-              </span>
+      <div className="overflow-x-auto">
+        <div className="grid grid-cols-[80px_1fr_1fr] max-[600px]:grid-cols-[60px_1fr] text-[13px] min-w-0">
+          {endpoints.map((ep) => (
+            <div key={ep.path} className="contents group">
+              <div className="px-5.5 max-[600px]:px-3 py-2.75 border-b border-(--border-subtle) flex items-center group-last:border-b-0 group-hover:bg-(--card-hover)">
+                <span className={`font-bold text-[11px] tracking-wide ${methodClasses[ep.method] ?? ""}`}>
+                  {ep.method}
+                </span>
+              </div>
+              <div className="px-5.5 max-[600px]:px-3 py-2.75 border-b border-(--border-subtle) flex items-center font-mono text-[12.5px] text-(--foreground) group-last:border-b-0 group-hover:bg-(--card-hover) truncate">
+                {ep.path}
+              </div>
+              <div className="px-5.5 py-2.75 border-b border-(--border-subtle) flex items-center text-[12.5px] text-(--muted-foreground) group-last:border-b-0 group-hover:bg-(--card-hover) max-[600px]:hidden">
+                {ep.description}
+              </div>
             </div>
-            <div className="px-5.5 py-2.75 border-b border-(--border-subtle) flex items-center font-mono text-[12.5px] text-(--foreground) group-last:border-b-0 group-hover:bg-(--card-hover)">
-              {ep.path}
-            </div>
-            <div className="px-5.5 py-2.75 border-b border-(--border-subtle) flex items-center text-[12.5px] text-(--muted-foreground) group-last:border-b-0 group-hover:bg-(--card-hover)">
-              {ep.description}
-            </div>
-          </div>
-        ))}
+          ))}
+        </div>
       </div>
     </div>
   );
