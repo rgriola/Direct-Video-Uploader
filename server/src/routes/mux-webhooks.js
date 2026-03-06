@@ -16,6 +16,9 @@ import path from 'path';
 
 const MUX_WEBHOOK_SECRET = process.env.MUX_WEBHOOK_SECRET || '';
 
+// Mux v12: verifySignature is an instance method, not static
+const muxClient = new Mux();
+
 export default async function muxWebhookRoutes(fastify) {
     /**
      * POST /api/webhooks/mux
@@ -40,7 +43,7 @@ export default async function muxWebhookRoutes(fastify) {
             try {
                 // rawBody is available because of the rawBody config above
                 const rawBody = typeof request.body === 'string' ? request.body : JSON.stringify(request.body);
-                Mux.Webhooks.verifySignature(rawBody, { 'mux-signature': signature }, MUX_WEBHOOK_SECRET);
+                muxClient.webhooks.verifySignature(rawBody, { 'mux-signature': signature }, MUX_WEBHOOK_SECRET);
             } catch (err) {
                 console.warn('🎬 Mux webhook signature verification failed:', err.message);
                 return reply.status(401).send({ error: 'Invalid signature' });
