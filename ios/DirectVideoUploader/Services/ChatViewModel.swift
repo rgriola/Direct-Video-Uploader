@@ -312,57 +312,97 @@ final class ChatViewModel {
             return attrs?[.size] as? Int64 ?? 0
         }()
         
-        do {
-            let (data, _) = try await URLSession.shared.data(for: request)
-            let response = try JSONDecoder().decode(CreateAssetResponse.self, from: data)
-            currentAssetId = response.asset.id
+        // Retry up to 2 times on transient network/decode failures
+        var lastError: Error?
+        for attempt in 1...3 {
+            do {
+                let (data, httpResponse) = try await URLSession.shared.data(for: request)
+                let statusCode = (httpResponse as? HTTPURLResponse)?.statusCode ?? 0
+                
+                guard statusCode >= 200, statusCode < 300 else {
+                    let body = String(data: data, encoding: .utf8) ?? "(empty)"
+                    print("❌ createAsset HTTP \(statusCode): \(body)")
+                    lastError = NSError(domain: "createAsset", code: statusCode,
+                                        userInfo: [NSLocalizedDescriptionKey: "Server returned \(statusCode)"])
+                    if statusCode >= 500 {
+                        try? await Task.sleep(for: .seconds(Double(attempt)))
+                        continue
+                    }
+                    break
+                }
+                
+                let asset: Asset
+                do {
+                    let response = try JSONDecoder().decode(CreateAssetResponse.self, from: data)
+                    asset = response.asset
+                } catch {
+                    let raw = String(data: data, encoding: .utf8) ?? "(non-utf8, \(data.count) bytes)"
+                    print("❌ createAsset decode failed (attempt \(attempt)): \(error)\nRaw: \(raw)")
+                    lastError = error
+                    if attempt < 3 {
+                        try? await Task.sleep(for: .seconds(Double(attempt)))
+                        continue
+                    }
+                    break
+                }
+                
+                currentAssetId = asset.id
             
-            // Add outgoing video message locally — also cache thumbnail for SentUploadBubble
-            let msgId = UUID().uuidString
-            let videoMessage = ChatMessage(
-                id: msgId,
-                userId: auth.currentUser?.id,
-                assetId: response.asset.id,
-                direction: .outgoing,
-                messageType: .video,
-                content: MessageContent(text: "📹 \(fileName)", fileName: fileName),
-                createdAt: ISO8601DateFormatter().string(from: Date())
-            )
-            messages.append(videoMessage)
-            
-            // Cache thumbnail + metadata so SentUploadBubble can render the card
-            if let thumb = formThumbnail {
-                sentUploadThumbnails[msgId] = thumb
-            }
-            sentUploadFileNames[msgId] = fileName
-            sentUploadDates[msgId] = lastStagedCreatedDate ?? {
-                let formatter = DateFormatter()
-                formatter.dateFormat = "MMM d, yyyy h:mm a"
-                return formatter.string(from: Date())
-            }()
-            sentUploadHasLocation[msgId] = lastStagedHasLocation
-            
-            // Notify WebSocket with real file size
-            ws.sendVideoUpload(
-                assetId: response.asset.id,
-                fileName: fileName,
-                fileSize: fileSize
-            )
-            
-            return response.asset
-        } catch {
-            print("❌ Failed to create asset:", error)
-            appendErrorBubble("⚠️ Could not start upload. Please try again.")
-            Task {
-                await reportError(
-                    category: "upload",
-                    message: "Asset creation failed: \(error.localizedDescription)",
-                    severity: "ERROR",
-                    details: ["fileName": fileName]
+                // Add outgoing video message locally — also cache thumbnail for SentUploadBubble
+                let msgId = UUID().uuidString
+                let videoMessage = ChatMessage(
+                    id: msgId,
+                    userId: auth.currentUser?.id,
+                    assetId: asset.id,
+                    direction: .outgoing,
+                    messageType: .video,
+                    content: MessageContent(text: "📹 \(fileName)", fileName: fileName),
+                    createdAt: ISO8601DateFormatter().string(from: Date())
                 )
+                messages.append(videoMessage)
+                
+                // Cache thumbnail + metadata so SentUploadBubble can render the card
+                if let thumb = formThumbnail {
+                    sentUploadThumbnails[msgId] = thumb
+                }
+                sentUploadFileNames[msgId] = fileName
+                sentUploadDates[msgId] = lastStagedCreatedDate ?? {
+                    let formatter = DateFormatter()
+                    formatter.dateFormat = "MMM d, yyyy h:mm a"
+                    return formatter.string(from: Date())
+                }()
+                sentUploadHasLocation[msgId] = lastStagedHasLocation
+                
+                // Notify WebSocket with real file size
+                ws.sendVideoUpload(
+                    assetId: asset.id,
+                    fileName: fileName,
+                    fileSize: fileSize
+                )
+                
+                return asset
+            } catch {
+                print("❌ createAsset attempt \(attempt) network error:", error)
+                lastError = error
+                if attempt < 3 {
+                    try? await Task.sleep(for: .seconds(Double(attempt)))
+                    continue
+                }
             }
-            return nil
         }
+        
+        // All attempts exhausted
+        let errorDesc = lastError?.localizedDescription ?? "Unknown error"
+        appendErrorBubble("⚠️ Could not start upload. Please try again.")
+        Task {
+            await reportError(
+                category: "upload",
+                message: "Asset creation failed after 3 attempts: \(errorDesc)",
+                severity: "ERROR",
+                details: ["fileName": fileName]
+            )
+        }
+        return nil
     }
     
     // MARK: - Upload Video
