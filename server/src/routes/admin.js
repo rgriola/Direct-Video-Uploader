@@ -285,4 +285,32 @@ export default async function adminRoutes(fastify) {
             },
         };
     });
+
+    /**
+     * POST /api/admin/sync-mux-status
+     * Fix assets stuck in PROCESSING — checks clips and syncs asset status.
+     */
+    fastify.post('/api/admin/sync-mux-status', {
+        preHandler: [fastify.authenticate],
+    }, async () => {
+        // Find assets stuck in PROCESSING/UPLOADING that have READY clips
+        const stuck = await prisma.$queryRawUnsafe(`
+            SELECT a.id, a.mediasource_id, a.status as asset_status, c.status as clip_status
+            FROM assets a
+            JOIN clips c ON c.asset_id = a.id
+            WHERE a.status IN ('PROCESSING', 'UPLOADING')
+              AND c.status = 'READY'
+        `);
+
+        const fixed = [];
+        for (const row of stuck) {
+            await prisma.asset.update({
+                where: { id: row.id },
+                data: { status: 'READY' },
+            });
+            fixed.push({ id: row.id, mediasourceId: row.mediasource_id, was: row.asset_status });
+        }
+
+        return { fixed, count: fixed.length };
+    });
 }

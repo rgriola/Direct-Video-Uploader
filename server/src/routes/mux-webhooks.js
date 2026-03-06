@@ -144,6 +144,12 @@ export default async function muxWebhookRoutes(fastify) {
                         }
                     }
 
+                    // Update the parent asset status to READY
+                    await dbRetry(() => prisma.asset.update({
+                        where: { id: clip.assetId },
+                        data: { status: 'READY' },
+                    }));
+
                     // Notify connected clients via WebSocket
                     const asset = await prisma.asset.findUnique({ where: { id: clip.assetId } });
                     if (asset) {
@@ -176,6 +182,10 @@ export default async function muxWebhookRoutes(fastify) {
                 if (clip) {
                     await dbRetry(() => prisma.clip.update({
                         where: { id: clip.id },
+                        data: { status: 'ERROR' },
+                    }));
+                    await dbRetry(() => prisma.asset.update({
+                        where: { id: clip.assetId },
                         data: { status: 'ERROR' },
                     }));
                 }
@@ -247,6 +257,12 @@ export default async function muxWebhookRoutes(fastify) {
                         await dbRetry(() => prisma.clip.update({
                             where: { id: clipId },
                             data: { muxPlaybackId: playbackId, streamUrl, thumbnailUrl, status: 'READY' },
+                        }));
+
+                        // Also update the parent asset status
+                        await dbRetry(() => prisma.asset.update({
+                            where: { id: clip.assetId },
+                            data: { status: 'READY' },
                         }));
 
                         return { status: 'ready', muxPlaybackId: playbackId, streamUrl, thumbnailUrl };
