@@ -279,13 +279,17 @@ final class ChatViewModel {
     func sendTextMessage(_ text: String) {
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         
+        // Detect Slack commands: #channel or @user
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let isSlackCommand = trimmed.hasPrefix("#") || trimmed.hasPrefix("@")
+        
         // Optimistic UI — add message locally
         let localMessage = ChatMessage(
             id: UUID().uuidString,
             userId: auth.currentUser?.id,
             assetId: nil,
             direction: .outgoing,
-            messageType: .text,
+            messageType: isSlackCommand ? .slackPost : .text,
             content: MessageContent(text: text),
             createdAt: ISO8601DateFormatter().string(from: Date())
         )

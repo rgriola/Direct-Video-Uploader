@@ -34,5 +34,5 @@ services:
         sync: false
       - key: MUX_ENV_KEY
         sync: false
-      # - key: SLACK_WEBHOOK_URL
-      #   sync: false
+      - key: SLACK_BOT_TOKEN
+        sync: false

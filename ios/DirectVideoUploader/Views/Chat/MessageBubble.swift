@@ -270,12 +270,53 @@ struct MessageBubble: View {
     }
     
     private var slackContent: some View {
-        HStack(spacing: 8) {
-            Text("💬")
-                .font(.system(size: 14))
+        VStack(alignment: .leading, spacing: 6) {
+            // Header with Slack icon
+            HStack(spacing: 6) {
+                Image(systemName: isOutgoing ? "paperplane.fill" : "checkmark.circle.fill")
+                    .font(.system(size: 13))
+                    .foregroundStyle(isOutgoing ? .white : Theme.green)
+                Text(isOutgoing ? "Sending to Slack…" : "Slack")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(isOutgoing ? .white.opacity(0.7) : Theme.secondaryText)
+            }
+            
+            // Message text (command or confirmation)
             Text(message.content.text ?? "Posted to Slack")
                 .font(.system(size: 15))
-                .foregroundStyle(Theme.lightText)
+                .foregroundStyle(isOutgoing ? .white : Theme.lightText)
+            
+            // Channel/mention badges on confirmation
+            if !isOutgoing {
+                HStack(spacing: 8) {
+                    if let channel = message.content.channel {
+                        HStack(spacing: 3) {
+                            Text("#")
+                                .font(.system(size: 11, weight: .bold, design: .monospaced))
+                            Text(channel)
+                                .font(.system(size: 11, weight: .medium))
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(Theme.blue.opacity(0.2))
+                        .foregroundStyle(Theme.blue)
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                    }
+                    if let mention = message.content.mention {
+                        HStack(spacing: 3) {
+                            Text("@")
+                                .font(.system(size: 11, weight: .bold, design: .monospaced))
+                            Text(mention)
+                                .font(.system(size: 11, weight: .medium))
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(Theme.green.opacity(0.2))
+                        .foregroundStyle(Theme.green)
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                    }
+                }
+            }
         }
     }
     

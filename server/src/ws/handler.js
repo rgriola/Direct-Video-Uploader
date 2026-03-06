@@ -4,6 +4,7 @@
  */
 import crypto from 'node:crypto';
 import prisma from '../lib/prisma.js';
+import * as slack from '../lib/slack.js';
 
 /** Return a time-of-day greeting personalised with the user's first name. */
 function getGreeting(name) {
@@ -13,6 +14,138 @@ function getGreeting(name) {
     else if (hour < 17) timeOfDay = 'Good Afternoon';
     else timeOfDay = 'Good Evening';
     return `🙋‍♂️ ${timeOfDay} ${name}! I am ready for your video.`;
+}
+
+/**
+ * Handle a Slack command — parse #channels and @mentions, post via Slack API,
+ * persist to DB, and send confirmation/error bubble back to iOS.
+ */
+async function handleSlackCommand(socket, userId, assetId, channels, mentions, originalText) {
+    const now = new Date().toISOString();
+
+    // Persist the outgoing Slack command message
+    try {
+        await prisma.chatMessage.create({
+            data: {
+                userId,
+                assetId: assetId || null,
+                direction: 'OUTGOING',
+                messageType: 'SLACK_POST',
+                content: {
+                    text: originalText,
+                    channel: channels[0] || null,
+                    mention: mentions[0] || null,
+                },
+            },
+        });
+    } catch (dbErr) {
+        console.error('DB write failed (slack command):', dbErr.message);
+    }
+
+    // Check if Slack is configured
+    if (!slack.isConfigured()) {
+        socket.emit('message:new', {
+            id: crypto.randomUUID(),
+            userId: null,
+            assetId: assetId || null,
+            direction: 'INCOMING',
+            messageType: 'SLACK_POST',
+            content: { text: '❌ Slack is not configured. Set SLACK_BOT_TOKEN on the server.' },
+            createdAt: now,
+        });
+        return;
+    }
+
+    // Resolve the most recent READY asset for this user to build the clip URL
+    let mediasourceId = null;
+    let clipUrl = null;
+    try {
+        const asset = await prisma.asset.findFirst({
+            where: { userId, status: 'READY' },
+            orderBy: { createdAt: 'desc' },
+            select: { mediasourceId: true },
+        });
+        if (asset?.mediasourceId) {
+            mediasourceId = asset.mediasourceId;
+            const baseUrl = process.env.NODE_ENV === 'production'
+                ? 'https://rodgriola.com'
+                : `http://localhost:${process.env.PORT || 3000}`;
+            clipUrl = `${baseUrl}/clips/${mediasourceId}`;
+        }
+    } catch (err) {
+        console.error('Failed to look up asset for Slack:', err.message);
+    }
+
+    // Build Slack mention string (resolve display names to <@USERID> for channel posts)
+    let slackMentionStr = null;
+    if (mentions.length > 0 && channels.length > 0) {
+        // For channel posts with mentions, resolve to Slack user IDs for proper @notification
+        const resolved = [];
+        for (const name of mentions) {
+            const { postDM } = slack; // just need the resolver
+            // We'll resolve and use in buildAssetMessage
+            resolved.push(`@${name}`);
+        }
+        slackMentionStr = resolved.join(' ');
+    }
+
+    const { text: msgText, blocks } = slack.buildAssetMessage({
+        userName: socket.userName,
+        mediasourceId: mediasourceId || 'N/A',
+        clipUrl: clipUrl || '(no clip ready)',
+        mention: slackMentionStr,
+    });
+
+    const results = [];
+
+    // Post to each #channel
+    for (const ch of channels) {
+        console.log(`📣 Posting to #${ch} for ${socket.userName}`);
+        const result = await slack.postToChannel(ch, msgText, blocks);
+        results.push({ type: 'channel', target: `#${ch}`, ...result });
+    }
+
+    // Send DM to each @mention (only if not also posting to a channel — avoids double-notify)
+    if (channels.length === 0) {
+        for (const name of mentions) {
+            console.log(`📨 DM to @${name} for ${socket.userName}`);
+            const result = await slack.postDM(name, msgText, blocks);
+            results.push({ type: 'dm', target: `@${name}`, ...result });
+        }
+    }
+
+    // Build confirmation text
+    const successes = results.filter(r => r.ok);
+    const failures = results.filter(r => !r.ok);
+
+    let confirmText;
+    if (successes.length > 0 && failures.length === 0) {
+        const targets = successes.map(r => r.target).join(', ');
+        confirmText = `✅ Posted to ${targets} in Slack`;
+    } else if (failures.length > 0 && successes.length === 0) {
+        const targets = failures.map(r => `${r.target} (${r.error})`).join(', ');
+        confirmText = `❌ Couldn't post to ${targets}`;
+    } else {
+        const ok = successes.map(r => r.target).join(', ');
+        const fail = failures.map(r => `${r.target} (${r.error})`).join(', ');
+        confirmText = `✅ Posted to ${ok}\n❌ Failed: ${fail}`;
+    }
+
+    // Send confirmation bubble to iOS
+    socket.emit('message:new', {
+        id: crypto.randomUUID(),
+        userId: null,
+        assetId: assetId || null,
+        direction: 'INCOMING',
+        messageType: 'SLACK_POST',
+        content: {
+            text: confirmText,
+            channel: channels[0] || null,
+            mention: mentions[0] || null,
+            mediasourceId,
+        },
+        createdAt: now,
+    });
 }
 
 export function setupWebSocket(io, fastify) {
@@ -114,16 +247,26 @@ export function setupWebSocket(io, fastify) {
             });
         });
 
-        // NOTE: slack:post handler removed — Slack integration is Phase 3.
-        // The iOS app no longer sends this event.
-
         /**
          * message:send — Client sends a text message.
+         * If text starts with # or @, treat as Slack command (post to channel/DM).
+         * Otherwise, debounced auto-reply.
          */
         socket.on('message:send', async (data) => {
             try {
                 const { text, assetId } = data;
                 console.log(`💬 Message from ${socket.userName}: ${text}`);
+
+                // ─── Slack command detection ───
+                const trimmed = (text || '').trim();
+                const channels = [...trimmed.matchAll(/#([\w-]+)/g)].map(m => m[1]);
+                const mentions = [...trimmed.matchAll(/@([\w.-]+)/g)].map(m => m[1]);
+                const isSlackCommand = channels.length > 0 || mentions.length > 0;
+
+                if (isSlackCommand) {
+                    await handleSlackCommand(socket, userId, assetId, channels, mentions, trimmed);
+                    return; // Skip auto-reply for Slack commands
+                }
 
                 // Store outgoing message (best-effort — don't let DB failure block reply)
                 try {
