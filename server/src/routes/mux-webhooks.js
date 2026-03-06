@@ -212,6 +212,7 @@ export default async function muxWebhookRoutes(fastify) {
             where: { id: clipId },
             select: {
                 id: true,
+                assetId: true,
                 muxAssetId: true,
                 muxPlaybackId: true,
                 muxUploadId: true,
@@ -245,28 +246,31 @@ export default async function muxWebhookRoutes(fastify) {
                     where: { id: clipId },
                     data: { muxAssetId: upload.asset_id },
                 }));
+                clip.muxAssetId = upload.asset_id;
+            }
+        }
 
-                // Now check if the asset is ready
-                const asset = await getMuxAsset(upload.asset_id);
-                if (asset?.status === 'ready') {
-                    const playbackId = asset.playback_ids?.find(p => p.policy === 'public')?.id;
-                    if (playbackId) {
-                        const streamUrl = `https://stream.mux.com/${playbackId}.m3u8`;
-                        const thumbnailUrl = `https://image.mux.com/${playbackId}/thumbnail.png?width=640`;
+        // If we have a Mux asset ID but no playback ID, check if it's ready
+        if (clip.muxAssetId && !clip.muxPlaybackId) {
+            const muxAsset = await getMuxAsset(clip.muxAssetId);
+            if (muxAsset?.status === 'ready') {
+                const playbackId = muxAsset.playback_ids?.find(p => p.policy === 'public')?.id;
+                if (playbackId) {
+                    const streamUrl = `https://stream.mux.com/${playbackId}.m3u8`;
+                    const thumbnailUrl = `https://image.mux.com/${playbackId}/thumbnail.png?width=640`;
 
-                        await dbRetry(() => prisma.clip.update({
-                            where: { id: clipId },
-                            data: { muxPlaybackId: playbackId, streamUrl, thumbnailUrl, status: 'READY' },
-                        }));
+                    await dbRetry(() => prisma.clip.update({
+                        where: { id: clipId },
+                        data: { muxPlaybackId: playbackId, streamUrl, thumbnailUrl, status: 'READY' },
+                    }));
 
-                        // Also update the parent asset status
-                        await dbRetry(() => prisma.asset.update({
-                            where: { id: clip.assetId },
-                            data: { status: 'READY' },
-                        }));
+                    // Also update the parent asset status
+                    await dbRetry(() => prisma.asset.update({
+                        where: { id: clip.assetId },
+                        data: { status: 'READY' },
+                    }));
 
-                        return { status: 'ready', muxPlaybackId: playbackId, streamUrl, thumbnailUrl };
-                    }
+                    return { status: 'ready', muxPlaybackId: playbackId, streamUrl, thumbnailUrl };
                 }
             }
         }
