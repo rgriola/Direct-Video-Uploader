@@ -25,13 +25,13 @@ struct ArchiveRowView: View {
                     
                     // File info
                     VStack(alignment: .leading, spacing: 3) {
-                        Text(asset.originalFileName ?? asset.slug)
+                        Text(asset.originalFileName ?? asset.mediasourceId ?? asset.id)
                             .font(.system(size: 15, weight: .medium))
                             .foregroundStyle(.white)
                             .lineLimit(1)
                         
                         HStack(spacing: 6) {
-                            Text(asset.slug)
+                            Text(asset.mediasourceId ?? asset.id)
                                 .font(.system(size: 12, design: .monospaced))
                                 .foregroundStyle(Theme.secondaryText)
                                 .lineLimit(1)
@@ -115,7 +115,8 @@ struct ArchiveRowView: View {
                     HStack(spacing: 12) {
                         // View button — open in browser
                         Button {
-                            if let url = ServerConfig.clipURL(asset.slug) {
+                            if let msId = asset.mediasourceId,
+                               let url = ServerConfig.clipURL(msId) {
                                 UIApplication.shared.open(url)
                             }
                         } label: {

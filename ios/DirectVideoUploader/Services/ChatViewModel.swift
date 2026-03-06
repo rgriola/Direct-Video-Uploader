@@ -91,9 +91,8 @@ final class ChatViewModel {
             // Build only editable fields
             var fields: [FormField] = []
             
-            // Slug (prefilled from server)
-            let prefillSlug = (data["prefilledData"] as? [String: Any])?["slug"] as? String
-            fields.append(FormField(id: "slug", label: "Slug / Title", type: "text", value: prefillSlug))
+            // Slug (form title — user editable, no prefill from server)
+            fields.append(FormField(id: "slug", label: "Slug / Title", type: "text", value: nil))
             
             // Type (Raw or Cut)
             fields.append(FormField(
@@ -122,7 +121,6 @@ final class ChatViewModel {
         ws.onFormConfirmed = { [weak self] data in
             guard let self else { return }
             let text = data["message"] as? String ?? "🙌 High Five! Form received."
-            let slug = data["slug"] as? String
             let mediasourceId = data["mediasourceId"] as? String
             let mediasourceUrl = data["mediasourceUrl"] as? String
             let originalFileName = data["originalFileName"] as? String
@@ -139,7 +137,7 @@ final class ChatViewModel {
                 messageType: .confirmation,
                 content: MessageContent(
                     text: text,
-                    slug: slug,
+                    slug: nil,
                     mediasourceId: mediasourceId,
                     mediasourceUrl: mediasourceUrl,
                     originalFileName: originalFileName,
@@ -527,7 +525,7 @@ final class ChatViewModel {
         
         // Create asset on server
         if let asset = await createAsset(fileName: fileName, fileURL: fileURL) {
-            print("✅ Asset created: \(asset.slug)")
+            print("✅ Asset created: \(asset.mediasourceId ?? asset.id)")
             await uploadVideo(assetId: asset.id, fileURL: fileURL, metadata: metadata)
             
             // Clean up temp video file after upload (#18)

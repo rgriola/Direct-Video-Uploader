@@ -16,19 +16,6 @@ export function verifyPin(pin, hash) {
 }
 
 /**
- * Generate a short slug from a string.
- * e.g., "Santana Standup" → "santana-standup"
- */
-export function generateSlug(name) {
-    const base = name
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, '-')
-        .replace(/^-|-$/g, '');
-    const suffix = crypto.randomBytes(3).toString('hex');
-    return `${base}-${suffix}`;
-}
-
-/**
  * Generate an incremental 9-digit Mediasource ID from DB sequence.
  * Falls back to random if DB call fails.
  */
@@ -105,7 +92,7 @@ export function serializeClip(clip) {
  * @param {Set<string>|undefined} socketIds - Set of socket IDs for the user
  * @param {object} payload - Event data
  * @param {string} payload.assetId
- * @param {object} payload.asset - { slug, mediasourceId, mediasourceUrl, originalFileName }
+ * @param {object} payload.asset - { mediasourceId, mediasourceUrl, originalFileName }
  * @param {string} payload.userName
  * @param {object} payload.metadata - Parsed metadata from parseClientMetadata()
  * @param {object} payload.clip - { id, storageUrl?, fileSize, originalFileName }
@@ -169,7 +156,7 @@ export function notifyUserSockets(io, socketIds, payload) {
             capturedAt: metadata.capturedAt,
             clipCount: 1,
             duration: metadata.duration,
-            prefilledData: { slug: asset.slug },
+            prefilledData: {},
         });
     }
 }

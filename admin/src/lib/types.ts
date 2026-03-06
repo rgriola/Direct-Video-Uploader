@@ -27,7 +27,6 @@ export interface Clip {
 
 export interface Asset {
   id: string;
-  slug: string;
   mediasourceId?: string | null;
   mediasourceUrl?: string | null;
   status: string;

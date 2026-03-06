@@ -6,7 +6,7 @@ import path from 'path';
 import fs from 'fs/promises';
 import { pipeline } from 'stream/promises';
 import prisma from '../lib/prisma.js';
-import { generateSlug, generateMediasourceId, dbRetry, parseClientMetadata, serializeClip, notifyUserSockets } from '../lib/utils.js';
+import { generateMediasourceId, dbRetry, parseClientMetadata, serializeClip, notifyUserSockets } from '../lib/utils.js';
 import { ingestVideo, isMuxEnabled, createDirectUpload } from '../lib/mux.js';
 
 export default async function assetRoutes(fastify) {
@@ -19,19 +19,13 @@ export default async function assetRoutes(fastify) {
         preHandler: [fastify.authenticate],
     }, async (request) => {
         const { fileName } = request.body || {};
-        const slugBase = fileName
-            ? fileName.replace(/\.[^/.]+$/, '')  // strip extension
-            : 'upload';
-
-        const slug = generateSlug(slugBase);
         const mediasourceId = await generateMediasourceId(prisma);
 
         const asset = await dbRetry(() => prisma.asset.create({
             data: {
-                slug,
                 userId: request.user.id,
                 mediasourceId,
-                mediasourceUrl: `/clips/${slug}`,
+                mediasourceUrl: `/clips/${mediasourceId}`,
                 originalFileName: fileName || null,
                 status: 'UPLOADING',
             },
@@ -40,7 +34,6 @@ export default async function assetRoutes(fastify) {
         return {
             asset: {
                 id: asset.id,
-                slug: asset.slug,
                 mediasourceId: asset.mediasourceId,
                 mediasourceUrl: asset.mediasourceUrl,
                 originalFileName: asset.originalFileName,
@@ -94,7 +87,7 @@ export default async function assetRoutes(fastify) {
         const stats = await fs.stat(filePath);
 
         const metadata = parseClientMetadata(clientMeta);
-        console.log(`📊 Metadata for ${asset.slug}:`, metadata);
+        console.log(`📊 Metadata for ${asset.mediasourceId}:`, metadata);
 
         // Create clip with metadata in one call (merged from 2 separate calls — #9)
         const clip = await dbRetry(() => prisma.clip.create({
@@ -122,15 +115,15 @@ export default async function assetRoutes(fastify) {
         }));
 
         // Push metadata + form request via WebSocket
-        const originalName = clip.originalFileName || asset.originalFileName || asset.slug;
+        const originalName = clip.originalFileName || asset.originalFileName || asset.mediasourceId;
 
         notifyUserSockets(fastify.io, fastify.userSockets?.get(request.user.id), {
             assetId: id,
-            asset: { slug: asset.slug, mediasourceId: asset.mediasourceId, mediasourceUrl: asset.mediasourceUrl, originalFileName: originalName },
+            asset: { mediasourceId: asset.mediasourceId, mediasourceUrl: asset.mediasourceUrl, originalFileName: originalName },
             userName: request.user.name,
             metadata,
             clip: { id: clipId, storageUrl: clip.storageUrl, fileSize: stats.size.toString() },
-            messageText: `🎬 ${asset.slug} is being processed, here are the Mediasource details.`,
+            messageText: `🎬 #${asset.mediasourceId} is being processed, here are the Mediasource details.`,
         });
 
         // FORM_REQUEST is ephemeral — sent via WebSocket only, not persisted (Option B)
@@ -164,7 +157,6 @@ export default async function assetRoutes(fastify) {
             },
             asset: {
                 id: updatedAsset.id,
-                slug: updatedAsset.slug,
                 mediasourceId: updatedAsset.mediasourceId,
                 mediasourceUrl: updatedAsset.mediasourceUrl,
                 status: updatedAsset.status,
@@ -229,18 +221,18 @@ export default async function assetRoutes(fastify) {
             },
         }));
 
-        console.log(`🎬 Mux direct upload created for clip ${clipId}, asset ${asset.slug}`);
+        console.log(`🎬 Mux direct upload created for clip ${clipId}, asset #${asset.mediasourceId}`);
 
         // Push form request via WebSocket
-        const originalName = clientMeta.fileName || asset.originalFileName || asset.slug;
+        const originalName = clientMeta.fileName || asset.originalFileName || asset.mediasourceId;
 
         notifyUserSockets(fastify.io, fastify.userSockets?.get(request.user.id), {
             assetId: id,
-            asset: { slug: asset.slug, mediasourceId: asset.mediasourceId, mediasourceUrl: asset.mediasourceUrl, originalFileName: originalName },
+            asset: { mediasourceId: asset.mediasourceId, mediasourceUrl: asset.mediasourceUrl, originalFileName: originalName },
             userName: request.user.name,
             metadata,
             clip: { id: clipId, fileSize: clientMeta.fileSize || '0' },
-            messageText: `🎬 ${asset.slug} is uploading to Mux, here are the Mediasource details.`,
+            messageText: `🎬 #${asset.mediasourceId} is uploading to Mux, here are the Mediasource details.`,
         });
 
         return {
@@ -345,7 +337,7 @@ export default async function assetRoutes(fastify) {
             where: { assetId: id },
             create: {
                 assetId: id,
-                slug: slug || asset.slug,
+                slug: slug || null,
                 type: type || 'Raw',
                 description,
                 priority: priority?.toUpperCase() || 'MEDIUM',
@@ -366,7 +358,6 @@ export default async function assetRoutes(fastify) {
             for (const socketId of userSockets) {
                 io.to(socketId).emit('form:confirmed', {
                     assetId: id,
-                    slug: asset.slug,
                     mediasourceId: asset.mediasourceId,
                     mediasourceUrl: asset.mediasourceUrl,
                     originalFileName: asset.originalFileName ?? clip?.originalFileName,

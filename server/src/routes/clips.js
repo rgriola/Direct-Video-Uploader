@@ -1,6 +1,6 @@
 /**
  * Clip Viewer — Public page to view a video clip with metadata.
- * Accessible at GET /clips/:slug
+ * Accessible at GET /clips/:mediasourceId
  */
 import prisma from '../lib/prisma.js';
 import { MUX_ENV_KEY } from '../lib/mux.js';
@@ -18,16 +18,28 @@ function escapeHtml(str) {
 
 export default async function clipRoutes(fastify) {
     /**
-     * GET /clips/:slug
+     * GET /clips/:mediasourceId
      * Render a public clip viewer page (dark theme, video player + metadata).
      */
-    fastify.get('/clips/:slug', async (request, reply) => {
-        const { slug } = request.params;
+    fastify.get('/clips/:mediasourceId', async (request, reply) => {
+        const { mediasourceId } = request.params;
+
+        // Reject obviously invalid IDs (e.g. "undefined", empty, non-numeric)
+        if (!mediasourceId || mediasourceId === 'undefined' || mediasourceId === 'null') {
+            reply.status(404).type('text/html').send(`
+                <!DOCTYPE html>
+                <html><head><title>Not Found</title>
+                <style>body{background:#0A0E1A;color:#fff;font-family:system-ui;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}
+                h1{font-size:1.5rem;opacity:0.7}</style></head>
+                <body><h1>Clip not found</h1></body></html>
+            `);
+            return;
+        }
 
         let asset;
         try {
             asset = await prisma.asset.findFirst({
-                where: { slug },
+                where: { mediasourceId },
             });
 
             // Clean up the 404 message
@@ -49,7 +61,7 @@ export default async function clipRoutes(fastify) {
 
             asset = { ...asset, clips, formResponse, user };
         } catch (err) {
-            fastify.log.error({ err, slug }, 'Clip viewer DB query failed');
+            fastify.log.error({ err, mediasourceId }, 'Clip viewer DB query failed');
             reply.status(500).type('text/html').send(`
                 <!DOCTYPE html>
                 <html><head><title>Error</title>
@@ -66,7 +78,6 @@ export default async function clipRoutes(fastify) {
         // ── Asset-level metadata ──
         const assetRows = [];
         assetRows.push({ icon: '🆔', label: 'Asset ID', value: asset.id });
-        assetRows.push({ icon: '🔗', label: 'Slug', value: asset.slug });
         if (asset.mediasourceId) assetRows.push({ icon: '📡', label: 'Mediasource ID', value: asset.mediasourceId });
         if (asset.mediasourceUrl) assetRows.push({ icon: '🌐', label: 'Mediasource URL', value: asset.mediasourceUrl });
         if (asset.originalFileName) assetRows.push({ icon: '📄', label: 'Original File', value: asset.originalFileName });
@@ -132,7 +143,7 @@ export default async function clipRoutes(fastify) {
         // Build HTML helper
         const renderRows = (rows) => rows.map(r => {
             const val = r.link
-                ? `<a href="${escapeHtml(r.link)}" target="_blank" rel="noopener" style="color:#007AFF;text-decoration:none">${escapeHtml(r.value)} ↗</a>`
+                ? `<a href="${escapeHtml(r.link)}" target="_blank" rel="noopener" style="color:#ccc;text-decoration:underline;text-underline-offset:2px">${escapeHtml(r.value)} ↗</a>`
                 : escapeHtml(r.value);
             return `<div class="meta-row"><span class="meta-icon">${r.icon}</span><span class="meta-label">${escapeHtml(r.label)}</span><span class="meta-value">${val}</span></div>`;
         }).join('\n');
@@ -142,6 +153,10 @@ export default async function clipRoutes(fastify) {
         const hasMuxPlayback = !!(clip?.muxPlaybackId);
         const muxPlaybackId = clip?.muxPlaybackId || '';
         const muxEnvKey = MUX_ENV_KEY || '';
+
+        // Display title: form_response.slug or mediasourceId
+        const displayTitle = form?.slug || `#${asset.mediasourceId || 'Unknown'}`;
+        const displayOwner = asset.user ? `@${asset.user.name}` : '';
 
         // Mux Player uses a web component — only load when we have a playback ID
         const muxPlayerScript = hasMuxPlayback
@@ -153,7 +168,7 @@ export default async function clipRoutes(fastify) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>${escapeHtml(asset.slug)} — Mediasource Viewer</title>
+    <title>${escapeHtml(displayTitle)} — Mediasource Viewer</title>
     ${muxPlayerScript}
     <style>
         *, *::before, *::after { box-sizing: border-box; }
@@ -165,51 +180,64 @@ export default async function clipRoutes(fastify) {
             min-height: 100vh;
             -webkit-text-size-adjust: 100%;
         }
+        a { color: #ccc; }
         .container {
             max-width: 800px;
             margin: 0 auto;
             padding: 24px 20px 64px;
         }
-        /* Header */
+        /* Header — split layout */
         .header {
-            text-align: center;
-            padding: 32px 0 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            padding: 24px 0 16px;
             border-bottom: 1px solid rgba(255,255,255,0.08);
-            margin-bottom: 24px;
+            margin-bottom: 20px;
         }
-        .header .brand {
-            font-size: 12px;
+        .header-left {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        .header-left .brand {
+            font-size: 11px;
             font-weight: 600;
             letter-spacing: 2px;
             text-transform: uppercase;
-            color: #007AFF;
-            margin-bottom: 8px;
+            color: rgba(255,255,255,0.35);
         }
-        .header h1 {
-            font-size: 24px;
+        .header-left h1 {
+            font-size: 22px;
             font-weight: 700;
             color: #fff;
-            margin-bottom: 6px;
             word-break: break-word;
-            overflow-wrap: break-word;
         }
-        .header .msid {
+        .header-left .msid {
             font-family: 'SF Mono', ui-monospace, monospace;
             font-size: 13px;
-            color: #007AFF;
-            word-break: break-all;
+            color: rgba(255,255,255,0.5);
         }
-        .header .uploader {
-            font-size: 13px;
+        .header-right {
+            text-align: right;
+            flex-shrink: 0;
+            padding-top: 4px;
+        }
+        .header-right .owner {
+            font-size: 15px;
+            font-weight: 600;
+            color: #fff;
+        }
+        .header-right .team {
+            font-size: 12px;
             color: rgba(255,255,255,0.4);
-            margin-top: 8px;
         }
         /* Video */
         .video-wrap {
             background: #000;
             border-radius: 14px;
             overflow: hidden;
-            margin-bottom: 24px;
+            margin-bottom: 8px;
             position: relative;
         }
         .video-wrap video {
@@ -229,6 +257,49 @@ export default async function clipRoutes(fastify) {
             text-align: center;
             color: rgba(255,255,255,0.3);
             font-size: 14px;
+        }
+        /* Below video — status + copy link */
+        .video-bar {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 8px 0 20px;
+        }
+        /* Status pill */
+        .status {
+            display: inline-block;
+            padding: 4px 14px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            vertical-align: middle;
+        }
+        .status-READY { background: rgba(48,209,88,0.15); color: #30D158; }
+        .status-PROCESSING { background: rgba(255,159,10,0.15); color: #FF9F0A; }
+        .status-UPLOADING { background: rgba(0,122,255,0.15); color: #7ABAFF; }
+        .status-ERROR { background: rgba(255,69,58,0.15); color: #FF453A; }
+        /* Copy link button */
+        .copy-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: rgba(255,255,255,0.08);
+            color: #fff;
+            border: 1px solid rgba(255,255,255,0.15);
+            border-radius: 8px;
+            padding: 5px 12px;
+            font-size: 12px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-family: inherit;
+        }
+        .copy-link:hover { background: rgba(255,255,255,0.14); }
+        .copy-link:active { transform: scale(0.96); }
+        .copy-link.copied {
+            background: rgba(48,209,88,0.15);
+            color: #30D158;
+            border-color: rgba(48,209,88,0.3);
         }
         /* Sections */
         .section {
@@ -275,44 +346,6 @@ export default async function clipRoutes(fastify) {
         .priority-high { color: #FF9F0A; }
         .priority-medium { color: #30D158; }
         .priority-low { color: rgba(255,255,255,0.5); }
-        /* Status pill */
-        .status {
-            display: inline-block;
-            padding: 4px 14px;
-            border-radius: 20px;
-            font-size: 12px;
-            font-weight: 600;
-            margin-top: 10px;
-            vertical-align: middle;
-        }
-        .status-READY { background: rgba(48,209,88,0.15); color: #30D158; }
-        .status-PROCESSING { background: rgba(255,159,10,0.15); color: #FF9F0A; }
-        .status-UPLOADING { background: rgba(0,122,255,0.15); color: #007AFF; }
-        .status-ERROR { background: rgba(255,69,58,0.15); color: #FF453A; }
-        /* Copy link button */
-        .copy-link {
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-            background: rgba(0,122,255,0.12);
-            color: #007AFF;
-            border: 1px solid rgba(0,122,255,0.25);
-            border-radius: 8px;
-            padding: 6px 14px;
-            font-size: 13px;
-            font-weight: 500;
-            cursor: pointer;
-            margin-top: 12px;
-            transition: all 0.2s;
-            font-family: inherit;
-        }
-        .copy-link:hover { background: rgba(0,122,255,0.2); }
-        .copy-link:active { transform: scale(0.96); }
-        .copy-link.copied {
-            background: rgba(48,209,88,0.15);
-            color: #30D158;
-            border-color: rgba(48,209,88,0.3);
-        }
         /* Footer */
         .footer {
             text-align: center;
@@ -329,9 +362,10 @@ export default async function clipRoutes(fastify) {
         /* ── Mobile ── */
         @media (max-width: 480px) {
             .container { padding: 16px 14px 48px; }
-            .header { padding: 20px 0 18px; margin-bottom: 18px; }
-            .header h1 { font-size: 20px; }
-            .video-wrap { border-radius: 10px; margin-bottom: 18px; }
+            .header { padding: 16px 0 12px; margin-bottom: 16px; flex-direction: column; gap: 8px; }
+            .header-right { text-align: left; }
+            .header-left h1 { font-size: 18px; }
+            .video-wrap { border-radius: 10px; }
             .meta-row {
                 grid-template-columns: 28px 1fr;
                 gap: 2px 8px;
@@ -356,12 +390,15 @@ export default async function clipRoutes(fastify) {
 <body>
     <div class="container">
         <div class="header">
-            <div class="brand">Mediasource Viewer</div>
-            <h1>${escapeHtml(asset.slug)}</h1>
-            ${asset.mediasourceId ? `<div class="msid">#${escapeHtml(asset.mediasourceId)}</div>` : ''}
-            ${asset.user ? `<div class="uploader">Uploaded by ${escapeHtml(asset.user.name)}${asset.user.team ? ' · ' + escapeHtml(asset.user.team) : ''}</div>` : ''}
-            <span class="status status-${escapeHtml(asset.status)}">${escapeHtml(asset.status)}</span>
-            <div><button class="copy-link" onclick="copyLink(this)">📋 Copy Link</button></div>
+            <div class="header-left">
+                <div class="brand">Mediasource Viewer</div>
+                <h1>${escapeHtml(displayTitle)}</h1>
+                ${asset.mediasourceId ? `<div class="msid">#${escapeHtml(asset.mediasourceId)}</div>` : ''}
+            </div>
+            ${asset.user ? `<div class="header-right">
+                <div class="owner">@${escapeHtml(asset.user.name)}</div>
+                ${asset.user.team ? `<div class="team">${escapeHtml(asset.user.team)}</div>` : ''}
+            </div>` : ''}
         </div>
 
         <div class="video-wrap">
@@ -370,7 +407,7 @@ export default async function clipRoutes(fastify) {
                     stream-type="on-demand"
                     playback-id="${escapeHtml(muxPlaybackId)}"
                     ${MUX_ENV_KEY ? `env-key="${escapeHtml(MUX_ENV_KEY)}"` : ''}
-                    metadata-video-title="${escapeHtml(asset.slug)}"
+                    metadata-video-title="${escapeHtml(displayTitle)}"
                     accent-color="#007AFF"
                     preload="auto"
                   ></mux-player>`
@@ -378,6 +415,11 @@ export default async function clipRoutes(fastify) {
                     ? `<video controls preload="metadata" playsinline><source src="${escapeHtml(videoURL)}" type="video/quicktime"><source src="${escapeHtml(videoURL)}" type="video/mp4">Your browser does not support video playback.</video>`
                     : `<div class="no-video">🎬 Video not yet available</div>`
             }
+        </div>
+
+        <div class="video-bar">
+            <span class="status status-${escapeHtml(asset.status)}">${escapeHtml(asset.status)}</span>
+            <button class="copy-link" onclick="copyLink(this)">📋 Copy Link</button>
         </div>
 
         ${clipRows.length > 0 ? `

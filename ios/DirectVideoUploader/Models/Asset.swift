@@ -4,7 +4,6 @@ import Foundation
 
 struct Asset: Codable, Identifiable {
     let id: String
-    let slug: String
     let mediasourceId: String?
     let mediasourceUrl: String?
     let originalFileName: String?

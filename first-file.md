@@ -319,3 +319,31 @@ In the Text Flow Right After the greeting my Upload should be in the Text Chain.
 - I think for the iOS app these url's are hard coded by view or function. These paths and how they are appended need to be in a unified location and imported properly - reused.
 - Doing this will make maintenence easier
   .....
+
+**_ Task _**
+
+- Clip viewer needs overall layout improvement
+
+**_ Context _**
+
+- The Data is very important to the video we upload. being able to track it helps the user make decsions.
+
+**_ Instructions _**
+
+- Above the Video Player
+
+.......
+**_ Task _**
+
+- Reduce Database Size and uneeded data
+
+**_ Context _**
+
+- several fields in several tables are not needed and/or redundant
+
+**_ Instructions _**
+
+- remove dependency on asset.slug, remove field from use and database
+- server generated mediasourceID is the binding numercial identity replacing asset.slug ie;
+- the in field mediasource_url /clips/100000003 the new mediasource_url
+-

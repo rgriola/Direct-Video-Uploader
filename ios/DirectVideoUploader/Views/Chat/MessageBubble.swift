@@ -113,8 +113,8 @@ struct MessageBubble: View {
             // Action buttons — View (green) + Metadata (blue)
             HStack(spacing: 12) {
                 // View button — opens clip in browser
-                if let slug = message.content.slug,
-                   let clipURL = ServerConfig.clipURL(slug) {
+                if let msId = message.content.mediasourceId,
+                   let clipURL = ServerConfig.clipURL(msId) {
                     Button {
                         UIApplication.shared.open(clipURL)
                     } label: {

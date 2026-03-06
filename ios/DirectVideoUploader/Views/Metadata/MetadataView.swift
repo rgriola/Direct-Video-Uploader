@@ -150,8 +150,8 @@ struct MetadataView: View {
                         }
                         
                         // View clip link
-                        if let slug = asset?.slug,
-                           let url = ServerConfig.clipURL(slug) {
+                        if let msId = asset?.mediasourceId,
+                           let url = ServerConfig.clipURL(msId) {
                             Link(destination: url) {
                                 HStack {
                                     Image(systemName: "play.circle.fill")

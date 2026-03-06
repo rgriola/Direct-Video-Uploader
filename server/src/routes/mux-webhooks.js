@@ -150,7 +150,7 @@ export default async function muxWebhookRoutes(fastify) {
                         fastify.io?.emit('mux:ready', {
                             assetId: asset.id,
                             clipId: clip.id,
-                            slug: asset.slug,
+                            mediasourceId: asset.mediasourceId,
                             muxPlaybackId,
                             streamUrl,
                             thumbnailUrl,

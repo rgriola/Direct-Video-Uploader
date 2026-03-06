@@ -136,7 +136,7 @@ export default async function adminRoutes(fastify) {
     }, async () => {
         // Single raw SQL query — avoids multiple Prisma ORM roundtrips that exhaust the pool
         const assets = await prisma.$queryRawUnsafe(`
-            SELECT a.id, a.slug, a.mediasource_id AS "mediasourceId",
+            SELECT a.id, a.mediasource_id AS "mediasourceId",
                    a.mediasource_url AS "mediasourceUrl", a.status,
                    a.clip_count::int AS "clipCount", a.total_duration_seconds::int AS "totalDuration",
                    a.created_at AS "createdAt",
@@ -179,7 +179,7 @@ export default async function adminRoutes(fastify) {
                 status: 'UPLOADING',
                 clips: { none: {} },
             },
-            select: { id: true, slug: true },
+            select: { id: true },
         });
 
         if (staleAssets.length === 0) {

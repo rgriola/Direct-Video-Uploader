@@ -116,8 +116,8 @@ enum ServerConfig {
     static var healthURL: URL { url(for: "/api/health") }
     
     // Clip viewer (public)
-    static func clipURL(_ slug: String) -> URL? {
-        let trimmed = slug.trimmingCharacters(in: .whitespacesAndNewlines)
+    static func clipURL(_ mediasourceId: String) -> URL? {
+        let trimmed = mediasourceId.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
         return URL(string: "\(baseURL.absoluteString)/clips/\(trimmed)")
     }

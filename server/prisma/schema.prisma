@@ -36,7 +36,6 @@ enum UserStatus {
 // ─── Assets (video upload groups) ────────────────────────
 model Asset {
   id               String      @id @default(uuid())
-  slug             String      @unique
   userId           String      @map("user_id")
   mediasourceId    String?     @unique @map("mediasource_id")
   mediasourceUrl   String?     @map("mediasource_url")

@@ -78,7 +78,7 @@ export function AssetList({ assets, isLoading }: AssetListProps) {
                   </div>
 
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold truncate">{asset.slug}</p>
+                    <p className="text-sm font-semibold truncate">{asset.mediasourceId || asset.id}</p>
                     <p className="text-xs text-(--muted-foreground) mt-0.5 flex items-center gap-2">
                       {details}
                     </p>
@@ -140,7 +140,7 @@ export function AssetList({ assets, isLoading }: AssetListProps) {
                         {asset.createdAt ? new Date(asset.createdAt).toLocaleString() : ""}
                       </span>
                       <a
-                        href={`/clips/${asset.slug}`}
+                        href={asset.mediasourceUrl || `/clips/${asset.mediasourceId || asset.id}`}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="text-[11px] font-semibold text-[#007AFF] hover:underline no-underline"
