@@ -84,6 +84,7 @@ struct ChatView: View {
                             }
                         }
                     }
+                    .scrollDismissesKeyboard(.interactively)
                 }
                 
                 // Upload progress bar
