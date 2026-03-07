@@ -264,6 +264,7 @@ private final class UploadDelegate: NSObject, URLSessionTaskDelegate, URLSession
     }
     
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        session.finishTasksAndInvalidate()
         if let error {
             onComplete(nil, nil, error)
         } else {

@@ -23,6 +23,7 @@ import clipRoutes from './routes/clips.js';
 import errorRoutes from './routes/errors.js';
 import muxWebhookRoutes from './routes/mux-webhooks.js';
 import { setupWebSocket } from './ws/handler.js';
+import { startMuxSync, stopMuxSync } from './jobs/mux-sync.js';
 
 // ─── Global Crash Protection ─────────────────────────────
 // Prevent the process from dying on unhandled errors (Render shows 502 when this happens)
@@ -115,7 +116,9 @@ fastify.decorate('authenticate', async function (request, reply) {
 // ─── Socket.IO ───────────────────────────────────────────
 const io = new SocketIOServer(fastify.server, {
     cors: {
-        origin: '*',
+        origin: isProduction
+            ? ['https://rodgriola.com', 'https://www.rodgriola.com']
+            : '*',
         methods: ['GET', 'POST'],
     },
     transports: ['websocket', 'polling'],
@@ -166,6 +169,9 @@ const start = async () => {
 ║  Status: Running ✅                         ║
 ╚══════════════════════════════════════════  ╝
     `);
+
+        // Start background Mux status sync
+        startMuxSync(io);
     } catch (err) {
         fastify.log.error(err);
         process.exit(1);
@@ -177,6 +183,7 @@ const start = async () => {
 const shutdown = async (signal) => {
     console.log(`\n🛑 ${signal} received — shutting down gracefully...`);
     try {
+        stopMuxSync();    // Stop background jobs
         io.close();       // Close WebSocket connections
         await fastify.close(); // Stop accepting HTTP, finish in-flight requests
         console.log('👋 Server stopped cleanly');

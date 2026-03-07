@@ -4,12 +4,18 @@
 
 ---
 
-## Server Startup
+## Dev Server Startup
 
 - Check if port 3000 is in use before starting dev server.
 - Test API endpoints with `curl`.
 - Keep `PROJECT_SPEC.md`, `PROJECT_STATUS.md`, and this file up to date.
 - run npm run dev from the root.
+
+## Live Host
+
+- RENDER PAID ACCOUNT (no cold starts)
+- Custom domain: `rodgriola.com`
+- Auto-deploys from `main` branch
 
 ---
 
@@ -58,6 +64,7 @@ const result = await prisma.$queryRawUnsafe(
 - **Chat persistence (Option B)** — only persist meaningful events: user `TEXT` (outgoing), `FORM_SUBMITTED`. Ephemeral messages (greeting, auto-reply, form-request, confirmation) are sent via WebSocket only — never written to `chat_messages`.
 - **DB pool** — `pg.Pool` with `max: 20` connections. Pool was 5, caused timeouts on concurrent requests.
 - **Server auto-reply** — `message:send` handler replies to plain text with "send me your videos!"; Slack commands (e.g., `#team-alerts @carrie`) trigger `slack:post`.
+- **Background jobs** — `server/src/jobs/mux-sync.js` runs on an interval after `fastify.listen()`. Start in `start()`, stop in `shutdown()`. Pattern: export `startXxx(io)` / `stopXxx()`.
 
 ---
 
@@ -76,6 +83,26 @@ const result = await prisma.$queryRawUnsafe(
 11. **DVUDateFormatting.swift** — Cached date/time formatters. Use `DVUDateFormatting.longDate(_:)`, `.duration(_:)`, `.fileSize(_:)`, etc. Never create inline `DateFormatter` or `ISO8601DateFormatter` instances.
 12. **UserDefaultsKeys** — Enum in `ServerConfig.swift`. Use `UserDefaultsKeys.authToken` / `.serverURL` instead of hardcoded strings.
 13. **Clip URLs** — Use `ServerConfig.clipURL(_:slug)` to build clip viewer URLs. Never hand-build `/clips/` URLs inline.
+
+---
+
+## Mux Integration — Key Gotchas
+
+1. **SDK version** — `@mux/mux-node` v12+. Instance methods, NOT static. `new Mux()` then `muxClient.video.assets.retrieve()` etc.
+2. **Webhook signature** — `muxClient.webhooks.verifySignature()` (instance method). NOT `Mux.Webhooks.verifySignature()` (old static API, does not exist in v12).
+3. **Direct upload** — iOS uploads directly to Mux CDN via `createDirectUpload()`. Server creates clip in PROCESSING state.
+4. **Webhook events** — `video.upload.asset_created` links muxAssetId, `video.asset.ready` sets clip+asset to READY, `video.asset.errored` sets ERROR.
+5. **Background sync** — `server/src/jobs/mux-sync.js` polls Mux every 2min for stuck PROCESSING clips (fallback if webhooks fail). Alerts via Slack.
+6. **Mux helpers** — `server/src/lib/mux.js` exports `getMuxAsset()`, `getMuxUpload()`, `createDirectUpload()`, `ingestVideo()`, `isMuxEnabled`, `MUX_ENV_KEY`.
+
+---
+
+## Slack Integration
+
+- **Module:** `server/src/lib/slack.js` — exports `isConfigured()`, `postToChannel()`, `postDM()`, `buildAssetMessage()`.
+- **Bot name:** "fixer-video" (Sea Lion Media workspace).
+- **Chat trigger:** User types `#channel-name @user` in iOS chat → server posts to Slack via bot token.
+- **Alerting:** Background jobs use `postToChannel('general', ...)` for error alerts.
 
 ---
 
@@ -108,3 +135,7 @@ const result = await prisma.$queryRawUnsafe(
 - `PROJECT_SPEC.md` — Full architecture, data model, endpoint catalog
 - `PROJECT_STATUS.md` — Current progress, milestones, verified features
 - `server/prisma/schema.prisma` — Source of truth for all Prisma ↔ PostgreSQL field mappings
+- `server/src/lib/mux.js` — Mux SDK wrapper (direct upload, asset/upload retrieval)
+- `server/src/lib/slack.js` — Slack bot integration (channel posts, DMs, alerts)
+- `server/src/jobs/mux-sync.js` — Background worker for stuck PROCESSING clips
+- `server/src/routes/mux-webhooks.js` — Mux webhook handler + polling fallback

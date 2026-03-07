@@ -57,7 +57,7 @@ export async function fetchAssets() {
 }
 
 export async function fetchMessages() {
-  return api<{ messages: unknown[] }>("GET", "/api/messages");
+  return api<{ messages: unknown[] }>("GET", "/api/admin/messages");
 }
 
 export async function fetchTriadStatus() {

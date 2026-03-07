@@ -167,6 +167,24 @@ export default async function adminRoutes(fastify) {
     });
 
     /**
+     * GET /api/admin/messages
+     * List all chat messages across all users (for admin dashboard).
+     */
+    fastify.get('/api/admin/messages', {
+        preHandler: [fastify.authenticate],
+    }, async () => {
+        const messages = await prisma.chatMessage.findMany({
+            orderBy: { createdAt: 'desc' },
+            take: 200,
+            include: {
+                user: { select: { id: true, name: true } },
+            },
+        });
+
+        return { messages };
+    });
+
+    /**
      * POST /api/admin/cleanup-assets
      * Delete stale UPLOADING assets that have no clips (abandoned uploads).
      */

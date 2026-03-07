@@ -1,7 +1,7 @@
 # TODO — Direct Video Uploader
 
-> Full project audit — March 3, 2026
-> **20 of 25 issues fixed. 5 deferred to deployment prep.**
+> Full project audit — March 3, 2026 · Updated March 6
+> **25 of 25 issues fixed. ✅ All clear.**
 
 ---
 
@@ -45,22 +45,20 @@
 
 ## Lower Priority
 
-| #      | Issue                                       | Status   |
-| ------ | ------------------------------------------- | -------- |
-| **18** | Temp video files never deleted after upload | DONE     |
-| **19** | VideoUploadService URLSession leak          | DEFERRED |
-| **20** | Upload progress 100ms polling               | DEFERRED |
-| **21** | pool.on error silently swallows errors      | DONE     |
-| **22** | No rate limiting on login                   | DEFERRED |
-| **23** | GET /api/assets/:id no auth                 | DONE     |
-| **24** | CORS origin: true in production             | DEFERRED |
-| **25** | Admin ChatHistory shows only own messages   | DEFERRED |
+| #      | Issue                                                                    | Status |
+| ------ | ------------------------------------------------------------------------ | ------ |
+| **18** | Temp video files never deleted after upload                              | DONE   |
+| **19** | VideoUploadService URLSession leak — Added finishTasksAndInvalidate()    | DONE   |
+| **20** | Upload progress 100ms polling — Now event-driven via URLSession delegate | DONE   |
+| **21** | pool.on error silently swallows errors                                   | DONE   |
+| **22** | No rate limiting on login — Added @fastify/rate-limit (5/min)            | DONE   |
+| **23** | GET /api/assets/:id no auth                                              | DONE   |
+| **24** | CORS origin: true in production — Locked to rodgriola.com (HTTP + WS)    | DONE   |
+| **25** | Admin ChatHistory shows only own messages — Added /api/admin/messages    | DONE   |
 
 ## USER TODO do not modify below this line >>>>>>>>>>>>>>>>>>>>>>>>>
 
 iOS APP
-
-- Add Chat Icon, Profile Icon, Settings Icon at the bottom of the UI
 
 - Conversation Button - List of Previous Conversations [see image conversation-list.png]
   - Should show Video Thumnail - Upload Date - Time - Location ie Boston, MA; Syracuse, NY

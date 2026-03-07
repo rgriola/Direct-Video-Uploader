@@ -1,8 +1,8 @@
 # Direct Video Uploader — Project Status
 
-> **Last Updated:** March 5, 2026 · MST
-> **Current Phase:** Phase 3 (Render + Cloud + Mux) — Mux direct upload complete
-> **Overall Progress:** ████████████████████ 100% (Phase 2) · Phase 3 ~65%
+> **Last Updated:** March 6, 2026 · MST
+> **Current Phase:** Phase 3 (Render + Cloud + Mux) — Mux pipeline fully operational
+> **Overall Progress:** ████████████████████ 100% (Phase 2) · Phase 3 ~80%
 
 ---
 
@@ -10,7 +10,7 @@
 
 The **Direct Video Uploader** is a mobile-first video upload platform disguised as a text conversation. Field crew members "text" videos to the **Mediasource Fixer** server, which processes them the way a news assignment desk operates — fast, structured, and integrated with Slack.
 
-We've completed the **interactive chat demo** (HTML prototype), **project specification** (v4), the **Phase 1 server foundation** (Node.js API, WebSocket, PostgreSQL, auth, admin dashboard), the **Phase 2 — iOS Demo App** core flow (login → chat → video upload → form → confirmation → archive), and the **Web Clip Viewer** (server-rendered at `/clips/:slug`). Latest session (Mar 5): Xcode automatic code signing, clip URL bug fix (server was sending user-typed slug instead of auto-generated slug), and comprehensive iOS codebase refactoring — centralized Theme.swift (20 color constants), DVUDateFormatting.swift (cached formatters), and UserDefaultsKeys enum.
+We've completed the **interactive chat demo** (HTML prototype), **project specification** (v4), the **Phase 1 server foundation** (Node.js API, WebSocket, PostgreSQL, auth, admin dashboard), the **Phase 2 — iOS Demo App** core flow (login → chat → video upload → form → confirmation → archive), and the **Web Clip Viewer** (server-rendered at `/clips/:slug`). Latest session (Mar 6): Fixed critical Mux webhook signature verification bug (`@mux/mux-node` v12 changed `verifySignature` from static to instance method — ALL webhooks were being rejected). Implemented real Slack integration, iOS createAsset retry logic, background Mux status sync job, and upgraded Render to paid tier.
 
 ---
 
@@ -126,29 +126,32 @@ cd ios && xcodegen generate && xcodebuild -project DirectVideoUploader.xcodeproj
 
 **Server Endpoints Verified:**
 
-| Method | Path                         | Status                 |
-| ------ | ---------------------------- | ---------------------- |
-| `GET`  | `/api/health`                | ✅                     |
-| `POST` | `/api/auth/login`            | ✅                     |
-| `GET`  | `/api/auth/me`               | ✅                     |
-| `POST` | `/api/assets`                | ✅                     |
-| `POST` | `/api/assets/:id/upload`     | ✅                     |
-| `GET`  | `/api/assets/:id`            | ✅                     |
-| `POST` | `/api/assets/:id/form`       | ✅                     |
-| `GET`  | `/api/messages`              | ✅                     |
-| `GET`  | `/api/admin/stats`           | ✅                     |
-| `GET`  | `/api/admin/users`           | ✅                     |
-| `GET`  | `/api/admin/assets`          | ✅                     |
-| `GET`  | `/api/admin/status`          | ✅ Triad health        |
-| `WS`   | `/socket.io/`                | ✅                     |
-| `POST` | `/api/admin/cleanup-assets`  | ✅ Stale asset cleanup |
-| `GET`  | `/api/assets/mine`           | ✅ User's assets list  |
-| `POST` | `/api/errors`                | ✅ Client error log    |
-| `GET`  | `/api/admin/errors`          | ✅ Retrieve errors     |
-| `POST` | `/api/assets/:id/mux-upload` | ✅ Mux direct upload   |
-| `POST` | `/api/webhooks/mux`          | ✅ Mux webhook handler |
-| `GET`  | `/`                          | ✅ Dashboard           |
-| `GET`  | `/clips/:slug`               | ✅ Web clip viewer     |
+| Method | Path                         | Status                     |
+| ------ | ---------------------------- | -------------------------- |
+| `GET`  | `/api/health`                | ✅                         |
+| `POST` | `/api/auth/login`            | ✅                         |
+| `GET`  | `/api/auth/me`               | ✅                         |
+| `POST` | `/api/assets`                | ✅                         |
+| `POST` | `/api/assets/:id/upload`     | ✅                         |
+| `GET`  | `/api/assets/:id`            | ✅                         |
+| `POST` | `/api/assets/:id/form`       | ✅                         |
+| `GET`  | `/api/messages`              | ✅                         |
+| `GET`  | `/api/admin/stats`           | ✅                         |
+| `GET`  | `/api/admin/users`           | ✅                         |
+| `GET`  | `/api/admin/assets`          | ✅                         |
+| `GET`  | `/api/admin/status`          | ✅ Triad health            |
+| `WS`   | `/socket.io/`                | ✅                         |
+| `POST` | `/api/admin/cleanup-assets`  | ✅ Stale asset cleanup     |
+| `GET`  | `/api/assets/mine`           | ✅ User's assets list      |
+| `POST` | `/api/errors`                | ✅ Client error log        |
+| `GET`  | `/api/admin/errors`          | ✅ Retrieve errors         |
+| `POST` | `/api/assets/:id/mux-upload` | ✅ Mux direct upload       |
+| `POST` | `/api/webhooks/mux`          | ✅ Mux webhook handler     |
+| `GET`  | `/api/mux/status/:clipId`    | ✅ Mux polling fallback    |
+| `GET`  | `/api/mux/env-key`           | ✅ Mux env key (public)    |
+| `POST` | `/api/admin/sync-mux-status` | ✅ Force-sync stuck assets |
+| `GET`  | `/`                          | ✅ Dashboard               |
+| `GET`  | `/clips/:slug`               | ✅ Web clip viewer         |
 
 ---
 
@@ -173,6 +176,19 @@ cd ios && xcodegen generate && xcodebuild -project DirectVideoUploader.xcodeproj
 | TestFlight build                   | 🔲 Not started     | For demo distribution                                  |
 | Xcode automatic code signing       | ✅ Done            | Team `LW5P4PVL96`, auto signing in project.yml         |
 | Centralized Theme + Formatting     | ✅ Done            | Theme.swift, DVUDateFormatting.swift, UserDefaultsKeys |
+
+**Features Added (Mar 6 — Session):**
+
+- **Mux webhook signature fix (ROOT CAUSE)** — `@mux/mux-node` v12 changed `Webhooks.verifySignature` from static method to instance method. Code called `Mux.Webhooks.verifySignature()` which threw "is not a function", rejecting ALL Mux webhooks with 401. Fixed to `new Mux().webhooks.verifySignature()`. This was why all clips stayed stuck in PROCESSING.
+- **Asset status propagation** — `video.asset.ready` webhook handler only updated `clip.status` to READY but never updated the parent `asset.status`. Dashboard and clip viewer show asset status. Fixed in webhook handler, polling endpoint, and error handler.
+- **Polling endpoint crash fix** — `GET /api/mux/status/:clipId` was missing `assetId` in its SELECT clause, causing `where: { id: undefined }` crashes. Fixed and restructured to handle `muxAssetId` exists but `muxPlaybackId` missing.
+- **Admin sync endpoint** — `POST /api/admin/sync-mux-status` finds assets stuck in PROCESSING/UPLOADING that have READY clips and force-updates them.
+- **Slug removal** — Removed `asset.slug` from entire codebase, replaced with `mediasourceId` for clip URLs.
+- **Real Slack integration** — `server/src/lib/slack.js` with bot token for "fixer-video" bot. `postToChannel()`, `postDM()`, `buildAssetMessage()`. iOS `#channel @user` chat commands post to real Slack channels.
+- **iOS createAsset retry** — Up to 3 attempts with exponential backoff in `ChatViewModel.createAsset()` for Render cold-start resilience.
+- **Keyboard dismiss** — `.scrollDismissesKeyboard(.interactively)` on ChatView.
+- **Background Mux sync job** — `server/src/jobs/mux-sync.js` runs every 2min, checks all PROCESSING clips against Mux API, auto-heals stuck clips, alerts via Slack on errors. Wired into server startup/shutdown lifecycle.
+- **Render paid tier** — Upgraded to paid account. No cold starts. Dashboard response times 150–480ms.
 
 **Features Added (Mar 5 — Session):**
 
@@ -263,21 +279,24 @@ cd ios && xcodegen generate && xcodebuild -project DirectVideoUploader.xcodeproj
 
 Render is the preview environment (stand-in for eventual company production system). TestFlight couples with live Render + Cloud + Mux.
 
-| Deliverable              | Status           | Notes                                                                                                              |
-| ------------------------ | ---------------- | ------------------------------------------------------------------------------------------------------------------ |
-| Render deployment prep   | ✅ Done          | `render.yaml`, `render-build.sh`, SSL-aware pg pool, `trustProxy`, conditional pino-pretty, `NODE_ENV` detection   |
-| Deploy server to Render  | ✅ Live          | Auto-deploys from `main`. Custom domain `rodgriola.com`. Managed PostgreSQL.                                       |
-| Mux SDK + service        | ✅ Done          | `@mux/mux-node`, `server/src/lib/mux.js` — createDirectUpload, ingestVideo, status helpers                         |
-| Mux direct upload (iOS)  | ✅ Done          | iOS uploads directly to Mux CDN (bypasses server). `uploadViaMux()` in `VideoUploadService`, fallback to multipart |
-| Mux webhooks             | ✅ Done          | `server/src/routes/mux-webhooks.js` — handles upload.asset_created, asset.ready, asset.errored                     |
-| Mux Player (clip viewer) | ✅ Done          | `<mux-player>` web component in clip viewer when muxPlaybackId exists, `<video>` fallback                          |
-| Cloud storage (R2 or B2) | 🔲 Not started   | Replace local `uploads/` with Cloudflare R2 or Backblaze B2. Presigned URLs for upload + playback.                 |
-| Slack webhook (real)     | 🔲 Not started   | Replace simulated posts with Incoming Webhook to real workspace                                                    |
-| TestFlight build         | ⚠️ Needs rebuild | Production URL changed to `rodgriola.com`. New archive + upload to App Store Connect needed.                       |
-| Admin UI (expanded)      | ⚠️ Partial       | React dashboard running; needs asset detail, log persistence                                                       |
-| Real metadata extraction | ✅ Done          | iOS AVAsset extracts real metadata (not ffprobe — native iOS)                                                      |
-| Parallel form + upload   | 🔲 Not started   | Show form at upload start (not after); wait for both to finalize asset. Needed when real transcoding adds latency. |
-| Ephemeral chat cleanup   | ✅ Done          | Option B: greeting, auto-reply, form-request, confirmation no longer persisted to DB — sent via WS only.           |
+| Deliverable              | Status           | Notes                                                                                                                                       |
+| ------------------------ | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| Render deployment prep   | ✅ Done          | `render.yaml`, `render-build.sh`, SSL-aware pg pool, `trustProxy`, conditional pino-pretty, `NODE_ENV` detection                            |
+| Deploy server to Render  | ✅ Live          | Auto-deploys from `main`. Custom domain `rodgriola.com`. Managed PostgreSQL.                                                                |
+| Mux SDK + service        | ✅ Done          | `@mux/mux-node`, `server/src/lib/mux.js` — createDirectUpload, ingestVideo, status helpers                                                  |
+| Mux direct upload (iOS)  | ✅ Done          | iOS uploads directly to Mux CDN (bypasses server). `uploadViaMux()` in `VideoUploadService`, fallback to multipart                          |
+| Mux webhooks             | ✅ Done          | `server/src/routes/mux-webhooks.js` — handles upload.asset_created, asset.ready, asset.errored. v12 instance method signature verification. |
+| Mux Player (clip viewer) | ✅ Done          | `<mux-player>` web component in clip viewer when muxPlaybackId exists, `<video>` fallback                                                   |
+| Mux background sync      | ✅ Done          | `server/src/jobs/mux-sync.js` — polls every 2min for stuck PROCESSING clips, auto-heals, Slack alerts                                       |
+| Slack integration (real) | ✅ Done          | `server/src/lib/slack.js` — bot "fixer-video", `postToChannel()`, `postDM()`. iOS chat triggers real Slack posts.                           |
+| Render paid tier         | ✅ Done          | No cold starts. Custom domain `rodgriola.com`. Auto-deploy from `main`.                                                                     |
+| Cloud storage (R2 or B2) | 🔲 Not started   | Replace local `uploads/` with Cloudflare R2 or Backblaze B2. Presigned URLs for upload + playback.                                          |
+| Slack webhook (real)     | ✅ Done          | Real Slack bot integration via `server/src/lib/slack.js`. Bot "fixer-video" in Sea Lion Media workspace.                                    |
+| TestFlight build         | ⚠️ Needs rebuild | Production URL changed to `rodgriola.com`. New archive + upload to App Store Connect needed.                                                |
+| Admin UI (expanded)      | ⚠️ Partial       | React dashboard running; needs asset detail, log persistence                                                                                |
+| Real metadata extraction | ✅ Done          | iOS AVAsset extracts real metadata (not ffprobe — native iOS)                                                                               |
+| Parallel form + upload   | 🔲 Not started   | Show form at upload start (not after); wait for both to finalize asset. Needed when real transcoding adds latency.                          |
+| Ephemeral chat cleanup   | ✅ Done          | Option B: greeting, auto-reply, form-request, confirmation no longer persisted to DB — sent via WS only.                                    |
 
 ---
 
