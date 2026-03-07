@@ -18,8 +18,15 @@ final class AuthService {
     private let tokenKey = UserDefaultsKeys.authToken
     
     init() {
-        // Try to restore token from UserDefaults (use Keychain in production)
-        token = UserDefaults.standard.string(forKey: tokenKey)
+        // Restore token from Keychain; migrate from UserDefaults if present.
+        if let keychainToken = KeychainHelper.load(forKey: tokenKey) {
+            token = keychainToken
+        } else if let legacyToken = UserDefaults.standard.string(forKey: tokenKey) {
+            // One-time migration: move old token into Keychain and remove from UserDefaults.
+            token = legacyToken
+            KeychainHelper.save(legacyToken, forKey: tokenKey)
+            UserDefaults.standard.removeObject(forKey: tokenKey)
+        }
     }
     
     // MARK: - Login
@@ -59,8 +66,8 @@ final class AuthService {
         token = loginResponse.token
         currentUser = loginResponse.user
         
-        // Persist token
-        UserDefaults.standard.set(token, forKey: tokenKey)
+        // Persist token securely in Keychain
+        if let t = token { KeychainHelper.save(t, forKey: tokenKey) }
     }
     
     // MARK: - Fetch Current User
@@ -89,7 +96,7 @@ final class AuthService {
     func logout() {
         token = nil
         currentUser = nil
-        UserDefaults.standard.removeObject(forKey: tokenKey)
+        KeychainHelper.delete(forKey: tokenKey)
     }
     
     // MARK: - Authenticated Request Helper

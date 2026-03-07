@@ -21,9 +21,15 @@ struct ContextFormView: View {
     private static let allowedCharacters = CharacterSet.alphanumerics
         .union(CharacterSet(charactersIn: "-. "))
     
-    /// Sanitize input: strip anything not in the allowed set
+    /// Sanitize input: strip anything not in the allowed set (for slug)
     private func sanitize(_ input: String) -> String {
         String(input.unicodeScalars.filter { Self.allowedCharacters.contains($0) })
+    }
+
+    /// Sanitize free-text description: strip only null bytes and non-printable control
+    /// characters. Preserves newlines, punctuation, and all printable Unicode.
+    private func sanitizeDescription(_ input: String) -> String {
+        String(input.unicodeScalars.filter { $0.value >= 32 || $0 == "\n" || $0 == "\r" || $0 == "\t" })
     }
     
     private var isSlugValid: Bool {
@@ -151,7 +157,7 @@ struct ContextFormView: View {
                             fieldSection(label: "DESCRIPTION", required: true) {
                                 TextEditor(text: Binding(
                                     get: { formValues["description"] ?? "" },
-                                    set: { formValues["description"] = sanitize($0) }
+                                    set: { formValues["description"] = sanitizeDescription($0) }
                                 ))
                                 .font(.system(size: 15))
                                 .foregroundStyle(.white)

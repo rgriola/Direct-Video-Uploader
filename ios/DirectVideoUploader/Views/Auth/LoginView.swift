@@ -69,6 +69,10 @@ struct LoginView: View {
                                 .focused($focusedField, equals: .phone)
                                 .foregroundStyle(.white)
                                 .font(.system(size: 16, weight: .medium))
+                                .onChange(of: phoneNumber) { _, new in
+                                    let digits = new.filter { $0.isNumber }
+                                    if digits != new || new.count > 15 { phoneNumber = String(digits.prefix(15)) }
+                                }
                         }
                         .padding(.horizontal, 16)
                         .padding(.vertical, 14)
@@ -97,6 +101,10 @@ struct LoginView: View {
                                 .focused($focusedField, equals: .pin)
                                 .foregroundStyle(.white)
                                 .font(.system(size: 16, weight: .medium))
+                                .onChange(of: pin) { _, new in
+                                    let digits = new.filter { $0.isNumber }
+                                    if digits != new || new.count > 8 { pin = String(digits.prefix(8)) }
+                                }
                         }
                         .padding(.horizontal, 16)
                         .padding(.vertical, 14)

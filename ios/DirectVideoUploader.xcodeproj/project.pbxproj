@@ -24,6 +24,7 @@
 		958C853DDA42C7E81E258AC7 /* DVUDateFormatting.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4DBB133385999B4E09A826F7 /* DVUDateFormatting.swift */; };
 		A9F088643DC2986469FFC84B /* ContextFormView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3899E53553FC5E50293A8E8 /* ContextFormView.swift */; };
 		B23CA5DB5C7678A863AC8029 /* VideoMetadataExtractor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E996DE4500DDFF0790F62F0 /* VideoMetadataExtractor.swift */; };
+		B4C8A94E9D6FEE5A35C487AF /* KeychainHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2F7D1991BA8E3668878BC47 /* KeychainHelper.swift */; };
 		BB8D6AF27EE9A0B211E28483 /* ArchiveListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7A81292325663F81C4B8772 /* ArchiveListView.swift */; };
 		CC1C0E76EF9FE58674443EC5 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A7F3BED43E9CB3FFE330020 /* Theme.swift */; };
 		CE6C303AB52C17CF99EFD315 /* User.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A0611DEBA9BE67788466164 /* User.swift */; };
@@ -58,6 +59,7 @@
 		CC7AA7D72D102A4BC8F6B464 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		CE10509FD1B4B7983FB58B3D /* DirectVideoUploaderApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DirectVideoUploaderApp.swift; sourceTree = "<group>"; };
 		D56F342EB8CB3B26EC77BBF3 /* ServerConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerConfig.swift; sourceTree = "<group>"; };
+		E2F7D1991BA8E3668878BC47 /* KeychainHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainHelper.swift; sourceTree = "<group>"; };
 		E3899E53553FC5E50293A8E8 /* ContextFormView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContextFormView.swift; sourceTree = "<group>"; };
 		E7A81292325663F81C4B8772 /* ArchiveListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArchiveListView.swift; sourceTree = "<group>"; };
 		E8F7A0FE6F16D77BFEF57574 /* SentUploadBubble.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SentUploadBubble.swift; sourceTree = "<group>"; };
@@ -82,6 +84,7 @@
 			children = (
 				86A11FF4693D09E9320E8C07 /* AuthService.swift */,
 				66AE6120B342F8FBF6D9F832 /* ChatViewModel.swift */,
+				E2F7D1991BA8E3668878BC47 /* KeychainHelper.swift */,
 				0E996DE4500DDFF0790F62F0 /* VideoMetadataExtractor.swift */,
 				EA58877C26F0C09FF7DFA4DC /* VideoUploadService.swift */,
 				0813D4F9F9F55CFAE78F08B5 /* WebSocketService.swift */,
@@ -274,6 +277,7 @@
 				958C853DDA42C7E81E258AC7 /* DVUDateFormatting.swift in Sources */,
 				8479D08EF2DC76BFF0C2BDCF /* DirectVideoUploaderApp.swift in Sources */,
 				94EB8482D6F7158958A03393 /* InputBar.swift in Sources */,
+				B4C8A94E9D6FEE5A35C487AF /* KeychainHelper.swift in Sources */,
 				2F5EB0FE2B5962DCCF6BCD5B /* LoginView.swift in Sources */,
 				E6DDF3D43DC556C9E5C75AAF /* MessageBubble.swift in Sources */,
 				37912629DFC4719F11FEB3F5 /* MetadataView.swift in Sources */,

@@ -343,7 +343,21 @@ In the Text Flow Right After the greeting my Upload should be in the Text Chain.
 
 **_ Instructions _**
 
-- remove dependency on asset.slug, remove field from use and database
+- remove dependency on asset.slug, remove field from use and database, any pages, code or forms
 - server generated mediasourceID is the binding numercial identity replacing asset.slug ie;
-- the in field mediasource_url /clips/100000003 the new mediasource_url
--
+  in the field asset.mediasource_url : >> /clips/100000003 the new mediasource_url
+- In the clip viewer remove display of asset.slug
+- On the Clip Viewer page change all font color to white including links (blue on black is impossible to read)
+- Add form_response.slug, asset.mediasource_id to the top left corner of the clip viewer above the video player, add the clip owner (who uploaded it) to the right top corner of the page with the "@" ie; @davidburgess
+- Place the clip status, share link (copy link) in the bottom left corner of video_player window.
+- while working consider other data points that are redundant, but only work on the above.
+  ....
+
+**_ ISSUE _**
+
+- slack integration does not work on production, works on local dev
+
+**_ Context _**
+
+- Testing on iOS, production through Render.
+- received Cannot

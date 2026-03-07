@@ -1,0 +1,1091 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DVU — Chat Message Catalog</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif;
+    background: #000;
+    color: #e5e5ea;
+    min-height: 100vh;
+  }
+
+  /* Layout */
+  .page-header {
+    position: sticky; top: 0; z-index: 100;
+    background: rgba(0,0,0,0.85);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+    padding: 16px 20px;
+    text-align: center;
+  }
+  .page-header h1 { font-size: 20px; font-weight: 700; color: #fff; }
+  .page-header p { font-size: 13px; color: #98989d; margin-top: 4px; }
+
+  .toc {
+    padding: 12px 20px 20px;
+    display: flex; flex-wrap: wrap; gap: 8px;
+    justify-content: center;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+  }
+  .toc a {
+    font-size: 12px; font-weight: 600;
+    padding: 6px 12px;
+    border-radius: 14px;
+    text-decoration: none;
+    transition: all 0.15s;
+  }
+  .toc a:hover { filter: brightness(1.2); }
+  .toc a.green  { background: rgba(48,209,88,0.15); color: #30d158; }
+  .toc a.blue   { background: rgba(0,122,255,0.15); color: #007aff; }
+  .toc a.red    { background: rgba(255,69,58,0.15); color: #ff453a; }
+  .toc a.purple { background: rgba(191,90,242,0.15); color: #bf5af2; }
+  .toc a.orange { background: rgba(255,159,10,0.15); color: #ff9f0a; }
+  .toc a.gray   { background: rgba(152,152,157,0.15); color: #98989d; }
+
+  .container { max-width: 480px; margin: 0 auto; padding: 16px 12px 60px; }
+
+  /* Section headers */
+  .section {
+    margin-top: 32px;
+    scroll-margin-top: 80px;
+  }
+  .section-label {
+    display: flex; align-items: center; gap: 8px;
+    margin-bottom: 14px;
+    padding: 0 6px;
+  }
+  .section-badge {
+    font-size: 10px; font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    padding: 4px 10px;
+    border-radius: 10px;
+  }
+  .badge-green  { background: rgba(48,209,88,0.18); color: #30d158; }
+  .badge-blue   { background: rgba(0,122,255,0.18); color: #007aff; }
+  .badge-red    { background: rgba(255,69,58,0.18); color: #ff453a; }
+  .badge-purple { background: rgba(191,90,242,0.18); color: #bf5af2; }
+  .badge-orange { background: rgba(255,159,10,0.18); color: #ff9f0a; }
+  .badge-gray   { background: rgba(152,152,157,0.18); color: #98989d; }
+
+  .section-title {
+    font-size: 15px; font-weight: 600; color: #fff;
+  }
+  .section-count {
+    font-size: 12px; color: #636366; margin-left: auto;
+  }
+
+  /* Chat row */
+  .chat-row { 
+    display: flex; 
+    margin-bottom: 4px;
+    padding: 0 4px;
+  }
+  .chat-row.outgoing { justify-content: flex-end; }
+  .chat-row.incoming { justify-content: flex-start; }
+
+  /* Bubble */
+  .bubble {
+    max-width: 82%;
+    padding: 10px 14px;
+    border-radius: 18px;
+    font-size: 16px;
+    line-height: 1.4;
+    position: relative;
+  }
+  .bubble.outgoing {
+    background: linear-gradient(135deg, #007aff, #0063d1);
+    color: #fff;
+    border-bottom-right-radius: 6px;
+  }
+  .bubble.incoming {
+    background: #2c2c2e;
+    color: #e5e5ea;
+    border-bottom-left-radius: 6px;
+  }
+  .bubble.outgoing.slack-out {
+    background: linear-gradient(135deg, #4a154b, #611f69);
+  }
+
+  /* Metadata line */
+  .meta-line {
+    display: flex; align-items: center; gap: 5px;
+    font-size: 13px; color: #98989d;
+    margin-top: 3px;
+  }
+  .meta-line .icon { font-size: 12px; }
+  .meta-line .ms-id {
+    font-weight: 700;
+    font-family: 'SF Mono', 'Menlo', monospace;
+    color: #007aff;
+    font-size: 14px;
+  }
+  .meta-line .mono {
+    font-family: 'SF Mono', 'Menlo', monospace;
+    font-size: 13px;
+  }
+
+  /* Divider inside bubble */
+  .bubble-divider {
+    height: 1px;
+    background: rgba(255,255,255,0.08);
+    margin: 8px 0;
+  }
+
+  /* Action buttons row */
+  .action-row {
+    display: flex; gap: 10px;
+    margin-top: 8px;
+  }
+  .action-btn {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 7px 13px;
+    border-radius: 8px;
+    font-size: 13px; font-weight: 600;
+    color: #fff; border: none; cursor: default;
+  }
+  .btn-green  { background: #30d158; }
+  .btn-blue   { background: #007aff; }
+  .btn-link {
+    display: inline-flex; align-items: center; gap: 4px;
+    font-size: 12px; font-weight: 500;
+    color: #007aff; background: none; border: none; cursor: default;
+  }
+  .btn-link.green { color: #30d158; }
+
+  /* Timestamp */
+  .timestamp {
+    font-size: 10px;
+    color: rgba(255,255,255,0.25);
+    margin-top: 3px;
+    padding: 0 4px;
+  }
+  .timestamp.right { text-align: right; }
+  .timestamp.left  { text-align: left; }
+
+  /* Label tag above bubble */
+  .msg-label {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    padding: 2px 8px;
+    border-radius: 6px;
+    margin-bottom: 4px;
+    display: inline-block;
+  }
+  .lbl-greeting   { background: rgba(48,209,88,0.12); color: #30d158; }
+  .lbl-text       { background: rgba(152,152,157,0.12); color: #98989d; }
+  .lbl-video      { background: rgba(0,122,255,0.12); color: #007aff; }
+  .lbl-form       { background: rgba(191,90,242,0.12); color: #bf5af2; }
+  .lbl-confirm    { background: rgba(255,214,10,0.12); color: #ffd60a; }
+  .lbl-error      { background: rgba(255,69,58,0.12); color: #ff453a; }
+  .lbl-slack      { background: rgba(74,21,75,0.2); color: #e01e5a; }
+  .lbl-ui         { background: rgba(255,159,10,0.12); color: #ff9f0a; }
+
+  /* Source reference */
+  .msg-source {
+    font-size: 10px; color: #48484a;
+    margin-top: 2px; padding: 0 4px;
+  }
+  .msg-source code {
+    font-family: 'SF Mono', 'Menlo', monospace;
+    font-size: 10px;
+    color: #636366;
+  }
+
+  /* Typing indicator */
+  .typing-dots {
+    display: flex; gap: 5px; padding: 4px 0;
+  }
+  .typing-dots span {
+    width: 8px; height: 8px;
+    background: #636366;
+    border-radius: 50%;
+    animation: pulse 1.2s ease-in-out infinite;
+  }
+  .typing-dots span:nth-child(2) { animation-delay: 0.2s; }
+  .typing-dots span:nth-child(3) { animation-delay: 0.4s; }
+  @keyframes pulse {
+    0%, 100% { opacity: 0.3; transform: scale(0.85); }
+    50% { opacity: 1; transform: scale(1.1); }
+  }
+
+  /* Upload progress bar */
+  .progress-bar-container {
+    background: #1c1c1e;
+    border-radius: 14px;
+    padding: 12px 16px;
+    max-width: 82%;
+  }
+  .progress-label {
+    font-size: 13px; color: #98989d;
+    display: flex; justify-content: space-between; margin-bottom: 6px;
+  }
+  .progress-track {
+    height: 4px;
+    background: #3a3a3c;
+    border-radius: 2px;
+    overflow: hidden;
+  }
+  .progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #007aff, #5ac8fa);
+    border-radius: 2px;
+    width: 62%;
+    transition: width 0.3s;
+  }
+
+  /* Sent upload card */
+  .sent-card {
+    background: linear-gradient(135deg, #007aff, #0063d1);
+    border-radius: 18px;
+    border-bottom-right-radius: 6px;
+    padding: 10px;
+    max-width: 82%;
+  }
+  .sent-card-inner {
+    display: flex; gap: 10px; align-items: flex-start;
+  }
+  .sent-thumb {
+    width: 56px; height: 56px;
+    background: #1c1c1e;
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 24px; flex-shrink: 0;
+  }
+  .sent-info { flex: 1; min-width: 0; }
+  .sent-filename {
+    font-size: 14px; font-weight: 600; color: #fff;
+    font-family: 'SF Mono', 'Menlo', monospace;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .sent-date { font-size: 12px; color: rgba(255,255,255,0.6); margin-top: 2px; }
+  .sent-location {
+    display: inline-flex; align-items: center; gap: 3px;
+    font-size: 11px; font-weight: 500;
+    color: #30d158;
+    background: rgba(48,209,88,0.15);
+    padding: 2px 8px; border-radius: 8px;
+    margin-top: 4px;
+  }
+  .sent-status {
+    display: flex; align-items: center; gap: 4px; justify-content: flex-end;
+    margin-top: 6px;
+    font-size: 11px; color: rgba(255,255,255,0.5);
+  }
+  .sent-check { color: #30d158; font-size: 13px; }
+
+  /* Video preview card (pre-upload) */
+  .preview-card {
+    background: #2c2c2e;
+    border-radius: 18px;
+    border-bottom-right-radius: 6px;
+    padding: 10px;
+    max-width: 82%;
+  }
+  .preview-actions {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-top: 8px; padding-top: 6px;
+    border-top: 1px solid rgba(255,255,255,0.06);
+  }
+  .preview-cancel {
+    font-size: 12px; color: #ff453a; font-weight: 500;
+    background: none; border: none; cursor: default;
+    display: flex; align-items: center; gap: 3px;
+  }
+  .preview-send {
+    width: 32px; height: 32px;
+    background: #007aff; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    color: #fff; font-size: 16px; border: none; cursor: default;
+  }
+  .preview-hint {
+    font-size: 11px; color: #636366;
+    text-align: center; margin-top: 4px;
+  }
+
+  /* Slack badge */
+  .slack-header {
+    display: flex; align-items: center; gap: 5px;
+    font-size: 11px; font-weight: 600;
+    color: rgba(255,255,255,0.5);
+    margin-bottom: 4px;
+  }
+  .slack-icon { width: 14px; height: 14px; }
+  .slack-badge {
+    display: inline-block;
+    font-size: 11px; font-weight: 600;
+    padding: 2px 8px; border-radius: 8px;
+    margin-right: 4px; margin-top: 4px;
+  }
+  .badge-channel { background: rgba(0,122,255,0.15); color: #5ac8fa; }
+  .badge-mention { background: rgba(48,209,88,0.15); color: #30d158; }
+
+  /* Form error banner */
+  .form-error-banner {
+    background: rgba(255,69,58,0.1);
+    border: 1px solid rgba(255,69,58,0.3);
+    border-radius: 10px;
+    padding: 10px 14px;
+    display: flex; align-items: center; gap: 8px;
+    max-width: 82%;
+  }
+  .form-error-banner .icon { font-size: 16px; }
+  .form-error-banner .text { font-size: 13px; color: #ff453a; }
+
+  /* Connection header states */
+  .header-bar {
+    background: #1c1c1e;
+    border-radius: 14px;
+    padding: 10px 16px;
+    display: flex; align-items: center; gap: 10px;
+    max-width: 82%;
+  }
+  .header-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%; flex-shrink: 0;
+  }
+  .dot-green  { background: #30d158; }
+  .dot-yellow { background: #ffd60a; }
+  .dot-red    { background: #ff453a; }
+  .header-info { flex: 1; }
+  .header-name { font-size: 15px; font-weight: 600; color: #fff; }
+  .header-sub  { font-size: 12px; color: #98989d; }
+
+  /* Spacer */
+  .spacer { height: 12px; }
+  .spacer-sm { height: 6px; }
+
+  /* Fun follow-up variants */
+  .variants-list {
+    padding: 0 6px;
+    margin-top: 6px;
+  }
+  .variant-item {
+    font-size: 13px;
+    color: #98989d;
+    padding: 6px 12px;
+    background: #1c1c1e;
+    border-radius: 10px;
+    margin-bottom: 4px;
+    border-left: 3px solid #30d158;
+  }
+  .variant-num {
+    font-size: 10px; font-weight: 700;
+    color: #636366; margin-right: 6px;
+  }
+
+  /* Footer */
+  .page-footer {
+    text-align: center;
+    padding: 30px 20px;
+    font-size: 11px;
+    color: #48484a;
+  }
+
+  /* Stats bar */
+  .stats-bar {
+    display: flex; justify-content: center; gap: 20px;
+    padding: 12px 20px;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+  }
+  .stat-item { text-align: center; }
+  .stat-num { font-size: 22px; font-weight: 700; color: #fff; }
+  .stat-label { font-size: 10px; color: #636366; text-transform: uppercase; letter-spacing: 0.5px; }
+</style>
+</head>
+<body>
+
+<div class="page-header">
+  <h1>📱 DVU Chat Message Catalog</h1>
+  <p>Every message a user can see in the iOS app — grouped by type</p>
+</div>
+
+<div class="stats-bar">
+  <div class="stat-item"><div class="stat-num">7</div><div class="stat-label">Server Messages</div></div>
+  <div class="stat-item"><div class="stat-num">4</div><div class="stat-label">User Messages</div></div>
+  <div class="stat-item"><div class="stat-num">7</div><div class="stat-label">Error Bubbles</div></div>
+  <div class="stat-item"><div class="stat-num">6</div><div class="stat-label">UI Elements</div></div>
+</div>
+
+<div class="toc">
+  <a href="#greeting" class="green">Greeting</a>
+  <a href="#auto-reply" class="green">Auto-Reply</a>
+  <a href="#form-request" class="purple">Form Request</a>
+  <a href="#confirmation" class="blue">Confirmation</a>
+  <a href="#fun-followup" class="green">Fun Follow-Up</a>
+  <a href="#slack" class="purple">Slack</a>
+  <a href="#user-text" class="blue">User Text</a>
+  <a href="#user-video" class="blue">User Video</a>
+  <a href="#errors" class="red">Errors</a>
+  <a href="#ui-elements" class="orange">UI Elements</a>
+  <a href="#form-ui" class="orange">Form UI</a>
+  <a href="#connection" class="gray">Connection</a>
+</div>
+
+<div class="container">
+
+  <!-- ============================== -->
+  <!-- 1. SERVER MESSAGES (INCOMING)  -->
+  <!-- ============================== -->
+
+  <!-- 1A. GREETING -->
+  <div class="section" id="greeting">
+    <div class="section-label">
+      <span class="section-badge badge-green">Incoming</span>
+      <span class="section-title">Greeting</span>
+      <span class="section-count">3 variants</span>
+    </div>
+
+    <div class="chat-row incoming">
+      <div>
+        <span class="msg-label lbl-greeting">GREETING</span>
+        <div class="bubble incoming">🙋‍♂️ Good Morning David! I am ready for your video.</div>
+        <div class="timestamp left">8:14 AM</div>
+        <div class="msg-source">handler.js — <code>getGreeting()</code> · on iOS connect</div>
+      </div>
+    </div>
+
+    <div class="spacer"></div>
+
+    <div class="chat-row incoming">
+      <div>
+        <div class="bubble incoming">🙋‍♂️ Good Afternoon David! I am ready for your video.</div>
+        <div class="timestamp left">1:30 PM</div>
+      </div>
+    </div>
+
+    <div class="spacer-sm"></div>
+
+    <div class="chat-row incoming">
+      <div>
+        <div class="bubble incoming">🙋‍♂️ Good Evening David! I am ready for your video.</div>
+        <div class="timestamp left">7:45 PM</div>
+      </div>
+    </div>
+    <div class="msg-source" style="padding: 0 10px;">Time-of-day variants: Morning (5am–12pm) · Afternoon (12–5pm) · Evening (5pm–5am)</div>
+  </div>
+
+  <!-- 1B. AUTO-REPLY -->
+  <div class="section" id="auto-reply">
+    <div class="section-label">
+      <span class="section-badge badge-green">Incoming</span>
+      <span class="section-title">Auto-Reply (to plain text)</span>
+      <span class="section-count">1 message</span>
+    </div>
+
+    <div class="chat-row outgoing">
+      <div>
+        <span class="msg-label lbl-text">TEXT · Outgoing</span>
+        <div class="bubble outgoing">Hey what's up?</div>
+        <div class="timestamp right">8:15 AM</div>
+      </div>
+    </div>
+
+    <div class="spacer-sm"></div>
+
+    <div class="chat-row incoming">
+      <div>
+        <span class="msg-label lbl-text">TEXT · Auto-Reply</span>
+        <div class="bubble incoming">📱 Hey David, I can't text just yet — send me your videos! Tap the ＋ button to pick a video from your camera roll.</div>
+        <div class="timestamp left">8:15 AM</div>
+        <div class="msg-source">handler.js — 5-second debounce · ephemeral (not persisted)</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 1C. FORM REQUEST -->
+  <div class="section" id="form-request">
+    <div class="section-label">
+      <span class="section-badge badge-purple">Incoming</span>
+      <span class="section-title">Form Request (Upload Response Card)</span>
+      <span class="section-count">1 rich card</span>
+    </div>
+
+    <div class="chat-row incoming">
+      <div>
+        <span class="msg-label lbl-form">FORM_REQUEST</span>
+        <div class="bubble incoming" style="padding: 12px;">
+          <div style="font-size:15px; font-weight:600; color:#fff;">David Burgess</div>
+          <div style="font-size:13px; font-family: monospace; color:#98989d; margin-top:2px;">IMG_6278.MOV</div>
+          <div class="meta-line" style="margin-top:6px;">
+            <span class="icon">🔗</span>
+            <span class="ms-id">MS-100000042</span>
+          </div>
+          <div class="bubble-divider"></div>
+          <div class="meta-line"><span class="icon">📍</span> 40.7128, -74.0060</div>
+          <div class="meta-line"><span class="icon">🕐</span> Mar 7, 2026 8:14 AM</div>
+          <div class="meta-line"><span class="icon">🎬</span> HEVC / H.265 · 3840×2160 · 0:42</div>
+          <div class="bubble-divider"></div>
+          <div class="action-row" style="justify-content: space-between;">
+            <span class="btn-link">ℹ️ Show Details ›</span>
+            <span class="btn-link green">✏️ Add Details ›</span>
+          </div>
+        </div>
+        <div class="timestamp left">8:16 AM</div>
+        <div class="msg-source">assets.js → utils.js <code>notifyUserSockets()</code> · "🎬 #MS-100000042 is being processed"</div>
+      </div>
+    </div>
+
+    <div class="spacer-sm"></div>
+    <div class="msg-source" style="padding:0 10px;">
+      <strong>Server upload text:</strong> "🎬 #{mediasourceId} is being processed, here are the Mediasource details."<br>
+      <strong>Mux upload text:</strong> "🎬 #{mediasourceId} is uploading to Mux, here are the Mediasource details."
+    </div>
+  </div>
+
+  <!-- 1D. CONFIRMATION -->
+  <div class="section" id="confirmation">
+    <div class="section-label">
+      <span class="section-badge badge-blue">Incoming</span>
+      <span class="section-title">Confirmation ("High Five")</span>
+      <span class="section-count">1 rich card</span>
+    </div>
+
+    <div class="chat-row incoming">
+      <div>
+        <span class="msg-label lbl-confirm">CONFIRMATION</span>
+        <div class="bubble incoming" style="padding: 12px;">
+          <div style="font-size:15px; color:#e5e5ea;">🙌 High Five! I received your sheet, thank you. I'll text when the video is done.</div>
+          <div style="margin-top:8px;">
+            <div class="meta-line">
+              <span class="icon">🔗</span>
+              <span class="ms-id">MS-100000042</span>
+            </div>
+            <div class="meta-line">
+              <span class="icon">📄</span>
+              <span class="mono">IMG_6278.MOV</span>
+            </div>
+            <div class="meta-line">
+              <span class="icon">🕐</span> Mar 7, 2026 8:14 AM
+            </div>
+          </div>
+          <div class="action-row" style="margin-top:10px;">
+            <span class="action-btn btn-green">▶ View</span>
+            <span class="action-btn btn-blue">ℹ️ Metadata</span>
+          </div>
+        </div>
+        <div class="timestamp left">8:18 AM</div>
+        <div class="msg-source">assets.js → <code>form:confirmed</code> WS event<br>
+          iOS fallback: "🙌 High Five! Form received." (if server text is nil)</div>
+      </div>
+    </div>
+
+    <div class="spacer"></div>
+
+    <div style="padding:0 10px;">
+      <div class="msg-source"><strong>View button:</strong> Opens <code>ServerConfig.baseURL/clips/{slug}</code> in Safari<br>
+      <strong>Metadata button:</strong> Opens MetadataView sheet</div>
+    </div>
+  </div>
+
+  <!-- 1E. FUN FOLLOW-UP -->
+  <div class="section" id="fun-followup">
+    <div class="section-label">
+      <span class="section-badge badge-green">Incoming</span>
+      <span class="section-title">Fun Follow-Up (post-confirmation)</span>
+      <span class="section-count">10 variants</span>
+    </div>
+
+    <div class="chat-row incoming">
+      <div>
+        <span class="msg-label lbl-greeting">GREETING (reused type)</span>
+        <div class="bubble incoming">David, you are working hard today, but I am here when your next video is ready.</div>
+        <div class="timestamp left">8:19 AM</div>
+        <div class="msg-source">ChatViewModel.swift — 1s delay after <code>form:confirmed</code> · random pick · client-side only</div>
+      </div>
+    </div>
+
+    <div class="spacer"></div>
+
+    <div class="variants-list">
+      <div class="variant-item"><span class="variant-num">1</span>David, you are working hard today, but I am here when your next video is ready.</div>
+      <div class="variant-item"><span class="variant-num">2</span>David, that upload was smoother than a dolly shot. Send another whenever you're ready.</div>
+      <div class="variant-item"><span class="variant-num">3</span>David, another one in the can! I'll be here when the next masterpiece drops.</div>
+      <div class="variant-item"><span class="variant-num">4</span>David, that's a wrap! Take five — or send five more videos, I don't judge.</div>
+      <div class="variant-item"><span class="variant-num">5</span>David, you're on fire today 🔥 I'll keep the upload lane open for you.</div>
+      <div class="variant-item"><span class="variant-num">6</span>David, video received and locked. I'm basically your cloud butler — at your service.</div>
+      <div class="variant-item"><span class="variant-num">7</span>David, if uploads were Olympic events, you'd be on the podium right now 🥇</div>
+      <div class="variant-item"><span class="variant-num">8</span>David, that one's safe with me. Go grab coffee — I'll hold down the fort.</div>
+      <div class="variant-item"><span class="variant-num">9</span>David, filed and processed! You make this look easy. Ready when you are.</div>
+      <div class="variant-item"><span class="variant-num">10</span>David, boom — done! I'll just be here, staring at the upload button, waiting for you.</div>
+    </div>
+  </div>
+
+  <!-- 1F. SLACK MESSAGES -->
+  <div class="section" id="slack">
+    <div class="section-label">
+      <span class="section-badge badge-purple">Slack</span>
+      <span class="section-title">Slack Integration Messages</span>
+      <span class="section-count">5 messages</span>
+    </div>
+
+    <!-- Outgoing Slack command -->
+    <div class="chat-row outgoing">
+      <div>
+        <span class="msg-label lbl-slack">SLACK_POST · Outgoing</span>
+        <div class="bubble outgoing slack-out" style="padding:12px;">
+          <div class="slack-header">
+            <svg class="slack-icon" viewBox="0 0 24 24" fill="none"><path d="M6 15a2 2 0 0 1-2 2a2 2 0 0 1-2-2a2 2 0 0 1 2-2h2v2zm1 0a2 2 0 0 1 2-2a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2a2 2 0 0 1-2-2v-5z" fill="#E01E5A"/><path d="M9 6a2 2 0 0 1-2-2a2 2 0 0 1 2-2a2 2 0 0 1 2 2v2H9zm0 1a2 2 0 0 1 2 2a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2a2 2 0 0 1 2-2h5z" fill="#36C5F0"/><path d="M18 9a2 2 0 0 1 2-2a2 2 0 0 1 2 2a2 2 0 0 1-2 2h-2V9zm-1 0a2 2 0 0 1-2 2a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2a2 2 0 0 1 2 2v5z" fill="#2EB67D"/><path d="M15 18a2 2 0 0 1 2 2a2 2 0 0 1-2 2a2 2 0 0 1-2-2v-2h2zm0-1a2 2 0 0 1-2-2a2 2 0 0 1 2-2h5a2 2 0 0 1 2 2a2 2 0 0 1-2 2h-5z" fill="#ECB22E"/></svg>
+            Sending to Slack…
+          </div>
+          <div style="font-size:15px; color:#fff;">#team-alerts @carrie</div>
+          <div style="margin-top:6px;">
+            <span class="slack-badge badge-channel">#team-alerts</span>
+            <span class="slack-badge badge-mention">@carrie</span>
+          </div>
+        </div>
+        <div class="timestamp right">8:20 AM</div>
+      </div>
+    </div>
+
+    <div class="spacer"></div>
+
+    <!-- Incoming Slack success -->
+    <div class="chat-row incoming">
+      <div>
+        <span class="msg-label lbl-slack">SLACK_POST · Success</span>
+        <div class="bubble incoming" style="padding:12px;">
+          <div class="slack-header">
+            <svg class="slack-icon" viewBox="0 0 24 24" fill="none"><path d="M6 15a2 2 0 0 1-2 2a2 2 0 0 1-2-2a2 2 0 0 1 2-2h2v2zm1 0a2 2 0 0 1 2-2a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2a2 2 0 0 1-2-2v-5z" fill="#E01E5A"/><path d="M9 6a2 2 0 0 1-2-2a2 2 0 0 1 2-2a2 2 0 0 1 2 2v2H9zm0 1a2 2 0 0 1 2 2a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2a2 2 0 0 1 2-2h5z" fill="#36C5F0"/><path d="M18 9a2 2 0 0 1 2-2a2 2 0 0 1 2 2a2 2 0 0 1-2 2h-2V9zm-1 0a2 2 0 0 1-2 2a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2a2 2 0 0 1 2 2v5z" fill="#2EB67D"/><path d="M15 18a2 2 0 0 1 2 2a2 2 0 0 1-2 2a2 2 0 0 1-2-2v-2h2zm0-1a2 2 0 0 1-2-2a2 2 0 0 1 2-2h5a2 2 0 0 1 2 2a2 2 0 0 1-2 2h-5z" fill="#ECB22E"/></svg>
+            Slack ✓
+          </div>
+          <div style="font-size:15px; color:#e5e5ea;">✅ Posted to #team-alerts, @carrie in Slack</div>
+        </div>
+        <div class="timestamp left">8:20 AM</div>
+      </div>
+    </div>
+
+    <div class="spacer"></div>
+
+    <!-- Incoming Slack failure -->
+    <div class="chat-row incoming">
+      <div>
+        <span class="msg-label lbl-slack">SLACK_POST · Failure</span>
+        <div class="bubble incoming" style="padding:12px;">
+          <div class="slack-header">
+            <svg class="slack-icon" viewBox="0 0 24 24" fill="none"><path d="M6 15a2 2 0 0 1-2 2a2 2 0 0 1-2-2a2 2 0 0 1 2-2h2v2zm1 0a2 2 0 0 1 2-2a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2a2 2 0 0 1-2-2v-5z" fill="#E01E5A"/><path d="M9 6a2 2 0 0 1-2-2a2 2 0 0 1 2-2a2 2 0 0 1 2 2v2H9zm0 1a2 2 0 0 1 2 2a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2a2 2 0 0 1 2-2h5z" fill="#36C5F0"/><path d="M18 9a2 2 0 0 1 2-2a2 2 0 0 1 2 2a2 2 0 0 1-2 2h-2V9zm-1 0a2 2 0 0 1-2 2a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2a2 2 0 0 1 2 2v5z" fill="#2EB67D"/><path d="M15 18a2 2 0 0 1 2 2a2 2 0 0 1-2 2a2 2 0 0 1-2-2v-2h2zm0-1a2 2 0 0 1-2-2a2 2 0 0 1 2-2h5a2 2 0 0 1 2 2a2 2 0 0 1-2 2h-5z" fill="#ECB22E"/></svg>
+            Slack
+          </div>
+          <div style="font-size:15px; color:#e5e5ea;">❌ Couldn't post to #team-alerts (channel_not_found)</div>
+        </div>
+        <div class="timestamp left">8:20 AM</div>
+      </div>
+    </div>
+
+    <div class="spacer"></div>
+
+    <!-- Mixed results -->
+    <div class="chat-row incoming">
+      <div>
+        <span class="msg-label lbl-slack">SLACK_POST · Mixed</span>
+        <div class="bubble incoming">✅ Posted to #team-alerts<br>❌ Failed: @unknownuser</div>
+        <div class="timestamp left">8:21 AM</div>
+      </div>
+    </div>
+
+    <div class="spacer-sm"></div>
+
+    <!-- Not configured -->
+    <div class="chat-row incoming">
+      <div>
+        <span class="msg-label lbl-slack">SLACK_POST · Not Configured</span>
+        <div class="bubble incoming">❌ Slack is not configured. Set SLACK_BOT_TOKEN on the server.</div>
+        <div class="timestamp left">8:21 AM</div>
+        <div class="msg-source">handler.js — when <code>isConfigured()</code> returns false</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================== -->
+  <!-- 2. USER MESSAGES (OUTGOING)    -->
+  <!-- ============================== -->
+
+  <!-- 2A. Plain Text -->
+  <div class="section" id="user-text">
+    <div class="section-label">
+      <span class="section-badge badge-blue">Outgoing</span>
+      <span class="section-title">User Text Message</span>
+      <span class="section-count">1 message</span>
+    </div>
+
+    <div class="chat-row outgoing">
+      <div>
+        <span class="msg-label lbl-text">TEXT</span>
+        <div class="bubble outgoing">Hello! I have a clip for you.</div>
+        <div class="timestamp right">8:14 AM</div>
+        <div class="msg-source">ChatViewModel.swift <code>sendTextMessage()</code> · optimistic UI</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 2B-2C. Video Upload (Sent Card + Fallback) -->
+  <div class="section" id="user-video">
+    <div class="section-label">
+      <span class="section-badge badge-blue">Outgoing</span>
+      <span class="section-title">Video Upload Messages</span>
+      <span class="section-count">3 variants</span>
+    </div>
+
+    <!-- Sent Upload Card (rich) -->
+    <div class="chat-row outgoing">
+      <div>
+        <span class="msg-label lbl-video">VIDEO · SentUploadBubble</span>
+        <div class="sent-card">
+          <div class="sent-card-inner">
+            <div class="sent-thumb">🎬</div>
+            <div class="sent-info">
+              <div class="sent-filename">IMG_6278.MOV</div>
+              <div class="sent-date">Mar 7, 2026 8:15 AM</div>
+              <div class="sent-location">📍 Location included</div>
+            </div>
+          </div>
+          <div class="sent-status">
+            <span class="sent-check">✓</span> Sent
+          </div>
+        </div>
+        <div class="timestamp right">8:15 AM</div>
+        <div class="msg-source">SentUploadBubble.swift — with cached thumbnail + metadata</div>
+      </div>
+    </div>
+
+    <div class="spacer"></div>
+
+    <!-- Fallback video bubble -->
+    <div class="chat-row outgoing">
+      <div>
+        <span class="msg-label lbl-video">VIDEO · Fallback Bubble</span>
+        <div class="bubble outgoing">
+          <span style="display:flex; align-items:center; gap:6px;">
+            🎥 <span style="font-size:15px; font-weight:500;">📹 IMG_6278.MOV</span>
+          </span>
+        </div>
+        <div class="timestamp right">8:15 AM</div>
+        <div class="msg-source">MessageBubble.swift <code>videoContent</code> — when no thumbnail cached</div>
+      </div>
+    </div>
+
+    <div class="spacer"></div>
+
+    <!-- Form Submitted (rarely visible as bubble) -->
+    <div class="chat-row outgoing">
+      <div>
+        <span class="msg-label lbl-form">FORM_SUBMITTED · DB record</span>
+        <div class="bubble outgoing">✅ Form submitted</div>
+        <div class="timestamp right">8:17 AM</div>
+        <div class="msg-source">assets.js — persisted to DB, visible in message history. User sees form:confirmed instead.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================== -->
+  <!-- 3. ERROR BUBBLES               -->
+  <!-- ============================== -->
+
+  <div class="section" id="errors">
+    <div class="section-label">
+      <span class="section-badge badge-red">Error</span>
+      <span class="section-title">Error Bubbles (Client-Generated)</span>
+      <span class="section-count">7 messages</span>
+    </div>
+
+    <div style="padding:0 10px; margin-bottom:12px;">
+      <div class="msg-source">All errors are type TEXT, direction INCOMING, generated by <code>appendErrorBubble()</code> in ChatViewModel.swift. They appear as standard gray incoming bubbles.</div>
+    </div>
+
+    <!-- 3A: Reconnecting -->
+    <div class="chat-row incoming">
+      <div>
+        <span class="msg-label lbl-error">ERROR · WebSocket Reconnecting</span>
+        <div class="bubble incoming">⚠️ Connection lost. Reconnecting...</div>
+        <div class="timestamp left">8:22 AM</div>
+        <div class="msg-source">First reconnect attempt only · suppressed on subsequent attempts</div>
+      </div>
+    </div>
+
+    <div class="spacer"></div>
+
+    <!-- 3B: Connection Lost -->
+    <div class="chat-row incoming">
+      <div>
+        <span class="msg-label lbl-error">ERROR · Connection Lost (Fatal)</span>
+        <div class="bubble incoming">🔴 Connection lost. Please check your network and restart the app.</div>
+        <div class="timestamp left">8:24 AM</div>
+        <div class="msg-source">After 10 reconnect attempts exhausted · CRITICAL severity logged</div>
+      </div>
+    </div>
+
+    <div class="spacer"></div>
+
+    <!-- 3C: Message History -->
+    <div class="chat-row incoming">
+      <div>
+        <span class="msg-label lbl-error">ERROR · Message History</span>
+        <div class="bubble incoming">⚠️ Could not load message history.</div>
+        <div class="timestamp left">8:14 AM</div>
+        <div class="msg-source">GET /api/messages fails (network or decode)</div>
+      </div>
+    </div>
+
+    <div class="spacer"></div>
+
+    <!-- 3D: Asset Creation -->
+    <div class="chat-row incoming">
+      <div>
+        <span class="msg-label lbl-error">ERROR · Asset Creation</span>
+        <div class="bubble incoming">⚠️ Could not start upload. Please try again.</div>
+        <div class="timestamp left">8:15 AM</div>
+        <div class="msg-source">POST /api/assets fails after 3 retries</div>
+      </div>
+    </div>
+
+    <div class="spacer"></div>
+
+    <!-- 3E: Upload Failed -->
+    <div class="chat-row incoming">
+      <div>
+        <span class="msg-label lbl-error">ERROR · Upload Failed</span>
+        <div class="bubble incoming">⚠️ Upload failed: The request timed out.</div>
+        <div class="timestamp left">8:16 AM</div>
+        <div class="msg-source">Dynamic text: <code>error.localizedDescription</code> — varies per failure</div>
+      </div>
+    </div>
+
+    <div class="spacer"></div>
+
+    <!-- 3F: Form Submission -->
+    <div class="chat-row incoming">
+      <div>
+        <span class="msg-label lbl-error">ERROR · Form Submission</span>
+        <div class="bubble incoming">⚠️ Form submission failed. The form is still open — please retry.</div>
+        <div class="timestamp left">8:17 AM</div>
+        <div class="msg-source">POST /api/assets/:id/form fails · form sheet stays open</div>
+      </div>
+    </div>
+
+    <div class="spacer"></div>
+
+    <!-- 3G: Asset Detail -->
+    <div class="chat-row incoming">
+      <div>
+        <span class="msg-label lbl-error">ERROR · Video Detail Fetch</span>
+        <div class="bubble incoming">⚠️ Could not load video details.</div>
+        <div class="timestamp left">8:16 AM</div>
+        <div class="msg-source">GET /api/assets/:id fails after upload:complete event</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================== -->
+  <!-- 4. UI ELEMENTS (Non-Bubble)    -->
+  <!-- ============================== -->
+
+  <div class="section" id="ui-elements">
+    <div class="section-label">
+      <span class="section-badge badge-orange">UI</span>
+      <span class="section-title">Non-Bubble UI Elements</span>
+      <span class="section-count">4 elements</span>
+    </div>
+
+    <!-- Typing Indicator -->
+    <div class="chat-row incoming">
+      <div>
+        <span class="msg-label lbl-ui">Typing Indicator</span>
+        <div class="bubble incoming" style="padding: 12px 18px;">
+          <div class="typing-dots">
+            <span></span><span></span><span></span>
+          </div>
+        </div>
+        <div class="msg-source">TypingIndicatorBubble.swift · shown during: awaiting greeting, processing video from library</div>
+      </div>
+    </div>
+
+    <div class="spacer"></div>
+
+    <!-- Upload Progress -->
+    <div class="chat-row incoming">
+      <div>
+        <span class="msg-label lbl-ui">Upload Progress Bar</span>
+        <div class="progress-bar-container">
+          <div class="progress-label">
+            <span>Uploading video…</span>
+            <span>62%</span>
+          </div>
+          <div class="progress-track">
+            <div class="progress-fill"></div>
+          </div>
+        </div>
+        <div class="msg-source">ChatView.swift — visible during active file upload</div>
+      </div>
+    </div>
+
+    <div class="spacer"></div>
+
+    <!-- Video Preview Card -->
+    <div class="chat-row outgoing">
+      <div>
+        <span class="msg-label lbl-ui">Video Preview (Pre-Upload)</span>
+        <div class="preview-card">
+          <div class="sent-card-inner">
+            <div class="sent-thumb" style="background:#3a3a3c;">🎬</div>
+            <div class="sent-info">
+              <div class="sent-filename" style="color:#e5e5ea;">IMG_6278.MOV</div>
+              <div class="sent-date">Mar 7, 2026 8:14 AM</div>
+              <div class="sent-location">📍 Location included</div>
+            </div>
+          </div>
+          <div class="preview-actions">
+            <span class="preview-cancel">✕ Cancel</span>
+            <span class="preview-send">↑</span>
+          </div>
+          <div class="preview-hint">Tap ↑ to upload</div>
+        </div>
+        <div class="msg-source">VideoPreviewBubble.swift — after user picks video, before confirming upload</div>
+      </div>
+    </div>
+
+    <div class="spacer"></div>
+
+    <!-- Video Library alerts -->
+    <div class="chat-row incoming">
+      <div>
+        <span class="msg-label lbl-ui">Video Library Error</span>
+        <div class="form-error-banner">
+          <span class="icon">⚠️</span>
+          <span class="text">Could not load video from library</span>
+        </div>
+        <div class="msg-source">VideoLibraryView.swift — banner in library sheet. Also: "Failed to load video: {error}"</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================== -->
+  <!-- 5. FORM UI ELEMENTS            -->
+  <!-- ============================== -->
+
+  <div class="section" id="form-ui">
+    <div class="section-label">
+      <span class="section-badge badge-orange">Form</span>
+      <span class="section-title">Form Sheet UI</span>
+      <span class="section-count">3 elements</span>
+    </div>
+
+    <!-- Form navigation title -->
+    <div class="chat-row incoming">
+      <div>
+        <span class="msg-label lbl-ui">Form Navigation Title</span>
+        <div class="header-bar">
+          <div class="header-info">
+            <div class="header-name">Add Details</div>
+            <div class="header-sub">Navigation bar title of ContextFormView</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="spacer"></div>
+
+    <!-- Form send button -->
+    <div class="chat-row incoming">
+      <div>
+        <span class="msg-label lbl-ui">Form Submit Button</span>
+        <div style="display:inline-block;">
+          <span class="action-btn btn-blue" style="font-size:15px; padding:10px 24px;">
+            ✈ Send
+          </span>
+        </div>
+        <div class="msg-source">ContextFormView.swift — toolbar button</div>
+      </div>
+    </div>
+
+    <div class="spacer"></div>
+
+    <!-- Form error banner -->
+    <div class="chat-row incoming">
+      <div>
+        <span class="msg-label lbl-error">Form Error Banner</span>
+        <div class="form-error-banner">
+          <span class="icon">⚠️</span>
+          <span class="text">Failed to send form. Please try again.</span>
+        </div>
+        <div class="msg-source">ContextFormView.swift — red banner inside form sheet · form stays open for retry</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================== -->
+  <!-- 6. CONNECTION HEADER STATES    -->
+  <!-- ============================== -->
+
+  <div class="section" id="connection">
+    <div class="section-label">
+      <span class="section-badge badge-gray">Header</span>
+      <span class="section-title">Connection Status (ChatHeaderView)</span>
+      <span class="section-count">3 states</span>
+    </div>
+
+    <!-- Connected -->
+    <div class="chat-row incoming">
+      <div>
+        <span class="msg-label lbl-ui">Connected</span>
+        <div class="header-bar">
+          <span class="header-dot dot-green"></span>
+          <div class="header-info">
+            <div class="header-name">Mediasource Fixer</div>
+            <div class="header-sub">Newsroom</div>
+          </div>
+        </div>
+        <div class="msg-source">Green dot · subtitle = user's team name</div>
+      </div>
+    </div>
+
+    <div class="spacer"></div>
+
+    <!-- Reconnecting -->
+    <div class="chat-row incoming">
+      <div>
+        <span class="msg-label lbl-ui">Reconnecting</span>
+        <div class="header-bar">
+          <span class="header-dot dot-yellow"></span>
+          <div class="header-info">
+            <div class="header-name">Mediasource Fixer</div>
+            <div class="header-sub" style="color:#ffd60a;">Reconnecting...</div>
+          </div>
+        </div>
+        <div class="msg-source">Yellow dot · "Reconnecting..." subtitle</div>
+      </div>
+    </div>
+
+    <div class="spacer"></div>
+
+    <!-- Disconnected -->
+    <div class="chat-row incoming">
+      <div>
+        <span class="msg-label lbl-error">Disconnected</span>
+        <div class="header-bar">
+          <span class="header-dot dot-red"></span>
+          <div class="header-info">
+            <div class="header-name">Mediasource Fixer</div>
+            <div class="header-sub" style="color:#ff453a;">Disconnected</div>
+          </div>
+        </div>
+        <div class="msg-source">Red dot · "Disconnected" subtitle</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div class="page-footer">
+  Direct Video Uploader — Chat Message Catalog<br>
+  Generated from codebase audit: handler.js · ChatViewModel.swift · MessageBubble.swift · assets.js
+</div>
+
+</body>
+</html>
