@@ -5,6 +5,8 @@ import SwiftUI
 /// Centralized color palette. Use `Theme.blue` instead of `Color(hex: "007AFF")` everywhere.
 enum Theme {
     // Primary actions
+    static let black       = Color(hex: "000000")
+    static let white       = Color(hex: "FFFFFF")
     static let blue        = Color(hex: "007AFF")
     static let green       = Color(hex: "30D158")
     static let red         = Color(hex: "FF453A")
@@ -19,7 +21,14 @@ enum Theme {
     static let deepBg      = Color(hex: "0A0E1A")
     static let formBg      = Color(hex: "1A2544")
     static let separator   = Color(hex: "38383A")
+    static let chatScreen  = Color(hex: "F3F2F2")
 
+    // Incoming bubble
+    static let incomingBubble = Color(hex: "DBDBDB")
+    static let incomingText   = Color(hex: "2F2D2D")
+
+    static let outgoingBubble = Color(hex: "1C3A5F")
+    static let outgoingText   = Color.white
     // Gradients
     static let bubbleBlueHi  = Color(hex: "007AFF")
     static let bubbleBlueLo  = Color(hex: "0063D1")

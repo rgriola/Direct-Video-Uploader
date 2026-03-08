@@ -5,11 +5,41 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>DVU — Chat Message Catalog</title>
 <style>
+  :root {
+    /* Theme.swift palette — editable via sidebar color pickers */
+    --t-blue: #007AFF;
+    --t-green: #30D158;
+    --t-red: #FF453A;
+    --t-yellow: #FFD60A;
+    --t-purple: #5856D6;
+    --t-tint: #0A84FF;
+    --t-viewGreen: #34C759;
+    --t-darkBg: #1C1C1E;
+    --t-cardBg: #2C2C2E;
+    --t-deepBg: #0A0E1A;
+    --t-formBg: #1A2544;
+    --t-separator: #38383A;
+    --t-bubbleBlueHi: #007AFF;
+    --t-bubbleBlueLo: #0063D1;
+    --t-videoBubbleHi: #1C3A5F;
+    --t-videoBubbleLo: #0A1E3D;
+    --t-primaryText: #FFFFFF;
+    --t-secondaryText: #98989D;
+    --t-tertiaryText: #636366;
+    --t-lightText: #E5E5EA;
+    --t-metaText: #EBEBF5;
+    --t-typingDot: #A0A0A0;
+    --t-black: #000000;
+    /* New light chat scheme */
+    --t-chatScreen: #F3F2F2;
+    --t-incomingBubble: #DBDBDB;
+    --t-incomingText: #2F2D2D;
+  }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
     font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif;
-    background: #000;
-    color: #e5e5ea;
+    background: #000000;
+    color: var(--t-lightText);
     min-height: 100vh;
   }
 
@@ -23,8 +53,8 @@
     padding: 16px 20px;
     text-align: center;
   }
-  .page-header h1 { font-size: 20px; font-weight: 700; color: #fff; }
-  .page-header p { font-size: 13px; color: #98989d; margin-top: 4px; }
+  .page-header h1 { font-size: 20px; font-weight: 700; color: var(--t-primaryText); }
+  .page-header p { font-size: 13px; color: var(--t-secondaryText); margin-top: 4px; }
 
   .toc {
     padding: 12px 20px 20px;
@@ -74,10 +104,10 @@
   .badge-gray   { background: rgba(152,152,157,0.18); color: #98989d; }
 
   .section-title {
-    font-size: 15px; font-weight: 600; color: #fff;
+    font-size: 15px; font-weight: 600; color: var(--t-primaryText);
   }
   .section-count {
-    font-size: 12px; color: #636366; margin-left: auto;
+    font-size: 12px; color: var(--t-tertiaryText); margin-left: auto;
   }
 
   /* Chat row */
@@ -99,13 +129,13 @@
     position: relative;
   }
   .bubble.outgoing {
-    background: linear-gradient(135deg, #007aff, #0063d1);
-    color: #fff;
+    background: linear-gradient(135deg, var(--t-bubbleBlueHi), var(--t-bubbleBlueLo));
+    color: var(--t-primaryText);
     border-bottom-right-radius: 6px;
   }
   .bubble.incoming {
-    background: #2c2c2e;
-    color: #e5e5ea;
+    background: var(--t-incomingBubble);
+    color: var(--t-incomingText);
     border-bottom-left-radius: 6px;
   }
   .bubble.outgoing.slack-out {
@@ -115,14 +145,14 @@
   /* Metadata line */
   .meta-line {
     display: flex; align-items: center; gap: 5px;
-    font-size: 13px; color: #98989d;
+    font-size: 13px; color: var(--t-secondaryText);
     margin-top: 3px;
   }
   .meta-line .icon { font-size: 12px; }
   .meta-line .ms-id {
     font-weight: 700;
     font-family: 'SF Mono', 'Menlo', monospace;
-    color: #007aff;
+    color: var(--t-blue);
     font-size: 14px;
   }
   .meta-line .mono {
@@ -133,7 +163,7 @@
   /* Divider inside bubble */
   .bubble-divider {
     height: 1px;
-    background: rgba(255,255,255,0.08);
+    background: rgba(0,0,0,0.1);
     margin: 8px 0;
   }
 
@@ -149,19 +179,19 @@
     font-size: 13px; font-weight: 600;
     color: #fff; border: none; cursor: default;
   }
-  .btn-green  { background: #30d158; }
-  .btn-blue   { background: #007aff; }
+  .btn-green  { background: var(--t-green); }
+  .btn-blue   { background: var(--t-blue); }
   .btn-link {
     display: inline-flex; align-items: center; gap: 4px;
     font-size: 12px; font-weight: 500;
-    color: #007aff; background: none; border: none; cursor: default;
+    color: var(--t-blue); background: none; border: none; cursor: default;
   }
-  .btn-link.green { color: #30d158; }
+  .btn-link.green { color: var(--t-green); }
 
   /* Timestamp */
   .timestamp {
     font-size: 10px;
-    color: rgba(255,255,255,0.25);
+    color: rgba(0,0,0,0.3);
     margin-top: 3px;
     padding: 0 4px;
   }
@@ -196,7 +226,7 @@
   .msg-source code {
     font-family: 'SF Mono', 'Menlo', monospace;
     font-size: 10px;
-    color: #636366;
+    color: var(--t-tertiaryText);
   }
 
   /* Typing indicator */
@@ -205,7 +235,7 @@
   }
   .typing-dots span {
     width: 8px; height: 8px;
-    background: #636366;
+    background: var(--t-tertiaryText);
     border-radius: 50%;
     animation: pulse 1.2s ease-in-out infinite;
   }
@@ -218,13 +248,13 @@
 
   /* Upload progress bar */
   .progress-bar-container {
-    background: #1c1c1e;
+    background: var(--t-darkBg);
     border-radius: 14px;
     padding: 12px 16px;
     max-width: 82%;
   }
   .progress-label {
-    font-size: 13px; color: #98989d;
+    font-size: 13px; color: var(--t-secondaryText);
     display: flex; justify-content: space-between; margin-bottom: 6px;
   }
   .progress-track {
@@ -235,7 +265,7 @@
   }
   .progress-fill {
     height: 100%;
-    background: linear-gradient(90deg, #007aff, #5ac8fa);
+    background: linear-gradient(90deg, var(--t-blue), #5ac8fa);
     border-radius: 2px;
     width: 62%;
     transition: width 0.3s;
@@ -243,7 +273,7 @@
 
   /* Sent upload card */
   .sent-card {
-    background: linear-gradient(135deg, #007aff, #0063d1);
+    background: linear-gradient(135deg, var(--t-bubbleBlueHi), var(--t-bubbleBlueLo));
     border-radius: 18px;
     border-bottom-right-radius: 6px;
     padding: 10px;
@@ -254,14 +284,14 @@
   }
   .sent-thumb {
     width: 56px; height: 56px;
-    background: #1c1c1e;
+    background: var(--t-darkBg);
     border-radius: 8px;
     display: flex; align-items: center; justify-content: center;
     font-size: 24px; flex-shrink: 0;
   }
   .sent-info { flex: 1; min-width: 0; }
   .sent-filename {
-    font-size: 14px; font-weight: 600; color: #fff;
+    font-size: 14px; font-weight: 600; color: var(--t-primaryText);
     font-family: 'SF Mono', 'Menlo', monospace;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
@@ -269,7 +299,7 @@
   .sent-location {
     display: inline-flex; align-items: center; gap: 3px;
     font-size: 11px; font-weight: 500;
-    color: #30d158;
+    color: var(--t-green);
     background: rgba(48,209,88,0.15);
     padding: 2px 8px; border-radius: 8px;
     margin-top: 4px;
@@ -279,11 +309,11 @@
     margin-top: 6px;
     font-size: 11px; color: rgba(255,255,255,0.5);
   }
-  .sent-check { color: #30d158; font-size: 13px; }
+  .sent-check { color: var(--t-green); font-size: 13px; }
 
   /* Video preview card (pre-upload) */
   .preview-card {
-    background: #2c2c2e;
+    background: var(--t-cardBg);
     border-radius: 18px;
     border-bottom-right-radius: 6px;
     padding: 10px;
@@ -295,18 +325,18 @@
     border-top: 1px solid rgba(255,255,255,0.06);
   }
   .preview-cancel {
-    font-size: 12px; color: #ff453a; font-weight: 500;
+    font-size: 12px; color: var(--t-red); font-weight: 500;
     background: none; border: none; cursor: default;
     display: flex; align-items: center; gap: 3px;
   }
   .preview-send {
     width: 32px; height: 32px;
-    background: #007aff; border-radius: 50%;
+    background: var(--t-blue); border-radius: 50%;
     display: flex; align-items: center; justify-content: center;
     color: #fff; font-size: 16px; border: none; cursor: default;
   }
   .preview-hint {
-    font-size: 11px; color: #636366;
+    font-size: 11px; color: var(--t-tertiaryText);
     text-align: center; margin-top: 4px;
   }
 
@@ -341,7 +371,7 @@
 
   /* Connection header states */
   .header-bar {
-    background: #1c1c1e;
+    background: var(--t-darkBg);
     border-radius: 14px;
     padding: 10px 16px;
     display: flex; align-items: center; gap: 10px;
@@ -351,12 +381,12 @@
     width: 8px; height: 8px;
     border-radius: 50%; flex-shrink: 0;
   }
-  .dot-green  { background: #30d158; }
-  .dot-yellow { background: #ffd60a; }
-  .dot-red    { background: #ff453a; }
+  .dot-green  { background: var(--t-green); }
+  .dot-yellow { background: var(--t-yellow); }
+  .dot-red    { background: var(--t-red); }
   .header-info { flex: 1; }
-  .header-name { font-size: 15px; font-weight: 600; color: #fff; }
-  .header-sub  { font-size: 12px; color: #98989d; }
+  .header-name { font-size: 15px; font-weight: 600; color: var(--t-primaryText); }
+  .header-sub  { font-size: 12px; color: var(--t-secondaryText); }
 
   /* Spacer */
   .spacer { height: 12px; }
@@ -369,16 +399,16 @@
   }
   .variant-item {
     font-size: 13px;
-    color: #98989d;
+    color: var(--t-secondaryText);
     padding: 6px 12px;
-    background: #1c1c1e;
+    background: var(--t-darkBg);
     border-radius: 10px;
     margin-bottom: 4px;
-    border-left: 3px solid #30d158;
+    border-left: 3px solid var(--t-green);
   }
   .variant-num {
     font-size: 10px; font-weight: 700;
-    color: #636366; margin-right: 6px;
+    color: var(--t-tertiaryText); margin-right: 6px;
   }
 
   /* Footer */
@@ -396,12 +426,646 @@
     border-bottom: 1px solid rgba(255,255,255,0.06);
   }
   .stat-item { text-align: center; }
-  .stat-num { font-size: 22px; font-weight: 700; color: #fff; }
-  .stat-label { font-size: 10px; color: #636366; text-transform: uppercase; letter-spacing: 0.5px; }
+  .stat-num { font-size: 22px; font-weight: 700; color: var(--t-primaryText); }
+  .stat-label { font-size: 10px; color: var(--t-tertiaryText); text-transform: uppercase; letter-spacing: 0.5px; }
+
+  /* View name tag */
+  .view-name {
+    font-size: 10px;
+    font-family: 'SF Mono', 'Menlo', monospace;
+    color: var(--t-tertiaryText);
+    background: rgba(152,152,157,0.1);
+    padding: 2px 8px;
+    border-radius: 6px;
+    margin-left: 8px;
+  }
+
+  /* Metadata sheet mockup */
+  .metadata-sheet {
+    background: var(--t-darkBg);
+    border-radius: 16px;
+    padding: 16px;
+    max-width: 92%;
+    margin: 0 auto;
+  }
+  .sheet-nav {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+  }
+  .sheet-title {
+    font-size: 17px;
+    font-weight: 600;
+    color: var(--t-primaryText);
+  }
+  .sheet-close {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--t-blue);
+  }
+  .sheet-hero {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    margin-bottom: 14px;
+  }
+  .meta-rows {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    background: rgba(255,255,255,0.04);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  .meta-row {
+    display: flex;
+    align-items: center;
+    padding: 10px 14px;
+    background: var(--t-cardBg);
+  }
+  .meta-icon {
+    font-size: 14px;
+    width: 24px;
+    flex-shrink: 0;
+  }
+  .meta-key {
+    font-size: 14px;
+    color: var(--t-secondaryText);
+    width: 90px;
+    flex-shrink: 0;
+  }
+  .meta-val {
+    font-size: 14px;
+    color: var(--t-lightText);
+    font-weight: 500;
+  }
+
+  /* Context form sheet mockup */
+  .form-sheet {
+    background: var(--t-darkBg);
+    border-radius: 16px;
+    padding: 16px;
+    max-width: 92%;
+    margin: 0 auto;
+  }
+  .form-divider {
+    height: 1px;
+    background: rgba(255,255,255,0.06);
+    margin: 12px 0;
+  }
+  .form-group {
+    margin-bottom: 14px;
+  }
+  .form-label {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--t-secondaryText);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 6px;
+    display: block;
+  }
+  .required { color: var(--t-red); }
+  .form-input {
+    width: 100%;
+    background: var(--t-cardBg);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 10px;
+    padding: 10px 14px;
+    font-size: 15px;
+    color: var(--t-lightText);
+    font-family: inherit;
+    outline: none;
+  }
+  .form-input-error { border-color: var(--t-red); }
+  .form-select {
+    background: var(--t-cardBg);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 10px;
+    padding: 10px 14px;
+    font-size: 15px;
+    color: var(--t-lightText);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .form-textarea {
+    background: var(--t-cardBg);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 10px;
+    padding: 10px 14px;
+    font-size: 15px;
+    color: var(--t-lightText);
+    min-height: 60px;
+    line-height: 1.4;
+  }
+  .form-hint {
+    font-size: 11px;
+    color: var(--t-tertiaryText);
+    margin-top: 4px;
+  }
+  .segmented-picker {
+    display: flex;
+    background: var(--t-cardBg);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  .seg-item {
+    flex: 1;
+    text-align: center;
+    padding: 8px 0;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--t-secondaryText);
+    border-right: 1px solid rgba(255,255,255,0.06);
+  }
+  .seg-item:last-child { border-right: none; }
+  .seg-active { background: var(--t-blue); color: var(--t-primaryText); }
+
+  /* ===== Color Sidebar ===== */
+  .sidebar-toggle {
+    position: fixed; top: 14px; right: 14px; z-index: 200;
+    width: 38px; height: 38px;
+    border-radius: 50%; border: none; cursor: pointer;
+    background: linear-gradient(135deg, var(--t-blue), var(--t-purple));
+    color: #fff; font-size: 18px;
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.5);
+    transition: transform 0.2s;
+  }
+  .sidebar-toggle:hover { transform: scale(1.1); }
+
+  .color-sidebar {
+    position: fixed; top: 0; right: -380px; z-index: 150;
+    width: 370px; height: 100vh;
+    background: rgba(18,18,20,0.97);
+    backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px);
+    border-left: 1px solid rgba(255,255,255,0.08);
+    overflow-y: auto; overscroll-behavior: contain;
+    transition: right 0.3s cubic-bezier(0.25,0.46,0.45,0.94);
+    padding: 60px 16px 30px;
+  }
+  .color-sidebar.open { right: 0; }
+  .color-sidebar.open + .sidebar-scrim { display: block; }
+
+  .sidebar-scrim {
+    display: none; position: fixed; inset: 0; z-index: 140;
+    background: rgba(0,0,0,0.4);
+  }
+
+  .sb-title {
+    font-size: 17px; font-weight: 700; color: var(--t-primaryText);
+    margin-bottom: 4px;
+  }
+  .sb-subtitle {
+    font-size: 11px; color: var(--t-tertiaryText); margin-bottom: 18px;
+  }
+
+  .sb-section {
+    margin-bottom: 20px;
+    border-radius: 12px;
+    overflow: hidden;
+    border: 1px solid rgba(255,255,255,0.06);
+  }
+  .sb-section-head {
+    padding: 10px 12px;
+    font-size: 12px; font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: space-between;
+    user-select: none;
+  }
+  .sb-section-head .sb-arrow { transition: transform 0.2s; font-size: 10px; }
+  .sb-section-head.collapsed .sb-arrow { transform: rotate(-90deg); }
+  .sb-section-body { padding: 2px 0; }
+  .sb-section-body.hidden { display: none; }
+
+  .sb-head-theme     { background: rgba(88,86,214,0.15); color: #bf5af2; }
+  .sb-head-msg       { background: rgba(0,122,255,0.12); color: #007aff; }
+  .sb-head-header    { background: rgba(152,152,157,0.12); color: #98989d; }
+  .sb-head-input     { background: rgba(255,159,10,0.12); color: #ff9f0a; }
+  .sb-head-ui        { background: rgba(48,209,88,0.12); color: #30d158; }
+  .sb-head-form      { background: rgba(191,90,242,0.12); color: #bf5af2; }
+  .sb-head-meta      { background: rgba(90,200,250,0.12); color: #5ac8fa; }
+  .sb-head-slack     { background: rgba(74,21,75,0.15); color: #e01e5a; }
+  .sb-head-sent      { background: rgba(28,58,95,0.3); color: #5ac8fa; }
+  .sb-head-screen    { background: rgba(255,255,255,0.06); color: #98989d; }
+
+  .sb-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 7px 12px;
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+  }
+  .sb-row:last-child { border-bottom: none; }
+  .sb-swatch {
+    width: 22px; height: 22px;
+    border-radius: 6px;
+    flex-shrink: 0;
+    border: 1px solid rgba(255,255,255,0.12);
+  }
+  .sb-swatch.gradient { width: 40px; }
+  .sb-color-info { flex: 1; min-width: 0; }
+  .sb-color-label {
+    font-size: 12px; font-weight: 600; color: #e5e5ea;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .sb-color-hex {
+    font-size: 11px; font-family: 'SF Mono','Menlo',monospace;
+    color: #636366;
+  }
+  .sb-color-usage {
+    font-size: 10px; color: #48484a;
+    margin-top: 1px;
+  }
+
+  .sb-palette {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(70px, 1fr));
+    gap: 6px;
+    padding: 8px 12px 10px;
+  }
+  .sb-palette-item { text-align: center; }
+  .sb-palette-swatch {
+    width: 100%; height: 28px;
+    border-radius: 6px;
+    border: 1px solid rgba(255,255,255,0.1);
+    margin-bottom: 3px;
+  }
+  .sb-palette-name {
+    font-size: 9px; font-weight: 600; color: #98989d;
+    line-height: 1.2;
+  }
+  .sb-palette-hex {
+    font-size: 8px; font-family: 'SF Mono','Menlo',monospace;
+    color: #48484a;
+  }
+
+  /* Color picker overlay on palette swatches */
+  .sb-palette-item { position: relative; }
+  .sb-palette-swatch { position: relative; cursor: pointer; }
+  .sb-picker {
+    position: absolute; inset: 0;
+    width: 100%; height: 100%;
+    opacity: 0; cursor: pointer;
+    border: none; padding: 0;
+  }
+  .sb-palette-swatch:hover { outline: 2px solid rgba(255,255,255,0.3); outline-offset: 1px; }
+
+  /* Row swatches with picker */
+  .sb-row { position: relative; }
+  .sb-swatch { position: relative; cursor: pointer; }
+  .sb-swatch .sb-picker {
+    position: absolute; inset: 0;
+    width: 100%; height: 100%;
+    opacity: 0; cursor: pointer;
+    border: none; padding: 0;
+  }
+  .sb-swatch:hover { outline: 2px solid rgba(255,255,255,0.3); outline-offset: 1px; }
+
+  /* Sidebar controls bar */
+  .sb-controls {
+    display: flex; gap: 8px;
+    margin-bottom: 16px;
+  }
+  .sb-btn {
+    flex: 1;
+    padding: 8px 0;
+    border-radius: 8px;
+    font-size: 11px; font-weight: 600;
+    text-align: center;
+    cursor: pointer;
+    border: 1px solid rgba(255,255,255,0.1);
+    transition: all 0.15s;
+  }
+  .sb-btn:hover { filter: brightness(1.2); }
+  .sb-btn-reset {
+    background: rgba(255,69,58,0.15); color: #ff453a;
+  }
+  .sb-btn-export {
+    background: rgba(48,209,88,0.15); color: #30d158;
+  }
+  .sb-btn-swift {
+    background: rgba(0,122,255,0.15); color: #007aff;
+  }
+  .sb-toast {
+    position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+    background: rgba(48,209,88,0.9); color: #fff;
+    padding: 10px 20px; border-radius: 10px;
+    font-size: 13px; font-weight: 600;
+    opacity: 0; transition: opacity 0.3s;
+    z-index: 300; pointer-events: none;
+  }
+  .sb-toast.show { opacity: 1; }
+
+  /* ===== Left Chat Preview Panel ===== */
+  .chat-preview-panel {
+    position: fixed; left: 0; top: 0; z-index: 110;
+    width: 340px; height: 100vh;
+    background: rgba(18,18,20,0.95);
+    backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+    border-right: 1px solid rgba(255,255,255,0.08);
+    display: flex; flex-direction: column;
+    overflow: hidden;
+    transition: transform 0.3s cubic-bezier(0.25,0.46,0.45,0.94);
+  }
+  .chat-preview-panel.collapsed { transform: translateX(-300px); }
+  .chat-preview-panel.collapsed .cp-toggle { right: -40px; }
+
+  .cp-toggle {
+    position: absolute; top: 14px; right: -0px; z-index: 111;
+    width: 32px; height: 32px;
+    border-radius: 0 8px 8px 0;
+    border: none; cursor: pointer;
+    background: rgba(0,122,255,0.2);
+    color: var(--t-blue); font-size: 14px;
+    display: flex; align-items: center; justify-content: center;
+    transition: right 0.3s;
+  }
+  .cp-toggle:hover { background: rgba(0,122,255,0.35); }
+
+  .cp-header {
+    padding: 10px 14px;
+    font-size: 11px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.6px;
+    color: var(--t-secondaryText);
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+    display: flex; align-items: center; gap: 6px;
+  }
+
+  /* Phone frame */
+  .cp-phone {
+    flex: 1;
+    margin: 12px;
+    border-radius: 40px;
+    border: 3px solid var(--t-separator);
+    overflow: hidden;
+    display: flex; flex-direction: column;
+    background: var(--t-chatScreen);
+    position: relative;
+  }
+  .cp-notch {
+    width: 120px; height: 28px;
+    background: var(--t-chatScreen);
+    border-radius: 0 0 18px 18px;
+    margin: 0 auto;
+    position: relative; z-index: 2;
+  }
+
+  /* Chat header inside phone */
+  .cp-chat-header {
+    display: flex; align-items: center; gap: 8px;
+    padding: 4px 14px 8px;
+    background: var(--t-chatScreen);
+    border-bottom: 1px solid rgba(0,0,0,0.1);
+    margin-top: -4px;
+  }
+  .cp-avatar {
+    width: 30px; height: 30px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--t-blue), var(--t-purple));
+    display: flex; align-items: center; justify-content: center;
+    font-size: 13px; color: var(--t-primaryText); font-weight: 700;
+    flex-shrink: 0;
+  }
+  .cp-chat-name { font-size: 14px; font-weight: 600; color: var(--t-incomingText); }
+  .cp-chat-status { font-size: 10px; color: var(--t-green); }
+  .cp-status-dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--t-green);
+    display: inline-block; margin-right: 3px;
+  }
+
+  /* Chat messages area */
+  .cp-messages {
+    flex: 1;
+    padding: 10px 10px 6px;
+    overflow-y: auto;
+    display: flex; flex-direction: column; gap: 6px;
+  }
+
+  .cp-row { display: flex; }
+  .cp-row.out { justify-content: flex-end; }
+  .cp-row.in  { justify-content: flex-start; }
+
+  .cp-bubble {
+    max-width: 80%;
+    padding: 8px 12px;
+    border-radius: 16px;
+    font-size: 13px; line-height: 1.35;
+  }
+  .cp-bubble.out {
+    background: linear-gradient(135deg, var(--t-bubbleBlueHi), var(--t-bubbleBlueLo));
+    color: var(--t-primaryText);
+    border-bottom-right-radius: 4px;
+  }
+  .cp-bubble.in {
+    background: var(--t-incomingBubble);
+    color: var(--t-incomingText);
+    border-bottom-left-radius: 4px;
+  }
+  .cp-time {
+    font-size: 9px;
+    color: rgba(0,0,0,0.3);
+    margin-top: 2px;
+    padding: 0 4px;
+  }
+  .cp-time.right { text-align: right; }
+
+  /* Sent upload card inside preview */
+  .cp-sent-card {
+    max-width: 85%;
+    background: linear-gradient(135deg, var(--t-bubbleBlueHi), var(--t-bubbleBlueLo));
+    border-radius: 16px;
+    border-bottom-right-radius: 4px;
+    padding: 8px;
+  }
+  .cp-sent-inner { display: flex; gap: 8px; align-items: flex-start; }
+  .cp-sent-thumb {
+    width: 40px; height: 40px;
+    background: var(--t-darkBg);
+    border-radius: 6px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px; flex-shrink: 0;
+  }
+  .cp-sent-info { flex: 1; min-width: 0; }
+  .cp-sent-name {
+    font-size: 11px; font-weight: 600; color: var(--t-primaryText);
+    font-family: 'SF Mono','Menlo',monospace;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .cp-sent-date { font-size: 10px; color: rgba(255,255,255,0.6); margin-top: 1px; }
+  .cp-sent-loc {
+    display: inline-flex; align-items: center; gap: 2px;
+    font-size: 9px; font-weight: 500; color: var(--t-green);
+    background: rgba(48,209,88,0.15);
+    padding: 1px 6px; border-radius: 6px; margin-top: 3px;
+  }
+  .cp-sent-status {
+    display: flex; align-items: center; gap: 3px;
+    justify-content: flex-end; margin-top: 4px;
+    font-size: 9px; color: rgba(255,255,255,0.5);
+  }
+  .cp-sent-check { color: var(--t-green); font-size: 11px; }
+
+  /* Confirmation bubble inside preview */
+  .cp-confirm-bubble {
+    max-width: 85%;
+    background: var(--t-incomingBubble);
+    border-radius: 16px;
+    border-bottom-left-radius: 4px;
+    padding: 8px 10px;
+    font-size: 12px; color: var(--t-incomingText); line-height: 1.35;
+  }
+  .cp-confirm-bubble .cp-ms {
+    font-family: 'SF Mono','Menlo',monospace;
+    font-weight: 700; color: var(--t-blue); font-size: 12px;
+  }
+  .cp-confirm-bubble .cp-meta {
+    font-size: 11px; color: var(--t-secondaryText); margin-top: 2px;
+  }
+  .cp-confirm-bubble .cp-divider {
+    height: 1px; background: rgba(0,0,0,0.1); margin: 5px 0;
+  }
+  .cp-confirm-bubble .cp-actions {
+    display: flex; gap: 6px; margin-top: 5px;
+  }
+  .cp-confirm-bubble .cp-act-btn {
+    padding: 4px 10px; border-radius: 6px;
+    font-size: 10px; font-weight: 600; color: var(--t-primaryText);
+  }
+  .cp-act-green { background: var(--t-green); }
+  .cp-act-blue  { background: var(--t-blue); }
+
+  /* Input bar inside phone */
+  .cp-input-bar {
+    display: flex; align-items: center; gap: 6px;
+    padding: 8px 10px;
+    background: var(--t-chatScreen);
+    border-top: 1px solid rgba(0,0,0,0.1);
+  }
+  .cp-input-plus {
+    width: 24px; height: 24px; border-radius: 50%;
+    background: var(--t-blue);
+    color: var(--t-primaryText);
+    font-size: 14px; font-weight: 700;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  .cp-input-field {
+    flex: 1;
+    background: rgba(0,0,0,0.06);
+    border-radius: 16px;
+    padding: 6px 12px;
+    font-size: 12px;
+    color: var(--t-tertiaryText);
+  }
+  .cp-input-send {
+    width: 24px; height: 24px; border-radius: 50%;
+    background: var(--t-blue);
+    color: var(--t-primaryText);
+    font-size: 12px;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+
+  /* Home indicator */
+  .cp-home-bar {
+    width: 100px; height: 4px;
+    background: var(--t-separator);
+    border-radius: 2px;
+    margin: 6px auto 8px;
+  }
+
+  /* Main content offset when panel open */
+  body.panel-open .page-header,
+  body.panel-open .stats-bar,
+  body.panel-open .toc { margin-left: 340px; }
+  body.panel-open .container { margin-left: calc(340px + max(0px, (100vw - 340px - 480px) / 2)); }
+  body.panel-open .page-footer { margin-left: 340px; }
 </style>
 </head>
-<body>
+<body class="panel-open">
 
+<!-- ===== Left Chat Preview Panel ===== -->
+<div class="chat-preview-panel" id="chatPreviewPanel">
+  <button class="cp-toggle" onclick="togglePreviewPanel()" title="Toggle Chat Preview">◀</button>
+  <div class="cp-header">📱 Live Chat Preview</div>
+  <div class="cp-phone">
+    <div class="cp-notch"></div>
+    <!-- Chat header -->
+    <div class="cp-chat-header">
+      <div class="cp-avatar">DB</div>
+      <div>
+        <div class="cp-chat-name">Direct Video</div>
+        <div class="cp-chat-status"><span class="cp-status-dot"></span>Connected</div>
+      </div>
+    </div>
+    <!-- Messages -->
+    <div class="cp-messages">
+      <!-- Greeting -->
+      <div class="cp-row in">
+        <div class="cp-bubble in">🙋‍♂️ Good Morning David! I am ready for your video.</div>
+      </div>
+      <div class="cp-time">8:14 AM</div>
+
+      <!-- User text -->
+      <div class="cp-row out">
+        <div class="cp-bubble out">Hey what's up?</div>
+      </div>
+      <div class="cp-time right">8:15 AM</div>
+
+      <!-- Auto-reply -->
+      <div class="cp-row in">
+        <div class="cp-bubble in">📹 Send me your videos! I'll upload them right away.</div>
+      </div>
+      <div class="cp-time">8:15 AM</div>
+
+      <!-- Sent video upload card -->
+      <div class="cp-row out">
+        <div class="cp-sent-card">
+          <div class="cp-sent-inner">
+            <div class="cp-sent-thumb">🎬</div>
+            <div class="cp-sent-info">
+              <div class="cp-sent-name">interview_b-roll.mov</div>
+              <div class="cp-sent-date">Mar 7, 2026 · 245 MB</div>
+              <div class="cp-sent-loc">📍 Albuquerque</div>
+            </div>
+          </div>
+          <div class="cp-sent-status"><span class="cp-sent-check">✓</span> Sent</div>
+        </div>
+      </div>
+      <div class="cp-time right">8:16 AM</div>
+
+      <!-- Server confirmation -->
+      <div class="cp-row in">
+        <div class="cp-confirm-bubble">
+          <div style="font-size:11px; font-family:'SF Mono','Menlo',monospace; color:var(--t-incomingText);">interview-b-roll</div>
+          <div class="cp-meta">🔗 <span style="font-weight:700; font-family:'SF Mono','Menlo',monospace; color:var(--t-incomingText); font-size:11px;">MS-4F2A</span> <span style="font-size:9px;">📋</span></div>
+          <div class="cp-divider"></div>
+          <div class="cp-actions">
+            <span class="cp-act-btn cp-act-blue">ℹ️ Metadata</span>
+          </div>
+        </div>
+      </div>
+      <div class="cp-time">8:16 AM</div>
+
+      <!-- Fun follow-up -->
+      <div class="cp-row in">
+        <div class="cp-bubble in">🎬 Lights, camera, action! Your video is in the pipeline!</div>
+      </div>
+      <div class="cp-time">8:16 AM</div>
+    </div>
+    <!-- Input bar -->
+    <div class="cp-input-bar">
+      <div class="cp-input-plus">+</div>
+      <div class="cp-input-field">Message…</div>
+      <div class="cp-input-send">↑</div>
+    </div>
+    <div class="cp-home-bar"></div>
+  </div>
+</div>
 <div class="page-header">
   <h1>📱 DVU Chat Message Catalog</h1>
   <p>Every message a user can see in the iOS app — grouped by type</p>
@@ -410,8 +1074,9 @@
 <div class="stats-bar">
   <div class="stat-item"><div class="stat-num">7</div><div class="stat-label">Server Messages</div></div>
   <div class="stat-item"><div class="stat-num">4</div><div class="stat-label">User Messages</div></div>
+  <div class="stat-item"><div class="stat-num">8</div><div class="stat-label">Slack Messages</div></div>
   <div class="stat-item"><div class="stat-num">7</div><div class="stat-label">Error Bubbles</div></div>
-  <div class="stat-item"><div class="stat-num">6</div><div class="stat-label">UI Elements</div></div>
+  <div class="stat-item"><div class="stat-num">8</div><div class="stat-label">UI Elements</div></div>
 </div>
 
 <div class="toc">
@@ -426,6 +1091,8 @@
   <a href="#errors" class="red">Errors</a>
   <a href="#ui-elements" class="orange">UI Elements</a>
   <a href="#form-ui" class="orange">Form UI</a>
+  <a href="#metadata-sheet" class="purple">Metadata Sheet</a>
+  <a href="#context-form" class="purple">Context Form</a>
   <a href="#connection" class="gray">Connection</a>
 </div>
 
@@ -441,6 +1108,7 @@
       <span class="section-badge badge-green">Incoming</span>
       <span class="section-title">Greeting</span>
       <span class="section-count">3 variants</span>
+      <span class="view-name">MessageBubble</span>
     </div>
 
     <div class="chat-row incoming">
@@ -478,6 +1146,7 @@
       <span class="section-badge badge-green">Incoming</span>
       <span class="section-title">Auto-Reply (to plain text)</span>
       <span class="section-count">1 message</span>
+      <span class="view-name">MessageBubble</span>
     </div>
 
     <div class="chat-row outgoing">
@@ -506,26 +1175,23 @@
       <span class="section-badge badge-purple">Incoming</span>
       <span class="section-title">Form Request (Upload Response Card)</span>
       <span class="section-count">1 rich card</span>
+      <span class="view-name">MessageBubble.formRequestContent</span>
     </div>
 
     <div class="chat-row incoming">
       <div>
         <span class="msg-label lbl-form">FORM_REQUEST</span>
         <div class="bubble incoming" style="padding: 12px;">
-          <div style="font-size:15px; font-weight:600; color:#fff;">David Burgess</div>
-          <div style="font-size:13px; font-family: monospace; color:#98989d; margin-top:2px;">IMG_6278.MOV</div>
-          <div class="meta-line" style="margin-top:6px;">
+          <div style="font-size:13px; font-family: monospace; color:var(--t-incomingText); margin-bottom:2px;">interview-b-roll</div>
+          <div class="meta-line" style="margin-top:4px;">
             <span class="icon">🔗</span>
-            <span class="ms-id">MS-100000042</span>
+            <span style="font-weight:700; font-family:'SF Mono','Menlo',monospace; color:var(--t-incomingText); font-size:14px;">MS-100000042</span>
+            <span style="font-size:11px; color:var(--t-incomingText); margin-left:4px;">rodgriola.com/clips/interview-b-roll</span>
+            <span style="cursor:pointer; font-size:13px; margin-left:4px;" title="Copy link">📋</span>
           </div>
           <div class="bubble-divider"></div>
-          <div class="meta-line"><span class="icon">📍</span> 40.7128, -74.0060</div>
-          <div class="meta-line"><span class="icon">🕐</span> Mar 7, 2026 8:14 AM</div>
-          <div class="meta-line"><span class="icon">🎬</span> HEVC / H.265 · 3840×2160 · 0:42</div>
-          <div class="bubble-divider"></div>
-          <div class="action-row" style="justify-content: space-between;">
-            <span class="btn-link">ℹ️ Show Details ›</span>
-            <span class="btn-link green">✏️ Add Details ›</span>
+          <div class="action-row">
+            <span class="action-btn btn-blue">ℹ️ Metadata</span>
           </div>
         </div>
         <div class="timestamp left">8:16 AM</div>
@@ -546,29 +1212,24 @@
       <span class="section-badge badge-blue">Incoming</span>
       <span class="section-title">Confirmation ("High Five")</span>
       <span class="section-count">1 rich card</span>
+      <span class="view-name">MessageBubble.confirmationContent</span>
     </div>
 
     <div class="chat-row incoming">
       <div>
         <span class="msg-label lbl-confirm">CONFIRMATION</span>
         <div class="bubble incoming" style="padding: 12px;">
-          <div style="font-size:15px; color:#e5e5ea;">🙌 High Five! I received your sheet, thank you. I'll text when the video is done.</div>
-          <div style="margin-top:8px;">
-            <div class="meta-line">
-              <span class="icon">🔗</span>
-              <span class="ms-id">MS-100000042</span>
-            </div>
-            <div class="meta-line">
-              <span class="icon">📄</span>
-              <span class="mono">IMG_6278.MOV</span>
-            </div>
-            <div class="meta-line">
-              <span class="icon">🕐</span> Mar 7, 2026 8:14 AM
-            </div>
+          <div style="font-size:15px; color:var(--t-incomingText);">🙌 High Five! I received your sheet, thank you. I'll text when the video is done.</div>
+          <div style="font-size:13px; font-family:monospace; color:var(--t-incomingText); margin-top:6px;">interview-b-roll</div>
+          <div class="meta-line" style="margin-top:4px;">
+            <span class="icon">🔗</span>
+            <span style="font-weight:700; font-family:'SF Mono','Menlo',monospace; color:var(--t-incomingText); font-size:14px;">MS-100000042</span>
+            <span style="font-size:11px; color:var(--t-incomingText); margin-left:4px;">rodgriola.com/clips/interview-b-roll</span>
+            <span style="cursor:pointer; font-size:13px; margin-left:4px;" title="Copy link">📋</span>
           </div>
           <div class="action-row" style="margin-top:10px;">
-            <span class="action-btn btn-green">▶ View</span>
             <span class="action-btn btn-blue">ℹ️ Metadata</span>
+            <span class="action-btn btn-green">▶ View</span>
           </div>
         </div>
         <div class="timestamp left">8:18 AM</div>
@@ -591,6 +1252,7 @@
       <span class="section-badge badge-green">Incoming</span>
       <span class="section-title">Fun Follow-Up (post-confirmation)</span>
       <span class="section-count">10 variants</span>
+      <span class="view-name">MessageBubble</span>
     </div>
 
     <div class="chat-row incoming">
@@ -623,82 +1285,182 @@
     <div class="section-label">
       <span class="section-badge badge-purple">Slack</span>
       <span class="section-title">Slack Integration Messages</span>
-      <span class="section-count">5 messages</span>
+      <span class="section-count">8 messages</span>
+      <span class="view-name">MessageBubble.slackContent</span>
     </div>
 
-    <!-- Outgoing Slack command -->
+    <div style="padding:0 10px; margin-bottom:14px;">
+      <div class="msg-source">
+        <strong>Trigger:</strong> iOS detects text starting with <code>#</code> or <code>@</code> → tags as <code>.slackPost</code> → sends raw text via WS <code>message:send</code><br>
+        <strong>Server:</strong> handler.js <code>handleSlackCommand()</code> parses <code>#channels</code> and <code>@mentions</code>, posts via Slack Web API<br>
+        <strong>DB:</strong> Outgoing command persisted as SLACK_POST. Confirmations are ephemeral (WS only, not persisted).<br>
+        <strong>iOS rendering:</strong> Uses SF Symbols (not Slack logo) — <code>paperplane.fill</code> outgoing, <code>checkmark.circle.fill</code> incoming<br>
+        <strong>Outgoing bubble:</strong> Same blue gradient as regular messages (Theme.bubbleBlueHi → bubbleBlueLo). No badges on outgoing.<br>
+        <strong>Incoming badges:</strong> <code>channel</code> + <code>mention</code> fields from server <code>content</code> object — rendered as tinted rounded rects.
+      </div>
+    </div>
+
+    <!-- 1F-a. Outgoing: Channel + Mention -->
     <div class="chat-row outgoing">
       <div>
-        <span class="msg-label lbl-slack">SLACK_POST · Outgoing</span>
-        <div class="bubble outgoing slack-out" style="padding:12px;">
-          <div class="slack-header">
-            <svg class="slack-icon" viewBox="0 0 24 24" fill="none"><path d="M6 15a2 2 0 0 1-2 2a2 2 0 0 1-2-2a2 2 0 0 1 2-2h2v2zm1 0a2 2 0 0 1 2-2a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2a2 2 0 0 1-2-2v-5z" fill="#E01E5A"/><path d="M9 6a2 2 0 0 1-2-2a2 2 0 0 1 2-2a2 2 0 0 1 2 2v2H9zm0 1a2 2 0 0 1 2 2a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2a2 2 0 0 1 2-2h5z" fill="#36C5F0"/><path d="M18 9a2 2 0 0 1 2-2a2 2 0 0 1 2 2a2 2 0 0 1-2 2h-2V9zm-1 0a2 2 0 0 1-2 2a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2a2 2 0 0 1 2 2v5z" fill="#2EB67D"/><path d="M15 18a2 2 0 0 1 2 2a2 2 0 0 1-2 2a2 2 0 0 1-2-2v-2h2zm0-1a2 2 0 0 1-2-2a2 2 0 0 1 2-2h5a2 2 0 0 1 2 2a2 2 0 0 1-2 2h-5z" fill="#ECB22E"/></svg>
-            Sending to Slack…
+        <span class="msg-label lbl-slack">SLACK_POST · Outgoing (Channel + Mention)</span>
+        <div class="bubble outgoing" style="padding:12px;">
+          <div style="display:flex; align-items:center; gap:6px; margin-bottom:6px;">
+            <span style="font-size:13px;">✈️</span>
+            <span style="font-size:12px; font-weight:600; color:rgba(255,255,255,0.7);">Sending to Slack…</span>
           </div>
           <div style="font-size:15px; color:#fff;">#team-alerts @carrie</div>
-          <div style="margin-top:6px;">
-            <span class="slack-badge badge-channel">#team-alerts</span>
-            <span class="slack-badge badge-mention">@carrie</span>
-          </div>
         </div>
         <div class="timestamp right">8:20 AM</div>
+        <div class="msg-source">ChatViewModel.swift <code>sendTextMessage()</code> — text starts with # → tagged <code>.slackPost</code><br>
+          Optimistic UI: appears immediately. Server parses channels/mentions from raw text.</div>
       </div>
     </div>
 
     <div class="spacer"></div>
 
-    <!-- Incoming Slack success -->
+    <!-- 1F-b. Outgoing: DM only (no channel) -->
+    <div class="chat-row outgoing">
+      <div>
+        <span class="msg-label lbl-slack">SLACK_POST · Outgoing (DM Only)</span>
+        <div class="bubble outgoing" style="padding:12px;">
+          <div style="display:flex; align-items:center; gap:6px; margin-bottom:6px;">
+            <span style="font-size:13px;">✈️</span>
+            <span style="font-size:12px; font-weight:600; color:rgba(255,255,255,0.7);">Sending to Slack…</span>
+          </div>
+          <div style="font-size:15px; color:#fff;">@carrie</div>
+        </div>
+        <div class="timestamp right">8:20 AM</div>
+        <div class="msg-source">Text starts with @ → tagged <code>.slackPost</code>. Server sends DM via <code>postDM()</code> when no #channels found.</div>
+      </div>
+    </div>
+
+    <div class="spacer"></div>
+
+    <!-- 1F-c. Incoming: Success (all targets posted) -->
     <div class="chat-row incoming">
       <div>
         <span class="msg-label lbl-slack">SLACK_POST · Success</span>
         <div class="bubble incoming" style="padding:12px;">
-          <div class="slack-header">
-            <svg class="slack-icon" viewBox="0 0 24 24" fill="none"><path d="M6 15a2 2 0 0 1-2 2a2 2 0 0 1-2-2a2 2 0 0 1 2-2h2v2zm1 0a2 2 0 0 1 2-2a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2a2 2 0 0 1-2-2v-5z" fill="#E01E5A"/><path d="M9 6a2 2 0 0 1-2-2a2 2 0 0 1 2-2a2 2 0 0 1 2 2v2H9zm0 1a2 2 0 0 1 2 2a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2a2 2 0 0 1 2-2h5z" fill="#36C5F0"/><path d="M18 9a2 2 0 0 1 2-2a2 2 0 0 1 2 2a2 2 0 0 1-2 2h-2V9zm-1 0a2 2 0 0 1-2 2a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2a2 2 0 0 1 2 2v5z" fill="#2EB67D"/><path d="M15 18a2 2 0 0 1 2 2a2 2 0 0 1-2 2a2 2 0 0 1-2-2v-2h2zm0-1a2 2 0 0 1-2-2a2 2 0 0 1 2-2h5a2 2 0 0 1 2 2a2 2 0 0 1-2 2h-5z" fill="#ECB22E"/></svg>
-            Slack ✓
+          <div style="display:flex; align-items:center; gap:6px; margin-bottom:6px;">
+            <span style="font-size:13px; color:#30d158;">✅</span>
+            <span style="font-size:12px; font-weight:600; color:#98989d;">Slack</span>
           </div>
           <div style="font-size:15px; color:#e5e5ea;">✅ Posted to #team-alerts, @carrie in Slack</div>
+          <div style="display:flex; gap:8px; margin-top:8px;">
+            <span style="font-size:11px; font-weight:600; padding:3px 8px; border-radius:6px; background:rgba(0,122,255,0.2); color:#007aff; font-family:'SF Mono',monospace;"># team-alerts</span>
+            <span style="font-size:11px; font-weight:600; padding:3px 8px; border-radius:6px; background:rgba(48,209,88,0.2); color:#30d158; font-family:'SF Mono',monospace;">@ carrie</span>
+          </div>
         </div>
         <div class="timestamp left">8:20 AM</div>
+        <div class="msg-source">handler.js — all <code>results.ok</code> → <code>`✅ Posted to ${targets} in Slack`</code><br>
+          Badges from <code>content.channel</code> + <code>content.mention</code> fields in WS payload</div>
       </div>
     </div>
 
     <div class="spacer"></div>
 
-    <!-- Incoming Slack failure -->
+    <!-- 1F-d. Incoming: Failure (all targets failed) -->
     <div class="chat-row incoming">
       <div>
-        <span class="msg-label lbl-slack">SLACK_POST · Failure</span>
+        <span class="msg-label lbl-slack">SLACK_POST · Failure (channel_not_found)</span>
         <div class="bubble incoming" style="padding:12px;">
-          <div class="slack-header">
-            <svg class="slack-icon" viewBox="0 0 24 24" fill="none"><path d="M6 15a2 2 0 0 1-2 2a2 2 0 0 1-2-2a2 2 0 0 1 2-2h2v2zm1 0a2 2 0 0 1 2-2a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2a2 2 0 0 1-2-2v-5z" fill="#E01E5A"/><path d="M9 6a2 2 0 0 1-2-2a2 2 0 0 1 2-2a2 2 0 0 1 2 2v2H9zm0 1a2 2 0 0 1 2 2a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2a2 2 0 0 1 2-2h5z" fill="#36C5F0"/><path d="M18 9a2 2 0 0 1 2-2a2 2 0 0 1 2 2a2 2 0 0 1-2 2h-2V9zm-1 0a2 2 0 0 1-2 2a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2a2 2 0 0 1 2 2v5z" fill="#2EB67D"/><path d="M15 18a2 2 0 0 1 2 2a2 2 0 0 1-2 2a2 2 0 0 1-2-2v-2h2zm0-1a2 2 0 0 1-2-2a2 2 0 0 1 2-2h5a2 2 0 0 1 2 2a2 2 0 0 1-2 2h-5z" fill="#ECB22E"/></svg>
-            Slack
+          <div style="display:flex; align-items:center; gap:6px; margin-bottom:6px;">
+            <span style="font-size:13px; color:#30d158;">✅</span>
+            <span style="font-size:12px; font-weight:600; color:#98989d;">Slack</span>
           </div>
           <div style="font-size:15px; color:#e5e5ea;">❌ Couldn't post to #team-alerts (channel_not_found)</div>
+          <div style="display:flex; gap:8px; margin-top:8px;">
+            <span style="font-size:11px; font-weight:600; padding:3px 8px; border-radius:6px; background:rgba(0,122,255,0.2); color:#007aff; font-family:'SF Mono',monospace;"># team-alerts</span>
+          </div>
         </div>
         <div class="timestamp left">8:20 AM</div>
+        <div class="msg-source">handler.js — all <code>results !ok</code> → <code>`❌ Couldn't post to ${targets} (${error})`</code><br>
+          Error from Slack API: <code>channel_not_found</code>, <code>not_in_channel</code>, <code>invalid_auth</code>, etc.</div>
       </div>
     </div>
 
     <div class="spacer"></div>
 
-    <!-- Mixed results -->
+    <!-- 1F-e. Incoming: Failure (user not found — DM) -->
     <div class="chat-row incoming">
       <div>
-        <span class="msg-label lbl-slack">SLACK_POST · Mixed</span>
-        <div class="bubble incoming">✅ Posted to #team-alerts<br>❌ Failed: @unknownuser</div>
-        <div class="timestamp left">8:21 AM</div>
+        <span class="msg-label lbl-slack">SLACK_POST · Failure (user not found)</span>
+        <div class="bubble incoming" style="padding:12px;">
+          <div style="display:flex; align-items:center; gap:6px; margin-bottom:6px;">
+            <span style="font-size:13px; color:#30d158;">✅</span>
+            <span style="font-size:12px; font-weight:600; color:#98989d;">Slack</span>
+          </div>
+          <div style="font-size:15px; color:#e5e5ea;">❌ Couldn't post to @unknownuser (User "unknownuser" not found in Slack workspace)</div>
+          <div style="display:flex; gap:8px; margin-top:8px;">
+            <span style="font-size:11px; font-weight:600; padding:3px 8px; border-radius:6px; background:rgba(48,209,88,0.2); color:#30d158; font-family:'SF Mono',monospace;">@ unknownuser</span>
+          </div>
+        </div>
+        <div class="timestamp left">8:20 AM</div>
+        <div class="msg-source">slack.js <code>postDM()</code> → <code>resolveUserId()</code> returns null → error text with display name</div>
       </div>
     </div>
 
-    <div class="spacer-sm"></div>
+    <div class="spacer"></div>
 
-    <!-- Not configured -->
+    <!-- 1F-f. Incoming: Mixed results -->
+    <div class="chat-row incoming">
+      <div>
+        <span class="msg-label lbl-slack">SLACK_POST · Mixed (partial success)</span>
+        <div class="bubble incoming" style="padding:12px;">
+          <div style="display:flex; align-items:center; gap:6px; margin-bottom:6px;">
+            <span style="font-size:13px; color:#30d158;">✅</span>
+            <span style="font-size:12px; font-weight:600; color:#98989d;">Slack</span>
+          </div>
+          <div style="font-size:15px; color:#e5e5ea;">✅ Posted to #team-alerts<br>❌ Failed: #nonexistent (channel_not_found)</div>
+          <div style="display:flex; gap:8px; margin-top:8px;">
+            <span style="font-size:11px; font-weight:600; padding:3px 8px; border-radius:6px; background:rgba(0,122,255,0.2); color:#007aff; font-family:'SF Mono',monospace;"># team-alerts</span>
+          </div>
+        </div>
+        <div class="timestamp left">8:21 AM</div>
+        <div class="msg-source">handler.js — some successes + some failures → two-line format with ✅ / ❌ prefixes<br>
+          Occurs with multi-channel commands: <code>#team-alerts #nonexistent @carrie</code></div>
+      </div>
+    </div>
+
+    <div class="spacer"></div>
+
+    <!-- 1F-g. Incoming: Not Configured -->
     <div class="chat-row incoming">
       <div>
         <span class="msg-label lbl-slack">SLACK_POST · Not Configured</span>
-        <div class="bubble incoming">❌ Slack is not configured. Set SLACK_BOT_TOKEN on the server.</div>
+        <div class="bubble incoming" style="padding:12px;">
+          <div style="display:flex; align-items:center; gap:6px; margin-bottom:6px;">
+            <span style="font-size:13px; color:#30d158;">✅</span>
+            <span style="font-size:12px; font-weight:600; color:#98989d;">Slack</span>
+          </div>
+          <div style="font-size:15px; color:#e5e5ea;">❌ Slack is not configured. Set SLACK_BOT_TOKEN on the server.</div>
+        </div>
         <div class="timestamp left">8:21 AM</div>
-        <div class="msg-source">handler.js — when <code>isConfigured()</code> returns false</div>
+        <div class="msg-source">handler.js — <code>slack.isConfigured()</code> returns false (no SLACK_BOT_TOKEN env var)<br>
+          Early return — no Slack API calls made.</div>
+      </div>
+    </div>
+
+    <div class="spacer"></div>
+
+    <!-- 1F-h. What gets posted to Slack workspace -->
+    <div style="padding:0 10px; margin-top:12px;">
+      <div class="msg-source" style="color:#636366;">
+        <strong style="color:#e01e5a;">📣 What gets posted to the Slack workspace</strong> (not seen in iOS — sent via Slack Web API):<br><br>
+        <code>slack.js buildAssetMessage()</code> creates a Block Kit message:<br>
+        <div style="background:#1c1c1e; border-radius:10px; padding:10px 14px; margin:8px 0; border-left:3px solid #e01e5a;">
+          <div style="font-size:13px; color:#e5e5ea;"><strong>🎬 New Video Upload</strong></div>
+          <div style="font-size:12px; color:#98989d; margin-top:4px;"><strong>From:</strong> David Burgess</div>
+          <div style="font-size:12px; color:#98989d;"><strong>ID:</strong> <code style="color:#007aff;">MS-100000042</code></div>
+          <div style="margin-top:8px;">
+            <span style="font-size:11px; font-weight:600; padding:4px 10px; border-radius:6px; background:rgba(0,122,255,0.2); color:#007aff;">▶️ View Clip</span>
+          </div>
+          <div style="font-size:11px; color:#636366; margin-top:6px;">@carrie please review</div>
+        </div>
+        <strong>Clip URL:</strong> Resolves most recent READY asset → <code>baseURL/clips/{mediasourceId}</code><br>
+        <strong>Mention:</strong> Only included when user typed @names in the command<br>
+        <strong>Fallback text:</strong> <code>"🎬 New Video from David Burgess\n🔗 {clipUrl}\n@carrie please review"</code>
       </div>
     </div>
   </div>
@@ -713,6 +1475,7 @@
       <span class="section-badge badge-blue">Outgoing</span>
       <span class="section-title">User Text Message</span>
       <span class="section-count">1 message</span>
+      <span class="view-name">MessageBubble.textContent</span>
     </div>
 
     <div class="chat-row outgoing">
@@ -731,6 +1494,7 @@
       <span class="section-badge badge-blue">Outgoing</span>
       <span class="section-title">Video Upload Messages</span>
       <span class="section-count">3 variants</span>
+      <span class="view-name">SentUploadBubble</span>
     </div>
 
     <!-- Sent Upload Card (rich) -->
@@ -793,6 +1557,7 @@
       <span class="section-badge badge-red">Error</span>
       <span class="section-title">Error Bubbles (Client-Generated)</span>
       <span class="section-count">7 messages</span>
+      <span class="view-name">ChatViewModel.appendErrorBubble</span>
     </div>
 
     <div style="padding:0 10px; margin-bottom:12px;">
@@ -891,6 +1656,7 @@
       <span class="section-badge badge-orange">UI</span>
       <span class="section-title">Non-Bubble UI Elements</span>
       <span class="section-count">4 elements</span>
+      <span class="view-name">Mixed views</span>
     </div>
 
     <!-- Typing Indicator -->
@@ -974,6 +1740,7 @@
       <span class="section-badge badge-orange">Form</span>
       <span class="section-title">Form Sheet UI</span>
       <span class="section-count">3 elements</span>
+      <span class="view-name">ContextFormView</span>
     </div>
 
     <!-- Form navigation title -->
@@ -1028,6 +1795,7 @@
       <span class="section-badge badge-gray">Header</span>
       <span class="section-title">Connection Status (ChatHeaderView)</span>
       <span class="section-count">3 states</span>
+      <span class="view-name">ChatHeaderView</span>
     </div>
 
     <!-- Connected -->
@@ -1080,12 +1848,771 @@
     </div>
   </div>
 
+  <!-- ============================== -->
+  <!-- 7. METADATA SHEET              -->
+  <!-- ============================== -->
+
+  <div class="section" id="metadata-sheet">
+    <div class="section-label">
+      <span class="section-badge badge-purple">Sheet</span>
+      <span class="section-title">Metadata Panel</span>
+      <span class="section-count">2 states</span>
+      <span class="view-name">MetadataView</span>
+    </div>
+
+    <!-- Full metadata state -->
+    <div class="metadata-sheet">
+      <div class="sheet-nav">
+        <span style="visibility:hidden;">Done</span>
+        <span class="sheet-title">📄 File Metadata</span>
+        <span class="sheet-close">Done</span>
+      </div>
+      <div class="sheet-hero">
+        <div class="sent-thumb" style="width:64px; height:64px; font-size:28px;">🎬</div>
+        <div>
+          <div class="sent-filename" style="color:#fff;">IMG_6278.MOV</div>
+          <div style="font-size:12px; color:#007aff; font-family:'SF Mono',monospace; margin-top:2px;">MS-100000042</div>
+        </div>
+      </div>
+      <div class="meta-rows">
+        <div class="meta-row"><span class="meta-icon">📍</span><span class="meta-key">GPS</span><span class="meta-val">40.7128, -74.0060</span></div>
+        <div class="meta-row"><span class="meta-icon">🕐</span><span class="meta-key">Captured</span><span class="meta-val">Mar 7, 2026 8:14 AM</span></div>
+        <div class="meta-row"><span class="meta-icon">📱</span><span class="meta-key">Device</span><span class="meta-val">iPhone 16 Pro Max</span></div>
+        <div class="meta-row"><span class="meta-icon">⚙️</span><span class="meta-key">OS</span><span class="meta-val">iOS 18.5.1</span></div>
+        <div class="meta-row"><span class="meta-icon">🎬</span><span class="meta-key">Codec</span><span class="meta-val">HEVC / H.265</span></div>
+        <div class="meta-row"><span class="meta-icon">📐</span><span class="meta-key">Resolution</span><span class="meta-val">3840 × 2160</span></div>
+        <div class="meta-row"><span class="meta-icon">↔️</span><span class="meta-key">Orientation</span><span class="meta-val">Landscape</span></div>
+        <div class="meta-row"><span class="meta-icon">⏱</span><span class="meta-key">Duration</span><span class="meta-val">0:42</span></div>
+        <div class="meta-row"><span class="meta-icon">📁</span><span class="meta-key">File Size</span><span class="meta-val">127.4 MB</span></div>
+        <div class="meta-row"><span class="meta-icon">✅</span><span class="meta-key">Status</span><span class="meta-val">READY</span></div>
+        <div class="meta-row"><span class="meta-icon">💾</span><span class="meta-key">Storage</span><span class="meta-val">Mux</span></div>
+      </div>
+      <div style="text-align:center; margin-top:14px;">
+        <span class="action-btn btn-blue" style="font-size:14px; padding:10px 20px;">🔗 View Clip</span>
+      </div>
+    </div>
+
+    <div class="spacer"></div>
+    <div class="msg-source" style="padding:0 10px;">Opened from: Confirmation card "ℹ️ Metadata" button · Form Request "ℹ️ Metadata" button</div>
+
+    <div class="spacer"></div>
+
+    <!-- No metadata fallback -->
+    <div class="metadata-sheet" style="text-align:center; padding:40px 20px;">
+      <div style="font-size:48px;">🚫</div>
+      <div style="font-size:17px; font-weight:600; color:#fff; margin-top:12px;">No Metadata Found</div>
+      <div style="font-size:14px; color:#98989d; margin-top:4px;">Metadata is not yet available for this clip.</div>
+    </div>
+    <div class="msg-source" style="padding:0 10px;">Fallback when clip.metadata is nil</div>
+  </div>
+
+  <!-- ============================== -->
+  <!-- 8. CONTEXT FORM                -->
+  <!-- ============================== -->
+
+  <div class="section" id="context-form">
+    <div class="section-label">
+      <span class="section-badge badge-purple">Sheet</span>
+      <span class="section-title">Context Form (Add Details)</span>
+      <span class="section-count">4 fields + validation</span>
+      <span class="view-name">ContextFormView</span>
+    </div>
+
+    <!-- Filled form state -->
+    <div class="form-sheet">
+      <div class="sheet-nav">
+        <span class="sheet-close" style="color:#ff453a;">✕</span>
+        <span class="sheet-title">Add Details</span>
+        <span class="sheet-close" style="visibility:hidden;">✕</span>
+      </div>
+      <div class="sheet-hero">
+        <div class="sent-thumb" style="width:56px; height:56px; font-size:24px;">🎬</div>
+        <div>
+          <div style="font-size:11px; color:#98989d;">Clip 1 of 3 · 0:42</div>
+          <div class="sent-filename" style="color:#fff;">IMG_6278.MOV</div>
+          <div style="font-size:12px; color:#98989d; margin-top:2px;">Mar 7, 2026 8:14 AM</div>
+        </div>
+      </div>
+      <div class="form-divider"></div>
+      <div class="form-group">
+        <label class="form-label">Slug <span class="required">*</span></label>
+        <input class="form-input" type="text" value="img-6278" readonly>
+        <div class="form-hint">Letters, numbers, dashes, periods only</div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Type</label>
+        <div class="form-select">
+          <span>Raw</span>
+          <span style="color:#636366;">▼</span>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Description <span class="required">*</span></label>
+        <div class="form-textarea">Interview B-roll from downtown location shoot</div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Priority</label>
+        <div class="segmented-picker">
+          <span class="seg-item seg-active">Low</span>
+          <span class="seg-item">Med</span>
+          <span class="seg-item">High</span>
+          <span class="seg-item">Critical</span>
+        </div>
+      </div>
+      <div style="text-align:center; margin-top:16px;">
+        <span class="action-btn btn-blue" style="font-size:15px; padding:12px 32px;">✈ Send</span>
+      </div>
+    </div>
+
+    <div class="spacer"></div>
+    <div class="msg-source" style="padding:0 10px;">Opened from: Form Request card "✏️ Add Details" button · presented as .sheet modifier</div>
+
+    <div class="spacer"></div>
+
+    <!-- Validation error state -->
+    <div class="form-sheet">
+      <div class="sheet-nav">
+        <span class="sheet-close" style="color:#ff453a;">✕</span>
+        <span class="sheet-title">Add Details — Validation Error</span>
+        <span class="sheet-close" style="visibility:hidden;">✕</span>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Slug <span class="required">*</span></label>
+        <input class="form-input form-input-error" type="text" value="" readonly placeholder="Required">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Description <span class="required">*</span></label>
+        <div class="form-textarea form-input-error" style="color:#636366;">Required</div>
+      </div>
+      <div class="form-error-banner" style="margin-top:12px;">
+        <span class="icon">⚠️</span>
+        <span class="text">Failed to send form. Please try again.</span>
+      </div>
+    </div>
+    <div class="msg-source" style="padding:0 10px;">Red border on empty required fields after first submit attempt</div>
+  </div>
+
 </div>
 
 <div class="page-footer">
   Direct Video Uploader — Chat Message Catalog<br>
-  Generated from codebase audit: handler.js · ChatViewModel.swift · MessageBubble.swift · assets.js
+  Generated from codebase audit: handler.js · ChatViewModel.swift · MessageBubble.swift · MetadataView.swift · ContextFormView.swift · assets.js
 </div>
+
+<!-- Color Sidebar Toggle -->
+<button class="sidebar-toggle" onclick="toggleSidebar()" title="iOS Color Reference">🎨</button>
+
+<!-- Color Sidebar -->
+<div class="color-sidebar" id="colorSidebar">
+  <div class="sb-title">🎨 iOS Color Reference</div>
+  <div class="sb-subtitle">From Theme.swift — click any swatch to change its color</div>
+
+  <!-- Controls -->
+  <div class="sb-controls">
+    <div class="sb-btn sb-btn-reset" onclick="resetColors()">↺ Reset</div>
+    <div class="sb-btn sb-btn-export" onclick="exportCSS()">⬇ CSS Vars</div>
+    <div class="sb-btn sb-btn-swift" onclick="exportSwift()">⬇ Swift</div>
+  </div>
+
+  <!-- Theme Palette -->
+  <div class="sb-section">
+    <div class="sb-section-head sb-head-theme" onclick="toggleSection(this)">Theme.swift Palette <span class="sb-arrow">▼</span></div>
+    <div class="sb-section-body">
+      <div class="sb-palette">
+        <div class="sb-palette-item"><div class="sb-palette-swatch" style="background:#007AFF;" data-var="--t-blue"><input type="color" class="sb-picker" value="#007AFF" data-var="--t-blue"></div><div class="sb-palette-name">.blue</div><div class="sb-palette-hex">#007AFF</div></div>
+        <div class="sb-palette-item"><div class="sb-palette-swatch" style="background:#30D158;" data-var="--t-green"><input type="color" class="sb-picker" value="#30D158" data-var="--t-green"></div><div class="sb-palette-name">.green</div><div class="sb-palette-hex">#30D158</div></div>
+        <div class="sb-palette-item"><div class="sb-palette-swatch" style="background:#FF453A;" data-var="--t-red"><input type="color" class="sb-picker" value="#FF453A" data-var="--t-red"></div><div class="sb-palette-name">.red</div><div class="sb-palette-hex">#FF453A</div></div>
+        <div class="sb-palette-item"><div class="sb-palette-swatch" style="background:#FFD60A;" data-var="--t-yellow"><input type="color" class="sb-picker" value="#FFD60A" data-var="--t-yellow"></div><div class="sb-palette-name">.yellow</div><div class="sb-palette-hex">#FFD60A</div></div>
+        <div class="sb-palette-item"><div class="sb-palette-swatch" style="background:#5856D6;" data-var="--t-purple"><input type="color" class="sb-picker" value="#5856D6" data-var="--t-purple"></div><div class="sb-palette-name">.purple</div><div class="sb-palette-hex">#5856D6</div></div>
+        <div class="sb-palette-item"><div class="sb-palette-swatch" style="background:#0A84FF;" data-var="--t-tint"><input type="color" class="sb-picker" value="#0A84FF" data-var="--t-tint"></div><div class="sb-palette-name">.tint</div><div class="sb-palette-hex">#0A84FF</div></div>
+        <div class="sb-palette-item"><div class="sb-palette-swatch" style="background:#34C759;" data-var="--t-viewGreen"><input type="color" class="sb-picker" value="#34C759" data-var="--t-viewGreen"></div><div class="sb-palette-name">.viewGreen</div><div class="sb-palette-hex">#34C759</div></div>
+        <div class="sb-palette-item"><div class="sb-palette-swatch" style="background:#1C1C1E;" data-var="--t-darkBg"><input type="color" class="sb-picker" value="#1C1C1E" data-var="--t-darkBg"></div><div class="sb-palette-name">.darkBg</div><div class="sb-palette-hex">#1C1C1E</div></div>
+        <div class="sb-palette-item"><div class="sb-palette-swatch" style="background:#2C2C2E;" data-var="--t-cardBg"><input type="color" class="sb-picker" value="#2C2C2E" data-var="--t-cardBg"></div><div class="sb-palette-name">.cardBg</div><div class="sb-palette-hex">#2C2C2E</div></div>
+        <div class="sb-palette-item"><div class="sb-palette-swatch" style="background:#0A0E1A;" data-var="--t-deepBg"><input type="color" class="sb-picker" value="#0A0E1A" data-var="--t-deepBg"></div><div class="sb-palette-name">.deepBg</div><div class="sb-palette-hex">#0A0E1A</div></div>
+        <div class="sb-palette-item"><div class="sb-palette-swatch" style="background:#1A2544;" data-var="--t-formBg"><input type="color" class="sb-picker" value="#1A2544" data-var="--t-formBg"></div><div class="sb-palette-name">.formBg</div><div class="sb-palette-hex">#1A2544</div></div>
+        <div class="sb-palette-item"><div class="sb-palette-swatch" style="background:#38383A;" data-var="--t-separator"><input type="color" class="sb-picker" value="#38383A" data-var="--t-separator"></div><div class="sb-palette-name">.separator</div><div class="sb-palette-hex">#38383A</div></div>
+        <div class="sb-palette-item"><div class="sb-palette-swatch" style="background:#007AFF;" data-var="--t-bubbleBlueHi"><input type="color" class="sb-picker" value="#007AFF" data-var="--t-bubbleBlueHi"></div><div class="sb-palette-name">.bubbleHi</div><div class="sb-palette-hex">#007AFF</div></div>
+        <div class="sb-palette-item"><div class="sb-palette-swatch" style="background:#0063D1;" data-var="--t-bubbleBlueLo"><input type="color" class="sb-picker" value="#0063D1" data-var="--t-bubbleBlueLo"></div><div class="sb-palette-name">.bubbleLo</div><div class="sb-palette-hex">#0063D1</div></div>
+        <div class="sb-palette-item"><div class="sb-palette-swatch" style="background:#1C3A5F;" data-var="--t-videoBubbleHi"><input type="color" class="sb-picker" value="#1C3A5F" data-var="--t-videoBubbleHi"></div><div class="sb-palette-name">.videoHi</div><div class="sb-palette-hex">#1C3A5F</div></div>
+        <div class="sb-palette-item"><div class="sb-palette-swatch" style="background:#0A1E3D;" data-var="--t-videoBubbleLo"><input type="color" class="sb-picker" value="#0A1E3D" data-var="--t-videoBubbleLo"></div><div class="sb-palette-name">.videoLo</div><div class="sb-palette-hex">#0A1E3D</div></div>
+        <div class="sb-palette-item"><div class="sb-palette-swatch" style="background:#FFFFFF;" data-var="--t-primaryText"><input type="color" class="sb-picker" value="#FFFFFF" data-var="--t-primaryText"></div><div class="sb-palette-name">.primaryText</div><div class="sb-palette-hex">#FFFFFF</div></div>
+        <div class="sb-palette-item"><div class="sb-palette-swatch" style="background:#98989D;" data-var="--t-secondaryText"><input type="color" class="sb-picker" value="#98989D" data-var="--t-secondaryText"></div><div class="sb-palette-name">.secondaryText</div><div class="sb-palette-hex">#98989D</div></div>
+        <div class="sb-palette-item"><div class="sb-palette-swatch" style="background:#636366;" data-var="--t-tertiaryText"><input type="color" class="sb-picker" value="#636366" data-var="--t-tertiaryText"></div><div class="sb-palette-name">.tertiaryText</div><div class="sb-palette-hex">#636366</div></div>
+        <div class="sb-palette-item"><div class="sb-palette-swatch" style="background:#E5E5EA;" data-var="--t-lightText"><input type="color" class="sb-picker" value="#E5E5EA" data-var="--t-lightText"></div><div class="sb-palette-name">.lightText</div><div class="sb-palette-hex">#E5E5EA</div></div>
+        <div class="sb-palette-item"><div class="sb-palette-swatch" style="background:#EBEBF5;" data-var="--t-metaText"><input type="color" class="sb-picker" value="#EBEBF5" data-var="--t-metaText"></div><div class="sb-palette-name">.metaText</div><div class="sb-palette-hex">#EBEBF5</div></div>
+        <div class="sb-palette-item"><div class="sb-palette-swatch" style="background:#A0A0A0;" data-var="--t-typingDot"><input type="color" class="sb-picker" value="#A0A0A0" data-var="--t-typingDot"></div><div class="sb-palette-name">.typingDot</div><div class="sb-palette-hex">#A0A0A0</div></div>
+        <div class="sb-palette-item"><div class="sb-palette-swatch" style="background:#000000;" data-var="--t-black"><input type="color" class="sb-picker" value="#000000" data-var="--t-black"></div><div class="sb-palette-name">.black</div><div class="sb-palette-hex">#000000</div></div>
+        <div class="sb-palette-item"><div class="sb-palette-swatch" style="background:#F3F2F2;" data-var="--t-chatScreen"><input type="color" class="sb-picker" value="#F3F2F2" data-var="--t-chatScreen"></div><div class="sb-palette-name">.chatScreen</div><div class="sb-palette-hex">#F3F2F2</div></div>
+        <div class="sb-palette-item"><div class="sb-palette-swatch" style="background:#DBDBDB;" data-var="--t-incomingBubble"><input type="color" class="sb-picker" value="#DBDBDB" data-var="--t-incomingBubble"></div><div class="sb-palette-name">.incomingBubble</div><div class="sb-palette-hex">#DBDBDB</div></div>
+        <div class="sb-palette-item"><div class="sb-palette-swatch" style="background:#2F2D2D;" data-var="--t-incomingText"><input type="color" class="sb-picker" value="#2F2D2D" data-var="--t-incomingText"></div><div class="sb-palette-name">.incomingText</div><div class="sb-palette-hex">#2F2D2D</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Message Bubbles -->
+  <div class="sb-section">
+    <div class="sb-section-head sb-head-msg" onclick="toggleSection(this)">Message Bubbles <span class="sb-arrow">▼</span></div>
+    <div class="sb-section-body">
+      <div class="sb-row">
+        <div class="sb-swatch gradient" style="background:linear-gradient(135deg,#007AFF,#0063D1);" data-var="--t-bubbleBlueHi" data-var2="--t-bubbleBlueLo"><input type="color" class="sb-picker" value="#007AFF" data-var="--t-bubbleBlueHi" title="Gradient start"></div>
+        <div class="sb-color-info">
+          <div class="sb-color-label">Outgoing Bubble</div>
+          <div class="sb-color-hex">bubbleBlueHi → bubbleBlueLo</div>
+          <div class="sb-color-usage">MessageBubble.swift — LinearGradient</div>
+        </div>
+      </div>
+      <div class="sb-row">
+        <div class="sb-swatch" style="background:#DBDBDB;" data-var="--t-incomingBubble"><input type="color" class="sb-picker" value="#DBDBDB" data-var="--t-incomingBubble"></div>
+        <div class="sb-color-info">
+          <div class="sb-color-label">Incoming Bubble</div>
+          <div class="sb-color-hex">#DBDBDB (was Theme.cardBg)</div>
+          <div class="sb-color-usage">MessageBubble.swift — solid fill</div>
+        </div>
+      </div>
+      <div class="sb-row">
+        <div class="sb-swatch" style="background:#FFFFFF;" data-var="--t-primaryText"><input type="color" class="sb-picker" value="#FFFFFF" data-var="--t-primaryText"></div>
+        <div class="sb-color-info">
+          <div class="sb-color-label">Outgoing Text</div>
+          <div class="sb-color-hex">.white · #FFFFFF</div>
+          <div class="sb-color-usage">All outgoing: text, video, slack</div>
+        </div>
+      </div>
+      <div class="sb-row">
+        <div class="sb-swatch" style="background:#2F2D2D;" data-var="--t-incomingText"><input type="color" class="sb-picker" value="#2F2D2D" data-var="--t-incomingText"></div>
+        <div class="sb-color-info">
+          <div class="sb-color-label">Incoming Text</div>
+          <div class="sb-color-hex">#2F2D2D (was Theme.lightText)</div>
+          <div class="sb-color-usage">Text, video, slack, confirmation body</div>
+        </div>
+      </div>
+      <div class="sb-row">
+        <div class="sb-swatch" style="background:rgba(255,255,255,0.3);"></div>
+        <div class="sb-color-info">
+          <div class="sb-color-label">Timestamp</div>
+          <div class="sb-color-hex">.white.opacity(0.3)</div>
+        </div>
+      </div>
+      <div class="sb-row">
+        <div class="sb-swatch" style="background:rgba(255,255,255,0.1);"></div>
+        <div class="sb-color-info">
+          <div class="sb-color-label">Bubble Dividers</div>
+          <div class="sb-color-hex">Color.white.opacity(0.1)</div>
+        </div>
+      </div>
+      <div class="sb-row">
+        <div class="sb-swatch" style="background:#007AFF;" data-var="--t-blue"><input type="color" class="sb-picker" value="#007AFF" data-var="--t-blue"></div>
+        <div class="sb-color-info">
+          <div class="sb-color-label">Mediasource ID / Show Details</div>
+          <div class="sb-color-hex">Theme.blue · #007AFF</div>
+        </div>
+      </div>
+      <div class="sb-row">
+        <div class="sb-swatch" style="background:#30D158;" data-var="--t-green"><input type="color" class="sb-picker" value="#30D158" data-var="--t-green"></div>
+        <div class="sb-color-info">
+          <div class="sb-color-label">View Btn / Add Details</div>
+          <div class="sb-color-hex">Theme.green · #30D158</div>
+        </div>
+      </div>
+      <div class="sb-row">
+        <div class="sb-swatch" style="background:#98989D;" data-var="--t-secondaryText"><input type="color" class="sb-picker" value="#98989D" data-var="--t-secondaryText"></div>
+        <div class="sb-color-info">
+          <div class="sb-color-label">Meta: Filename, Date, Summary</div>
+          <div class="sb-color-hex">Theme.secondaryText · #98989D</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Chat Header -->
+  <div class="sb-section">
+    <div class="sb-section-head sb-head-header" onclick="toggleSection(this)">Chat Header <span class="sb-arrow">▼</span></div>
+    <div class="sb-section-body">
+      <div class="sb-row">
+        <div class="sb-swatch" style="background:rgba(28,28,30,0.94);" data-var="--t-darkBg"><input type="color" class="sb-picker" value="#1C1C1E" data-var="--t-darkBg"></div>
+        <div class="sb-color-info">
+          <div class="sb-color-label">Header Background</div>
+          <div class="sb-color-hex">Theme.darkBg.opacity(0.94)</div>
+          <div class="sb-color-usage">ChatHeaderView.swift</div>
+        </div>
+      </div>
+      <div class="sb-row">
+        <div class="sb-swatch gradient" style="background:linear-gradient(135deg,#007AFF,#5856D6);" data-var="--t-blue" data-var2="--t-purple"><input type="color" class="sb-picker" value="#007AFF" data-var="--t-blue" title="Gradient start"></div>
+        <div class="sb-color-info">
+          <div class="sb-color-label">Avatar Circle</div>
+          <div class="sb-color-hex">Theme.blue → Theme.purple</div>
+        </div>
+      </div>
+      <div class="sb-row">
+        <div class="sb-swatch" style="background:#30D158;" data-var="--t-green"><input type="color" class="sb-picker" value="#30D158" data-var="--t-green"></div>
+        <div class="sb-color-info">
+          <div class="sb-color-label">Status Dot — Connected</div>
+          <div class="sb-color-hex">Theme.green · #30D158</div>
+        </div>
+      </div>
+      <div class="sb-row">
+        <div class="sb-swatch" style="background:#FFD60A;" data-var="--t-yellow"><input type="color" class="sb-picker" value="#FFD60A" data-var="--t-yellow"></div>
+        <div class="sb-color-info">
+          <div class="sb-color-label">Status Dot — Connecting</div>
+          <div class="sb-color-hex">Theme.yellow · #FFD60A</div>
+        </div>
+      </div>
+      <div class="sb-row">
+        <div class="sb-swatch" style="background:#FF453A;" data-var="--t-red"><input type="color" class="sb-picker" value="#FF453A" data-var="--t-red"></div>
+        <div class="sb-color-info">
+          <div class="sb-color-label">Status Dot — Disconnected</div>
+          <div class="sb-color-hex">Theme.red · #FF453A</div>
+        </div>
+      </div>
+      <div class="sb-row">
+        <div class="sb-swatch" style="background:rgba(255,255,255,0.6);"></div>
+        <div class="sb-color-info">
+          <div class="sb-color-label">Status Subtitle</div>
+          <div class="sb-color-hex">.white.opacity(0.6)</div>
+        </div>
+      </div>
+      <div class="sb-row">
+        <div class="sb-swatch" style="background:rgba(255,255,255,0.1);"></div>
+        <div class="sb-color-info">
+          <div class="sb-color-label">Bottom Separator</div>
+          <div class="sb-color-hex">Color.white.opacity(0.1)</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Input Bar -->
+  <div class="sb-section">
+    <div class="sb-section-head sb-head-input" onclick="toggleSection(this)">Input Bar <span class="sb-arrow">▼</span></div>
+    <div class="sb-section-body">
+      <div class="sb-row">
+        <div class="sb-swatch" style="background:rgba(0,0,0,0.94);" data-var="--t-black"><input type="color" class="sb-picker" value="#000000" data-var="--t-black"></div>
+        <div class="sb-color-info">
+          <div class="sb-color-label">Bar Background</div>
+          <div class="sb-color-hex">#000000 (.opacity 0.94)</div>
+          <div class="sb-color-usage">InputBar.swift</div>
+        </div>
+      </div>
+      <div class="sb-row">
+        <div class="sb-swatch" style="background:#1C1C1E;" data-var="--t-darkBg"><input type="color" class="sb-picker" value="#1C1C1E" data-var="--t-darkBg"></div>
+        <div class="sb-color-info">
+          <div class="sb-color-label">Text Field Capsule</div>
+          <div class="sb-color-hex">Theme.darkBg · #1C1C1E</div>
+        </div>
+      </div>
+      <div class="sb-row">
+        <div class="sb-swatch" style="background:#007AFF;" data-var="--t-blue"><input type="color" class="sb-picker" value="#007AFF" data-var="--t-blue"></div>
+        <div class="sb-color-info">
+          <div class="sb-color-label">+ Button / Send Arrow</div>
+          <div class="sb-color-hex">Theme.blue · #007AFF</div>
+        </div>
+      </div>
+      <div class="sb-row">
+        <div class="sb-swatch" style="background:rgba(255,255,255,0.2);"></div>
+        <div class="sb-color-info">
+          <div class="sb-color-label">Send Arrow (Disabled)</div>
+          <div class="sb-color-hex">Color.white.opacity(0.2)</div>
+        </div>
+      </div>
+      <div class="sb-row">
+        <div class="sb-swatch" style="background:rgba(255,255,255,0.4);"></div>
+        <div class="sb-color-info">
+          <div class="sb-color-label">Camera Icon</div>
+          <div class="sb-color-hex">.white.opacity(0.4)</div>
+        </div>
+      </div>
+      <div class="sb-row">
+        <div class="sb-swatch" style="background:rgba(255,255,255,0.1);"></div>
+        <div class="sb-color-info">
+          <div class="sb-color-label">Top Separator</div>
+          <div class="sb-color-hex">Color.white.opacity(0.1)</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Sent / Video Bubbles -->
+  <div class="sb-section">
+    <div class="sb-section-head sb-head-sent" onclick="toggleSection(this)">Sent Upload / Video Preview <span class="sb-arrow">▼</span></div>
+    <div class="sb-section-body">
+      <div class="sb-row">
+        <div class="sb-swatch gradient" style="background:linear-gradient(135deg,#1C3A5F,#0A1E3D);" data-var="--t-videoBubbleHi" data-var2="--t-videoBubbleLo"><input type="color" class="sb-picker" value="#1C3A5F" data-var="--t-videoBubbleHi" title="Gradient start"></div>
+        <div class="sb-color-info">
+          <div class="sb-color-label">Bubble Background</div>
+          <div class="sb-color-hex">videoBubbleHi → videoBubbleLo</div>
+          <div class="sb-color-usage">SentUploadBubble + VideoPreviewBubble</div>
+        </div>
+      </div>
+      <div class="sb-row">
+        <div class="sb-swatch" style="background:rgba(48,209,88,0.3); border-color:rgba(48,209,88,0.5);"></div>
+        <div class="sb-color-info">
+          <div class="sb-color-label">Sent Border Stroke</div>
+          <div class="sb-color-hex">Theme.green.opacity(0.3)</div>
+        </div>
+      </div>
+      <div class="sb-row">
+        <div class="sb-swatch" style="background:rgba(0,122,255,0.3); border-color:rgba(0,122,255,0.5);"></div>
+        <div class="sb-color-info">
+          <div class="sb-color-label">Preview Border Stroke</div>
+          <div class="sb-color-hex">Theme.blue.opacity(0.3)</div>
+        </div>
+      </div>
+      <div class="sb-row">
+        <div class="sb-swatch" style="background:#30D158;" data-var="--t-green"><input type="color" class="sb-picker" value="#30D158" data-var="--t-green"></div>
+        <div class="sb-color-info">
+          <div class="sb-color-label">✓ Checkmark / Location Badge</div>
+          <div class="sb-color-hex">Theme.green · #30D158</div>
+        </div>
+      </div>
+      <div class="sb-row">
+        <div class="sb-swatch" style="background:rgba(255,255,255,0.6);"></div>
+        <div class="sb-color-info">
+          <div class="sb-color-label">Date Text</div>
+          <div class="sb-color-hex">.white.opacity(0.6)</div>
+        </div>
+      </div>
+      <div class="sb-row">
+        <div class="sb-swatch" style="background:rgba(255,255,255,0.3);"></div>
+        <div class="sb-color-info">
+          <div class="sb-color-label">"Sent" / "Tap ↑" Label</div>
+          <div class="sb-color-hex">.white.opacity(0.3)</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Typing Indicator -->
+  <div class="sb-section">
+    <div class="sb-section-head sb-head-ui" onclick="toggleSection(this)">Typing Indicator <span class="sb-arrow">▼</span></div>
+    <div class="sb-section-body">
+      <div class="sb-row">
+        <div class="sb-swatch" style="background:#2C2C2E;" data-var="--t-cardBg"><input type="color" class="sb-picker" value="#2C2C2E" data-var="--t-cardBg"></div>
+        <div class="sb-color-info">
+          <div class="sb-color-label">Bubble Background</div>
+          <div class="sb-color-hex">Theme.cardBg · #2C2C2E</div>
+          <div class="sb-color-usage">TypingIndicatorBubble.swift</div>
+        </div>
+      </div>
+      <div class="sb-row">
+        <div class="sb-swatch" style="background:#A0A0A0;" data-var="--t-typingDot"><input type="color" class="sb-picker" value="#A0A0A0" data-var="--t-typingDot"></div>
+        <div class="sb-color-info">
+          <div class="sb-color-label">Dot Fill</div>
+          <div class="sb-color-hex">Theme.typingDot · #A0A0A0</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Slack -->
+  <div class="sb-section">
+    <div class="sb-section-head sb-head-slack" onclick="toggleSection(this)">Slack Bubbles <span class="sb-arrow">▼</span></div>
+    <div class="sb-section-body">
+      <div class="sb-row">
+        <div class="sb-swatch" style="background:rgba(0,122,255,0.2);" data-var="--t-blue"><input type="color" class="sb-picker" value="#007AFF" data-var="--t-blue"></div>
+        <div class="sb-color-info">
+          <div class="sb-color-label">Channel Badge Bg</div>
+          <div class="sb-color-hex">Theme.blue.opacity(0.2)</div>
+        </div>
+      </div>
+      <div class="sb-row">
+        <div class="sb-swatch" style="background:rgba(48,209,88,0.2);" data-var="--t-green"><input type="color" class="sb-picker" value="#30D158" data-var="--t-green"></div>
+        <div class="sb-color-info">
+          <div class="sb-color-label">Mention Badge Bg</div>
+          <div class="sb-color-hex">Theme.green.opacity(0.2)</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Context Form -->
+  <div class="sb-section">
+    <div class="sb-section-head sb-head-form" onclick="toggleSection(this)">Context Form <span class="sb-arrow">▼</span></div>
+    <div class="sb-section-body">
+      <div class="sb-row">
+        <div class="sb-swatch" style="background:#F3F2F2;" data-var="--t-chatScreen"><input type="color" class="sb-picker" value="#F3F2F2" data-var="--t-chatScreen"></div>
+        <div class="sb-color-info">
+          <div class="sb-color-label">Full-Screen Background</div>
+          <div class="sb-color-hex">#F3F2F2 (was Theme.formBg)</div>
+          <div class="sb-color-usage">ContextFormView.swift</div>
+        </div>
+      </div>
+      <div class="sb-row">
+        <div class="sb-swatch" style="background:rgba(255,255,255,0.08);"></div>
+        <div class="sb-color-info">
+          <div class="sb-color-label">Field / Dropdown Bg</div>
+          <div class="sb-color-hex">Color.white.opacity(0.08)</div>
+        </div>
+      </div>
+      <div class="sb-row">
+        <div class="sb-swatch" style="background:rgba(255,255,255,0.05);"></div>
+        <div class="sb-color-info">
+          <div class="sb-color-label">Clip Header Card Bg</div>
+          <div class="sb-color-hex">Color.white.opacity(0.05)</div>
+        </div>
+      </div>
+      <div class="sb-row">
+        <div class="sb-swatch" style="background:rgba(255,255,255,0.06);"></div>
+        <div class="sb-color-info">
+          <div class="sb-color-label">Unselected Priority Bg</div>
+          <div class="sb-color-hex">Color.white.opacity(0.06)</div>
+        </div>
+      </div>
+      <div class="sb-row">
+        <div class="sb-swatch" style="background:rgba(0,122,255,0.25);" data-var="--t-blue"><input type="color" class="sb-picker" value="#007AFF" data-var="--t-blue"></div>
+        <div class="sb-color-info">
+          <div class="sb-color-label">Selected Priority Bg</div>
+          <div class="sb-color-hex">Theme.blue.opacity(0.25)</div>
+        </div>
+      </div>
+      <div class="sb-row">
+        <div class="sb-swatch" style="background:rgba(255,69,58,0.15);" data-var="--t-red"><input type="color" class="sb-picker" value="#FF453A" data-var="--t-red"></div>
+        <div class="sb-color-info">
+          <div class="sb-color-label">Error Banner Bg</div>
+          <div class="sb-color-hex">Theme.red.opacity(0.15)</div>
+        </div>
+      </div>
+      <div class="sb-row">
+        <div class="sb-swatch" style="background:#FFFFFF;" data-var="--t-primaryText"><input type="color" class="sb-picker" value="#FFFFFF" data-var="--t-primaryText"></div>
+        <div class="sb-color-info">
+          <div class="sb-color-label">Field Text</div>
+          <div class="sb-color-hex">.white</div>
+        </div>
+      </div>
+      <div class="sb-row">
+        <div class="sb-swatch" style="background:rgba(255,255,255,0.5);"></div>
+        <div class="sb-color-info">
+          <div class="sb-color-label">Filename / Unselected Priority</div>
+          <div class="sb-color-hex">.white.opacity(0.5)</div>
+        </div>
+      </div>
+      <div class="sb-row">
+        <div class="sb-swatch" style="background:rgba(255,255,255,0.4);"></div>
+        <div class="sb-color-info">
+          <div class="sb-color-label">Date / Dropdown Chevron</div>
+          <div class="sb-color-hex">.white.opacity(0.4)</div>
+        </div>
+      </div>
+      <div class="sb-row">
+        <div class="sb-swatch" style="background:#FF0000; border-color:#FF0000;" data-var="--t-red"><input type="color" class="sb-picker" value="#FF453A" data-var="--t-red"></div>
+        <div class="sb-color-info">
+          <div class="sb-color-label">Validation Border</div>
+          <div class="sb-color-hex">Color.red (system)</div>
+          <div class="sb-color-usage">Slug / Description error state</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Metadata View -->
+  <div class="sb-section">
+    <div class="sb-section-head sb-head-meta" onclick="toggleSection(this)">Metadata Sheet <span class="sb-arrow">▼</span></div>
+    <div class="sb-section-body">
+      <div class="sb-row">
+        <div class="sb-swatch" style="background:#0A0E1A;" data-var="--t-deepBg"><input type="color" class="sb-picker" value="#0A0E1A" data-var="--t-deepBg"></div>
+        <div class="sb-color-info">
+          <div class="sb-color-label">Full-Screen Background</div>
+          <div class="sb-color-hex">Theme.deepBg · #0A0E1A</div>
+          <div class="sb-color-usage">MetadataView.swift</div>
+        </div>
+      </div>
+      <div class="sb-row">
+        <div class="sb-swatch" style="background:rgba(255,255,255,0.05);"></div>
+        <div class="sb-color-info">
+          <div class="sb-color-label">Row Background</div>
+          <div class="sb-color-hex">Color.white.opacity(0.05)</div>
+        </div>
+      </div>
+      <div class="sb-row">
+        <div class="sb-swatch" style="background:#007AFF;" data-var="--t-blue"><input type="color" class="sb-picker" value="#007AFF" data-var="--t-blue"></div>
+        <div class="sb-color-info">
+          <div class="sb-color-label">Mediasource ID / Done Btn</div>
+          <div class="sb-color-hex">Theme.blue · #007AFF</div>
+        </div>
+      </div>
+      <div class="sb-row">
+        <div class="sb-swatch" style="background:#34C759;" data-var="--t-viewGreen"><input type="color" class="sb-picker" value="#34C759" data-var="--t-viewGreen"></div>
+        <div class="sb-color-info">
+          <div class="sb-color-label">View Clip Button</div>
+          <div class="sb-color-hex">Theme.viewGreen · #34C759</div>
+          <div class="sb-color-usage">Text + bg at opacity(0.15)</div>
+        </div>
+      </div>
+      <div class="sb-row">
+        <div class="sb-swatch" style="background:rgba(255,255,255,0.6);"></div>
+        <div class="sb-color-info">
+          <div class="sb-color-label">Filename / Row Labels</div>
+          <div class="sb-color-hex">.white.opacity(0.6)</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Screen Background -->
+  <div class="sb-section">
+    <div class="sb-section-head sb-head-screen" onclick="toggleSection(this)">Screen Background <span class="sb-arrow">▼</span></div>
+    <div class="sb-section-body">
+      <div class="sb-row">
+        <div class="sb-swatch" style="background:#F3F2F2;" data-var="--t-chatScreen"><input type="color" class="sb-picker" value="#F3F2F2" data-var="--t-chatScreen"></div>
+        <div class="sb-color-info">
+          <div class="sb-color-label">Chat Screen</div>
+          <div class="sb-color-hex">#F3F2F2 (was #000000)</div>
+          <div class="sb-color-usage">ChatView.swift — .ignoresSafeArea()</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+<div class="sidebar-scrim" onclick="toggleSidebar()"></div>
+<div class="sb-toast" id="sbToast"></div>
+
+<script>
+// Default color values (from Theme.swift)
+const DEFAULTS = {
+  '--t-blue': '#007AFF', '--t-green': '#30D158', '--t-red': '#FF453A',
+  '--t-yellow': '#FFD60A', '--t-purple': '#5856D6', '--t-tint': '#0A84FF',
+  '--t-viewGreen': '#34C759', '--t-darkBg': '#1C1C1E', '--t-cardBg': '#2C2C2E',
+  '--t-deepBg': '#0A0E1A', '--t-formBg': '#1A2544', '--t-separator': '#38383A',
+  '--t-bubbleBlueHi': '#007AFF', '--t-bubbleBlueLo': '#0063D1',
+  '--t-videoBubbleHi': '#1C3A5F', '--t-videoBubbleLo': '#0A1E3D',
+  '--t-primaryText': '#FFFFFF', '--t-secondaryText': '#98989D',
+  '--t-tertiaryText': '#636366', '--t-lightText': '#E5E5EA',
+  '--t-metaText': '#EBEBF5', '--t-typingDot': '#A0A0A0',
+  '--t-black': '#000000',
+  '--t-chatScreen': '#F3F2F2', '--t-incomingBubble': '#DBDBDB', '--t-incomingText': '#2F2D2D'
+};
+
+// Swift name mapping
+const SWIFT_NAMES = {
+  '--t-blue': 'blue', '--t-green': 'green', '--t-red': 'red',
+  '--t-yellow': 'yellow', '--t-purple': 'purple', '--t-tint': 'tint',
+  '--t-viewGreen': 'viewGreen', '--t-darkBg': 'darkBg', '--t-cardBg': 'cardBg',
+  '--t-deepBg': 'deepBg', '--t-formBg': 'formBg', '--t-separator': 'separator',
+  '--t-bubbleBlueHi': 'bubbleBlueHi', '--t-bubbleBlueLo': 'bubbleBlueLo',
+  '--t-videoBubbleHi': 'videoBubbleHi', '--t-videoBubbleLo': 'videoBubbleLo',
+  '--t-primaryText': 'primaryText', '--t-secondaryText': 'secondaryText',
+  '--t-tertiaryText': 'tertiaryText', '--t-lightText': 'lightText',
+  '--t-metaText': 'metaText', '--t-typingDot': 'typingDot',
+  '--t-black': 'black',
+  '--t-chatScreen': 'chatScreen', '--t-incomingBubble': 'incomingBubble', '--t-incomingText': 'incomingText'
+};
+
+function toggleSidebar() {
+  document.getElementById('colorSidebar').classList.toggle('open');
+}
+function togglePreviewPanel() {
+  var panel = document.getElementById('chatPreviewPanel');
+  var btn = panel.querySelector('.cp-toggle');
+  panel.classList.toggle('collapsed');
+  document.body.classList.toggle('panel-open');
+  btn.textContent = panel.classList.contains('collapsed') ? '▶' : '◀';
+}
+function toggleSection(el) {
+  el.classList.toggle('collapsed');
+  el.nextElementSibling.classList.toggle('hidden');
+}
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') document.getElementById('colorSidebar').classList.remove('open');
+});
+
+// Color picker: update CSS var + swatch + hex label on change
+document.querySelectorAll('input.sb-picker').forEach(function(picker) {
+  picker.addEventListener('input', function() {
+    var varName = this.dataset.var;
+    var hex = this.value.toUpperCase();
+    // Update CSS custom property — this changes the actual catalog elements
+    document.documentElement.style.setProperty(varName, hex);
+    // Update this swatch background
+    this.parentElement.style.background = hex;
+    // Update hex label in palette context
+    var paletteItem = this.closest('.sb-palette-item');
+    if (paletteItem) {
+      var hexEl = paletteItem.querySelector('.sb-palette-hex');
+      if (hexEl) hexEl.textContent = hex;
+    }
+    // Update hex label in row context
+    var row = this.closest('.sb-row');
+    if (row) {
+      var hexEl = row.querySelector('.sb-color-hex');
+      if (hexEl) hexEl.textContent = hex;
+    }
+    // Sync all other pickers with the same var
+    document.querySelectorAll('input.sb-picker[data-var="' + varName + '"]').forEach(function(p) {
+      if (p !== picker) {
+        p.value = hex;
+        p.parentElement.style.background = hex;
+        // Sync their labels too
+        var pi = p.closest('.sb-palette-item');
+        if (pi) { var h = pi.querySelector('.sb-palette-hex'); if (h) h.textContent = hex; }
+        var ri = p.closest('.sb-row');
+        if (ri) { var h = ri.querySelector('.sb-color-hex'); if (h) h.textContent = hex; }
+      }
+    });
+  });
+});
+
+function resetColors() {
+  Object.entries(DEFAULTS).forEach(function(entry) {
+    var varName = entry[0], hex = entry[1];
+    document.documentElement.style.setProperty(varName, hex);
+    document.querySelectorAll('input.sb-picker[data-var="' + varName + '"]').forEach(function(p) {
+      p.value = hex;
+      p.parentElement.style.background = hex;
+      var pi = p.closest('.sb-palette-item');
+      if (pi) { var h = pi.querySelector('.sb-palette-hex'); if (h) h.textContent = hex; }
+      var ri = p.closest('.sb-row');
+      if (ri) { var h = ri.querySelector('.sb-color-hex'); if (h) h.textContent = hex; }
+    });
+  });
+  showToast('Reset to Theme.swift defaults');
+}
+
+function exportCSS() {
+  var lines = [':root {'];
+  Object.keys(DEFAULTS).forEach(function(varName) {
+    var val = getComputedStyle(document.documentElement).getPropertyValue(varName).trim().toUpperCase();
+    lines.push('  ' + varName + ': ' + val + ';');
+  });
+  lines.push('}');
+  copyToClipboard(lines.join('\n'));
+  showToast('CSS variables copied to clipboard');
+}
+
+function exportSwift() {
+  var lines = ['// Theme.swift — Custom Palette', 'enum Theme {'];
+  Object.keys(DEFAULTS).forEach(function(varName) {
+    var val = getComputedStyle(document.documentElement).getPropertyValue(varName).trim().toUpperCase();
+    var name = SWIFT_NAMES[varName];
+    if (name === 'primaryText' && val === '#FFFFFF') {
+      lines.push('  static let ' + name + ' = Color.white');
+    } else {
+      lines.push('  static let ' + name + ' = Color(hex: "' + val.replace('#','') + '")');
+    }
+  });
+  lines.push('}');
+  copyToClipboard(lines.join('\n'));
+  showToast('Swift Theme copied to clipboard');
+}
+
+function copyToClipboard(text) {
+  navigator.clipboard.writeText(text).catch(function() {
+    // Fallback
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+  });
+}
+
+function showToast(msg) {
+  var toast = document.getElementById('sbToast');
+  toast.textContent = msg;
+  toast.classList.add('show');
+  setTimeout(function() { toast.classList.remove('show'); }, 2000);
+}
+</script>
 
 </body>
 </html>

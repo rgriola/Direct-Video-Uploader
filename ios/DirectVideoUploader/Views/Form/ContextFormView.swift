@@ -16,6 +16,7 @@ struct ContextFormView: View {
     @State private var formValues: [String: String] = [:]
     @State private var selectedPriority: String = "Low"
     @State private var hasAttemptedSubmit = false
+    @State private var showDismissAlert = false
     
     /// Only letters, numbers, dashes, and periods allowed
     private static let allowedCharacters = CharacterSet.alphanumerics
@@ -256,13 +257,25 @@ struct ContextFormView: View {
             .toolbarColorScheme(.dark, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button { dismiss() } label: {
+                    Button {
+                        if canSubmit {
+                            dismiss()
+                        } else {
+                            showDismissAlert = true
+                        }
+                    } label: {
                         Image(systemName: "xmark")
                             .foregroundStyle(.white.opacity(0.6))
                     }
                 }
             }
+            .alert("Required Fields", isPresented: $showDismissAlert) {
+                Button("OK", role: .cancel) { }
+            } message: {
+                Text("Please fill out Slug and Description before closing the form.")
+            }
         }
+        .interactiveDismissDisabled(!canSubmit)
         .onAppear {
             // Initialize form values from field defaults — slug starts empty
             for field in fields {

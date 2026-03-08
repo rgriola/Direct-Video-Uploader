@@ -77,7 +77,7 @@ struct VideoPreviewBubble: View {
 
                         Spacer()
 
-                        // Send button
+                        // Send button 
                         Button {
                             onSend()
                         } label: {
@@ -89,7 +89,7 @@ struct VideoPreviewBubble: View {
                     .padding(.horizontal, 12)
                     .padding(.vertical, 10)
                 }
-                .background(
+                .background( /// background for videopreview bubble.
                     LinearGradient(
                         colors: [Theme.videoBubbleHi, Theme.videoBubbleLo],
                         startPoint: .topLeading,

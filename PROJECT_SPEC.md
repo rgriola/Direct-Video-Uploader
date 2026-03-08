@@ -4,6 +4,8 @@
 > **Platform:** iOS (registered work phones only)
 > **Design Principle:** The app looks and feels like Apple Messages. The user "texts" a video to the server. Under the hood, it's a direct background upload over WebSockets.
 
+# cd admin && npm run build
+
 ---
 
 ## Changelog (v3 → v4)

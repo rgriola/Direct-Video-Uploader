@@ -23,7 +23,7 @@ import AVFoundation
 @MainActor
 @Observable
 final class TranscriptionService {
-    
+
     enum TranscriptionState {
         case idle
         case requesting      // Awaiting user permission
@@ -33,49 +33,49 @@ final class TranscriptionService {
         case failed(String)
         case noSpeech        // Audio exists but no words detected
     }
-    
+
     var state: TranscriptionState = .idle
     var progress: Double = 0  // 0.0–1.0 estimate
-    
+
     // MARK: - Public API
-    
+
     /// Transcribe the audio track of a video file.
     /// Returns the transcript string, or nil if no speech was detected.
     func transcribe(videoURL: URL) async -> String? {
         state = .requesting
-        
+
         // 1. Check / request authorization
         let authorized = await requestAuthorization()
         guard authorized else {
             state = .failed("Speech recognition permission denied")
             return nil
         }
-        
+
         // 2. Verify recognizer is available
         guard let recognizer = SFSpeechRecognizer(), recognizer.isAvailable else {
             state = .failed("Speech recognizer unavailable for this locale")
             return nil
         }
-        
+
         // 3. Prefer on-device recognition (iOS 17+) to avoid network dependency
         if #available(iOS 17, *) {
             recognizer.supportsOnDeviceRecognition = true
         }
-        
+
         // 4. Create recognition request pointing at the video file
         //    SFSpeechURLRecognitionRequest reads the audio track directly — no AVAssetExportSession needed.
         state = .transcribing
         progress = 0.1
-        
+
         let request = SFSpeechURLRecognitionRequest(url: videoURL)
         request.shouldReportPartialResults = false
         request.taskHint = .dictation
-        
+
         // iOS 16+: request on-device only to guarantee privacy
         if #available(iOS 16, *) {
             request.requiresOnDeviceRecognition = true
         }
-        
+
         do {
             let result = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<SFSpeechRecognitionResult, Error>) in
                 recognizer.recognitionTask(with: request) { result, error in
@@ -88,19 +88,19 @@ final class TranscriptionService {
                     }
                 }
             }
-            
+
             let transcript = result.bestTranscription.formattedString
-            
+
             if transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 state = .noSpeech
                 progress = 1.0
                 return nil
             }
-            
+
             state = .completed(transcript)
             progress = 1.0
             return transcript
-            
+
         } catch {
             // Error code 203 = "no speech detected" — not a real error
             let nsError = error as NSError
@@ -109,15 +109,15 @@ final class TranscriptionService {
                 progress = 1.0
                 return nil
             }
-            
+
             state = .failed(error.localizedDescription)
             progress = 1.0
             return nil
         }
     }
-    
+
     // MARK: - Authorization
-    
+
     private func requestAuthorization() async -> Bool {
         await withCheckedContinuation { continuation in
             SFSpeechRecognizer.requestAuthorization { status in
@@ -227,7 +227,7 @@ Transcription runs **after** the upload completes (in parallel with or after met
 
   func confirmStagedUpload() async {
       guard let staged = stagedVideo else { return }
-      
+
       let fileURL = staged.tempFileURL
       let fileName = staged.fileName
       let metadata = staged.metadata
@@ -235,16 +235,16 @@ Transcription runs **after** the upload completes (in parallel with or after met
       lastStagedCreatedDate = staged.createdDate
       lastStagedHasLocation = metadata.gpsLat != nil
       stagedVideo = nil
-      
+
       if let asset = await createAsset(fileName: fileName, fileURL: fileURL) {
           print("✅ Asset created: \(asset.slug)")
           await uploadVideo(assetId: asset.id, fileURL: fileURL, metadata: metadata)
-          
+
 +         // Transcribe audio while file is still on disk
 +         if let transcript = await transcriber.transcribe(videoURL: fileURL) {
 +             await sendTranscript(assetId: asset.id, transcript: transcript)
 +         }
-          
+
           // Clean up temp video file after upload AND transcription
           try? FileManager.default.removeItem(at: fileURL)
       }
@@ -263,7 +263,7 @@ func sendTranscript(assetId: String, transcript: String) async {
     )
     let body: [String: String] = ["transcript": transcript]
     request.httpBody = try? JSONSerialization.data(withJSONObject: body)
-    
+
     do {
         let (_, response) = try await URLSession.shared.data(for: request)
         if let http = response as? HTTPURLResponse, http.statusCode == 200 {
@@ -284,34 +284,38 @@ In [server/src/routes/assets.js](../server/src/routes/assets.js), add:
 
 ```javascript
 // PATCH /api/assets/:id/transcript — Save speech-to-text transcript
-fastify.patch('/:id/transcript', {
-  preHandler: [fastify.authenticate],
-}, async (request, reply) => {
-  const { id } = request.params;
-  const { transcript } = request.body;
+fastify.patch(
+  "/:id/transcript",
+  {
+    preHandler: [fastify.authenticate],
+  },
+  async (request, reply) => {
+    const { id } = request.params;
+    const { transcript } = request.body;
 
-  if (!transcript || typeof transcript !== 'string') {
-    return reply.code(400).send({ error: 'transcript is required' });
-  }
+    if (!transcript || typeof transcript !== "string") {
+      return reply.code(400).send({ error: "transcript is required" });
+    }
 
-  // Find the first clip for this asset
-  const clip = await fastify.prisma.clip.findFirst({
-    where: { assetId: id },
-    orderBy: { clipIndex: 'asc' },
-  });
+    // Find the first clip for this asset
+    const clip = await fastify.prisma.clip.findFirst({
+      where: { assetId: id },
+      orderBy: { clipIndex: "asc" },
+    });
 
-  if (!clip) {
-    return reply.code(404).send({ error: 'No clip found for this asset' });
-  }
+    if (!clip) {
+      return reply.code(404).send({ error: "No clip found for this asset" });
+    }
 
-  // Update transcript
-  await fastify.prisma.clip.update({
-    where: { id: clip.id },
-    data: { transcript: transcript.slice(0, 10000) }, // Cap at 10K chars
-  });
+    // Update transcript
+    await fastify.prisma.clip.update({
+      where: { id: clip.id },
+      data: { transcript: transcript.slice(0, 10000) }, // Cap at 10K chars
+    });
 
-  return { ok: true, clipId: clip.id };
-});
+    return { ok: true, clipId: clip.id };
+  },
+);
 ```
 
 ---
@@ -325,7 +329,7 @@ In the existing `MetadataView.swift`, add a transcript section after the existin
 if let transcript = clip.transcript, !transcript.isEmpty {
     Divider()
         .background(Color.white.opacity(0.1))
-    
+
     VStack(alignment: .leading, spacing: 6) {
         HStack(spacing: 4) {
             Image(systemName: "text.quote")
@@ -335,7 +339,7 @@ if let transcript = clip.transcript, !transcript.isEmpty {
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(.white)
         }
-        
+
         Text(transcript)
             .font(.system(size: 13))
             .foregroundStyle(Color(hex: "98989D"))
@@ -377,32 +381,32 @@ static func transcriptURL(_ assetId: String) -> URL {
 
 ## Implementation Checklist
 
-| # | Task | File(s) | Notes |
-|---|------|---------|-------|
-| 1 | Create `TranscriptionService.swift` | `ios/.../Services/` | New file — code in §1 above |
-| 2 | Add `NSSpeechRecognitionUsageDescription` to `project.yml` | `ios/project.yml` | Then `xcodegen generate` |
-| 3 | Add `transcript` column to Clip schema | `server/prisma/schema.prisma` | Then `npx prisma db push` |
-| 4 | Add `transcript` to iOS `Clip` struct | `ios/.../Models/Asset.swift` | Optional `String?` |
-| 5 | Add `TranscriptionService` call in `confirmStagedUpload()` | `ios/.../Services/ChatViewModel.swift` | After upload, before file cleanup |
-| 6 | Add `sendTranscript()` method | `ios/.../Services/ChatViewModel.swift` | PATCH to server |
-| 7 | Add `transcriptURL()` to `ServerConfig` | `ios/.../Models/ServerConfig.swift` | Convenience URL |
-| 8 | Add `PATCH /api/assets/:id/transcript` route | `server/src/routes/assets.js` | Authenticated, caps at 10K chars |
-| 9 | Show transcript in `MetadataView.swift` | `ios/.../Views/Metadata/` | Collapsible text block |
-| 10 | Show transcript in clip web viewer | `server/src/routes/clips.js` | HTML section |
+| #   | Task                                                       | File(s)                                | Notes                             |
+| --- | ---------------------------------------------------------- | -------------------------------------- | --------------------------------- |
+| 1   | Create `TranscriptionService.swift`                        | `ios/.../Services/`                    | New file — code in §1 above       |
+| 2   | Add `NSSpeechRecognitionUsageDescription` to `project.yml` | `ios/project.yml`                      | Then `xcodegen generate`          |
+| 3   | Add `transcript` column to Clip schema                     | `server/prisma/schema.prisma`          | Then `npx prisma db push`         |
+| 4   | Add `transcript` to iOS `Clip` struct                      | `ios/.../Models/Asset.swift`           | Optional `String?`                |
+| 5   | Add `TranscriptionService` call in `confirmStagedUpload()` | `ios/.../Services/ChatViewModel.swift` | After upload, before file cleanup |
+| 6   | Add `sendTranscript()` method                              | `ios/.../Services/ChatViewModel.swift` | PATCH to server                   |
+| 7   | Add `transcriptURL()` to `ServerConfig`                    | `ios/.../Models/ServerConfig.swift`    | Convenience URL                   |
+| 8   | Add `PATCH /api/assets/:id/transcript` route               | `server/src/routes/assets.js`          | Authenticated, caps at 10K chars  |
+| 9   | Show transcript in `MetadataView.swift`                    | `ios/.../Views/Metadata/`              | Collapsible text block            |
+| 10  | Show transcript in clip web viewer                         | `server/src/routes/clips.js`           | HTML section                      |
 
 ---
 
 ## Constraints & Edge Cases
 
-| Scenario | Behavior |
-|----------|----------|
-| **No audio track** (screen recording, silent video) | `SFSpeechRecognizer` returns error code 203 → `state = .noSpeech`, transcript = nil |
-| **Permission denied** | User sees no transcript; no error bubble. Fails silently. |
-| **Video > 1 hour** | Apple Speech has a ~1 hour limit per request. For longer videos, split with `AVAssetExportSession` into segments. Not needed for this demo. |
-| **Non-English audio** | `SFSpeechRecognizer(locale: Locale(identifier: "es-MX"))` — could be configurable per user. Default: device locale. |
-| **Offline** | iOS 17+ on-device model works offline. If `requiresOnDeviceRecognition = true` is set, no network needed. |
-| **Slow device** | Transcription runs async after upload. UI is not blocked. Progress indicator optional. |
-| **Transcript too long** | Server caps at 10,000 characters. Could paginate or summarize later. |
+| Scenario                                            | Behavior                                                                                                                                    |
+| --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| **No audio track** (screen recording, silent video) | `SFSpeechRecognizer` returns error code 203 → `state = .noSpeech`, transcript = nil                                                         |
+| **Permission denied**                               | User sees no transcript; no error bubble. Fails silently.                                                                                   |
+| **Video > 1 hour**                                  | Apple Speech has a ~1 hour limit per request. For longer videos, split with `AVAssetExportSession` into segments. Not needed for this demo. |
+| **Non-English audio**                               | `SFSpeechRecognizer(locale: Locale(identifier: "es-MX"))` — could be configurable per user. Default: device locale.                         |
+| **Offline**                                         | iOS 17+ on-device model works offline. If `requiresOnDeviceRecognition = true` is set, no network needed.                                   |
+| **Slow device**                                     | Transcription runs async after upload. UI is not blocked. Progress indicator optional.                                                      |
+| **Transcript too long**                             | Server caps at 10,000 characters. Could paginate or summarize later.                                                                        |
 
 ---
 

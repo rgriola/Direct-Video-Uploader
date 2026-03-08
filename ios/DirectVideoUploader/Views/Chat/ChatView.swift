@@ -10,7 +10,7 @@ struct ChatView: View {
     
     var body: some View {
         ZStack {
-            Color.black.ignoresSafeArea()
+            Theme.chatScreen.ignoresSafeArea()
             
             VStack(spacing: 0) {
                 // Header
@@ -108,7 +108,7 @@ struct ChatView: View {
                     }
                     .padding(.horizontal, 16)
                     .padding(.vertical, 8)
-                    .background(Color.black)
+                    .background(Theme.chatScreen)
                 }
                 
                 // Input bar

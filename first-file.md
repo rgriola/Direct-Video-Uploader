@@ -319,45 +319,50 @@ In the Text Flow Right After the greeting my Upload should be in the Text Chain.
 - I think for the iOS app these url's are hard coded by view or function. These paths and how they are appended need to be in a unified location and imported properly - reused.
 - Doing this will make maintenence easier
   .....
+  hostname; scutil --get LocalHostName 2>/dev/null || echo
+  "N/A"
 
-**_ Task _**
+....
+**_ iOS Color Scheme Changes _**
 
-- Clip viewer needs overall layout improvement
+- Chat Screen #F3F2F2
+- Incoming Bubble #DBDBDB
+- Incoming Text #2F2D2D
+- update chat-message-catalog to reflect these changes
 
-**_ Context _**
+...
 
-- The Data is very important to the video we upload. being able to track it helps the user make decsions.
+**_ Changes to Form Request (Upload Response Card) _**
 
-**_ Instructions _**
+- remove "add details" button (if it exsists)
+- Change "show details" to "Metadata" button, this is implimented on Confirmation ("High Five").
 
-- Above the Video Player
-
-.......
-**_ Task _**
-
-- Reduce Database Size and uneeded data
-
-**_ Context _**
-
-- several fields in several tables are not needed and/or redundant
-
-**_ Instructions _**
-
-- remove dependency on asset.slug, remove field from use and database, any pages, code or forms
-- server generated mediasourceID is the binding numercial identity replacing asset.slug ie;
-  in the field asset.mediasource_url : >> /clips/100000003 the new mediasource_url
-- In the clip viewer remove display of asset.slug
-- On the Clip Viewer page change all font color to white including links (blue on black is impossible to read)
-- Add form_response.slug, asset.mediasource_id to the top left corner of the clip viewer above the video player, add the clip owner (who uploaded it) to the right top corner of the page with the "@" ie; @davidburgess
-- Place the clip status, share link (copy link) in the bottom left corner of video_player window.
-- while working consider other data points that are redundant, but only work on the above.
+- Background #F3F2F2
+- Text #2F2D2D
+- Remove User Name
+- Add Slug, Mediasource # with URL Link [copy button icon]
+- Mediasource Link font color should be black not blue.
+- Remove other Metadata from bubble, this is all contained in Metadata Panel.
   ....
+  **_ changes to Confirmation ("High Five") _**
+  - Add Slug, Mediasource # with URL Link [copy button icon]
+  - Mediasource Link font color should be black not blue
+- Background #F3F2F2
+- Text #2F2D2D
+- Switch Metadata Button to the left, View Button on the Right.
 
-**_ ISSUE _**
+...
 
-- slack integration does not work on production, works on local dev
+**_ Issue _**
+
+- iOS App Context Form (Add Details) can be closed prior to required fields being filled out (slug and description).
 
 **_ Context _**
 
-- Testing on iOS, production through Render.
-- received Cannot
+- This causes an error on the iOS Chat Send-Response Flow.
+
+**_ Instuctions _**
+
+- Prevent Context Form (Add Details) from closing until both required fields - Slug and Decription - are filled.
+- add alert to user the fields are required if the user tries to close the form without filling out the fields.
+- Create a fall back to resolve the Slug and Description missing; ie user closes the app, phones run out of battery. This could be the username in both fields, but not shown in the Context Form (Add Details) to the user, empty fields will still compell them to populate the form.

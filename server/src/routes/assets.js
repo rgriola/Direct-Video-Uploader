@@ -310,11 +310,10 @@ export default async function assetRoutes(fastify) {
         schema: {
             body: {
                 type: 'object',
-                required: ['slug', 'description'],
                 properties: {
-                    slug: { type: 'string', minLength: 1 },
+                    slug: { type: 'string' },
                     type: { type: 'string', default: 'Raw' },
-                    description: { type: 'string', minLength: 1 },
+                    description: { type: 'string' },
                     priority: { type: 'string', default: 'Low', enum: ['Low', 'Medium', 'High', 'Critical', 'low', 'medium', 'high', 'critical', 'LOW', 'MEDIUM', 'HIGH', 'CRITICAL'] },
                 },
             },
@@ -322,7 +321,7 @@ export default async function assetRoutes(fastify) {
         preHandler: [fastify.authenticate],
     }, async (request, reply) => {
         const { id } = request.params;
-        const { slug, type, description, priority } = request.body || {};
+        let { slug, type, description, priority } = request.body || {};
 
         const asset = await prisma.asset.findUnique({
             where: { id },
@@ -330,6 +329,17 @@ export default async function assetRoutes(fastify) {
         });
         if (!asset || asset.userId !== request.user.id) {
             return reply.status(404).send({ error: 'Asset not found' });
+        }
+
+        // Fallback: if slug or description are missing (app crash, battery death, etc.)
+        // use the authenticated user's name so the record isn't left blank.
+        if (!slug || !slug.trim()) {
+            const user = await prisma.user.findUnique({ where: { id: request.user.id } });
+            slug = user?.name || 'Untitled';
+        }
+        if (!description || !description.trim()) {
+            const user = await prisma.user.findUnique({ where: { id: request.user.id } });
+            description = user?.name || 'No description';
         }
 
         // Upsert form response

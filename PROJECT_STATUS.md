@@ -1,8 +1,8 @@
 # Direct Video Uploader — Project Status
 
-> **Last Updated:** March 6, 2026 · MST
+> **Last Updated:** March 7, 2026 · MST
 > **Current Phase:** Phase 3 (Render + Cloud + Mux) — Mux pipeline fully operational
-> **Overall Progress:** ████████████████████ 100% (Phase 2) · Phase 3 ~80%
+> **Overall Progress:** ████████████████████ 100% (Phase 2) · Phase 3 ~85%
 
 ---
 
@@ -10,7 +10,7 @@
 
 The **Direct Video Uploader** is a mobile-first video upload platform disguised as a text conversation. Field crew members "text" videos to the **Mediasource Fixer** server, which processes them the way a news assignment desk operates — fast, structured, and integrated with Slack.
 
-We've completed the **interactive chat demo** (HTML prototype), **project specification** (v4), the **Phase 1 server foundation** (Node.js API, WebSocket, PostgreSQL, auth, admin dashboard), the **Phase 2 — iOS Demo App** core flow (login → chat → video upload → form → confirmation → archive), and the **Web Clip Viewer** (server-rendered at `/clips/:slug`). Latest session (Mar 6): Fixed critical Mux webhook signature verification bug (`@mux/mux-node` v12 changed `verifySignature` from static to instance method — ALL webhooks were being rejected). Implemented real Slack integration, iOS createAsset retry logic, background Mux status sync job, and upgraded Render to paid tier.
+We've completed the **interactive chat demo** (HTML prototype), **project specification** (v4), the **Phase 1 server foundation** (Node.js API, WebSocket, PostgreSQL, auth, admin dashboard), the **Phase 2 — iOS Demo App** core flow (login → chat → video upload → form → confirmation → archive), and the **Web Clip Viewer** (server-rendered at `/clips/:slug`). Latest session (Mar 7): Overhauled chat bubble styling (MessageBubble rewrite with Slack confirmation, form request, video content types), added "missing form" alerts to dashboard AssetList and clip viewer, prevented ContextFormView dismiss without required fields, added server-side slug/description fallback, and rebuilt admin dashboard.
 
 ---
 
@@ -176,6 +176,21 @@ cd ios && xcodegen generate && xcodebuild -project DirectVideoUploader.xcodeproj
 | TestFlight build                   | 🔲 Not started     | For demo distribution                                  |
 | Xcode automatic code signing       | ✅ Done            | Team `LW5P4PVL96`, auto signing in project.yml         |
 | Centralized Theme + Formatting     | ✅ Done            | Theme.swift, DVUDateFormatting.swift, UserDefaultsKeys |
+
+**Features Added (Mar 7 — Session):**
+
+- **MessageBubble rewrite** — Complete rewrite of `MessageBubble.swift` with dedicated content views for each message type: `textContent`, `videoContent`, `confirmationContent`, `formRequestContent`, `slackContent`. Custom `ChatBubbleShape` with tail on outgoing (right) and incoming (left) bubbles.
+- **Slack confirmation bubble** — Incoming slack bubbles show ✅ checkmark icon, message text, `#channel` and `@mention` badges with colored pill backgrounds.
+- **Confirmation bubble enhancements** — Shows slug, mediasource ID with 🔗 link, copy-to-clipboard button, "Metadata" and "View" action buttons.
+- **Form request bubble** — Shows slug, mediasource ID link, copy button, divider, and "Metadata" action button.
+- **ContextFormView dismiss prevention** — Added `interactiveDismissDisabled(!canSubmit)` to prevent swipe-to-dismiss when slug/description fields are empty. X button shows alert dialog instead of closing when fields incomplete: "Please fill out Slug and Description before closing the form."
+- **Server-side slug/description fallback** — Relaxed schema validation on `POST /api/assets/:id/form`. If slug or description arrive empty (edge case: app crash, battery death), server falls back to authenticated user's name.
+- **Dashboard "missing form" alerts** — `AssetList.tsx` highlights READY assets without form data: red left border, tinted background, "⚠️ No Form" badge, expanded detail alert banner.
+- **Clip viewer "missing form" alerts** — Server-rendered `/clips/:slug` page shows red 🚨 alert banner when READY asset has no form submission.
+- **InputBar styling** — Darker background (`#DAD9D9`), 2px red top border accent.
+- **VideoPreviewBubble styling** — Updated gradient with `Theme.videoBubbleHi` / `Theme.videoBubbleLo`.
+- **Theme.swift additions** — Added `videoBubbleHi`, `videoBubbleLo`, and other new color constants.
+- **Admin dashboard rebuilt** — Fresh Vite build deployed to `server/public/assets/`.
 
 **Features Added (Mar 6 — Session):**
 

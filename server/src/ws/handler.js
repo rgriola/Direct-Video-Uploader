@@ -121,7 +121,7 @@ async function handleSlackCommand(socket, userId, assetId, channels, mentions, o
     let confirmText;
     if (successes.length > 0 && failures.length === 0) {
         const targets = successes.map(r => r.target).join(', ');
-        confirmText = `✅ Posted to ${targets} in Slack`;
+        confirmText = `${targets}`; /// post is finished in MessageBubble.swift 256
     } else if (failures.length > 0 && successes.length === 0) {
         const targets = failures.map(r => `${r.target} (${r.error})`).join(', ');
         confirmText = `❌ Couldn't post to ${targets}`;

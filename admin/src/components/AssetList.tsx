@@ -53,6 +53,8 @@ export function AssetList({ assets, isLoading }: AssetListProps) {
               ? `${Math.floor(asset.totalDuration / 60)}:${String(asset.totalDuration % 60).padStart(2, "0")}`
               : "";
 
+            const missingForm = !asset.formResponse && asset.status === "READY";
+
             const details = [
               asset.mediasourceId ? `#${asset.mediasourceId}` : null,
               asset.clipCount ? `${asset.clipCount} clip${asset.clipCount !== 1 ? "s" : ""}` : null,
@@ -67,7 +69,7 @@ export function AssetList({ assets, isLoading }: AssetListProps) {
             const isExpanded = expandedId === asset.id;
 
             return (
-              <div key={asset.id} className="border-b border-(--border-subtle) last:border-b-0">
+              <div key={asset.id} className={`border-b border-(--border-subtle) last:border-b-0 ${missingForm ? "border-l-3 border-l-[#FF453A] bg-[#FF453A]/5" : ""}`}>
                 {/* Row header — click to expand/collapse */}
                 <button
                   onClick={() => setExpandedId(isExpanded ? null : asset.id)}
@@ -85,6 +87,11 @@ export function AssetList({ assets, isLoading }: AssetListProps) {
                   </div>
 
                   <div className="shrink-0 flex items-center gap-2">
+                    {missingForm && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-[#FF453A]/15 text-[#FF453A]">
+                        ⚠️ No Form
+                      </span>
+                    )}
                     <span
                       className={`inline-flex items-center gap-1.25 px-2.5 py-0.5 rounded-md text-[11px] font-semibold ${statusClasses[asset.status] ?? ""}`}
                     >
@@ -97,6 +104,16 @@ export function AssetList({ assets, isLoading }: AssetListProps) {
                 {/* Expanded detail panel */}
                 {isExpanded && (
                   <div className="px-5.5 pb-4 pt-1 bg-(--secondary)/30 border-t border-(--border-subtle)">
+                    {/* Missing form alert */}
+                    {missingForm && (
+                      <div className="flex items-center gap-2 mb-3 px-3 py-2.5 rounded-lg bg-[#FF453A]/10 border border-[#FF453A]/25">
+                        <span className="text-base">🚨</span>
+                        <div className="text-xs">
+                          <span className="font-semibold text-[#FF453A]">NO CONTEXT FORM</span>
+                          <span className="text-(--muted-foreground)"> Slug and description are missing for this asset.</span>
+                        </div>
+                      </div>
+                    )}
                     {/* Clip details */}
                     {clip && (
                       <div className="mb-3">

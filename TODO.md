@@ -1,7 +1,20 @@
 # TODO — Direct Video Uploader
 
-> Full project audit — March 3, 2026 · Updated March 6
+> Full project audit — March 3, 2026 · Updated March 7
 > **25 of 25 issues fixed. ✅ All clear.**
+
+---
+
+## Completed — March 7
+
+| #      | Feature / Fix                                                                    | Status |
+| ------ | -------------------------------------------------------------------------------- | ------ |
+| **26** | MessageBubble rewrite — dedicated views per message type + ChatBubbleShape       | DONE   |
+| **27** | ContextFormView dismiss prevention — blocks close without slug + description     | DONE   |
+| **28** | Server slug/description fallback — uses user.name if form fields arrive empty    | DONE   |
+| **29** | Dashboard "missing form" alerts — red border + ⚠️ badge on READY assets w/o form | DONE   |
+| **30** | Clip viewer "missing form" alerts — red 🚨 banner on server-rendered page        | DONE   |
+| **31** | Admin dashboard rebuilt — fresh Vite build to server/public/                     | DONE   |
 
 ---
 

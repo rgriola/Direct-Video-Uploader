@@ -14,7 +14,7 @@ struct MessageBubble: View {
             if isOutgoing { Spacer(minLength: 60) }
             
             VStack(alignment: isOutgoing ? .trailing : .leading, spacing: 4) {
-                // Bubble content
+                // Bubble content 
                 bubbleContent
                     .padding(.horizontal, 14)
                     .padding(.vertical, 10)
@@ -25,7 +25,7 @@ struct MessageBubble: View {
                 if let time = formattedTime {
                     Text(time)
                         .font(.system(size: 10))
-                        .foregroundStyle(.white.opacity(0.3))
+                        .foregroundStyle(Color.black.opacity(0.7))
                         .padding(.horizontal, 4)
                 }
             }
@@ -56,7 +56,7 @@ struct MessageBubble: View {
     private var textContent: some View {
         Text(message.content.displayText)
             .font(.system(size: 16))
-            .foregroundStyle(isOutgoing ? .white : Theme.lightText)
+            .foregroundStyle(isOutgoing ? .white : Theme.incomingText)
     }
     
     private var videoContent: some View {
@@ -66,7 +66,7 @@ struct MessageBubble: View {
             Text(message.content.displayText)
                 .font(.system(size: 15, weight: .medium))
         }
-        .foregroundStyle(isOutgoing ? .white : Theme.lightText)
+        .foregroundStyle(isOutgoing ? .white : Theme.incomingText)
     }
     
     private var confirmationContent: some View {
@@ -74,44 +74,66 @@ struct MessageBubble: View {
             // Main confirmation text
             Text(message.content.text ?? "Upload confirmed")
                 .font(.system(size: 15))
-                .foregroundStyle(Theme.lightText)
+                .foregroundStyle(Theme.incomingText)
             
-            // Metadata details — mediasource ID, filename, date
-            VStack(alignment: .leading, spacing: 4) {
-                if let msId = message.content.mediasourceId {
-                    HStack(spacing: 4) {
-                        Text("🔗")
-                            .font(.system(size: 12))
-                        Text(msId)
-                            .font(.system(size: 14, weight: .bold, design: .monospaced))
-                            .foregroundStyle(Theme.blue)
-                    }
-                }
-                
-                if let fileName = message.content.originalFileName {
-                    HStack(spacing: 4) {
-                        Text("📄")
-                            .font(.system(size: 12))
-                        Text(fileName)
-                            .font(.system(size: 13, design: .monospaced))
-                            .foregroundStyle(Theme.secondaryText)
+            // Slug
+            if let slug = message.content.slug {
+                Text(slug)
+                    .font(.system(size: 13, design: .monospaced))
+                    .foregroundStyle(Theme.incomingText)
+                    .lineLimit(1)
+            }
+            
+            // Mediasource ID + URL link + copy button
+            if let msId = message.content.mediasourceId {
+                HStack(spacing: 4) {
+                    Text("🔗")
+                        .font(.system(size: 12))
+                    Text(msId)
+                        .font(.system(size: 14, weight: .bold, design: .monospaced))
+                        .foregroundStyle(Theme.incomingText)
+                    
+                    if let slug = message.content.slug {
+                        Text(ServerConfig.baseURL.absoluteString + "/clips/" + slug)
+                            .font(.system(size: 11))
+                            .foregroundStyle(Theme.incomingText)
                             .lineLimit(1)
+                            .truncationMode(.middle)
                     }
-                }
-                
-                if let dateStr = message.content.capturedAt {
-                    HStack(spacing: 4) {
-                        Text("🕐")
+                    
+                    // Copy button
+                    Button {
+                        let link = message.content.slug.map { ServerConfig.baseURL.absoluteString + "/clips/" + $0 } ?? msId
+                        UIPasteboard.general.string = link
+                    } label: {
+                        Image(systemName: "doc.on.doc")
                             .font(.system(size: 12))
-                        Text(DVUDateFormatting.longDate(dateStr))
-                            .font(.system(size: 13))
-                            .foregroundStyle(Theme.secondaryText)
+                            .foregroundStyle(Theme.incomingText.opacity(0.6))
                     }
                 }
             }
             
-            // Action buttons — View (green) + Metadata (blue)
+            // Action buttons — Metadata (left) + View (right)
             HStack(spacing: 12) {
+                // Metadata button — opens metadata sheet
+                if onTapMetadata != nil {
+                    Button {
+                        onTapMetadata?()
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "info.circle.fill")
+                                .font(.system(size: 13))
+                            Text("Metadata")
+                                .font(.system(size: 13, weight: .semibold))
+                        }
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .background(Color(hex: "#1C3A5F"))
+                        .foregroundStyle(.white)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                    }
+                }
+                
                 // View button — opens clip in browser
                 if let msId = message.content.mediasourceId,
                    let clipURL = ServerConfig.clipURL(msId) {
@@ -131,8 +153,54 @@ struct MessageBubble: View {
                         .clipShape(RoundedRectangle(cornerRadius: 8))
                     }
                 }
-                
-                // Metadata button — opens metadata sheet
+            }
+        }
+    }
+    
+    private var formRequestContent: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            // Slug name
+            if let slug = message.content.slug {
+                Text(slug)
+                    .font(.system(size: 13, design: .monospaced))
+                    .foregroundStyle(Theme.incomingText)
+                    .lineLimit(1)
+            }
+            
+            // Mediasource ID + URL link + copy button
+            if let msId = message.content.mediasourceId {
+                HStack(spacing: 4) {
+                    Text("🔗")
+                        .font(.system(size: 12))
+                    Text(msId)
+                        .font(.system(size: 14, weight: .bold, design: .monospaced))
+                        .foregroundStyle(Theme.incomingText)
+                    
+                    if let slug = message.content.slug {
+                        Text(ServerConfig.baseURL.absoluteString + "/clips/" + slug)
+                            .font(.system(size: 11))
+                            .foregroundStyle(Theme.incomingText)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                    
+                    // Copy button
+                    Button {
+                        let link = message.content.slug.map { ServerConfig.baseURL.absoluteString + "/clips/" + $0 } ?? msId
+                        UIPasteboard.general.string = link
+                    } label: {
+                        Image(systemName: "doc.on.doc")
+                            .font(.system(size: 12))
+                            .foregroundStyle(Theme.incomingText.opacity(0.6))
+                    }
+                }
+            }
+            
+            Divider()
+                .background(Color.black.opacity(0.1))
+            
+            // Action button — Metadata only
+            HStack(spacing: 12) {
                 if onTapMetadata != nil {
                     Button {
                         onTapMetadata?()
@@ -148,105 +216,6 @@ struct MessageBubble: View {
                         .background(Theme.blue)
                         .foregroundStyle(.white)
                         .clipShape(RoundedRectangle(cornerRadius: 8))
-                    }
-                }
-            }
-        }
-    }
-    
-    private var formRequestContent: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            // Header — User name
-            if let userName = message.content.userName {
-                Text(userName)
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(.white)
-            }
-            
-            // Original filename
-            if let fileName = message.content.originalFileName {
-                Text(fileName)
-                    .font(.system(size: 13, design: .monospaced))
-                    .foregroundStyle(Theme.secondaryText)
-                    .lineLimit(1)
-            }
-            
-            // Mediasource ID
-            if let msId = message.content.mediasourceId {
-                HStack(spacing: 4) {
-                    Text("🔗")
-                        .font(.system(size: 12))
-                    Text(msId)
-                        .font(.system(size: 14, weight: .bold, design: .monospaced))
-                        .foregroundStyle(Theme.blue)
-                }
-            }
-            
-            Divider()
-                .background(Color.white.opacity(0.1))
-            
-            // Metadata summary rows
-            VStack(alignment: .leading, spacing: 4) {
-                // GPS
-                if let lat = message.content.gpsLat, let lon = message.content.gpsLon {
-                    metaSummaryRow(icon: "📍", text: String(format: "%.4f, %.4f", lat, lon))
-                }
-                
-                // Captured date
-                if let dateStr = message.content.capturedAt {
-                    metaSummaryRow(icon: "🕐", text: DVUDateFormatting.longDate(dateStr))
-                }
-                
-                // Codec · Resolution · Duration
-                let codecParts = [
-                    message.content.codec,
-                    message.content.resolution,
-                    message.content.duration.map { DVUDateFormatting.duration($0) }
-                ].compactMap { $0 }
-                
-                if !codecParts.isEmpty {
-                    metaSummaryRow(icon: "🎬", text: codecParts.joined(separator: " · "))
-                }
-            }
-            
-            Divider()
-                .background(Color.white.opacity(0.1))
-            
-            // Action buttons
-            HStack(spacing: 12) {
-                // Show Details → (opens MetadataView)
-                if onTapMetadata != nil {
-                    Button {
-                        onTapMetadata?()
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "info.circle")
-                                .font(.system(size: 11))
-                            Text("Show Details")
-                                .font(.system(size: 12, weight: .medium))
-                            Image(systemName: "chevron.right")
-                                .font(.system(size: 9))
-                        }
-                        .foregroundStyle(Theme.blue)
-                    }
-                }
-                
-                Spacer()
-                
-                // Tap to add details → (opens ContextFormView)
-                if onTapForm != nil {
-                    Button {
-                        onTapForm?()
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "square.and.pencil")
-                                .font(.system(size: 11))
-                            Text("Add Details")
-                                .font(.system(size: 12, weight: .medium))
-                            Image(systemName: "chevron.right")
-                                .font(.system(size: 9))
-                        }
-                        .foregroundStyle(Theme.green)
                     }
                 }
             }
@@ -277,14 +246,14 @@ struct MessageBubble: View {
                     .font(.system(size: 13))
                     .foregroundStyle(isOutgoing ? .white : Theme.green)
                 Text(isOutgoing ? "Sending to Slack…" : "Slack")
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(isOutgoing ? .white.opacity(0.7) : Theme.secondaryText)
             }
             
             // Message text (command or confirmation)
             Text(message.content.text ?? "Posted to Slack")
                 .font(.system(size: 15))
-                .foregroundStyle(isOutgoing ? .white : Theme.lightText)
+                .foregroundStyle(isOutgoing ? .white : Theme.incomingText)
             
             // Channel/mention badges on confirmation
             if !isOutgoing {
@@ -296,10 +265,10 @@ struct MessageBubble: View {
                             Text(channel)
                                 .font(.system(size: 11, weight: .medium))
                         }
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 3)
-                        .background(Theme.blue.opacity(0.2))
-                        .foregroundStyle(Theme.blue)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(Theme.blue.opacity(0.3))
+                        .foregroundStyle(Theme.black)
                         .clipShape(RoundedRectangle(cornerRadius: 6))
                     }
                     if let mention = message.content.mention {
@@ -309,10 +278,10 @@ struct MessageBubble: View {
                             Text(mention)
                                 .font(.system(size: 11, weight: .medium))
                         }
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 3)
-                        .background(Theme.green.opacity(0.2))
-                        .foregroundStyle(Theme.green)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(Theme.green.opacity(0.3))
+                        .foregroundStyle(Theme.black)
                         .clipShape(RoundedRectangle(cornerRadius: 6))
                     }
                 }
@@ -325,13 +294,9 @@ struct MessageBubble: View {
     private var bubbleBackground: some View {
         Group {
             if isOutgoing {
-                LinearGradient(
-                    colors: [Theme.bubbleBlueHi, Theme.bubbleBlueLo],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
+                Theme.outgoingBubble
             } else {
-                Theme.cardBg
+                Theme.incomingBubble
             }
         }
     }

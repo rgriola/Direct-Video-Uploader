@@ -346,6 +346,27 @@ export default async function clipRoutes(fastify) {
         .priority-high { color: #FF9F0A; }
         .priority-medium { color: #30D158; }
         .priority-low { color: rgba(255,255,255,0.5); }
+        /* Alert banner */
+        .alert-banner {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 14px 18px;
+            border-radius: 12px;
+            background: rgba(255,69,58,0.10);
+            border: 1px solid rgba(255,69,58,0.25);
+            margin-bottom: 24px;
+        }
+        .alert-banner .alert-icon { font-size: 20px; flex-shrink: 0; }
+        .alert-banner .alert-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: #FF453A;
+        }
+        .alert-banner .alert-detail {
+            font-size: 13px;
+            color: rgba(255,255,255,0.5);
+        }
         /* Footer */
         .footer {
             text-align: center;
@@ -421,6 +442,16 @@ export default async function clipRoutes(fastify) {
             <span class="status status-${escapeHtml(asset.status)}">${escapeHtml(asset.status)}</span>
             <button class="copy-link" onclick="copyLink(this)">📋 Copy Link</button>
         </div>
+
+        ${!form && asset.status === 'READY' ? `
+        <div class="alert-banner">
+            <span class="alert-icon">🚨</span>
+            <div>
+                <div class="alert-title">NO CONTEXT FORM</div>
+                <div class="alert-detail">Slug and description are missing for this asset.</div>
+            </div>
+        </div>
+        ` : ''}
 
         ${clipRows.length > 0 ? `
         <div class="section">
