@@ -26,6 +26,7 @@ const DEMO_USERS = [
         email: 'admin@example.com',
         team: 'Engineering',
         pin: '0000',
+        role: 'ADMIN',
     },
 ];
 
@@ -48,7 +49,8 @@ async function seed() {
                 name: user.name,
                 email: user.email,
                 team: user.team,
-                pinHash: hashPin(user.pin),
+                pinHash: await hashPin(user.pin),
+                ...(user.role && { role: user.role }),
             },
         });
 

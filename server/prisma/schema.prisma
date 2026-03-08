@@ -17,6 +17,7 @@ model User {
   email       String?
   team        String?
   pinHash     String     @map("pin_hash")
+  role        UserRole   @default(USER) @map("role")
   status      UserStatus @default(ACTIVE)
   lastLoginAt DateTime?  @map("last_login_at")
   createdAt   DateTime   @default(now()) @map("created_at")
@@ -26,6 +27,11 @@ model User {
   messages ChatMessage[]
 
   @@map("users")
+}
+
+enum UserRole {
+  USER
+  ADMIN
 }
 
 enum UserStatus {

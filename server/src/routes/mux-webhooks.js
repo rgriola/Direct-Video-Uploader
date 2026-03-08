@@ -49,7 +49,8 @@ export default async function muxWebhookRoutes(fastify) {
                 return reply.status(401).send({ error: 'Invalid signature' });
             }
         } else if (process.env.NODE_ENV === 'production') {
-            console.warn('⚠️  MUX_WEBHOOK_SECRET not set — webhook signatures are NOT verified');
+            console.error('🛑 MUX_WEBHOOK_SECRET not set — rejecting webhook in production');
+            return reply.status(500).send({ error: 'Webhook signature verification not configured' });
         }
 
         const event = request.body;

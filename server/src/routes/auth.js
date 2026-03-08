@@ -2,7 +2,7 @@
  * Auth routes — Simple phone# + PIN login for demo.
  */
 import prisma from '../lib/prisma.js';
-import { verifyPin, dbRetry } from '../lib/utils.js';
+import { verifyPin, hashPin, dbRetry } from '../lib/utils.js';
 
 export default async function authRoutes(fastify) {
     /**
@@ -49,10 +49,19 @@ export default async function authRoutes(fastify) {
         }
 
         // Verify PIN
-        if (!verifyPin(pin, user.pinHash)) {
+        if (!(await verifyPin(pin, user.pinHash))) {
             return reply.status(401).send({
                 error: 'Invalid phone number or PIN',
             });
+        }
+
+        // Auto-migrate legacy SHA-256 hash to bcrypt
+        if (user.pinHash && !user.pinHash.startsWith('$2')) {
+            const bcryptHash = await hashPin(pin);
+            await dbRetry(() => prisma.user.update({
+                where: { id: user.id },
+                data: { pinHash: bcryptHash },
+            }));
         }
 
         // Track login time (skip for admin dashboard auto-login)
@@ -70,6 +79,7 @@ export default async function authRoutes(fastify) {
                 id: user.id,
                 phoneNumber: user.phoneNumber,
                 name: user.name,
+                role: user.role || 'USER',
             },
             { expiresIn: '7d' }
         );

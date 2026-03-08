@@ -5,9 +5,21 @@ import { randomUUID } from 'crypto';
 import path from 'path';
 import fs from 'fs/promises';
 import { pipeline } from 'stream/promises';
+import { fileTypeFromFile } from 'file-type';
 import prisma from '../lib/prisma.js';
 import { generateMediasourceId, dbRetry, parseClientMetadata, serializeClip, notifyUserSockets } from '../lib/utils.js';
 import { ingestVideo, isMuxEnabled, createDirectUpload } from '../lib/mux.js';
+
+// Allowed video MIME types (B5: file upload validation)
+const ALLOWED_VIDEO_MIMES = new Set([
+    'video/mp4',
+    'video/quicktime',
+    'video/x-msvideo',     // AVI
+    'video/x-matroska',    // MKV
+    'video/webm',
+    'video/3gpp',
+    'video/3gpp2',
+]);
 
 export default async function assetRoutes(fastify) {
     /**
@@ -17,6 +29,9 @@ export default async function assetRoutes(fastify) {
      */
     fastify.post('/api/assets', {
         preHandler: [fastify.authenticate],
+        config: {
+            rateLimit: { max: 10, timeWindow: '1 minute' },
+        },
     }, async (request) => {
         const { fileName } = request.body || {};
         const mediasourceId = await generateMediasourceId(prisma);
@@ -50,6 +65,9 @@ export default async function assetRoutes(fastify) {
      */
     fastify.post('/api/assets/:id/upload', {
         preHandler: [fastify.authenticate],
+        config: {
+            rateLimit: { max: 10, timeWindow: '1 minute' },
+        },
     }, async (request, reply) => {
         const { id } = request.params;
 
@@ -71,7 +89,12 @@ export default async function assetRoutes(fastify) {
         }
 
         // Save file to local uploads directory (demo — production would use R2/S3)
-        const ext = path.extname(data.filename) || '.mp4';
+        // B5: Sanitize filename — strip path components, limit length, remove null bytes
+        const safeOriginal = (data.filename || 'upload.mp4')
+            .replace(/\0/g, '')
+            .replace(/[/\\]/g, '_')
+            .slice(0, 255);
+        const ext = path.extname(safeOriginal) || '.mp4';
         const clipId = randomUUID();
         const fileName = `${clipId}${ext}`;
         const uploadDir = path.resolve(process.cwd(), 'uploads');
@@ -82,6 +105,16 @@ export default async function assetRoutes(fastify) {
         // Stream file to disk
         const writeStream = (await import('fs')).createWriteStream(filePath);
         await pipeline(data.file, writeStream);
+
+        // B5: Validate file is actually a video (magic byte check)
+        const fileType = await fileTypeFromFile(filePath);
+        if (!fileType || !ALLOWED_VIDEO_MIMES.has(fileType.mime)) {
+            await fs.unlink(filePath).catch(() => {});
+            return reply.status(415).send({
+                error: 'Invalid file type — only video files are accepted',
+                detected: fileType?.mime || 'unknown',
+            });
+        }
 
         // Get file stats
         const stats = await fs.stat(filePath);
@@ -95,7 +128,7 @@ export default async function assetRoutes(fastify) {
                 id: clipId,
                 assetId: id,
                 clipIndex: 0,
-                originalFileName: data.filename || asset.originalFileName || null,
+                originalFileName: safeOriginal || asset.originalFileName || null,
                 storageUrl: `/uploads/${fileName}`,
                 fileSize: BigInt(stats.size),
                 ...metadata,
@@ -289,6 +322,11 @@ export default async function assetRoutes(fastify) {
 
         if (!asset) {
             return reply.status(404).send({ error: 'Asset not found' });
+        }
+
+        // Ownership check — only asset owner or admin can view details (A6)
+        if (asset.userId !== request.user.id && request.user.role !== 'ADMIN') {
+            return reply.status(403).send({ error: 'Access denied' });
         }
 
         // Convert BigInt to string for JSON serialization

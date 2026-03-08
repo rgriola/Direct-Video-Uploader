@@ -11,6 +11,7 @@ import multipart from '@fastify/multipart';
 import fastifyJwt from '@fastify/jwt';
 import fastifyStatic from '@fastify/static';
 import rateLimit from '@fastify/rate-limit';
+import helmet from '@fastify/helmet';
 import { Server as SocketIOServer } from 'socket.io';
 import path from 'path';
 import crypto from 'crypto';
@@ -24,6 +25,7 @@ import errorRoutes from './routes/errors.js';
 import muxWebhookRoutes from './routes/mux-webhooks.js';
 import { setupWebSocket } from './ws/handler.js';
 import { startMuxSync, stopMuxSync } from './jobs/mux-sync.js';
+import { startUploadCleanup, stopUploadCleanup } from './jobs/upload-cleanup.js';
 
 // ─── Global Crash Protection ─────────────────────────────
 // Prevent the process from dying on unhandled errors (Render shows 502 when this happens)
@@ -64,8 +66,16 @@ await fastify.register(cors, {
     credentials: true,
 });
 
+// B8: Security headers (HSTS, X-Frame-Options, X-Content-Type-Options, CSP)
+await fastify.register(helmet, {
+    contentSecurityPolicy: isProduction ? undefined : false, // Disable CSP in dev (allows inline scripts for dashboard)
+});
+
+// B7: Global rate limiting — sensible defaults, per-route overrides below
 await fastify.register(rateLimit, {
-    global: false, // Don't rate-limit all routes — applied per-route where needed
+    global: true,
+    max: 100,               // 100 requests per window per IP
+    timeWindow: '1 minute',
 });
 
 await fastify.register(multipart, {
@@ -74,7 +84,11 @@ await fastify.register(multipart, {
     },
 });
 
-// JWT secret — warn loudly if not configured (#6)
+// JWT secret — required in production, random fallback in dev (A7)
+if (!process.env.JWT_SECRET && isProduction) {
+    console.error('\n🛑  JWT_SECRET is required in production. Set it in your environment variables.\n');
+    process.exit(1);
+}
 const jwtSecret = process.env.JWT_SECRET || (() => {
     const generated = crypto.randomBytes(64).toString('hex');
     console.warn('\n⚠️  JWT_SECRET not set — using random secret. Sessions will reset on restart.\n');
@@ -110,6 +124,13 @@ fastify.decorate('authenticate', async function (request, reply) {
         await request.jwtVerify();
     } catch (err) {
         reply.status(401).send({ error: 'Unauthorized' });
+    }
+});
+
+// Admin authorization — requires authenticate to run first (A5)
+fastify.decorate('authorizeAdmin', async function (request, reply) {
+    if (request.user?.role !== 'ADMIN') {
+        reply.status(403).send({ error: 'Admin access required' });
     }
 });
 
@@ -170,8 +191,9 @@ const start = async () => {
 ╚══════════════════════════════════════════  ╝
     `);
 
-        // Start background Mux status sync
+        // Start background jobs
         startMuxSync(io);
+        startUploadCleanup();
     } catch (err) {
         fastify.log.error(err);
         process.exit(1);
@@ -183,7 +205,8 @@ const start = async () => {
 const shutdown = async (signal) => {
     console.log(`\n🛑 ${signal} received — shutting down gracefully...`);
     try {
-        stopMuxSync();    // Stop background jobs
+        stopMuxSync();          // Stop background jobs
+        stopUploadCleanup();
         io.close();       // Close WebSocket connections
         await fastify.close(); // Stop accepting HTTP, finish in-flight requests
         console.log('👋 Server stopped cleanly');

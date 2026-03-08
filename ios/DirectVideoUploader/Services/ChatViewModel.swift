@@ -53,6 +53,7 @@ final class ChatViewModel {
         self.ws = ws
         setupWebSocketHandlers()
         setupConnectionHandlers()
+        checkPendingUpload() // B3: Check for interrupted uploads on launch
     }
     
     // MARK: - WebSocket Handlers
@@ -583,5 +584,73 @@ final class ChatViewModel {
             try? FileManager.default.removeItem(at: staged.tempFileURL)
         }
         stagedVideo = nil
+    }
+    
+    // MARK: - Pending Upload Recovery (B3)
+    
+    /// Check for an upload that was interrupted by app crash/kill.
+    /// If found, check the asset status on the server and notify the user.
+    private func checkPendingUpload() {
+        guard let pending = PendingUpload.load() else { return }
+        
+        let age = Date().timeIntervalSince(pending.startedAt)
+        print("🔄 [Recovery] Found pending upload: asset \(pending.assetId), age \(Int(age))s")
+        
+        // If older than 1 hour, the server cleanup job will handle it
+        if age > 3600 {
+            print("🔄 [Recovery] Pending upload is stale (>1h) — clearing")
+            PendingUpload.clear()
+            return
+        }
+        
+        // Check with server asynchronously
+        Task {
+            let request = auth.authenticatedRequest(for: ServerConfig.assetURL(pending.assetId))
+            do {
+                let (data, response) = try await URLSession.shared.data(for: request)
+                let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
+                
+                if statusCode == 200,
+                   let json = try? JSONDecoder().decode(AssetDetailResponse.self, from: data) {
+                    switch json.asset.status {
+                    case .ready:
+                        // Upload actually completed (background session finished it)
+                        print("🔄 [Recovery] Asset \(pending.assetId) is READY — upload completed in background")
+                        PendingUpload.clear()
+                    case .uploading:
+                        // Upload was interrupted — attempt tus resume for Mux uploads (C3)
+                        if pending.method == "mux", pending.uploadUrl != nil {
+                            print("🔄 [Recovery] Attempting tus resume for \(pending.assetId)...")
+                            appendErrorBubble("⏳ Resuming interrupted upload for \"\(pending.fileName)\"...")
+                            do {
+                                let resumed = try await uploader.resumeMuxUpload(pending: pending)
+                                if resumed {
+                                    appendErrorBubble("✅ Upload for \"\(pending.fileName)\" resumed and completed!")
+                                } else {
+                                    appendErrorBubble("⚠️ Could not resume upload for \"\(pending.fileName)\" — file no longer available.")
+                                    PendingUpload.clear()
+                                }
+                            } catch {
+                                print("🔄 [Recovery] Tus resume failed: \(error.localizedDescription)")
+                                appendErrorBubble("⚠️ Upload resume failed for \"\(pending.fileName)\". The server will clean it up.")
+                                PendingUpload.clear()
+                            }
+                        } else {
+                            print("🔄 [Recovery] Asset \(pending.assetId) still UPLOADING — interrupted (non-resumable)")
+                            appendErrorBubble("⚠️ A previous upload for \"\(pending.fileName)\" was interrupted. The server will clean it up automatically.")
+                            PendingUpload.clear()
+                        }
+                    default:
+                        PendingUpload.clear()
+                    }
+                } else {
+                    // Asset not found or error — clean up
+                    PendingUpload.clear()
+                }
+            } catch {
+                // Network error — keep state for next launch
+                print("🔄 [Recovery] Could not check pending upload: \(error.localizedDescription)")
+            }
+        }
     }
 }

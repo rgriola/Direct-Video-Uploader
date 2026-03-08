@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import Network
 
 /// WebSocket service using native URLSessionWebSocketTask.
 /// Communicates with the Socket.IO server using the Socket.IO protocol.
@@ -20,6 +21,9 @@ final class WebSocketService {
     var state: ConnectionState = .disconnected
     var isConnected: Bool { state == .connected }
     
+    /// True when messages are buffered waiting for reconnect
+    var hasPendingMessages: Bool { !pendingQueue.isEmpty }
+    
     // MARK: - Callbacks
     
     var onMessage: (@MainActor (ChatMessage) -> Void)?
@@ -38,17 +42,34 @@ final class WebSocketService {
     private var isUpgraded = false
     private var reconnectAttempt = 0
     private let maxReconnectAttempts = 10
+    private var isReconnecting = false // Guard against parallel connect attempts (1.6)
+    
+    // Message queue — buffers sends when disconnected, flushes on reconnect (A2)
+    private var pendingQueue: [String] = []
+    private let maxQueueSize = 20
+    
+    // Network path monitor — recovers after max retries exhausted (1.3)
+    private var pathMonitor: NWPathMonitor?
+    private var monitorQueue: DispatchQueue?
+    
+    // Ping watchdog — detects zombie connections when server pings stop (C1)
+    // Server sends Engine.IO pings every 20s with 25s timeout. If we don't
+    // receive a ping within 45s, the connection is zombie.
+    private var pingWatchdog: Task<Void, Never>?
+    private let pingWatchdogInterval: TimeInterval = 45
     
     // MARK: - Connect
     
     func connect(token: String) {
-        guard state == .disconnected else {
-            print("🔌 [WS] Already \(state), skipping connect")
+        guard state == .disconnected, !isReconnecting else {
+            print("🔌 [WS] Already \(state)\(isReconnecting ? " (reconnecting)" : ""), skipping connect")
             return
         }
         
         self.token = token
         state = .connecting
+        isReconnecting = true
+        stopNetworkMonitor()
         print("🔌 [WS] Connecting to: \(ServerConfig.wsURL.absoluteString)")
         
         // Step 1: Socket.IO handshake via HTTP polling to get session ID
@@ -61,6 +82,8 @@ final class WebSocketService {
                 // Attempt reconnect on handshake failure too
                 reconnectAttempt += 1
                 guard reconnectAttempt <= maxReconnectAttempts else {
+                    isReconnecting = false
+                    startNetworkMonitor() // Watch for network return (1.3)
                     onConnectionLost?()
                     return
                 }
@@ -68,6 +91,7 @@ final class WebSocketService {
                 print("🔄 [WS] Reconnect attempt \(reconnectAttempt)/\(maxReconnectAttempts) in \(delay)s")
                 onReconnecting?(reconnectAttempt, maxReconnectAttempts)
                 try? await Task.sleep(for: .seconds(delay))
+                isReconnecting = false
                 connect(token: token)
             }
         }
@@ -168,6 +192,8 @@ final class WebSocketService {
                     self.reconnectAttempt += 1
                     guard self.reconnectAttempt <= self.maxReconnectAttempts else {
                         print("🛑 [WS] Max reconnect attempts (\(self.maxReconnectAttempts)) reached — giving up")
+                        self.isReconnecting = false
+                        self.startNetworkMonitor() // Watch for network return (1.3)
                         self.onConnectionLost?()
                         return
                     }
@@ -176,6 +202,7 @@ final class WebSocketService {
                     self.onReconnecting?(self.reconnectAttempt, self.maxReconnectAttempts)
                     try? await Task.sleep(for: .seconds(delay))
                     if let token = self.token {
+                        self.isReconnecting = false
                         self.connect(token: token)
                     }
                 }
@@ -195,6 +222,7 @@ final class WebSocketService {
             break
         case "2": // Ping
             sendRaw("3") // Pong
+            resetPingWatchdog() // C1: Server is alive, reset watchdog
         case "3": // Pong
             // Only upgrade on the probe response "3probe", not regular pongs.
             // In Engine.IO 4 the SERVER sends keep-alive pings ("2") and the
@@ -235,12 +263,17 @@ final class WebSocketService {
         case "0": // Connect
             state = .connected
             reconnectAttempt = 0  // Reset backoff on successful connect
+            isReconnecting = false
+            stopNetworkMonitor()
             let rest = String(raw.dropFirst())
             if let data = rest.data(using: .utf8),
                let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                let sid = json["sid"] as? String {
                 print("✅ Socket.IO connected (sid: \(sid))")
             }
+            // Flush any queued messages
+            flushPendingQueue()
+            resetPingWatchdog() // C1: Start watchdog on successful connect
             
         case "2": // Event
             let rest = String(raw.dropFirst())
@@ -298,29 +331,151 @@ final class WebSocketService {
     // MARK: - Send
     
     func sendMessage(text: String) {
-        // Use JSONSerialization to safely escape user text (quotes, backslashes, emoji, etc.)
         let payload: [String: Any] = ["text": text]
         guard let jsonData = try? JSONSerialization.data(withJSONObject: payload),
               let jsonString = String(data: jsonData, encoding: .utf8) else { return }
-        sendRaw("42[\"message:send\",\(jsonString)]")
+        enqueueOrSend("42[\"message:send\",\(jsonString)]")
     }
     
     func sendVideoUpload(assetId: String, fileName: String, fileSize: Int64) {
-        // Use JSONSerialization for safe escaping (#16)
         let payload: [String: Any] = ["assetId": assetId, "fileName": fileName, "fileSize": fileSize]
         guard let jsonData = try? JSONSerialization.data(withJSONObject: payload),
               let jsonString = String(data: jsonData, encoding: .utf8) else { return }
-        sendRaw("42[\"video:upload\",\(jsonString)]")
+        enqueueOrSend("42[\"video:upload\",\(jsonString)]")
+    }
+    
+    // MARK: - Message Queue (A2)
+    
+    /// Send immediately if connected, otherwise buffer for later delivery.
+    private func enqueueOrSend(_ frame: String) {
+        if state == .connected {
+            sendRaw(frame)
+        } else {
+            // Drop oldest if queue is full (keep user's latest intent)
+            if pendingQueue.count >= maxQueueSize {
+                let dropped = pendingQueue.removeFirst()
+                print("⚠️ [WS] Queue full — dropped oldest: \(dropped.prefix(60))…")
+            }
+            pendingQueue.append(frame)
+            print("📦 [WS] Queued message (\(pendingQueue.count)/\(maxQueueSize))")
+        }
+    }
+    
+    /// Flush all queued messages in FIFO order after reconnect.
+    private func flushPendingQueue() {
+        guard !pendingQueue.isEmpty else { return }
+        let count = pendingQueue.count
+        print("📤 [WS] Flushing \(count) queued message(s)")
+        for frame in pendingQueue {
+            sendRaw(frame)
+        }
+        pendingQueue.removeAll()
     }
     
     // MARK: - Raw Send
     
     private func sendRaw(_ text: String) {
-        webSocket?.send(.string(text)) { error in
+        webSocket?.send(.string(text)) { [weak self] error in
             if let error {
                 print("❌ WS send error:", error)
+                // Send failure means connection is dead — trigger reconnect (1.4)
+                Task { @MainActor [weak self] in
+                    guard let self, self.state == .connected else { return }
+                    print("🔌 [WS] Send failure detected — triggering reconnect")
+                    self.cleanupConnection()
+                    self.reconnectAttempt += 1
+                    guard self.reconnectAttempt <= self.maxReconnectAttempts else {
+                        self.startNetworkMonitor()
+                        self.onConnectionLost?()
+                        return
+                    }
+                    self.onReconnecting?(self.reconnectAttempt, self.maxReconnectAttempts)
+                    let delay = min(3.0 * pow(2.0, Double(self.reconnectAttempt - 1)), 60.0)
+                    try? await Task.sleep(for: .seconds(delay))
+                    if let token = self.token {
+                        self.connect(token: token)
+                    }
+                }
             }
         }
+    }
+    
+    // MARK: - Foreground / Background (A1)
+    
+    /// Called when app returns to foreground — reset retries and reconnect immediately.
+    func reconnectFromForeground(token: String) {
+        reconnectAttempt = 0
+        isReconnecting = false
+        stopNetworkMonitor()
+        if state != .disconnected {
+            cleanupConnection()
+        }
+        connect(token: token)
+    }
+    
+    /// Called when app enters background — graceful close without preventing reconnect.
+    func backgroundDisconnect() {
+        cleanupConnection()
+    }
+    
+    // MARK: - Network Path Monitor (1.3)
+    
+    /// Start watching for network restoration after max retries exhausted.
+    private func startNetworkMonitor() {
+        guard pathMonitor == nil else { return }
+        let monitor = NWPathMonitor()
+        let queue = DispatchQueue(label: "ws.network.monitor")
+        monitorQueue = queue
+        pathMonitor = monitor
+        
+        monitor.pathUpdateHandler = { [weak self] path in
+            Task { @MainActor [weak self] in
+                guard let self, path.status == .satisfied, let token = self.token else { return }
+                print("🌐 [WS] Network restored — attempting reconnect")
+                self.reconnectAttempt = 0
+                self.isReconnecting = false
+                self.stopNetworkMonitor()
+                self.connect(token: token)
+            }
+        }
+        monitor.start(queue: queue)
+        print("👁️ [WS] Network monitor started — waiting for connectivity")
+    }
+    
+    private func stopNetworkMonitor() {
+        pathMonitor?.cancel()
+        pathMonitor = nil
+        monitorQueue = nil
+    }
+    
+    // MARK: - Ping Watchdog (C1)
+    
+    /// Start (or restart) the watchdog that detects zombie connections.
+    /// Called when we first connect and on every server ping.
+    private func resetPingWatchdog() {
+        pingWatchdog?.cancel()
+        pingWatchdog = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(self?.pingWatchdogInterval ?? 45))
+            guard !Task.isCancelled else { return }
+            await MainActor.run { [weak self] in
+                guard let self, self.state == .connected else { return }
+                print("⏰ [WS] Ping watchdog fired — no server ping in \(Int(self.pingWatchdogInterval))s, connection is zombie")
+                self.cleanupConnection()
+                self.reconnectAttempt += 1
+                if self.reconnectAttempt <= self.maxReconnectAttempts, let token = self.token {
+                    self.onReconnecting?(self.reconnectAttempt, self.maxReconnectAttempts)
+                    self.connect(token: token)
+                } else {
+                    self.startNetworkMonitor()
+                    self.onConnectionLost?()
+                }
+            }
+        }
+    }
+    
+    private func stopPingWatchdog() {
+        pingWatchdog?.cancel()
+        pingWatchdog = nil
     }
     
     // MARK: - Connection Cleanup
@@ -333,6 +488,7 @@ final class WebSocketService {
         session = nil
         sid = nil
         isUpgraded = false
+        stopPingWatchdog() // C1: Stop watchdog on disconnect
         state = .disconnected
     }
     
@@ -340,7 +496,10 @@ final class WebSocketService {
     
     func disconnect() {
         reconnectAttempt = maxReconnectAttempts + 1  // Prevent auto-reconnect
+        stopNetworkMonitor()
+        stopPingWatchdog() // C1
         cleanupConnection()
+        pendingQueue.removeAll()
         token = nil
         reconnectAttempt = 0
     }

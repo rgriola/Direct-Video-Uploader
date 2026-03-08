@@ -12,6 +12,9 @@ export default async function errorRoutes(fastify) {
      */
     fastify.post('/api/errors', {
         preHandler: [fastify.authenticate],
+        config: {
+            rateLimit: { max: 20, timeWindow: '1 minute' },
+        },
     }, async (request) => {
         const { source, category, message, details, severity, assetId } = request.body || {};
 

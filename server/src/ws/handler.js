@@ -261,10 +261,20 @@ export function setupWebSocket(io, fastify) {
         socket.on('message:send', async (data) => {
             try {
                 const { text, assetId } = data;
-                console.log(`💬 Message from ${socket.userName}: ${text}`);
+
+                // C4: Sanitize incoming message — length limit + strip control chars
+                const MAX_MESSAGE_LENGTH = 5000;
+                const sanitized = (text || '')
+                    .slice(0, MAX_MESSAGE_LENGTH)
+                    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '') // strip control chars except \n \r \t
+                    .trim();
+
+                if (!sanitized) return; // Drop empty messages
+
+                console.log(`💬 Message from ${socket.userName}: ${sanitized}`);
 
                 // ─── Slack command detection ───
-                const trimmed = (text || '').trim();
+                const trimmed = sanitized;
                 const channels = [...trimmed.matchAll(/#([\w-]+)/g)].map(m => m[1]);
                 const mentions = [...trimmed.matchAll(/@([\w.-]+)/g)].map(m => m[1]);
                 const isSlackCommand = channels.length > 0 || mentions.length > 0;

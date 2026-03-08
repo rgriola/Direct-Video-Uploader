@@ -366,3 +366,7 @@ In the Text Flow Right After the greeting my Upload should be in the Text Chain.
 - Prevent Context Form (Add Details) from closing until both required fields - Slug and Decription - are filled.
 - add alert to user the fields are required if the user tries to close the form without filling out the fields.
 - Create a fall back to resolve the Slug and Description missing; ie user closes the app, phones run out of battery. This could be the username in both fields, but not shown in the Context Form (Add Details) to the user, empty fields will still compell them to populate the form.
+
+... This is exactly what I wanted to work on. Auth, user profiles, slack profile connection will be added at the very end of this development since those need to integrate with a company system I do not have access to yet. When developing the Stability Improvement plan the also evaluate how to sustain video uploads when the user navigates away from the iOS app or there is an interuption in network upload cycle; network interuption, server delayed or busy, user sends video but closes the app. Any security issues you find. This is an important part of the app since these iteam builds the reputation of the app with users thus confidence in its task.
+
+...

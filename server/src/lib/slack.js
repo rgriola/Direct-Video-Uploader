@@ -116,19 +116,35 @@ async function resolveUserId(displayName) {
 }
 
 /**
+ * Escape Slack mrkdwn special characters in user-provided strings (C5).
+ * Prevents injection of bold, italic, code, links, etc.
+ */
+function escapeSlackMrkdwn(str) {
+    if (!str) return '';
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+}
+
+/**
  * Build a rich Slack message for a mediasource asset.
  * @param {{ userName: string, mediasourceId: string, clipUrl: string, mention?: string }} opts
  * @returns {{ text: string, blocks: object[] }}
  */
 export function buildAssetMessage({ userName, mediasourceId, clipUrl, mention, thumbnailUrl }) {
-    const mentionLine = mention ? `\n${mention} please review` : '';
-    const text = `🎬 New Video from ${userName}\n🔗 ${clipUrl}${mentionLine}`;
+    // C5: Escape user-provided strings before inserting into mrkdwn
+    const safeName = escapeSlackMrkdwn(userName);
+    const safeId = escapeSlackMrkdwn(mediasourceId);
+    const safeMention = escapeSlackMrkdwn(mention);
+    const mentionLine = mention ? `\n${safeMention} please review` : '';
+    const text = `🎬 New Video from ${safeName}\n🔗 ${clipUrl}${mentionLine}`;
 
     const sectionBlock = {
         type: 'section',
         text: {
             type: 'mrkdwn',
-            text: `*MS#* \`${mediasourceId}\` by: @${userName}`,
+            text: `*MS#* \`${safeId}\` by: @${safeName}`,
         },
     };
 
@@ -141,7 +157,7 @@ export function buildAssetMessage({ userName, mediasourceId, clipUrl, mention, t
     sectionBlock.accessory = {
         type: 'image',
         image_url: imageUrl,
-        alt_text: `Video thumbnail for ${mediasourceId}`,
+        alt_text: `Video thumbnail for ${safeId}`,
     };
 
     const blocks = [
@@ -162,7 +178,7 @@ export function buildAssetMessage({ userName, mediasourceId, clipUrl, mention, t
     if (mention) {
         blocks.push({
             type: 'context',
-            elements: [{ type: 'mrkdwn', text: `${mention} please review` }],
+            elements: [{ type: 'mrkdwn', text: `${safeMention} please review` }],
         });
     }
 

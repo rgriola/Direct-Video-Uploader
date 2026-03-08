@@ -11,7 +11,7 @@ export default async function adminRoutes(fastify) {
      * Triad health — database, server, WebSocket, iOS clients.
      */
     fastify.get('/api/admin/status', {
-        preHandler: [fastify.authenticate],
+        preHandler: [fastify.authenticate, fastify.authorizeAdmin],
     }, async () => {
         const triad = {
             database: { status: 'unknown', message: '' },
@@ -58,7 +58,7 @@ export default async function adminRoutes(fastify) {
      * Returns aggregate stats for the dashboard — all live data.
      */
     fastify.get('/api/admin/stats', {
-        preHandler: [fastify.authenticate],
+        preHandler: [fastify.authenticate, fastify.authorizeAdmin],
     }, async () => {
         const result = await prisma.$queryRawUnsafe(`
             SELECT 
@@ -102,7 +102,7 @@ export default async function adminRoutes(fastify) {
      * List all registered users with live status.
      */
     fastify.get('/api/admin/users', {
-        preHandler: [fastify.authenticate],
+        preHandler: [fastify.authenticate, fastify.authorizeAdmin],
     }, async () => {
         const users = await prisma.$queryRawUnsafe(`
             SELECT u.id, u.phone_number AS "phoneNumber", u.name, u.email, u.team, u.status,
@@ -132,7 +132,7 @@ export default async function adminRoutes(fastify) {
      * List all assets with user info and form responses.
      */
     fastify.get('/api/admin/assets', {
-        preHandler: [fastify.authenticate],
+        preHandler: [fastify.authenticate, fastify.authorizeAdmin],
     }, async () => {
         // Single raw SQL query — avoids multiple Prisma ORM roundtrips that exhaust the pool
         const assets = await prisma.$queryRawUnsafe(`
@@ -171,7 +171,7 @@ export default async function adminRoutes(fastify) {
      * List all chat messages across all users (for admin dashboard).
      */
     fastify.get('/api/admin/messages', {
-        preHandler: [fastify.authenticate],
+        preHandler: [fastify.authenticate, fastify.authorizeAdmin],
     }, async () => {
         const messages = await prisma.chatMessage.findMany({
             orderBy: { createdAt: 'desc' },
@@ -189,7 +189,7 @@ export default async function adminRoutes(fastify) {
      * Delete stale UPLOADING assets that have no clips (abandoned uploads).
      */
     fastify.post('/api/admin/cleanup-assets', {
-        preHandler: [fastify.authenticate],
+        preHandler: [fastify.authenticate, fastify.authorizeAdmin],
     }, async () => {
         // Find UPLOADING assets with 0 clips using Prisma ORM
         const staleAssets = await prisma.asset.findMany({
@@ -230,7 +230,7 @@ export default async function adminRoutes(fastify) {
      * Add a new user (admin action).
      */
     fastify.post('/api/admin/users', {
-        preHandler: [fastify.authenticate],
+        preHandler: [fastify.authenticate, fastify.authorizeAdmin],
     }, async (request, reply) => {
         const { phoneNumber, name, email, team, pin } = request.body || {};
 
@@ -253,7 +253,7 @@ export default async function adminRoutes(fastify) {
                 name,
                 email,
                 team,
-                pinHash: hashPin(pin),
+                pinHash: await hashPin(pin),
             },
         });
 
@@ -274,7 +274,7 @@ export default async function adminRoutes(fastify) {
      * Update a user's status (suspend/activate).
      */
     fastify.patch('/api/admin/users/:id', {
-        preHandler: [fastify.authenticate],
+        preHandler: [fastify.authenticate, fastify.authorizeAdmin],
     }, async (request, reply) => {
         const { id } = request.params;
         const { status, team, email } = request.body || {};
@@ -309,7 +309,7 @@ export default async function adminRoutes(fastify) {
      * Fix assets stuck in PROCESSING — checks clips and syncs asset status.
      */
     fastify.post('/api/admin/sync-mux-status', {
-        preHandler: [fastify.authenticate],
+        preHandler: [fastify.authenticate, fastify.authorizeAdmin],
     }, async () => {
         // Find assets stuck in PROCESSING/UPLOADING that have READY clips
         const stuck = await prisma.$queryRawUnsafe(`

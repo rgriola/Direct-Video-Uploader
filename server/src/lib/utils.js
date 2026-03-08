@@ -1,18 +1,34 @@
 import crypto from 'crypto';
+import bcrypt from 'bcrypt';
+
+const BCRYPT_ROUNDS = 10;
 
 /**
- * Hash a PIN for storage (simple demo auth — NOT production-grade).
- * Uses SHA-256 for simplicity. In production, use bcrypt/argon2.
+ * Hash a PIN for storage using bcrypt (C7).
  */
-export function hashPin(pin) {
-    return crypto.createHash('sha256').update(pin).digest('hex');
+export async function hashPin(pin) {
+    return bcrypt.hash(pin, BCRYPT_ROUNDS);
 }
 
 /**
  * Verify a PIN against its hash.
+ * Supports both bcrypt (new) and SHA-256 (legacy) hashes for migration.
  */
-export function verifyPin(pin, hash) {
-    return hashPin(pin) === hash;
+export async function verifyPin(pin, hash) {
+    // Bcrypt hashes start with $2b$ (or $2a$), SHA-256 hashes are 64 hex chars
+    if (hash.startsWith('$2')) {
+        return bcrypt.compare(pin, hash);
+    }
+    // Legacy SHA-256 fallback
+    const sha256 = crypto.createHash('sha256').update(pin).digest('hex');
+    return crypto.timingSafeEqual(Buffer.from(sha256), Buffer.from(hash));
+}
+
+/**
+ * Legacy SHA-256 hash — used only for checking if a hash needs migration.
+ */
+export function hashPinLegacy(pin) {
+    return crypto.createHash('sha256').update(pin).digest('hex');
 }
 
 /**
