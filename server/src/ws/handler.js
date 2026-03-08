@@ -59,11 +59,12 @@ async function handleSlackCommand(socket, userId, assetId, channels, mentions, o
     // Resolve the most recent READY asset for this user to build the clip URL
     let mediasourceId = null;
     let clipUrl = null;
+    let thumbnailUrl = null;
     try {
         const asset = await prisma.asset.findFirst({
             where: { userId, status: 'READY' },
             orderBy: { createdAt: 'desc' },
-            select: { mediasourceId: true },
+            select: { mediasourceId: true, clips: { select: { muxPlaybackId: true }, take: 1 } },
         });
         if (asset?.mediasourceId) {
             mediasourceId = asset.mediasourceId;
@@ -71,6 +72,10 @@ async function handleSlackCommand(socket, userId, assetId, channels, mentions, o
                 ? 'https://rodgriola.com'
                 : `http://localhost:${process.env.PORT || 3000}`;
             clipUrl = `${baseUrl}/clips/${mediasourceId}`;
+            const playbackId = asset.clips?.[0]?.muxPlaybackId;
+            if (playbackId) {
+                thumbnailUrl = `https://image.mux.com/${playbackId}/thumbnail.png?width=640`;
+            }
         }
     } catch (err) {
         console.error('Failed to look up asset for Slack:', err.message);
@@ -94,6 +99,7 @@ async function handleSlackCommand(socket, userId, assetId, channels, mentions, o
         mediasourceId: mediasourceId || 'N/A',
         clipUrl: clipUrl || '(no clip ready)',
         mention: slackMentionStr,
+        thumbnailUrl,
     });
 
     const results = [];

@@ -118,6 +118,55 @@ async function syncProcessingClips(io) {
 }
 
 /**
+ * Backfill READY clips that are missing muxPlaybackId.
+ * These clips were marked READY before playback data was saved.
+ */
+async function backfillMissingPlaybackIds() {
+    if (!isMuxEnabled) return;
+
+    try {
+        const clips = await prisma.clip.findMany({
+            where: { status: 'READY', muxPlaybackId: null, muxUploadId: { not: null } },
+            select: { id: true, muxUploadId: true, muxAssetId: true },
+        });
+
+        if (clips.length === 0) return;
+
+        console.log(`🔄 Mux backfill: ${clips.length} READY clip(s) missing playbackId`);
+
+        for (const clip of clips) {
+            let assetId = clip.muxAssetId;
+            if (!assetId && clip.muxUploadId) {
+                const upload = await getMuxUpload(clip.muxUploadId);
+                assetId = upload?.asset_id;
+                if (assetId) {
+                    await dbRetry(() => prisma.clip.update({
+                        where: { id: clip.id },
+                        data: { muxAssetId: assetId },
+                    }));
+                }
+            }
+
+            if (assetId) {
+                const muxAsset = await getMuxAsset(assetId);
+                const playbackId = muxAsset?.playback_ids?.find(p => p.policy === 'public')?.id;
+                if (playbackId) {
+                    const streamUrl = `https://stream.mux.com/${playbackId}.m3u8`;
+                    const thumbnailUrl = `https://image.mux.com/${playbackId}/thumbnail.png?width=640`;
+                    await dbRetry(() => prisma.clip.update({
+                        where: { id: clip.id },
+                        data: { muxPlaybackId: playbackId, streamUrl, thumbnailUrl },
+                    }));
+                    console.log(`🔄 Mux backfill: clip ${clip.id} → playbackId: ${playbackId}`);
+                }
+            }
+        }
+    } catch (err) {
+        console.error('🔄 Mux backfill error:', err.message);
+    }
+}
+
+/**
  * Start the background sync loop.
  * @param {import('socket.io').Server} io — Socket.IO server for push notifications
  */
@@ -129,6 +178,9 @@ export function startMuxSync(io) {
 
     // Run once immediately (catches anything stuck from before a deploy)
     setTimeout(() => syncProcessingClips(io), 10_000);
+
+    // Backfill READY clips missing playback data (one-time on boot)
+    setTimeout(() => backfillMissingPlaybackIds(), 15_000);
 
     // Then run on interval
     intervalId = setInterval(() => syncProcessingClips(io), SYNC_INTERVAL_MS);

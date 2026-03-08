@@ -120,18 +120,32 @@ async function resolveUserId(displayName) {
  * @param {{ userName: string, mediasourceId: string, clipUrl: string, mention?: string }} opts
  * @returns {{ text: string, blocks: object[] }}
  */
-export function buildAssetMessage({ userName, mediasourceId, clipUrl, mention }) {
+export function buildAssetMessage({ userName, mediasourceId, clipUrl, mention, thumbnailUrl }) {
     const mentionLine = mention ? `\n${mention} please review` : '';
     const text = `🎬 New Video from ${userName}\n🔗 ${clipUrl}${mentionLine}`;
 
-    const blocks = [
-        {
-            type: 'section',
-            text: {
-                type: 'mrkdwn',
-                text: `*🎬 New Video Upload*\n*From:* ${userName}\n*ID:* \`${mediasourceId}\``,
-            },
+    const sectionBlock = {
+        type: 'section',
+        text: {
+            type: 'mrkdwn',
+            text: `*MS#* \`${mediasourceId}\` by: @${userName}`,
         },
+    };
+
+    // Thumbnail — use Mux thumbnail if available, otherwise a film placeholder
+    const baseUrl = process.env.NODE_ENV === 'production'
+        ? 'https://rodgriola.com'
+        : `http://localhost:${process.env.PORT || 3000}`;
+    const imageUrl = thumbnailUrl || `${baseUrl}/assets/film-placeholder.svg`;
+
+    sectionBlock.accessory = {
+        type: 'image',
+        image_url: imageUrl,
+        alt_text: `Video thumbnail for ${mediasourceId}`,
+    };
+
+    const blocks = [
+        sectionBlock,
         {
             type: 'actions',
             elements: [
