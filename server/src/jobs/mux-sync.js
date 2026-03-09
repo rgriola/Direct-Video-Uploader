@@ -107,8 +107,24 @@ async function syncProcessingClips(io) {
                     // Still processing after threshold — log warning (only once per cycle)
                     console.warn(`🔄 Mux sync: clip ${clip.id} (#${clip.asset.mediasourceId}) still processing after ${ageMin}min (Mux status: ${muxAsset?.status || 'unknown'})`);
                 }
+            } else if (age > 30 * 60 * 1000) {
+                // No muxAssetId after 30 min — upload never completed, mark as ERROR
+                console.error(`🔄 Mux sync: clip ${clip.id} (#${clip.asset.mediasourceId}) has no Mux asset after ${ageMin}min — marking ERROR`);
+                await dbRetry(() => prisma.clip.update({
+                    where: { id: clip.id },
+                    data: { status: 'ERROR' },
+                }));
+                await dbRetry(() => prisma.asset.update({
+                    where: { id: clip.asset.id },
+                    data: { status: 'ERROR' },
+                }));
+                if (slack.isConfigured()) {
+                    await slack.postToChannel('general',
+                        `⚠️ Upload failed — clip #${clip.asset.mediasourceId} had no Mux asset after ${ageMin}min (auto-marked ERROR)`
+                    );
+                }
             } else if (age > STALE_THRESHOLD_MS) {
-                // No muxAssetId and stale — something went wrong with the upload
+                // No muxAssetId but under 30min — still waiting
                 console.warn(`🔄 Mux sync: clip ${clip.id} (#${clip.asset.mediasourceId}) has no Mux asset after ${ageMin}min`);
             }
         }

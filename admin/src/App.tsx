@@ -46,10 +46,10 @@ function Dashboard() {
   const [loggedIn, setLoggedIn] = useState(false);
   const [showChatHistory, setShowChatHistory] = useState(false);
 
-  const { data: stats } = useStats();
-  const { data: users, isLoading: usersLoading } = useUsers();
-  const { data: assets, isLoading: assetsLoading } = useAssets();
-  const { data: triadStatus, isLoading: triadLoading } = useTriadStatus();
+  const { data: stats } = useStats(loggedIn);
+  const { data: users, isLoading: usersLoading } = useUsers(loggedIn);
+  const { data: assets, isLoading: assetsLoading } = useAssets(loggedIn);
+  const { data: triadStatus, isLoading: triadLoading } = useTriadStatus(loggedIn);
   const refreshDashboard = useRefreshDashboard();
 
   const { connected, socketId, logs, addLog, clearLogs, connect } = useSocket(() => {

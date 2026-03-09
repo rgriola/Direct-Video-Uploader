@@ -3,15 +3,16 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { fetchStats, fetchUsers, fetchAssets, fetchTriadStatus } from "@/lib/api";
 
-export function useStats() {
+export function useStats(enabled = true) {
   return useQuery({
     queryKey: ["stats"],
     queryFn: fetchStats,
     refetchInterval: 10_000,
+    enabled,
   });
 }
 
-export function useUsers() {
+export function useUsers(enabled = true) {
   return useQuery({
     queryKey: ["users"],
     queryFn: async () => {
@@ -19,10 +20,11 @@ export function useUsers() {
       return data.users;
     },
     refetchInterval: 15_000,
+    enabled,
   });
 }
 
-export function useAssets() {
+export function useAssets(enabled = true) {
   return useQuery({
     queryKey: ["assets"],
     queryFn: async () => {
@@ -30,14 +32,16 @@ export function useAssets() {
       return data.assets;
     },
     refetchInterval: 15_000,
+    enabled,
   });
 }
 
-export function useTriadStatus() {
+export function useTriadStatus(enabled = true) {
   return useQuery({
     queryKey: ["triad-status"],
     queryFn: fetchTriadStatus,
     refetchInterval: 15_000,
+    enabled,
   });
 }
 
