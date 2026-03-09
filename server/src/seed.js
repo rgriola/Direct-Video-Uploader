@@ -39,7 +39,16 @@ async function seed() {
         });
 
         if (existing) {
-            console.log(`  ⏭️  ${user.name} (${user.phoneNumber}) — already exists`);
+            // Update role if it differs (fixes pre-existing users missing ADMIN role)
+            if (user.role && existing.role !== user.role) {
+                await prisma.user.update({
+                    where: { phoneNumber: user.phoneNumber },
+                    data: { role: user.role },
+                });
+                console.log(`  🔄 ${user.name} (${user.phoneNumber}) — role updated to ${user.role}`);
+            } else {
+                console.log(`  ⏭️  ${user.name} (${user.phoneNumber}) — already exists`);
+            }
             continue;
         }
 
