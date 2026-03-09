@@ -219,6 +219,28 @@ export default async function assetRoutes(fastify) {
             return reply.status(404).send({ error: 'Asset not found' });
         }
 
+        // Idempotent: if there's already a PROCESSING clip for this asset with a
+        // Mux upload URL, return it instead of creating a duplicate.
+        const existingClip = await dbRetry(() => prisma.clip.findFirst({
+            where: { assetId: id, status: 'PROCESSING', muxUploadId: { not: null } },
+            orderBy: { createdAt: 'desc' },
+        }));
+
+        if (existingClip) {
+            // Look up the Mux upload to get the URL (still valid if < 1h old)
+            const { getMuxUpload } = await import('../lib/mux.js');
+            const upload = await getMuxUpload(existingClip.muxUploadId);
+            if (upload?.url && upload.status !== 'asset_created' && upload.status !== 'errored') {
+                console.log(`🎬 Reusing existing PROCESSING clip ${existingClip.id} for asset #${asset.mediasourceId}`);
+                return {
+                    uploadUrl: upload.url,
+                    clipId: existingClip.id,
+                    muxUploadId: existingClip.muxUploadId,
+                };
+            }
+            // Upload expired or already used — fall through to create a new one
+        }
+
         const clientMeta = request.body?.metadata || {};
         const clipId = randomUUID();
 

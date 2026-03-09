@@ -128,6 +128,21 @@ final class VideoUploadService: NSObject {
         error = nil
         defer { isUploading = false }
         
+        // Idempotent: if we already have a pending Mux upload for this asset, resume it
+        if let pending = PendingUpload.load(),
+           pending.assetId == assetId,
+           pending.method == "mux",
+           pending.uploadUrl != nil {
+            print("📤 [Mux] Found existing pending upload for asset \(assetId) — attempting resume")
+            let resumed = try await resumeMuxUpload(pending: pending)
+            if resumed {
+                print("📤 [Mux] ✅ Resumed existing upload for asset \(assetId)")
+                return MuxUploadResponse(clipId: "", muxUploadId: "")
+            }
+            // Resume failed — fall through to get a (possibly reused) upload URL from server
+            print("📤 [Mux] Resume failed — requesting upload URL from server")
+        }
+        
         print("📤 [Mux] Requesting direct upload URL for asset: \(assetId)")
         
         // Step 1: Ask server for a Mux direct upload URL (fast — just metadata)
