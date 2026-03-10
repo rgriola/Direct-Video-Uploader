@@ -68,7 +68,20 @@ await fastify.register(cors, {
 
 // B8: Security headers (HSTS, X-Frame-Options, X-Content-Type-Options, CSP)
 await fastify.register(helmet, {
-    contentSecurityPolicy: isProduction ? undefined : false, // Disable CSP in dev (allows inline scripts for dashboard)
+    contentSecurityPolicy: isProduction
+        ? {
+              directives: {
+                  defaultSrc: ["'self'"],
+                  scriptSrc: ["'self'", "'unsafe-inline'", 'https://cdn.jsdelivr.net'],
+                  styleSrc: ["'self'", "'unsafe-inline'"],
+                  imgSrc: ["'self'", 'data:', 'https://image.mux.com'],
+                  mediaSrc: ["'self'", 'https://stream.mux.com', 'blob:'],
+                  connectSrc: ["'self'", 'https://stream.mux.com', 'https://*.mux.com', 'https://*.litix.io'],
+                  fontSrc: ["'self'"],
+                  frameSrc: ["'none'"],
+              },
+          }
+        : false, // Disable CSP in dev (allows inline scripts for dashboard)
 });
 
 // B7: Global rate limiting — sensible defaults, per-route overrides below

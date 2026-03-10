@@ -148,8 +148,6 @@ export default async function clipRoutes(fastify) {
             return `<div class="meta-row"><span class="meta-icon">${r.icon}</span><span class="meta-label">${escapeHtml(r.label)}</span><span class="meta-value">${val}</span></div>`;
         }).join('\n');
 
-        const videoURL = clip?.storageUrl || '';
-        const hasVideo = !!videoURL;
         const hasMuxPlayback = !!(clip?.muxPlaybackId);
         const muxPlaybackId = clip?.muxPlaybackId || '';
         const muxEnvKey = MUX_ENV_KEY || '';
@@ -239,11 +237,6 @@ export default async function clipRoutes(fastify) {
             overflow: hidden;
             margin-bottom: 8px;
             position: relative;
-        }
-        .video-wrap video {
-            width: 100%;
-            display: block;
-            aspect-ratio: 16/9;
         }
         .video-wrap mux-player {
             width: 100%;
@@ -432,9 +425,7 @@ export default async function clipRoutes(fastify) {
                     accent-color="#007AFF"
                     preload="auto"
                   ></mux-player>`
-                : hasVideo
-                    ? `<video controls preload="metadata" playsinline><source src="${escapeHtml(videoURL)}" type="video/quicktime"><source src="${escapeHtml(videoURL)}" type="video/mp4">Your browser does not support video playback.</video>`
-                    : `<div class="no-video">🎬 Video not yet available</div>`
+                : `<div class="no-video">🎬 Video not yet available</div>`
             }
         </div>
 

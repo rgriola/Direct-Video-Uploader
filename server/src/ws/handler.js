@@ -149,6 +149,8 @@ async function handleSlackCommand(socket, userId, assetId, channels, mentions, o
             channel: channels[0] || null,
             mention: mentions[0] || null,
             mediasourceId,
+            userName: socket.userName,
+            slug: mediasourceId,
         },
         createdAt: now,
     });

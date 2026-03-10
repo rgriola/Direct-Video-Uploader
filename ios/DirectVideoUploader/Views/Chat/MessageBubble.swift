@@ -3,6 +3,7 @@ import SwiftUI
 /// Individual chat bubble — handles outgoing (blue, right) and incoming (gray, left).
 struct MessageBubble: View {
     let message: ChatMessage
+    var thumbnail: UIImage?
     var onTapMetadata: (() -> Void)?
     var onTapForm: (() -> Void)?
     var onTapViewClip: (() -> Void)?
@@ -212,24 +213,123 @@ struct MessageBubble: View {
     }
     
     private var slackContent: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            // Header with Slack icon
-            HStack(spacing: 6) {
-                Image(systemName: isOutgoing ? "paperplane.fill" : "checkmark.circle.fill")
-                    .font(Theme.iconMediumFont)
-                    .foregroundStyle(isOutgoing ? .white : Theme.green)
-                Text(isOutgoing ? "Sending to Slack…" : "Slack")
-                    .font(Theme.captionBoldFont)
-                    .foregroundStyle(isOutgoing ? .white.opacity(0.7) : Theme.secondaryText)
+        Group {
+            if isOutgoing {
+                // Outgoing — simple sending indicator
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "paperplane.fill")
+                            .font(Theme.iconMediumFont)
+                            .foregroundStyle(.white)
+                        Text("Sending to Slack…")
+                            .font(Theme.captionBoldFont)
+                            .foregroundStyle(.white.opacity(0.7))
+                    }
+                    Text(message.content.text ?? "")
+                        .font(Theme.bodySmallFont)
+                        .foregroundStyle(.white)
+                }
+            } else {
+                // Incoming — structured Slack card
+                slackCardContent
             }
-            
-            // Message text (command or confirmation)
-            Text(message.content.text ?? "Posted to Slack")
-                .font(Theme.bodySmallFont)
-                .foregroundStyle(isOutgoing ? .white : Theme.incomingText)
-            
-            // Channel/mention badges on confirmation
-            if !isOutgoing {
+        }
+    }
+
+    /// Structured Slack confirmation card — thumbnail left, details right, Slack-style.
+    private var slackCardContent: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Green accent bar at top (Slack-style)
+            RoundedRectangle(cornerRadius: 2)
+                .fill(Theme.green)
+                .frame(height: 3)
+                .padding(.horizontal, 8)
+
+            HStack(alignment: .top, spacing: 10) {
+                // Thumbnail on the left with green stroke
+                if let thumb = thumbnail {
+                    Image(uiImage: thumb)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .frame(width: 64, height: 64)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8)
+                                .stroke(Theme.green, lineWidth: 2)
+                        )
+                } else {
+                    // Placeholder thumbnail
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(Color.black.opacity(0.15))
+                        .frame(width: 64, height: 64)
+                        .overlay(
+                            Image(systemName: "video.fill")
+                                .font(Theme.titleFont)
+                                .foregroundStyle(Theme.secondaryText)
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8)
+                                .stroke(Theme.green, lineWidth: 2)
+                        )
+                }
+
+                // Right side — details
+                VStack(alignment: .leading, spacing: 4) {
+                    // Slack header
+                    HStack(spacing: 4) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(Theme.iconSmallFont)
+                            .foregroundStyle(Theme.green)
+                        Text("Posted to Slack")
+                            .font(Theme.captionBoldFont)
+                            .foregroundStyle(Theme.green)
+                    }
+
+                    // Owner
+                    if let owner = message.content.userName {
+                        HStack(spacing: 4) {
+                            Image(systemName: "person.fill")
+                                .font(Theme.iconTinyFont)
+                                .foregroundStyle(Theme.secondaryText)
+                            Text(owner)
+                                .font(Theme.captionFont)
+                                .foregroundStyle(Theme.incomingText)
+                        }
+                    }
+
+                    // Mediasource ID
+                    if let msId = message.content.mediasourceId {
+                        HStack(spacing: 4) {
+                            Text("🔗")
+                                .font(Theme.iconTinyFont)
+                            Text(msId)
+                                .font(Theme.monoSmallFont)
+                                .foregroundStyle(Theme.incomingText)
+                                .lineLimit(1)
+                        }
+                    }
+
+                    // Clip URL
+                    if let msId = message.content.mediasourceId,
+                       let clipURL = ServerConfig.clipURL(msId) {
+                        Button {
+                            UIApplication.shared.open(clipURL)
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "play.circle.fill")
+                                    .font(Theme.iconSmallFont)
+                                Text("View Clip")
+                                    .font(Theme.captionBoldFont)
+                            }
+                            .foregroundStyle(Theme.blue)
+                        }
+                    }
+                }
+            }
+            .padding(.top, 8)
+
+            // Channel/mention badges
+            if message.content.channel != nil || message.content.mention != nil {
                 HStack(spacing: 8) {
                     if let channel = message.content.channel {
                         ChatBadge(
@@ -246,6 +346,7 @@ struct MessageBubble: View {
                         )
                     }
                 }
+                .padding(.top, 8)
             }
         }
     }

@@ -1,8 +1,8 @@
 # Direct Video Uploader — Project Status
 
-> **Last Updated:** March 9, 2026 · MST
+> **Last Updated:** March 10, 2026 · MST
 > **Current Phase:** Phase 3 (Render + Cloud + Mux) — Mux pipeline fully operational + Stability Phases A–C complete + Upload simplified
-> **Overall Progress:** ████████████████████ 100% (Phase 2) · Phase 3 ~90%
+> **Overall Progress:** ████████████████████ 100% (Phase 2) · Phase 3 ~92%
 
 ---
 
@@ -177,6 +177,13 @@ cd ios && xcodegen generate && xcodebuild -project DirectVideoUploader.xcodeproj
 | Xcode automatic code signing       | ✅ Done            | Team `LW5P4PVL96`, auto signing in project.yml         |
 | Centralized Theme + Formatting     | ✅ Done            | Theme.swift, DVUDateFormatting.swift, UserDefaultsKeys |
 
+**Features Added (Mar 10 — Session):**
+
+- **Clip viewer CSP fix** — Helmet's default Content-Security-Policy in production was blocking the mux-player CDN script (`script-src 'self'` rejects `cdn.jsdelivr.net`). The `<mux-player>` element silently failed to register, rendering nothing. Fixed by configuring explicit CSP directives allowing jsdelivr (scripts), stream.mux.com (media), image.mux.com (thumbnails), and *.litix.io (Mux Data analytics).
+- **Removed dead `<video>` fallback** — Clip viewer had a three-way conditional: mux-player → `<video>` → "not yet available". Since all clips now use Mux, the `<video>` fallback was dead code. Simplified to mux-player or "not yet available".
+- **Slack confirmation card redesign** — `MessageBubble.swift` Slack confirmation bubble redesigned with structured card layout: green accent bar, thumbnail with green stroke, channel/mention badges, clip link, and action buttons. Outgoing Slack messages simplified to plain "Sending to Slack…" indicator.
+- **WebSocket handler** — `userName` and `slug` now included in Slack confirmation message content for richer iOS display.
+
 **Features Added (Mar 9 — Session):**
 
 - **Upload pipeline simplification** — Collapsed 4 upload paths (server direct, Mux direct, server-side ingest, tus resume) into single Mux direct path. iOS → `POST /api/assets/:id/mux-upload` → PATCH to Mux CDN via tus protocol. Background URLSession with `waitsForConnectivity` handles network interruptions natively.
@@ -300,7 +307,7 @@ cd ios && xcodegen generate && xcodebuild -project DirectVideoUploader.xcodeproj
 | Clip viewer page               | ✅ Done     | Server-rendered HTML, `server/src/routes/clips.js` |
 | Responsive layout (dark theme) | ✅ Done     | Dark theme with metadata grid, priority badges     |
 | Public shareable links         | ✅ Done     | `GET /clips/:slug` — works without auth            |
-| Video playback                 | ✅ Done     | `<video>` tag with local file serve (demo)         |
+| Video playback                 | ✅ Done     | `<mux-player>` web component (Mux CDN streaming)   |
 | Admin links to clip viewer     | ✅ Done     | Asset list rows link to `/clips/:slug`             |
 | Host on Vercel                 | 🔲 Deferred | Server-rendered (not static); deploy with Render   |
 
@@ -319,7 +326,7 @@ Render is the preview environment (stand-in for eventual company production syst
 | Mux SDK + service        | ✅ Done          | `@mux/mux-node`, `server/src/lib/mux.js` — createDirectUpload, ingestVideo, status helpers                                                  |
 | Mux direct upload (iOS)  | ✅ Done          | iOS uploads directly to Mux CDN (bypasses server). `uploadViaMux()` in `VideoUploadService`, fallback to multipart                          |
 | Mux webhooks             | ✅ Done          | `server/src/routes/mux-webhooks.js` — handles upload.asset_created, asset.ready, asset.errored. v12 instance method signature verification. |
-| Mux Player (clip viewer) | ✅ Done          | `<mux-player>` web component in clip viewer when muxPlaybackId exists, `<video>` fallback                                                   |
+| Mux Player (clip viewer) | ✅ Done          | `<mux-player>` web component in clip viewer. CSP configured for jsdelivr + stream.mux.com. Dead `<video>` fallback removed.                 |
 | Mux background sync      | ✅ Done          | `server/src/jobs/mux-sync.js` — polls every 2min for stuck PROCESSING clips, auto-heals, Slack alerts                                       |
 | Slack integration (real) | ✅ Done          | `server/src/lib/slack.js` — bot "fixer-video", `postToChannel()`, `postDM()`. iOS chat triggers real Slack posts.                           |
 | Render paid tier         | ✅ Done          | No cold starts. Custom domain `rodgriola.com`. Auto-deploy from `main`.                                                                     |
