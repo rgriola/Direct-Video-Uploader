@@ -370,3 +370,36 @@ In the Text Flow Right After the greeting my Upload should be in the Text Chain.
 ... This is exactly what I wanted to work on. Auth, user profiles, slack profile connection will be added at the very end of this development since those need to integrate with a company system I do not have access to yet. When developing the Stability Improvement plan the also evaluate how to sustain video uploads when the user navigates away from the iOS app or there is an interuption in network upload cycle; network interuption, server delayed or busy, user sends video but closes the app. Any security issues you find. This is an important part of the app since these iteam builds the reputation of the app with users thus confidence in its task.
 
 ...
+
+Mux timeline for pipeline: Step Event What's Issued DB Column
+
+1. Create direct upload iOS calls POST /api/assets/:id/mux-upload → server calls muxClient.video.uploads.create() Upload URL + muxUploadId (not an asset ID yet) clip.muxUploadId
+2. iOS uploads bytes tus PATCH to Mux CDN Nothing new — Mux is receiving bytes —
+3. Upload complete Mux fires video.upload.asset_created webhook muxAssetId — Mux has now created an internal asset from the uploaded bytes clip.muxAssetId
+4. Transcoding done Mux fires video.asset.ready webhook muxPlaybackId — HLS stream and thumbnails are now available clip.muxPlaybackId, clip.streamUrl, clip.thumbnailUrl
+   So:
+
+Asset ID is issued at step 3, once Mux finishes receiving the file and creates its internal asset object.
+Playback ID is issued at step 4, once Mux finishes transcoding and the video is ready for streaming.
+Between steps 2→3 there's typically seconds; between 3→4 it depends on video length/resolution (usually 30s–2min for a typical phone clip). The mux-sync.js background job polls every 2min as a fallback in case webhooks don't arrive.
+....
+
+**_ Issue _**. Mon Mar 9 2026
+
+- Simplify the Server connection display in the Chat Header.
+  **_ Context _**
+- Current State: the chat header contains the name of the app and a server status update green, yellow or red ChatView.swift lines 15-20. This is confusing because it shows the user job as green "Field" or "Engineering" rather than a clear server-ios handshake status; ie ready, working, trying connnection...
+  **_ Instructions _**
+- Remove reference to the user job ie; field
+- Change server-ios handshake status to reflect state clearly, *Ready, *Working, \*trying to connnect, keep the dot color scheme, green, yellow, red make the dot 15% larger.
+- Review ChatView.swift implimentation and show me a plan prior to making this change.
+
+...
+
+**_ Issue _**
+
+- upload process is challenging to get right. We are going to modify the process to make it simpler.
+  **_ Context _**
+- currently we are trying to impliment several upload procedures, including fire and forget uploads. This is difficult to impliment and we are still in demo building.
+  **_ Instructions _**
+- evaluate the upload steps and fallbacks including how iOS uploads in a Production Environment.

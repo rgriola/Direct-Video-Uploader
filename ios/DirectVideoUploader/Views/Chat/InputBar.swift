@@ -21,14 +21,14 @@ struct InputBar: View {
                     onAttach()
                 } label: {
                     Image(systemName: "plus.circle.fill")
-                        .font(.system(size: 30))
-                        .foregroundStyle(Color(hex: "#1C3A5F"))
+                        .font(Theme.attachButtonFont)
+                        .foregroundStyle(Theme.actionBlue)
                 }
                 
                 // Text field
                 HStack {
                     TextField("Message", text: $text)
-                        .font(.system(size: 16))
+                        .font(Theme.bodyFont)
                         .foregroundStyle(.black)
                         .focused($isFocused)
                         .onSubmit {
@@ -40,13 +40,13 @@ struct InputBar: View {
                         onAttach()
                     } label: {
                         Image(systemName: "video.fill")
-                            .font(.system(size: 14))
+                            .font(Theme.iconFont)
                             .foregroundStyle(.black)
                     }
                 }
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
-                .background(Color(hex: "#D4D4D4"))
+                .background(Theme.inputFieldBg)
                 .clipShape(Capsule())
                 
                 // Send button
@@ -54,18 +54,18 @@ struct InputBar: View {
                     sendMessage()
                 } label: {
                     Image(systemName: "arrow.up.circle.fill")
-                        .font(.system(size: 32))
+                        .font(Theme.sendButtonFont)
                         .foregroundStyle(
                             text.isEmpty
                             ? Color.white.opacity(0.7)
-                            : Color(hex: "#1C3A5F")
+                            : Theme.actionBlue
                         )
                 }
                 .disabled(text.isEmpty)
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
-            .background(Color(hex: "#ADADAD"))
+            .background(Theme.inputBarBg)
            // 
         }
     }

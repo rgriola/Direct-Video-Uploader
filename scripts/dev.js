@@ -199,7 +199,7 @@ async function checkPort(port, urlPath = '/') {
 // ── Main ──────────────────────────────────────────────────
 async function main() {
     console.log(`\n${C.bold}${C.cyan}╔══════════════════════════════════════════════════╗
-║  🎬  Direct Video Uploader — Triad Launcher     ║
+║  🎬  Fixer — Triad Launcher               ║
 ╚══════════════════════════════════════════════════╝${C.reset}\n`);
 
     // ─ Step 1: Kill existing processes ────────────────────

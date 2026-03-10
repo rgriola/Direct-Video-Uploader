@@ -20,19 +20,19 @@ struct ArchiveRowView: View {
                             .fill(Theme.cardBg)
                             .frame(width: 50, height: 50)
                         Text("🎬")
-                            .font(.system(size: 22))
+                            .font(Theme.archiveEmojiFont)
                     }
                     
                     // File info
                     VStack(alignment: .leading, spacing: 3) {
                         Text(asset.originalFileName ?? asset.mediasourceId ?? asset.id)
-                            .font(.system(size: 15, weight: .medium))
+                            .font(Theme.archiveTitleFont)
                             .foregroundStyle(.white)
                             .lineLimit(1)
                         
                         HStack(spacing: 6) {
                             Text(asset.mediasourceId ?? asset.id)
-                                .font(.system(size: 12, design: .monospaced))
+                                .font(Theme.monoValueFont)
                                 .foregroundStyle(Theme.secondaryText)
                                 .lineLimit(1)
                             
@@ -40,12 +40,12 @@ struct ArchiveRowView: View {
                                 Text("·")
                                     .foregroundStyle(Theme.tertiaryText)
                                 Text(type)
-                                    .font(.system(size: 12))
+                                    .font(Theme.archiveMetaValueFont)
                                     .foregroundStyle(Theme.secondaryText)
                             }
                             
                             Text(asset.status.icon)
-                                .font(.system(size: 11))
+                                .font(Theme.timestampFont)
                         }
                     }
                     
@@ -54,11 +54,11 @@ struct ArchiveRowView: View {
                     // Date + chevron
                     VStack(alignment: .trailing, spacing: 3) {
                         Text(formatShortDate(asset.createdAt))
-                            .font(.system(size: 12))
+                            .font(Theme.archiveMetaValueFont)
                             .foregroundStyle(Theme.secondaryText)
                         
                         Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                            .font(.system(size: 11, weight: .semibold))
+                            .font(Theme.headerChevronFont)
                             .foregroundStyle(Theme.tertiaryText)
                     }
                 }
@@ -114,28 +114,19 @@ struct ArchiveRowView: View {
                     // Action buttons
                     HStack(spacing: 12) {
                         // View button — open in browser
-                        Button {
-                            if let msId = asset.mediasourceId,
-                               let url = ServerConfig.clipURL(msId) {
-                                UIApplication.shared.open(url)
-                            }
-                        } label: {
-                            HStack(spacing: 4) {
-                                Image(systemName: "play.circle.fill")
-                                    .font(.system(size: 13))
-                                Text("View")
-                                    .font(.system(size: 13, weight: .semibold))
-                            }
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 8)
-                            .background(Theme.green)
-                            .foregroundStyle(.white)
-                            .clipShape(Capsule())
+                        if let msId = asset.mediasourceId,
+                           let url = ServerConfig.clipURL(msId) {
+                            ChatActionButton(
+                                icon: "play.circle.fill",
+                                label: "View",
+                                color: Theme.green,
+                                action: { UIApplication.shared.open(url) }
+                            )
                         }
                         
                         // Status pill
                         Text("\(asset.status.icon) \(asset.status.displayName)")
-                            .font(.system(size: 12, weight: .medium))
+                            .font(Theme.archiveStatusFont)
                             .foregroundStyle(Theme.secondaryText)
                             .padding(.horizontal, 10)
                             .padding(.vertical, 6)
@@ -160,11 +151,11 @@ struct ArchiveRowView: View {
     private func metadataRow(label: String, value: String) -> some View {
         HStack(alignment: .top, spacing: 8) {
             Text(label)
-                .font(.system(size: 12, weight: .medium))
+                .font(Theme.archiveMetaLabelFont)
                 .foregroundStyle(Theme.tertiaryText)
                 .frame(width: 80, alignment: .trailing)
             Text(value)
-                .font(.system(size: 12))
+                .font(Theme.archiveMetaValueFont)
                 .foregroundStyle(Theme.metaText)
                 .lineLimit(3)
         }

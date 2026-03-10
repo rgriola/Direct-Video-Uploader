@@ -68,7 +68,7 @@ struct ContextFormView: View {
                                     .frame(width: 80, height: 60)
                                     .overlay {
                                         Image(systemName: "video.fill")
-                                            .font(.system(size: 20))
+                                            .font(Theme.titleFont)
                                             .foregroundStyle(.white.opacity(0.3))
                                     }
                             }
@@ -78,11 +78,11 @@ struct ContextFormView: View {
                                 HStack(spacing: 4) {
                                     let clips = clipCount ?? 1
                                     Text("\(clips) Clip")
-                                        .font(.system(size: 15, weight: .semibold))
+                                        .font(Theme.formClipFont)
                                         .foregroundStyle(.white)
                                     if let dur = duration, dur > 0 {
                                         Text("· \(DVUDateFormatting.duration(dur))")
-                                            .font(.system(size: 15, weight: .semibold))
+                                            .font(Theme.formClipFont)
                                             .foregroundStyle(.white)
                                     }
                                 }
@@ -90,7 +90,7 @@ struct ContextFormView: View {
                                 // Original filename
                                 if let name = originalFileName {
                                     Text(name)
-                                        .font(.system(size: 12))
+                                        .font(Theme.headerStatusFont)
                                         .foregroundStyle(.white.opacity(0.5))
                                         .lineLimit(1)
                                 }
@@ -98,7 +98,7 @@ struct ContextFormView: View {
                                 // Captured date
                                 if let dateStr = capturedAt {
                                     Text("🕐 \(DVUDateFormatting.longDate(dateStr))")
-                                        .font(.system(size: 12))
+                                        .font(Theme.headerStatusFont)
                                         .foregroundStyle(.white.opacity(0.4))
                                 }
                             }
@@ -117,7 +117,7 @@ struct ContextFormView: View {
                                     get: { formValues["slug"] ?? "" },
                                     set: { formValues["slug"] = sanitize($0) }
                                 ))
-                                .font(.system(size: 15))
+                                .font(Theme.formFieldFont)
                                 .foregroundStyle(.white)
                                 .padding(.horizontal, 16)
                                 .padding(.vertical, 14)
@@ -140,11 +140,11 @@ struct ContextFormView: View {
                                 } label: {
                                     HStack {
                                         Text(formValues["type"] ?? "Raw")
-                                            .font(.system(size: 15))
+                                            .font(Theme.formFieldFont)
                                             .foregroundStyle(.white)
                                         Spacer()
                                         Image(systemName: "chevron.down")
-                                            .font(.system(size: 12))
+                                            .font(Theme.iconSmallFont)
                                             .foregroundStyle(.white.opacity(0.4))
                                     }
                                     .padding(.horizontal, 16)
@@ -160,7 +160,7 @@ struct ContextFormView: View {
                                     get: { formValues["description"] ?? "" },
                                     set: { formValues["description"] = sanitizeDescription($0) }
                                 ))
-                                .font(.system(size: 15))
+                                .font(Theme.formFieldFont)
                                 .foregroundStyle(.white)
                                 .scrollContentBackground(.hidden)
                                 .frame(minHeight: 80)
@@ -187,7 +187,7 @@ struct ContextFormView: View {
                                             formValues["priority"] = fullName
                                         } label: {
                                             Text(level)
-                                                .font(.system(size: 13, weight: isSelected ? .semibold : .regular))
+                                                .font(Theme.formPriorityFont.weight(isSelected ? .semibold : .regular))
                                                 .frame(maxWidth: .infinity)
                                                 .padding(.vertical, 10)
                                                 .background(
@@ -220,7 +220,7 @@ struct ContextFormView: View {
                                 Image(systemName: "exclamationmark.triangle.fill")
                                     .foregroundStyle(Theme.red)
                                 Text(error)
-                                    .font(.system(size: 14))
+                                    .font(Theme.formErrorFont)
                                     .foregroundStyle(.white)
                             }
                             .padding(12)
@@ -237,9 +237,9 @@ struct ContextFormView: View {
                         } label: {
                             HStack(spacing: 6) {
                                 Text("Send")
-                                    .font(.system(size: 16, weight: .semibold))
+                                    .font(Theme.loginButtonFont)
                                 Image(systemName: "paperplane.fill")
-                                    .font(.system(size: 14))
+                                    .font(Theme.iconFont)
                             }
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 16)
@@ -299,12 +299,12 @@ struct ContextFormView: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 2) {
                 Text(label)
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(Theme.labelFont)
                     .foregroundStyle(.white.opacity(0.3))
                     .tracking(0.8)
                 if required {
                     Text("*")
-                        .font(.system(size: 13, weight: .bold))
+                        .font(Theme.captionBoldFont)
                         .foregroundStyle(.red)
                 }
             }

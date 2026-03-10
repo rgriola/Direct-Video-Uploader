@@ -446,60 +446,60 @@ Question: how can this also be adopted for multiclip uploads, same phone with al
 
 ## Implementation Phases
 
-### Phase A — Foundation (P0 items)
+### ✅ Phase A — Foundation (P0 items) — COMPLETE
 
-Core reliability and security — do these first. Each can be an independent PR.
+Core reliability and security.
 
-| #   | Item                                          | Area            | Effort       |
-| --- | --------------------------------------------- | --------------- | ------------ |
-| A1  | scenePhase observer + reconnect on foreground | iOS WS          | Small        |
-| A2  | Message send queue + flush on reconnect       | iOS WS          | Medium       |
-| A3  | Background URLSession for uploads             | iOS Upload      | Medium-Large |
-| A4  | `waitsForConnectivity = true`                 | iOS Upload      | Trivial      |
-| A5  | Admin role field + middleware                 | Server Security | Small        |
-| A6  | Asset ownership check on GET                  | Server Security | Trivial      |
-| A7  | Required JWT_SECRET in production             | Server Security | Trivial      |
+| #   | Item                                          | Area            | Effort       | Status |
+| --- | --------------------------------------------- | --------------- | ------------ | ------ |
+| A1  | scenePhase observer + reconnect on foreground | iOS WS          | Small        | ✅     |
+| A2  | Message send queue + flush on reconnect       | iOS WS          | Medium       | ✅     |
+| A3  | Background URLSession for uploads             | iOS Upload      | Medium-Large | ✅     |
+| A4  | `waitsForConnectivity = true`                 | iOS Upload      | Trivial      | ✅     |
+| A5  | Admin role field + middleware                 | Server Security | Small        | ✅     |
+| A6  | Asset ownership check on GET                  | Server Security | Trivial      | ✅     |
+| A7  | Required JWT_SECRET in production             | Server Security | Trivial      | ✅     |
 
 **Outcome:** App survives foreground/background transitions, uploads continue when app is suspended, messages aren't lost during brief disconnections, admin endpoints are protected.
 
-### Phase B — Resilience (P1 items)
+### ✅ Phase B — Resilience (P1 items) — COMPLETE
 
 Handling edge cases and building robustness.
 
-| #   | Item                                     | Area            | Effort  |
-| --- | ---------------------------------------- | --------------- | ------- |
-| B1  | NWPathMonitor recovery after max retries | iOS WS          | Small   |
-| B2  | sendRaw error triggers reconnect         | iOS WS          | Small   |
-| B3  | Persist upload state to disk             | iOS Upload      | Medium  |
-| B4  | Server orphan cleanup job                | Server Upload   | Small   |
-| B5  | File upload validation (magic bytes)     | Server Security | Small   |
-| B6  | Mux webhook signature required in prod   | Server Security | Trivial |
-| B7  | Global rate limiting                     | Server Security | Small   |
-| B8  | HTTP security headers (Helmet)           | Server Security | Trivial |
+| #   | Item                                     | Area            | Effort  | Status |
+| --- | ---------------------------------------- | --------------- | ------- | ------ |
+| B1  | NWPathMonitor recovery after max retries | iOS WS          | Small   | ✅     |
+| B2  | sendRaw error triggers reconnect         | iOS WS          | Small   | ✅     |
+| B3  | Persist upload state to disk             | iOS Upload      | Medium  | ✅     |
+| B4  | Server orphan cleanup job                | Server Upload   | Small   | ✅     |
+| B5  | File upload validation (magic bytes)     | Server Security | Small   | ✅     |
+| B6  | Mux webhook signature required in prod   | Server Security | Trivial | ✅     |
+| B7  | Global rate limiting                     | Server Security | Small   | ✅     |
+| B8  | HTTP security headers (Helmet)           | Server Security | Trivial | ✅     |
 
 **Outcome:** App recovers from any network state, uploads are resumable after crash, server rejects bad files, APIs are rate-limited.
 
-### Phase C — Hardening (P2 items)
+### ✅ Phase C — Hardening (P2 items) — COMPLETE (C6 deferred)
 
 Polish and defense-in-depth.
 
-| #   | Item                                       | Area            | Effort  |
-| --- | ------------------------------------------ | --------------- | ------- |
-| C1  | Client-side ping watchdog                  | iOS WS          | Small   |
-| C2  | Reconnect race guard                       | iOS WS          | Small   |
-| C3  | Resumable uploads (Mux tus)                | iOS Upload      | Large   |
-| C4  | Chat message sanitization + length limit   | Server Security | Small   |
-| C5  | Slack input escaping                       | Server Security | Trivial |
-| C6  | Shorter JWT expiry (24h)                   | Server Security | Small   |
-| C7  | Stronger PIN hashing (if still using PINs) | Server Security | Small   |
+| #   | Item                                       | Area            | Effort  | Status      |
+| --- | ------------------------------------------ | --------------- | ------- | ----------- |
+| C1  | Client-side ping watchdog                  | iOS WS          | Small   | ✅          |
+| C2  | Reconnect race guard                       | iOS WS          | Small   | ✅          |
+| C3  | Resumable uploads (Mux tus)                | iOS Upload      | Large   | ✅          |
+| C4  | Chat message sanitization + length limit   | Server Security | Small   | ✅          |
+| C5  | Slack input escaping                       | Server Security | Trivial | ✅          |
+| C6  | Shorter JWT expiry (24h)                   | Server Security | Small   | ⏳ Deferred |
+| C7  | Stronger PIN hashing (if still using PINs) | Server Security | Small   | ✅          |
 
-### Phase D — Nice-to-Have (P3 items)
+### Phase D — Nice-to-Have (P3 items) — NOT STARTED
 
-| #   | Item                                         | Area            | Effort  |
-| --- | -------------------------------------------- | --------------- | ------- |
-| D1  | WebSocket-only transport (skip HTTP polling) | iOS WS          | Medium  |
-| D2  | Temp file cleanup on launch                  | iOS Upload      | Trivial |
-| D3  | Replace admin raw SQL with Prisma ORM        | Server Security | Medium  |
+| #   | Item                                         | Area            | Effort  | Status         |
+| --- | -------------------------------------------- | --------------- | ------- | -------------- |
+| D1  | WebSocket-only transport (skip HTTP polling) | iOS WS          | Medium  | 🔲 Not started |
+| D2  | Temp file cleanup on launch                  | iOS Upload      | Trivial | 🔲 Not started |
+| D3  | Replace admin raw SQL with Prisma ORM        | Server Security | Medium  | 🔲 Not started |
 
 ---
 
@@ -535,7 +535,18 @@ Each phase should include targeted tests:
 
 ---
 
-_This plan is review-only. No code changes have been made. Ready to begin implementation on your go._
+_Phases A–C implemented March 8, 2026. Phase D remains for future work._
+
+### Additional Fixes (Mar 8 — Beyond Plan)
+
+| Item                     | Area       | Description                                                                                                                                                  |
+| ------------------------ | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Idempotent Mux upload    | Server/iOS | `POST /api/assets/:id/mux-upload` returns existing PROCESSING clip instead of creating duplicate. iOS checks `PendingUpload` before requesting new URL.      |
+| Upload recovery prompt   | iOS        | `checkPendingUpload()` handles PROCESSING status (not just UPLOADING). Shows alert: "Resume Upload" / "Discard" instead of auto-resuming.                    |
+| Form state persistence   | iOS        | `PendingForm` struct persisted to `Documents/pending-form.json`. Saved on `form:request`, cleared on submit. Restored on relaunch.                           |
+| Form restoration         | iOS        | `checkPendingForm()` verifies with server, restores form sheet. `restoreFormForAsset()` opens form when upload completed in background but form never shown. |
+| Dashboard auth fixes     | Admin      | 401 fix (query gating on `loggedIn`), 403 fix (admin role seeding).                                                                                          |
+| Stuck PROCESSING cleanup | Server     | `mux-sync.js` auto-marks clips as ERROR after 30min with no `muxAssetId`.                                                                                    |
 
 ... NOTES
 

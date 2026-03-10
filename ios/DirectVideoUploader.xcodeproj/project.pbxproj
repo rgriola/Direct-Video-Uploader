@@ -13,6 +13,7 @@
 		2F5EB0FE2B5962DCCF6BCD5B /* LoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAA58A3F30BFA24CE268AD67 /* LoginView.swift */; };
 		3326B73E86C395A539C4B69E /* WebSocketService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0813D4F9F9F55CFAE78F08B5 /* WebSocketService.swift */; };
 		37912629DFC4719F11FEB3F5 /* MetadataView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2796AFC62F34F3182D7CCE1C /* MetadataView.swift */; };
+		4B254383C12F662D1C19C869 /* ChatButtonStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = E40A97DC8EDA46629FA1ACA5 /* ChatButtonStyle.swift */; };
 		6D33A3123AE13D1CADF387DC /* ChatViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66AE6120B342F8FBF6D9F832 /* ChatViewModel.swift */; };
 		6E552E05D744677CF4C5DA6A /* ChatMessage.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC18F5FFC74280EFFEB0BE65 /* ChatMessage.swift */; };
 		7D6C4ADE8374C39A5C0B5DDB /* ArchiveRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5BE16E72579F144A61F60847 /* ArchiveRowView.swift */; };
@@ -61,6 +62,7 @@
 		D56F342EB8CB3B26EC77BBF3 /* ServerConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerConfig.swift; sourceTree = "<group>"; };
 		E2F7D1991BA8E3668878BC47 /* KeychainHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainHelper.swift; sourceTree = "<group>"; };
 		E3899E53553FC5E50293A8E8 /* ContextFormView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContextFormView.swift; sourceTree = "<group>"; };
+		E40A97DC8EDA46629FA1ACA5 /* ChatButtonStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatButtonStyle.swift; sourceTree = "<group>"; };
 		E7A81292325663F81C4B8772 /* ArchiveListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArchiveListView.swift; sourceTree = "<group>"; };
 		E8F7A0FE6F16D77BFEF57574 /* SentUploadBubble.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SentUploadBubble.swift; sourceTree = "<group>"; };
 		EA58877C26F0C09FF7DFA4DC /* VideoUploadService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoUploadService.swift; sourceTree = "<group>"; };
@@ -139,6 +141,7 @@
 		89B922455649C70F78D23028 /* Chat */ = {
 			isa = PBXGroup;
 			children = (
+				E40A97DC8EDA46629FA1ACA5 /* ChatButtonStyle.swift */,
 				49E974DDC963928102FA291B /* ChatHeaderView.swift */,
 				F1FF094BA3F6CC3D1003E121 /* ChatView.swift */,
 				EF5B8A623A0F5AA9CA07EA1A /* InputBar.swift */,
@@ -268,6 +271,7 @@
 				7D6C4ADE8374C39A5C0B5DDB /* ArchiveRowView.swift in Sources */,
 				8942F3630BCFD538BAE544E5 /* Asset.swift in Sources */,
 				D683D53CD3990DC7DE74FBC0 /* AuthService.swift in Sources */,
+				4B254383C12F662D1C19C869 /* ChatButtonStyle.swift in Sources */,
 				E2AE05593A1911192268E5FB /* ChatHeaderView.swift in Sources */,
 				6E552E05D744677CF4C5DA6A /* ChatMessage.swift in Sources */,
 				FD85A83F2B113BB394A15D3E /* ChatView.swift in Sources */,
@@ -370,6 +374,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = Fixer;
 				INFOPLIST_KEY_NSAppTransportSecurity_AllowsArbitraryLoads = YES;
 				INFOPLIST_KEY_NSCameraUsageDescription = "Record video to upload to the newsroom server.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Attach GPS coordinates to your video upload.";
@@ -395,6 +400,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = Fixer;
 				INFOPLIST_KEY_NSAppTransportSecurity_AllowsArbitraryLoads = YES;
 				INFOPLIST_KEY_NSCameraUsageDescription = "Record video to upload to the newsroom server.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Attach GPS coordinates to your video upload.";

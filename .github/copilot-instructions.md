@@ -1,5 +1,6 @@
-# Agent Guide — Direct Video Uploader
+# Agent Guide — Fixer (formerly Direct Video Uploader)
 
+> **App Name:** Fixer — use this name in all user-facing UI (titles, headers, alerts, about screens).
 > Auto-loaded by GitHub Copilot. Keep concise — every line here costs context on every prompt.
 
 ---
@@ -78,11 +79,13 @@ const result = await prisma.$queryRawUnsafe(
 6. **XcodeGen** — run `xcodegen generate` after adding new `.swift` files. The `project.yml` sources the entire `DirectVideoUploader/` directory.
 7. **Build with Xcode CLI** — `xcodebuild -project DirectVideoUploader.xcodeproj -scheme DirectVideoUploader -destination 'platform=iOS Simulator,name=iPhone 17 Pro' build`
 8. **PhotosPicker** — SwiftUI-native `PhotosPicker` with `.videos` filter and `Transferable` protocol. Reset `selectedPhotoItem` to `nil` after processing.
-9. **Video uploads** — `VideoUploadService` streams multipart body to temp file (1MB chunks) to avoid memory pressure. Uses delegate-based `URLSession.uploadTask` for progress.
-10. **Theme.swift** — All colors centralized in `Theme` enum (`Theme.blue`, `Theme.cardBg`, etc.). Never use `Color(hex: "...")` directly in views — add a constant to Theme.swift instead.
-11. **DVUDateFormatting.swift** — Cached date/time formatters. Use `DVUDateFormatting.longDate(_:)`, `.duration(_:)`, `.fileSize(_:)`, etc. Never create inline `DateFormatter` or `ISO8601DateFormatter` instances.
-12. **UserDefaultsKeys** — Enum in `ServerConfig.swift`. Use `UserDefaultsKeys.authToken` / `.serverURL` instead of hardcoded strings.
-13. **Clip URLs** — Use `ServerConfig.clipURL(_:slug)` to build clip viewer URLs. Never hand-build `/clips/` URLs inline.
+9. **Video uploads (simplified Mar 9)** — Single upload path: iOS → `POST /api/assets/:id/mux-upload` for URL → PATCH bytes directly to Mux CDN via tus protocol. Uses `URLSessionConfiguration.background` with `sessionSendsLaunchEvents = true` and `waitsForConnectivity = true`. iOS handles network interruptions natively — no custom resume/offset logic needed.
+10. **PendingForm** — Codable struct saved to `Documents/pending-form.json`. Stores `assetId`, `originalFileName`, `capturedAt`, `clipCount`, `duration`, `thumbnailJPEG`, `savedAt`. Saved on `form:request`, cleared on submit. Restored on relaunch if form not yet submitted.
+11. **No PendingUpload** — Removed Mar 9. Upload recovery via tus resume was over-engineered for demo phase. If upload is interrupted, user simply re-uploads. Background URLSession + `waitsForConnectivity` handles 95% of real-world interruptions automatically.
+12. **Theme.swift** — All colors centralized in `Theme` enum (`Theme.blue`, `Theme.cardBg`, etc.). Never use `Color(hex: "...")` directly in views — add a constant to Theme.swift instead.
+13. **DVUDateFormatting.swift** — Cached date/time formatters. Use `DVUDateFormatting.longDate(_:)`, `.duration(_:)`, `.fileSize(_:)`, etc. Never create inline `DateFormatter` or `ISO8601DateFormatter` instances.
+14. **UserDefaultsKeys** — Enum in `ServerConfig.swift`. Use `UserDefaultsKeys.authToken` / `.serverURL` instead of hardcoded strings.
+15. **Clip URLs** — Use `ServerConfig.clipURL(_:slug)` to build clip viewer URLs. Never hand-build `/clips/` URLs inline.
 
 ---
 

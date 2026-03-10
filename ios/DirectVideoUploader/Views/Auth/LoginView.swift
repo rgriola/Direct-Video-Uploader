@@ -28,18 +28,18 @@ struct LoginView: View {
                 // Logo & branding
                 VStack(spacing: 12) {
                     Text("🎬")
-                        .font(.system(size: 64))
+                        .font(Theme.loginEmojiFont)
                     
                     Text("Direct Video")
-                        .font(.system(size: 28, weight: .bold))
+                        .font(Theme.loginTitleFont)
                         .foregroundStyle(.white)
                     
                     Text("Uploader")
-                        .font(.system(size: 28, weight: .light))
+                        .font(Theme.loginSubtitleFont)
                         .foregroundStyle(.white.opacity(0.7))
                     
                     Text("Send. Confirm. Done.")
-                        .font(.system(size: 14, weight: .medium))
+                        .font(Theme.loginTaglineFont)
                         .foregroundStyle(.white.opacity(0.4))
                         .padding(.top, 4)
                 }
@@ -54,21 +54,21 @@ struct LoginView: View {
                     // Phone number
                     VStack(alignment: .leading, spacing: 6) {
                         Text("PHONE NUMBER")
-                            .font(.system(size: 11, weight: .semibold))
+                            .font(Theme.labelFont)
                             .foregroundStyle(.white.opacity(0.5))
                             .tracking(0.8)
                         
                         HStack {
                             Image(systemName: "phone.fill")
                                 .foregroundStyle(.white.opacity(0.4))
-                                .font(.system(size: 14))
+                                .font(Theme.iconFont)
                             
                             TextField("5055034455", text: $phoneNumber)
                                 .keyboardType(.numberPad)
                                 .textContentType(.telephoneNumber)
                                 .focused($focusedField, equals: .phone)
                                 .foregroundStyle(.white)
-                                .font(.system(size: 16, weight: .medium))
+                                .font(Theme.loginFieldFont)
                                 .onChange(of: phoneNumber) { _, new in
                                     let digits = new.filter { $0.isNumber }
                                     if digits != new || new.count > 15 { phoneNumber = String(digits.prefix(15)) }
@@ -87,20 +87,20 @@ struct LoginView: View {
                     // PIN
                     VStack(alignment: .leading, spacing: 6) {
                         Text("PIN")
-                            .font(.system(size: 11, weight: .semibold))
+                            .font(Theme.labelFont)
                             .foregroundStyle(.white.opacity(0.5))
                             .tracking(0.8)
                         
                         HStack {
                             Image(systemName: "lock.fill")
                                 .foregroundStyle(.white.opacity(0.4))
-                                .font(.system(size: 14))
+                                .font(Theme.iconFont)
                             
                             SecureField("1234", text: $pin)
                                 .keyboardType(.numberPad)
                                 .focused($focusedField, equals: .pin)
                                 .foregroundStyle(.white)
-                                .font(.system(size: 16, weight: .medium))
+                                .font(Theme.loginFieldFont)
                                 .onChange(of: pin) { _, new in
                                     let digits = new.filter { $0.isNumber }
                                     if digits != new || new.count > 8 { pin = String(digits.prefix(8)) }
@@ -121,7 +121,7 @@ struct LoginView: View {
                 // Error message
                 if let error = auth.errorMessage {
                     Text(error)
-                        .font(.system(size: 13))
+                        .font(Theme.captionFont)
                         .foregroundStyle(.red)
                         .padding(.top, 12)
                 }
@@ -137,7 +137,7 @@ struct LoginView: View {
                                 .scaleEffect(0.8)
                         } else {
                             Text("Sign In")
-                                .font(.system(size: 16, weight: .semibold))
+                                .font(Theme.loginButtonFont)
                         }
                     }
                     .frame(maxWidth: .infinity)
@@ -162,10 +162,10 @@ struct LoginView: View {
                 // Demo hint
                 VStack(spacing: 4) {
                     Text("Demo Account")
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(Theme.loginHintFont)
                         .foregroundStyle(.white.opacity(0.3))
                     Text("Phone: 5055034455 · PIN: 1234")
-                        .font(.system(size: 12, weight: .medium, design: .monospaced))
+                        .font(Theme.loginHintMonoFont)
                         .foregroundStyle(.white.opacity(0.25))
                 }
                 .padding(.bottom, 32)
@@ -189,10 +189,10 @@ struct LoginView: View {
                 HStack(spacing: 8) {
                     Image(systemName: "server.rack")
                         .foregroundStyle(.white.opacity(0.4))
-                        .font(.system(size: 11))
+                        .font(Theme.timestampFont)
                     
             TextField("http://192.168.0.111:3000", text: $serverURLDraft)
-                        .font(.system(size: 12, weight: .medium, design: .monospaced))
+                        .font(Theme.loginServerFont)
                         .foregroundStyle(.white.opacity(0.7))
                         .keyboardType(.URL)
                         .autocorrectionDisabled()
@@ -205,7 +205,7 @@ struct LoginView: View {
                         focusedField = nil
                     } label: {
                         Text("Save")
-                            .font(.system(size: 11, weight: .semibold))
+                            .font(Theme.labelFont)
                             .foregroundStyle(.blue)
                     }
                     
@@ -217,7 +217,7 @@ struct LoginView: View {
                             focusedField = nil
                         } label: {
                             Text("Reset")
-                                .font(.system(size: 11, weight: .semibold))
+                                .font(Theme.labelFont)
                                 .foregroundStyle(.red.opacity(0.7))
                         }
                     }
@@ -240,10 +240,10 @@ struct LoginView: View {
                             .frame(width: 6, height: 6)
                         
                         Image(systemName: "server.rack")
-                            .font(.system(size: 10))
+                            .font(Theme.iconTinyFont)
                         
                         Text(ServerConfig.currentURLString)
-                            .font(.system(size: 11, weight: .medium, design: .monospaced))
+                            .font(Theme.loginServerFont)
                         
                         if ServerConfig.hasCustomURL {
                             Text("(custom)")

@@ -15,8 +15,7 @@ struct ChatView: View {
             VStack(spacing: 0) {
                 // Header
                 ChatHeaderView(
-                    userName: "Mediasource Fixer",
-                    subtitle: auth.currentUser?.team ?? "Newsroom",
+                    userName: "Fixer",
                     connectionState: ws.state,
                     onLogout: { auth.logout(); ws.disconnect() }
                 )
@@ -164,11 +163,10 @@ struct ChatView: View {
             }
         }
         .task {
-            // Initialize ViewModel
+            // Only create ViewModel once — guard prevents re-creation on tab switch
+            guard viewModel == nil else { return }
             let vm = ChatViewModel(auth: auth, ws: ws)
             viewModel = vm
-            
-            // Fresh conversation — skip history, connect immediately
             vm.connectWebSocket()
         }
     }

@@ -3,24 +3,8 @@ import SwiftUI
 /// Chat header — mimics the iMessage conversation header.
 struct ChatHeaderView: View {
     let userName: String
-    let subtitle: String
     let connectionState: WebSocketService.ConnectionState
     var onLogout: (() -> Void)?
-    
-    /// Convenience backward-compat init
-    init(userName: String, subtitle: String, isConnected: Bool, onLogout: (() -> Void)? = nil) {
-        self.userName = userName
-        self.subtitle = subtitle
-        self.connectionState = isConnected ? .connected : .disconnected
-        self.onLogout = onLogout
-    }
-    
-    init(userName: String, subtitle: String, connectionState: WebSocketService.ConnectionState, onLogout: (() -> Void)? = nil) {
-        self.userName = userName
-        self.subtitle = subtitle
-        self.connectionState = connectionState
-        self.onLogout = onLogout
-    }
     
     private var statusColor: Color {
         switch connectionState {
@@ -32,9 +16,9 @@ struct ChatHeaderView: View {
     
     private var statusText: String {
         switch connectionState {
-        case .connected:    return subtitle
-        case .connecting:   return "Reconnecting..."
-        case .disconnected: return "Disconnected"
+        case .connected:    return "Ready"
+        case .connecting:   return "Working..."
+        case .disconnected: return "Trying to connect..."
         }
     }
     
@@ -54,23 +38,23 @@ struct ChatHeaderView: View {
                         .frame(width: 40, height: 40)
                     
                     Text("MF")
-                        .font(.system(size: 14, weight: .bold))
+                        .font(Theme.headerAvatarFont)
                         .foregroundStyle(.white)
                 }
                 
                 // Name + status
                 VStack(alignment: .leading, spacing: 2) {
                     Text(userName)
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(Theme.headerNameFont)
                         .foregroundStyle(.white)
                     
                     HStack(spacing: 4) {
                         Circle()
                             .fill(statusColor)
-                            .frame(width: 6, height: 6)
+                            .frame(width: Theme.statusDotSize, height: Theme.statusDotSize)
                         
                         Text(statusText)
-                            .font(.system(size: 12))
+                            .font(Theme.headerStatusFont)
                             .foregroundStyle(.white.opacity(0.6))
                     }
                 }
@@ -82,7 +66,7 @@ struct ChatHeaderView: View {
                     onLogout?()
                 } label: {
                     Image(systemName: "rectangle.portrait.and.arrow.right")
-                        .font(.system(size: 16))
+                        .font(Theme.iconHeaderFont)
                         .foregroundStyle(.white.opacity(0.5))
                 }
             }

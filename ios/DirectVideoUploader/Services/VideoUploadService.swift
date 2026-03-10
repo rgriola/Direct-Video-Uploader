@@ -1,40 +1,40 @@
 import Foundation
 import Observation
 
-// MARK: - Persisted Upload State (B3)
+// MARK: - Persisted Form State
 
-/// Saved to disk so the app can detect and reconcile incomplete uploads after crash/kill.
-struct PendingUpload: Codable {
+/// Saved to disk so the app can restore the context form after crash/kill.
+struct PendingForm: Codable {
     let assetId: String
-    let fileName: String
-    let fileURL: String        // Absolute path to the temp multipart body or original file
-    let startedAt: Date
-    var method: String = "server" // "server" or "mux"
-    var uploadUrl: String?     // Mux upload URL for tus resume (C3)
-    var totalFileSize: Int64?  // Total file size for resume progress calculation
+    let originalFileName: String?
+    let capturedAt: String?
+    let clipCount: Int?
+    let duration: Int?
+    let thumbnailJPEG: Data?  // JPEG-encoded thumbnail
+    let savedAt: Date
     
     static let storageURL: URL = {
         let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        return docs.appendingPathComponent("pending-upload.json")
+        return docs.appendingPathComponent("pending-form.json")
     }()
     
-    static func save(_ upload: PendingUpload) {
+    static func save(_ form: PendingForm) {
         do {
-            let data = try JSONEncoder().encode(upload)
+            let data = try JSONEncoder().encode(form)
             try data.write(to: storageURL, options: .atomic)
-            print("💾 [Upload] Saved pending upload state for asset: \(upload.assetId)")
+            print("💾 [Form] Saved pending form state for asset: \(form.assetId)")
         } catch {
-            print("⚠️ [Upload] Failed to save pending upload state: \(error)")
+            print("⚠️ [Form] Failed to save pending form state: \(error)")
         }
     }
     
-    static func load() -> PendingUpload? {
+    static func load() -> PendingForm? {
         guard FileManager.default.fileExists(atPath: storageURL.path) else { return nil }
         do {
             let data = try Data(contentsOf: storageURL)
-            return try JSONDecoder().decode(PendingUpload.self, from: data)
+            return try JSONDecoder().decode(PendingForm.self, from: data)
         } catch {
-            print("⚠️ [Upload] Failed to load pending upload state: \(error)")
+            print("⚠️ [Form] Failed to load pending form state: \(error)")
             clear()
             return nil
         }
@@ -42,7 +42,7 @@ struct PendingUpload: Codable {
     
     static func clear() {
         try? FileManager.default.removeItem(at: storageURL)
-        print("🗑️ [Upload] Cleared pending upload state")
+        print("🗑️ [Form] Cleared pending form state")
     }
 }
 
@@ -61,63 +61,6 @@ final class VideoUploadService: NSObject {
     private var continuation: CheckedContinuation<Data, Error>?
     private var progressContinuation: AsyncStream<Double>.Continuation?
     
-    // MARK: - Upload
-    
-    /// Upload a video file to the server as multipart/form-data.
-    /// Returns the raw response data from the server.
-    func upload(assetId: String, fileURL: URL, token: String, metadata: VideoMetadata? = nil) async throws -> Data {
-        isUploading = true
-        uploadProgress = 0
-        error = nil
-        defer { isUploading = false }
-        
-        let url = ServerConfig.uploadURL(assetId)
-        print("📤 [Upload] Starting upload to: \(url.absoluteString)")
-        print("📤 [Upload] File: \(fileURL.lastPathComponent)")
-        
-        // Build multipart body
-        let boundary = "Boundary-\(UUID().uuidString)"
-        let (bodyURL, bodySize) = try buildMultipartFile(fileURL: fileURL, boundary: boundary, metadata: metadata)
-        
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
-        request.setValue("\(bodySize)", forHTTPHeaderField: "Content-Length")
-        
-        // B3: Persist upload state before starting
-        PendingUpload.save(PendingUpload(
-            assetId: assetId,
-            fileName: fileURL.lastPathComponent,
-            fileURL: fileURL.absoluteString,
-            startedAt: Date(),
-            method: "server"
-        ))
-        
-        // Use delegate-based upload for progress tracking
-        let (data, response) = try await uploadWithProgress(request: request, fileURL: bodyURL)
-        
-        // Clean up temp multipart body file
-        try? FileManager.default.removeItem(at: bodyURL)
-        
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw UploadError.invalidResponse
-        }
-        
-        print("📤 [Upload] HTTP status: \(httpResponse.statusCode)")
-        
-        guard httpResponse.statusCode == 200 else {
-            let body = String(data: data, encoding: .utf8) ?? "Unknown error"
-            print("📤 [Upload] ❌ Error: \(body)")
-            throw UploadError.serverError(httpResponse.statusCode, body)
-        }
-        
-        uploadProgress = 1.0
-        PendingUpload.clear() // B3: Upload succeeded — remove persisted state
-        print("📤 [Upload] ✅ Upload complete!")
-        return data
-    }
-    
     // MARK: - Mux Direct Upload
     
     /// Upload via Mux direct upload: ask server for a Mux upload URL, then PUT file directly to Mux CDN.
@@ -127,21 +70,6 @@ final class VideoUploadService: NSObject {
         uploadProgress = 0
         error = nil
         defer { isUploading = false }
-        
-        // Idempotent: if we already have a pending Mux upload for this asset, resume it
-        if let pending = PendingUpload.load(),
-           pending.assetId == assetId,
-           pending.method == "mux",
-           pending.uploadUrl != nil {
-            print("📤 [Mux] Found existing pending upload for asset \(assetId) — attempting resume")
-            let resumed = try await resumeMuxUpload(pending: pending)
-            if resumed {
-                print("📤 [Mux] ✅ Resumed existing upload for asset \(assetId)")
-                return MuxUploadResponse(clipId: "", muxUploadId: "")
-            }
-            // Resume failed — fall through to get a (possibly reused) upload URL from server
-            print("📤 [Mux] Resume failed — requesting upload URL from server")
-        }
         
         print("📤 [Mux] Requesting direct upload URL for asset: \(assetId)")
         
@@ -194,34 +122,22 @@ final class VideoUploadService: NSObject {
         
         print("📤 [Mux] Got upload URL, uploading directly to Mux CDN...")
         
-        // B3: Persist upload state before starting Mux upload (with tus URL for resume)
+        // Get file size for tus headers
         let fileSize: Int64 = {
             if let attrs = try? FileManager.default.attributesOfItem(atPath: fileURL.path),
                let size = attrs[.size] as? Int64 { return size }
             return 0
         }()
-        PendingUpload.save(PendingUpload(
-            assetId: assetId,
-            fileName: fileURL.lastPathComponent,
-            fileURL: fileURL.absoluteString,
-            startedAt: Date(),
-            method: "mux",
-            uploadUrl: uploadUrlString,
-            totalFileSize: fileSize
-        ))
         
-        // Step 2: Upload file to Mux using tus protocol (PATCH with offset 0)
-        var patchRequest = URLRequest(url: uploadUrl)
-        patchRequest.httpMethod = "PATCH"
-        patchRequest.setValue("application/offset+octet-stream", forHTTPHeaderField: "Content-Type")
-        patchRequest.setValue("1.0.0", forHTTPHeaderField: "Tus-Resumable")
-        patchRequest.setValue("0", forHTTPHeaderField: "Upload-Offset")
+        // Simple PUT to Mux direct upload URL (no tus headers needed)
+        var putRequest = URLRequest(url: uploadUrl)
+        putRequest.httpMethod = "PUT"
+        putRequest.setValue("application/octet-stream", forHTTPHeaderField: "Content-Type")
         if fileSize > 0 {
-            patchRequest.setValue("\(fileSize)", forHTTPHeaderField: "Upload-Length")
-            patchRequest.setValue("\(fileSize)", forHTTPHeaderField: "Content-Length")
+            putRequest.setValue("\(fileSize)", forHTTPHeaderField: "Content-Length")
         }
         
-        let (_, putResponse) = try await uploadWithProgress(request: patchRequest, fileURL: fileURL)
+        let (_, putResponse) = try await uploadWithProgress(request: putRequest, fileURL: fileURL)
         
         guard let putHttp = putResponse as? HTTPURLResponse,
               (200...204).contains(putHttp.statusCode) else {
@@ -231,78 +147,12 @@ final class VideoUploadService: NSObject {
         }
         
         uploadProgress = 1.0
-        PendingUpload.clear() // B3: Mux upload succeeded — remove persisted state
         print("📤 [Mux] ✅ Direct upload complete! Mux will process and notify via webhook.")
         
         return MuxUploadResponse(clipId: clipId, muxUploadId: json["muxUploadId"] as? String ?? "")
     }
     
-    // MARK: - Multipart Body Builder
-    
-    /// Writes multipart form data to a temp file (avoids loading entire video into memory).
-    private func buildMultipartFile(fileURL: URL, boundary: String, metadata: VideoMetadata? = nil) throws -> (URL, Int64) {
-        let fileName = fileURL.lastPathComponent
-        let mimeType = "video/quicktime"
-        
-        let tempURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent("upload-\(UUID().uuidString).multipart")
-        
-        FileManager.default.createFile(atPath: tempURL.path, contents: nil)
-        let handle = try FileHandle(forWritingTo: tempURL)
-        
-        // Metadata fields (if provided)
-        if let meta = metadata {
-            let fields: [(String, String)] = [
-                ("duration", "\(meta.duration)"),
-                ("resolution", meta.resolution),
-                ("codec", meta.codec),
-                ("orientation", meta.orientation),
-                ("deviceModel", meta.deviceModel),
-                ("osVersion", meta.osVersion),
-                ("capturedAt", meta.capturedAt ?? ""),
-                ("gpsLat", meta.gpsLat.map { "\($0)" } ?? ""),
-                ("gpsLon", meta.gpsLon.map { "\($0)" } ?? ""),
-                ("gpsAltitude", meta.gpsAltitude.map { "\($0)" } ?? ""),
-            ]
-            for (name, value) in fields where !value.isEmpty {
-                let part = "--\(boundary)\r\n"
-                    + "Content-Disposition: form-data; name=\"\(name)\"\r\n\r\n"
-                    + "\(value)\r\n"
-                handle.write(part.data(using: .utf8)!)
-            }
-        }
-        
-        // File header
-        let header = "--\(boundary)\r\n"
-            + "Content-Disposition: form-data; name=\"file\"; filename=\"\(fileName)\"\r\n"
-            + "Content-Type: \(mimeType)\r\n\r\n"
-        handle.write(header.data(using: .utf8)!)
-        
-        // Video data (stream from file to avoid loading into memory)
-        let readHandle = try FileHandle(forReadingFrom: fileURL)
-        let chunkSize = 1024 * 1024 // 1 MB chunks
-        while autoreleasepool(invoking: {
-            let chunk = readHandle.readData(ofLength: chunkSize)
-            if chunk.isEmpty { return false }
-            handle.write(chunk)
-            return true
-        }) {}
-        readHandle.closeFile()
-        
-        // Footer
-        let footer = "\r\n--\(boundary)--\r\n"
-        handle.write(footer.data(using: .utf8)!)
-        handle.closeFile()
-        
-        let attrs = try FileManager.default.attributesOfItem(atPath: tempURL.path)
-        let size = attrs[.size] as? Int64 ?? 0
-        
-        print("📤 [Upload] Multipart body size: \(ByteCountFormatter.string(fromByteCount: size, countStyle: .file))")
-        
-        return (tempURL, size)
-    }
-    
-    // MARK: - Upload with Progress (A3: Background session + A4: waitsForConnectivity)
+    // MARK: - Upload with Progress (Background session + waitsForConnectivity)
     
     private func uploadWithProgress(request: URLRequest, fileURL: URL) async throws -> (Data, URLResponse) {
         try await withCheckedThrowingContinuation { continuation in
@@ -339,120 +189,6 @@ final class VideoUploadService: NSObject {
         }
     }
     
-    // MARK: - Tus Resumable Upload (C3)
-    
-    /// Check the current upload offset via tus HEAD request.
-    /// Returns the number of bytes Mux has already received, or 0 if the upload hasn't started.
-    func checkTusOffset(uploadUrl: URL) async throws -> Int64 {
-        var request = URLRequest(url: uploadUrl)
-        request.httpMethod = "HEAD"
-        request.setValue("1.0.0", forHTTPHeaderField: "Tus-Resumable")
-        
-        let (_, response) = try await URLSession.shared.data(for: request)
-        
-        guard let httpResp = response as? HTTPURLResponse,
-              (200...204).contains(httpResp.statusCode) else {
-            return 0
-        }
-        
-        if let offsetStr = httpResp.value(forHTTPHeaderField: "Upload-Offset"),
-           let offset = Int64(offsetStr) {
-            return offset
-        }
-        return 0
-    }
-    
-    /// Resume an interrupted Mux upload using tus protocol.
-    /// Returns true if upload completed, false if the file is no longer available.
-    func resumeMuxUpload(pending: PendingUpload) async throws -> Bool {
-        guard let uploadUrlString = pending.uploadUrl,
-              let uploadUrl = URL(string: uploadUrlString),
-              let fileURL = URL(string: pending.fileURL),
-              FileManager.default.fileExists(atPath: fileURL.path) else {
-            print("📤 [Tus] Cannot resume — file or upload URL missing")
-            return false
-        }
-        
-        let totalSize = pending.totalFileSize ?? {
-            if let attrs = try? FileManager.default.attributesOfItem(atPath: fileURL.path),
-               let size = attrs[.size] as? Int64 { return size }
-            return Int64(0)
-        }()
-        
-        guard totalSize > 0 else {
-            print("📤 [Tus] Cannot resume — file size unknown")
-            return false
-        }
-        
-        isUploading = true
-        uploadProgress = 0
-        error = nil
-        defer { isUploading = false }
-        
-        // HEAD to check how much Mux already received
-        let offset = try await checkTusOffset(uploadUrl: uploadUrl)
-        print("📤 [Tus] Resume check — offset: \(offset) / \(totalSize)")
-        
-        if offset >= totalSize {
-            // Upload was already completed
-            print("📤 [Tus] Upload already complete on Mux side")
-            PendingUpload.clear()
-            uploadProgress = 1.0
-            return true
-        }
-        
-        uploadProgress = Double(offset) / Double(totalSize)
-        
-        // Create temp file with remaining bytes (from offset to end)
-        let remainingURL = try createOffsetFile(from: fileURL, offset: offset)
-        defer { try? FileManager.default.removeItem(at: remainingURL) }
-        
-        // PATCH remaining bytes with tus headers
-        var patchRequest = URLRequest(url: uploadUrl)
-        patchRequest.httpMethod = "PATCH"
-        patchRequest.setValue("application/offset+octet-stream", forHTTPHeaderField: "Content-Type")
-        patchRequest.setValue("1.0.0", forHTTPHeaderField: "Tus-Resumable")
-        patchRequest.setValue("\(offset)", forHTTPHeaderField: "Upload-Offset")
-        let remaining = totalSize - offset
-        patchRequest.setValue("\(remaining)", forHTTPHeaderField: "Content-Length")
-        
-        let (_, response) = try await uploadWithProgress(request: patchRequest, fileURL: remainingURL)
-        
-        guard let httpResp = response as? HTTPURLResponse,
-              (200...204).contains(httpResp.statusCode) else {
-            let code = (response as? HTTPURLResponse)?.statusCode ?? 0
-            print("📤 [Tus] ❌ Resume PATCH failed with status \(code)")
-            throw UploadError.serverError(code, "Mux tus resume failed")
-        }
-        
-        uploadProgress = 1.0
-        PendingUpload.clear()
-        print("📤 [Tus] ✅ Resumed upload complete!")
-        return true
-    }
-    
-    /// Create a temporary file containing bytes from `offset` to end of `originalURL`.
-    private func createOffsetFile(from originalURL: URL, offset: Int64) throws -> URL {
-        let tempURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent("tus-resume-\(UUID().uuidString)")
-        FileManager.default.createFile(atPath: tempURL.path, contents: nil)
-        
-        let readHandle = try FileHandle(forReadingFrom: originalURL)
-        readHandle.seek(toFileOffset: UInt64(offset))
-        let writeHandle = try FileHandle(forWritingTo: tempURL)
-        
-        let chunkSize = 1024 * 1024 // 1 MB
-        while autoreleasepool(invoking: {
-            let chunk = readHandle.readData(ofLength: chunkSize)
-            if chunk.isEmpty { return false }
-            writeHandle.write(chunk)
-            return true
-        }) {}
-        
-        readHandle.closeFile()
-        writeHandle.closeFile()
-        return tempURL
-    }
 }
 
 // MARK: - Upload Delegate (Progress Tracking)

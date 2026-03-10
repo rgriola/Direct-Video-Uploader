@@ -16,7 +16,7 @@ export function Header({ wsConnected, onRefresh, refreshing, iosClients = 0 }: H
           🎬
         </div>
         <div className="min-w-0">
-          <h1 className="text-2xl max-[480px]:text-xl font-bold tracking-tight truncate">Direct Video Uploader</h1>
+          <h1 className="text-2xl max-[480px]:text-xl font-bold tracking-tight truncate">Fixer</h1>
           <p className="text-xs text-(--muted-foreground) mt-0.5">Server Dashboard · Live Data</p>
         </div>
       </div>

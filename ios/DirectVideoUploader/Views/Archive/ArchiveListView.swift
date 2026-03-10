@@ -17,10 +17,10 @@ struct ArchiveListView: View {
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Archive")
-                            .font(.system(size: 20, weight: .bold))
+                            .font(Theme.titleFont)
                             .foregroundStyle(.white)
                         Text("\(assets.count) upload\(assets.count == 1 ? "" : "s")")
-                            .font(.system(size: 13))
+                            .font(Theme.captionFont)
                             .foregroundStyle(Theme.secondaryText)
                     }
                     Spacer()
@@ -29,7 +29,7 @@ struct ArchiveListView: View {
                         Task { await fetchAssets() }
                     } label: {
                         Image(systemName: "arrow.clockwise")
-                            .font(.system(size: 16, weight: .medium))
+                            .font(Theme.iconHeaderFont)
                             .foregroundStyle(Theme.tint)
                     }
                 }
@@ -49,15 +49,15 @@ struct ArchiveListView: View {
                     Spacer()
                     VStack(spacing: 8) {
                         Text("⚠️")
-                            .font(.system(size: 32))
+                            .font(Theme.emojiLargeFont)
                         Text(error)
-                            .font(.system(size: 14))
+                            .font(Theme.formErrorFont)
                             .foregroundStyle(Theme.secondaryText)
                             .multilineTextAlignment(.center)
                         Button("Retry") {
                             Task { await fetchAssets() }
                         }
-                        .font(.system(size: 14, weight: .medium))
+                        .font(Theme.formErrorFont)
                         .foregroundStyle(Theme.tint)
                     }
                     .padding()
@@ -66,12 +66,12 @@ struct ArchiveListView: View {
                     Spacer()
                     VStack(spacing: 8) {
                         Text("📦")
-                            .font(.system(size: 40))
+                            .font(Theme.emptyEmojiFont)
                         Text("No uploads yet")
-                            .font(.system(size: 16, weight: .medium))
+                            .font(Theme.emptyStateFont)
                             .foregroundStyle(.white)
                         Text("Your completed uploads will appear here.")
-                            .font(.system(size: 13))
+                            .font(Theme.captionFont)
                             .foregroundStyle(Theme.secondaryText)
                     }
                     Spacer()

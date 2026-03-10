@@ -21,6 +21,7 @@ targets:
       - DirectVideoUploader
     settings:
       base:
+        INFOPLIST_KEY_CFBundleDisplayName: Fixer
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
         INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES
         INFOPLIST_KEY_UILaunchScreen_Generation: YES

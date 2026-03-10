@@ -1,8 +1,8 @@
 /**
- * Direct Video Uploader — Server Entry Point
+ * Fixer — Server Entry Point
  *
  * Fastify + Socket.IO + Prisma
- * Real-time chat server for the video upload demo.
+ * Real-time chat server for the video upload platform.
  */
 import 'dotenv/config';
 import Fastify from 'fastify';
@@ -163,7 +163,7 @@ await fastify.register(muxWebhookRoutes);
 fastify.get('/api/health', async () => ({
     status: 'ok',
     timestamp: new Date().toISOString(),
-    service: 'Direct Video Uploader',
+    service: 'Fixer',
     version: '1.0.0',
     env: isProduction ? 'production' : 'development',
 }));
@@ -182,7 +182,7 @@ const start = async () => {
 
         console.log(`
 ╔════════════════════════════════════════════╗
-║  🎬 Direct Video Uploader Server           ║
+║  🎬 Fixer Server                           ║
 ║                                            ║
 ║  URL:    ${baseUrl.padEnd(33)}║
 ║  Env:    ${(isProduction ? 'production' : 'development').padEnd(33)}║

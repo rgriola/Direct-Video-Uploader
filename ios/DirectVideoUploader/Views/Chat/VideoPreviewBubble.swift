@@ -39,7 +39,7 @@ struct VideoPreviewBubble: View {
                                 onCancel()
                             } label: {
                                 Image(systemName: "xmark.circle.fill")
-                                    .font(.system(size: 24))
+                                    .font(Theme.iconXLFont)
                                     .foregroundStyle(.white, .black.opacity(0.5))
                                     .shadow(radius: 3)
                             }
@@ -52,14 +52,14 @@ struct VideoPreviewBubble: View {
                         VStack(alignment: .leading, spacing: 3) {
                             // Filename
                             Text(stagedVideo.fileName)
-                                .font(.system(size: 13, weight: .medium, design: .monospaced))
+                                .font(Theme.monoSmallFont)
                                 .foregroundStyle(.white)
                                 .lineLimit(1)
 
                             // Created date
                             if let date = stagedVideo.createdDate {
                                 Text(date)
-                                    .font(.system(size: 12))
+                                    .font(Theme.timestampFont)
                                     .foregroundStyle(.white.opacity(0.6))
                             }
 
@@ -67,9 +67,9 @@ struct VideoPreviewBubble: View {
                             if stagedVideo.metadata.gpsLat != nil {
                                 HStack(spacing: 4) {
                                     Image(systemName: "location.fill")
-                                        .font(.system(size: 10))
+                                        .font(Theme.locationIconFont)
                                     Text("Location included")
-                                        .font(.system(size: 11))
+                                        .font(Theme.locationFont)
                                 }
                                 .foregroundStyle(Theme.green)
                             }
@@ -82,7 +82,7 @@ struct VideoPreviewBubble: View {
                             onSend()
                         } label: {
                             Image(systemName: "arrow.up.circle.fill")
-                                .font(.system(size: 34))
+                                .font(Theme.iconLargeFont)
                                 .foregroundStyle(Theme.blue)
                         }
                     }
@@ -104,7 +104,7 @@ struct VideoPreviewBubble: View {
 
                 // Label
                 Text("Tap ↑ to upload")
-                    .font(.system(size: 10))
+                    .font(Theme.timestampFont)
                     .foregroundStyle(.white.opacity(0.3))
                     .padding(.horizontal, 4)
             }

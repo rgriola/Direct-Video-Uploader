@@ -39,21 +39,21 @@ struct MetadataView: View {
                             }
                             
                             Text("📄 File Metadata")
-                                .font(.system(size: 20, weight: .bold))
+                                .font(Theme.titleFont)
                                 .foregroundStyle(.white)
                             
                             if let name = clip.originalFileName ?? asset?.originalFileName {
                                 Text(name)
-                                    .font(.system(size: 14, weight: .medium, design: .monospaced))
+                                    .font(Theme.metaFileFont)
                                     .foregroundStyle(.white.opacity(0.6))
                             }
                             
                             if let id = asset?.mediasourceId {
                                 HStack(spacing: 4) {
                                     Text("🔗")
-                                        .font(.system(size: 13))
+                                        .font(Theme.iconMediumFont)
                                     Text(id)
-                                        .font(.system(size: 15, weight: .bold, design: .monospaced))
+                                        .font(Theme.metaIdFont)
                                         .foregroundStyle(Theme.blue)
                                 }
                             }
@@ -125,12 +125,12 @@ struct MetadataView: View {
                             // No metadata fallback
                             VStack(spacing: 12) {
                                 Text("🚫")
-                                    .font(.system(size: 44))
+                                    .font(Theme.metaEmptyEmojiFont)
                                 Text("No Metadata Found")
-                                    .font(.system(size: 18, weight: .semibold))
+                                    .font(Theme.metaEmptyTitleFont)
                                     .foregroundStyle(.white)
                                 Text("Add details in Mediasource.")
-                                    .font(.system(size: 14))
+                                    .font(Theme.metaLabelFont)
                                     .foregroundStyle(.white.opacity(0.5))
                                 
                                 // Still show what we have: file size & timestamps
@@ -156,7 +156,7 @@ struct MetadataView: View {
                                 HStack {
                                     Image(systemName: "play.circle.fill")
                                     Text("View Clip")
-                                        .font(.system(size: 15, weight: .medium))
+                                        .font(Theme.metaLinkFont)
                                 }
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 14)
@@ -185,16 +185,16 @@ struct MetadataView: View {
     private func metadataRow(icon: String, label: String, value: String) -> some View {
         HStack {
             Text(icon)
-                .font(.system(size: 16))
+                .font(Theme.metaIconFont)
                 .frame(width: 28)
             
             Text(label)
-                .font(.system(size: 14))
+                .font(Theme.metaLabelFont)
                 .foregroundStyle(.white.opacity(0.6))
                 .frame(width: 80, alignment: .leading)
             
             Text(value)
-                .font(.system(size: 14, weight: .medium))
+                .font(Theme.metaValueFont)
                 .foregroundStyle(.white)
             
             Spacer()

@@ -42,6 +42,117 @@ enum Theme {
     static let lightText     = Color(hex: "E5E5EA")
     static let metaText      = Color(hex: "EBEBF5")
     static let typingDot     = Color(hex: "A0A0A0")
+
+    // InputBar
+    static let inputBarBg    = Color(hex: "ADADAD")
+    static let inputFieldBg  = Color(hex: "D4D4D4")
+    static let actionBlue    = Color(hex: "1C3A5F")
+
+    // MARK: - Typography
+
+    // Body
+    static let bodyFont          = Font.system(size: 16)
+    static let bodyMediumFont    = Font.system(size: 15, weight: .medium)
+    static let bodySmallFont     = Font.system(size: 15)
+
+    // Captions
+    static let captionFont       = Font.system(size: 13)
+    static let captionBoldFont   = Font.system(size: 13, weight: .semibold)
+
+    // Timestamps
+    static let timestampFont     = Font.system(size: 11)
+
+    // Badges
+    static let badgeFont         = Font.system(size: 11, weight: .medium)
+    static let badgeSymbolFont   = Font.system(size: 11, weight: .bold, design: .monospaced)
+
+    // Monospaced
+    static let monoSmallFont     = Font.system(size: 13, weight: .medium, design: .monospaced)
+    static let monoIdFont        = Font.system(size: 14, weight: .bold, design: .monospaced)
+    static let monoValueFont     = Font.system(size: 12, design: .monospaced)
+    static let monoLargeFont     = Font.system(size: 14, weight: .medium, design: .monospaced)
+    static let monoURLFont       = Font.system(size: 12, weight: .medium, design: .monospaced)
+
+    // URLs
+    static let urlFont           = Font.system(size: 11)
+
+    // Labels
+    static let labelFont         = Font.system(size: 11, weight: .semibold)
+
+    // Icons
+    static let iconTinyFont      = Font.system(size: 10)
+    static let iconSmallFont     = Font.system(size: 12)
+    static let iconMediumFont    = Font.system(size: 13)
+    static let iconFont          = Font.system(size: 14)
+    static let iconHeaderFont    = Font.system(size: 16)
+    static let iconXLFont        = Font.system(size: 24)
+    static let iconLargeFont     = Font.system(size: 34)
+
+    // Titles
+    static let titleFont         = Font.system(size: 20, weight: .bold)
+    static let subtitleFont      = Font.system(size: 18, weight: .semibold)
+
+    // Chat Header
+    static let headerNameFont    = Font.system(size: 16, weight: .semibold)
+    static let headerAvatarFont  = Font.system(size: 14, weight: .bold)
+    static let headerStatusFont  = Font.system(size: 12)
+    static let headerChevronFont = Font.system(size: 11, weight: .semibold)
+
+    // Login
+    static let loginTitleFont    = Font.system(size: 28, weight: .bold)
+    static let loginSubtitleFont = Font.system(size: 28, weight: .light)
+    static let loginTaglineFont  = Font.system(size: 14, weight: .medium)
+    static let loginFieldFont    = Font.system(size: 16, weight: .medium)
+    static let loginButtonFont   = Font.system(size: 16, weight: .semibold)
+    static let loginHintFont     = Font.system(size: 12, weight: .semibold)
+    static let loginHintMonoFont = Font.system(size: 12, weight: .medium, design: .monospaced)
+    static let loginEmojiFont    = Font.system(size: 64)
+    static let loginServerFont   = Font.system(size: 11, weight: .medium, design: .monospaced)
+
+    // Form
+    static let formFieldFont     = Font.system(size: 15)
+    static let formPriorityFont  = Font.system(size: 13)
+    static let formClipFont      = Font.system(size: 15, weight: .semibold)
+    static let formErrorFont     = Font.system(size: 14)
+
+    // Archive
+    static let archiveTitleFont   = Font.system(size: 15, weight: .medium)
+    static let archiveMetaLabelFont = Font.system(size: 12, weight: .medium)
+    static let archiveMetaValueFont = Font.system(size: 12)
+    static let archiveStatusFont    = Font.system(size: 12, weight: .medium)
+    static let archiveEmojiFont     = Font.system(size: 22)
+
+    // Metadata
+    static let metaIconFont      = Font.system(size: 16)
+    static let metaLabelFont     = Font.system(size: 14)
+    static let metaValueFont     = Font.system(size: 14, weight: .medium)
+    static let metaIdFont        = Font.system(size: 15, weight: .bold, design: .monospaced)
+    static let metaFileFont      = Font.system(size: 14, weight: .medium, design: .monospaced)
+    static let metaEmptyEmojiFont = Font.system(size: 44)
+    static let metaEmptyTitleFont = Font.system(size: 18, weight: .semibold)
+    static let metaLinkFont      = Font.system(size: 15, weight: .medium)
+
+    // Misc
+    static let statusDotSize: CGFloat   = 7
+    static let locationFont      = Font.system(size: 11)
+    static let locationIconFont  = Font.system(size: 10)
+    static let progressFont      = Font.caption.monospacedDigit()
+    static let emojiLargeFont    = Font.system(size: 32)
+    static let emptyStateFont    = Font.system(size: 16, weight: .medium)
+    static let emptyEmojiFont    = Font.system(size: 40)
+
+    // Attachment buttons
+    static let attachButtonFont  = Font.system(size: 30)
+    static let sendButtonFont    = Font.system(size: 32)
+
+    // MARK: - Button Layout
+
+    static let buttonPaddingH: CGFloat    = 14
+    static let buttonPaddingV: CGFloat    = 8
+    static let buttonCornerRadius: CGFloat = 8
+    static let badgePaddingH: CGFloat     = 12
+    static let badgePaddingV: CGFloat     = 6
+    static let badgeCornerRadius: CGFloat = 6
 }
 
 // MARK: - Color Extension

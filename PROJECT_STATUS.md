@@ -1,8 +1,8 @@
 # Direct Video Uploader — Project Status
 
-> **Last Updated:** March 7, 2026 · MST
-> **Current Phase:** Phase 3 (Render + Cloud + Mux) — Mux pipeline fully operational
-> **Overall Progress:** ████████████████████ 100% (Phase 2) · Phase 3 ~85%
+> **Last Updated:** March 9, 2026 · MST
+> **Current Phase:** Phase 3 (Render + Cloud + Mux) — Mux pipeline fully operational + Stability Phases A–C complete + Upload simplified
+> **Overall Progress:** ████████████████████ 100% (Phase 2) · Phase 3 ~90%
 
 ---
 
@@ -10,7 +10,7 @@
 
 The **Direct Video Uploader** is a mobile-first video upload platform disguised as a text conversation. Field crew members "text" videos to the **Mediasource Fixer** server, which processes them the way a news assignment desk operates — fast, structured, and integrated with Slack.
 
-We've completed the **interactive chat demo** (HTML prototype), **project specification** (v4), the **Phase 1 server foundation** (Node.js API, WebSocket, PostgreSQL, auth, admin dashboard), the **Phase 2 — iOS Demo App** core flow (login → chat → video upload → form → confirmation → archive), and the **Web Clip Viewer** (server-rendered at `/clips/:slug`). Latest session (Mar 7): Overhauled chat bubble styling (MessageBubble rewrite with Slack confirmation, form request, video content types), added "missing form" alerts to dashboard AssetList and clip viewer, prevented ContextFormView dismiss without required fields, added server-side slug/description fallback, and rebuilt admin dashboard.
+We've completed the **interactive chat demo** (HTML prototype), **project specification** (v4), the **Phase 1 server foundation** (Node.js API, WebSocket, PostgreSQL, auth, admin dashboard), the **Phase 2 — iOS Demo App** core flow (login → chat → video upload → form → confirmation → archive), and the **Web Clip Viewer** (server-rendered at `/clips/:slug`). Latest session (Mar 9): **Upload pipeline simplified** — collapsed 4 upload paths (server direct, Mux direct, server-side ingest, tus resume) to a single Mux direct upload path. Removed `PendingUpload` persistence, tus resume, server multipart upload, and DEBUG/RELEASE branching. Also simplified chat header to show clear connection status (Ready/Working/Trying to connect).
 
 ---
 
@@ -177,6 +177,24 @@ cd ios && xcodegen generate && xcodebuild -project DirectVideoUploader.xcodeproj
 | Xcode automatic code signing       | ✅ Done            | Team `LW5P4PVL96`, auto signing in project.yml         |
 | Centralized Theme + Formatting     | ✅ Done            | Theme.swift, DVUDateFormatting.swift, UserDefaultsKeys |
 
+**Features Added (Mar 9 — Session):**
+
+- **Upload pipeline simplification** — Collapsed 4 upload paths (server direct, Mux direct, server-side ingest, tus resume) into single Mux direct path. iOS → `POST /api/assets/:id/mux-upload` → PATCH to Mux CDN via tus protocol. Background URLSession with `waitsForConnectivity` handles network interruptions natively.
+- **Removed PendingUpload** — Deleted `PendingUpload` struct, `checkPendingUpload()`, `resumePendingUpload()`, `discardPendingUpload()`, `restoreFormForAsset(_:pending:)`, `buildMultipartFile()`, `checkTusOffset()`, `resumeMuxUpload()`, `createOffsetFile()`. ~350 lines removed across VideoUploadService.swift and ChatViewModel.swift.
+- **Removed upload recovery alert** — Deleted `.alert("Interrupted Upload")` with Resume/Discard buttons from ChatView. If upload is interrupted, user simply re-uploads.
+- **Removed server direct upload from iOS** — `ServerConfig.uploadURL(_:)` removed. Server endpoint still exists but iOS no longer calls it.
+- **Chat header simplified** — Removed team/job subtitle. Status text: 🟢 Ready / 🟡 Working... / 🔴 Trying to connect... Dot enlarged 6pt→7pt.
+
+**Features Added (Mar 8 — Session):**
+
+- **Stability Plan Phases A–C** — Full implementation of `STABILITY_PLAN.md`. See dedicated section below.
+- **Idempotent Mux upload** — `POST /api/assets/:id/mux-upload` now checks for existing PROCESSING clip with valid Mux upload URL before creating a new one. Prevents duplicate clips from retry/reconnect scenarios. (Commit `3fbb632`)
+- **Upload recovery prompt** — ~~On relaunch, `checkPendingUpload()` now handles both UPLOADING and PROCESSING asset statuses.~~ **Removed Mar 9** — replaced by simplified single-path upload; background URLSession handles interruptions automatically.
+- **Form state persistence** — New `PendingForm` Codable struct (modeled after `PendingUpload`) saved to `Documents/pending-form.json`. Stores `assetId`, `originalFileName`, `capturedAt`, `clipCount`, `duration`, `thumbnailJPEG`. Saved when `form:request` WebSocket event fires, cleared on successful form submit.
+- **Form restoration on relaunch** — `checkPendingForm()` loads persisted form, verifies with server that form hasn't already been submitted, then restores form sheet UI. If upload completed in background but form was never shown, `restoreFormForAsset()` auto-opens the form.
+- **Dashboard auth fixes** — 401 fix (query gating on `loggedIn` state), 403 fix (admin role seeding for Admin User).
+- **Stuck PROCESSING auto-error** — `mux-sync.js` now auto-marks clips as ERROR after 30 minutes if they have no `muxAssetId`.
+
 **Features Added (Mar 7 — Session):**
 
 - **MessageBubble rewrite** — Complete rewrite of `MessageBubble.swift` with dedicated content views for each message type: `textContent`, `videoContent`, `confirmationContent`, `formRequestContent`, `slackContent`. Custom `ChatBubbleShape` with tail on outgoing (right) and incoming (left) bubbles.
@@ -309,6 +327,10 @@ Render is the preview environment (stand-in for eventual company production syst
 | Slack webhook (real)     | ✅ Done          | Real Slack bot integration via `server/src/lib/slack.js`. Bot "fixer-video" in Sea Lion Media workspace.                                    |
 | TestFlight build         | ⚠️ Needs rebuild | Production URL changed to `rodgriola.com`. New archive + upload to App Store Connect needed.                                                |
 | Admin UI (expanded)      | ⚠️ Partial       | React dashboard running; needs asset detail, log persistence                                                                                |
+| Stability (Phases A–C)   | ✅ Done          | WS reliability, upload resilience, security hardening. See `STABILITY_PLAN.md`.                                                             |
+| Idempotent Mux upload    | ✅ Done          | Duplicate clip prevention on retry/reconnect. Commit `3fbb632`.                                                                             |
+| Upload recovery prompt   | ✅ Done          | iOS prompts user to resume or discard interrupted uploads on relaunch.                                                                      |
+| Form state persistence   | ✅ Done          | `PendingForm` persisted to disk; restored on relaunch if form not yet submitted.                                                            |
 | Real metadata extraction | ✅ Done          | iOS AVAsset extracts real metadata (not ffprobe — native iOS)                                                                               |
 | Parallel form + upload   | 🔲 Not started   | Show form at upload start (not after); wait for both to finalize asset. Needed when real transcoding adds latency.                          |
 | Ephemeral chat cleanup   | ✅ Done          | Option B: greeting, auto-reply, form-request, confirmation no longer persisted to DB — sent via WS only.                                    |
@@ -319,14 +341,14 @@ Render is the preview environment (stand-in for eventual company production syst
 
 **Target: TBD**
 
-| Deliverable                      | Status         | Notes                         |
-| -------------------------------- | -------------- | ----------------------------- |
-| Device registration / MDM        | 🔲 Not started | Enterprise device control     |
-| SMS/MMS fallback (Twilio)        | 🔲 Not started | Alternative upload path       |
-| Rate limiting + abuse protection | 🔲 Not started | Production security           |
-| Multi-clip asset support         | 🔲 Not started | Multiple videos per asset     |
-| Push notifications               | 🔲 Not started | Upload status, form reminders |
-| Audit logging                    | 🔲 Not started | Who did what, when            |
+| Deliverable                      | Status         | Notes                           |
+| -------------------------------- | -------------- | ------------------------------- |
+| Device registration / MDM        | 🔲 Not started | Enterprise device control       |
+| SMS/MMS fallback (Twilio)        | 🔲 Not started | Alternative upload path         |
+| Rate limiting + abuse protection | ✅ Done        | `@fastify/rate-limit` (Phase C) |
+| Multi-clip asset support         | 🔲 Not started | Multiple videos per asset       |
+| Push notifications               | 🔲 Not started | Upload status, form reminders   |
+| Audit logging                    | 🔲 Not started | Who did what, when              |
 
 ---
 
@@ -381,6 +403,7 @@ A profile screen accessible from the chat header. Houses personal info, credenti
 | **Hosting (Server)** | Render (rodgriola.com)                       | ✅ Live           |
 | **Hosting (Web)**    | Vercel (planned)                             | 🔲 Not started    |
 | **Slack**            | Incoming Webhooks (planned)                  | 🔲 Simulated only |
+| **Stability**        | STABILITY_PLAN.md Phases A–C                 | ✅ Complete       |
 
 ---
 
@@ -544,17 +567,19 @@ Direct-Video-Uploader/
 
 ### Now — Phase 3: Live Demo Stack
 
-1. ~~**Deploy server to Render**~~ — ✅ Prep done (`render.yaml`, build script, SSL, env detection). **Next: push to GitHub and connect Render.**
+1. ~~**Deploy server to Render**~~ — ✅ Done.
 2. **Cloud storage (Cloudflare R2 or Backblaze B2)** — Replace local `uploads/` directory. Implement presigned upload URLs so iOS uploads directly to cloud. Presigned read URLs for clip viewer playback.
-3. **Mux video streaming** — After upload lands in cloud storage, trigger Mux ingestion. Replace `<video src="local">` with Mux HLS player in clip viewer. Adaptive bitrate for any network.
-4. ~~**Update iOS `ServerConfig` for Render**~~ — ✅ Done. `productionURL` + simulator/device/debug/release detection already in place.
-5. **TestFlight build** — With live Render backend, cloud storage, and Mux streaming all wired up.
+3. ~~**Mux video streaming**~~ — ✅ Done. Direct upload + HLS playback + webhook pipeline.
+4. ~~**Update iOS `ServerConfig` for Render**~~ — ✅ Done.
+5. **TestFlight build** — With live Render backend, Mux streaming, and stability fixes.
+6. ~~**Stability Plan Phases A–C**~~ — ✅ Done. See `STABILITY_PLAN.md`.
+7. ~~**Idempotent Mux upload + recovery**~~ — ✅ Done. Duplicate clip prevention, form persistence. Upload recovery prompt removed Mar 9 (replaced by simplified single-path upload with background URLSession).
+8. **Stability Phase D** — WebSocket-only transport, temp file cleanup, replace admin raw SQL.
 
 ### Soon — Polish & Integrations
 
-6. **Real Slack webhooks** — Replace simulated posts with actual Slack Incoming Webhooks
-7. **End-to-end testing** — Full flow on live stack (login → upload → form → clip viewer → Slack)
-8. **Deferred security items** — Rate limiting (#22), CORS (#24) before wider distribution
+9. **End-to-end production testing** — Full flow on live stack (login → upload → background → resume → form → clip viewer → Slack)
+10. **Deferred security items** — JWT expiry shortening (C6), CORS tightening
 
 ### Later — Production Hardening
 

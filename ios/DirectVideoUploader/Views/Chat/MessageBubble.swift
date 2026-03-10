@@ -24,7 +24,7 @@ struct MessageBubble: View {
                 // Timestamp
                 if let time = formattedTime {
                     Text(time)
-                        .font(.system(size: 10))
+                        .font(Theme.timestampFont)
                         .foregroundStyle(Color.black.opacity(0.7))
                         .padding(.horizontal, 4)
                 }
@@ -55,16 +55,16 @@ struct MessageBubble: View {
     
     private var textContent: some View {
         Text(message.content.displayText)
-            .font(.system(size: 16))
+            .font(Theme.bodyFont)
             .foregroundStyle(isOutgoing ? .white : Theme.incomingText)
     }
     
     private var videoContent: some View {
         HStack(spacing: 8) {
             Image(systemName: "video.fill")
-                .font(.system(size: 14))
+                .font(Theme.iconFont)
             Text(message.content.displayText)
-                .font(.system(size: 15, weight: .medium))
+                .font(Theme.bodyMediumFont)
         }
         .foregroundStyle(isOutgoing ? .white : Theme.incomingText)
     }
@@ -73,13 +73,13 @@ struct MessageBubble: View {
         VStack(alignment: .leading, spacing: 8) {
             // Main confirmation text
             Text(message.content.text ?? "Upload confirmed")
-                .font(.system(size: 15))
+                .font(Theme.bodySmallFont)
                 .foregroundStyle(Theme.incomingText)
             
             // Slug
             if let slug = message.content.slug {
                 Text(slug)
-                    .font(.system(size: 13, design: .monospaced))
+                    .font(Theme.monoSmallFont)
                     .foregroundStyle(Theme.incomingText)
                     .lineLimit(1)
             }
@@ -88,14 +88,14 @@ struct MessageBubble: View {
             if let msId = message.content.mediasourceId {
                 HStack(spacing: 4) {
                     Text("🔗")
-                        .font(.system(size: 12))
+                        .font(Theme.iconSmallFont)
                     Text(msId)
-                        .font(.system(size: 14, weight: .bold, design: .monospaced))
+                        .font(Theme.monoIdFont)
                         .foregroundStyle(Theme.incomingText)
                     
                     if let slug = message.content.slug {
                         Text(ServerConfig.baseURL.absoluteString + "/clips/" + slug)
-                            .font(.system(size: 11))
+                            .font(Theme.urlFont)
                             .foregroundStyle(Theme.incomingText)
                             .lineLimit(1)
                             .truncationMode(.middle)
@@ -107,7 +107,7 @@ struct MessageBubble: View {
                         UIPasteboard.general.string = link
                     } label: {
                         Image(systemName: "doc.on.doc")
-                            .font(.system(size: 12))
+                            .font(Theme.iconSmallFont)
                             .foregroundStyle(Theme.incomingText.opacity(0.6))
                     }
                 }
@@ -116,42 +116,24 @@ struct MessageBubble: View {
             // Action buttons — Metadata (left) + View (right)
             HStack(spacing: 12) {
                 // Metadata button — opens metadata sheet
-                if onTapMetadata != nil {
-                    Button {
-                        onTapMetadata?()
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "info.circle.fill")
-                                .font(.system(size: 13))
-                            Text("Metadata")
-                                .font(.system(size: 13, weight: .semibold))
-                        }
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 8)
-                        .background(Color(hex: "#1C3A5F"))
-                        .foregroundStyle(.white)
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                    }
+                if let onTapMetadata {
+                    ChatActionButton(
+                        icon: "info.circle.fill",
+                        label: "Metadata",
+                        color: Theme.actionBlue,
+                        action: onTapMetadata
+                    )
                 }
                 
                 // View button — opens clip in browser
                 if let msId = message.content.mediasourceId,
                    let clipURL = ServerConfig.clipURL(msId) {
-                    Button {
-                        UIApplication.shared.open(clipURL)
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "play.circle.fill")
-                                .font(.system(size: 13))
-                            Text("View")
-                                .font(.system(size: 13, weight: .semibold))
-                        }
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 8)
-                        .background(Theme.green)
-                        .foregroundStyle(.white)
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                    }
+                    ChatActionButton(
+                        icon: "play.circle.fill",
+                        label: "View",
+                        color: Theme.green,
+                        action: { UIApplication.shared.open(clipURL) }
+                    )
                 }
             }
         }
@@ -162,7 +144,7 @@ struct MessageBubble: View {
             // Slug name
             if let slug = message.content.slug {
                 Text(slug)
-                    .font(.system(size: 13, design: .monospaced))
+                    .font(Theme.monoSmallFont)
                     .foregroundStyle(Theme.incomingText)
                     .lineLimit(1)
             }
@@ -171,14 +153,14 @@ struct MessageBubble: View {
             if let msId = message.content.mediasourceId {
                 HStack(spacing: 4) {
                     Text("🔗")
-                        .font(.system(size: 12))
+                        .font(Theme.iconSmallFont)
                     Text(msId)
-                        .font(.system(size: 14, weight: .bold, design: .monospaced))
+                        .font(Theme.monoIdFont)
                         .foregroundStyle(Theme.incomingText)
                     
                     if let slug = message.content.slug {
                         Text(ServerConfig.baseURL.absoluteString + "/clips/" + slug)
-                            .font(.system(size: 11))
+                            .font(Theme.urlFont)
                             .foregroundStyle(Theme.incomingText)
                             .lineLimit(1)
                             .truncationMode(.middle)
@@ -190,7 +172,7 @@ struct MessageBubble: View {
                         UIPasteboard.general.string = link
                     } label: {
                         Image(systemName: "doc.on.doc")
-                            .font(.system(size: 12))
+                            .font(Theme.iconSmallFont)
                             .foregroundStyle(Theme.incomingText.opacity(0.6))
                     }
                 }
@@ -201,22 +183,13 @@ struct MessageBubble: View {
             
             // Action button — Metadata only
             HStack(spacing: 12) {
-                if onTapMetadata != nil {
-                    Button {
-                        onTapMetadata?()
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "info.circle.fill")
-                                .font(.system(size: 13))
-                            Text("Metadata")
-                                .font(.system(size: 13, weight: .semibold))
-                        }
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 8)
-                        .background(Theme.blue)
-                        .foregroundStyle(.white)
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                    }
+                if let onTapMetadata {
+                    ChatActionButton(
+                        icon: "info.circle.fill",
+                        label: "Metadata",
+                        color: Theme.blue,
+                        action: onTapMetadata
+                    )
                 }
             }
         }
@@ -227,9 +200,9 @@ struct MessageBubble: View {
     private func metaSummaryRow(icon: String, text: String) -> some View {
         HStack(spacing: 6) {
             Text(icon)
-                .font(.system(size: 12))
+                .font(Theme.iconSmallFont)
             Text(text)
-                .font(.system(size: 13))
+                .font(Theme.captionFont)
                 .foregroundStyle(Theme.secondaryText)
         }
     }
@@ -243,46 +216,34 @@ struct MessageBubble: View {
             // Header with Slack icon
             HStack(spacing: 6) {
                 Image(systemName: isOutgoing ? "paperplane.fill" : "checkmark.circle.fill")
-                    .font(.system(size: 13))
+                    .font(Theme.iconMediumFont)
                     .foregroundStyle(isOutgoing ? .white : Theme.green)
                 Text(isOutgoing ? "Sending to Slack…" : "Slack")
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(Theme.captionBoldFont)
                     .foregroundStyle(isOutgoing ? .white.opacity(0.7) : Theme.secondaryText)
             }
             
             // Message text (command or confirmation)
             Text(message.content.text ?? "Posted to Slack")
-                .font(.system(size: 15))
+                .font(Theme.bodySmallFont)
                 .foregroundStyle(isOutgoing ? .white : Theme.incomingText)
             
             // Channel/mention badges on confirmation
             if !isOutgoing {
                 HStack(spacing: 8) {
                     if let channel = message.content.channel {
-                        HStack(spacing: 3) {
-                            Text("#")
-                                .font(.system(size: 11, weight: .bold, design: .monospaced))
-                            Text(channel)
-                                .font(.system(size: 11, weight: .medium))
-                        }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background(Theme.blue.opacity(0.3))
-                        .foregroundStyle(Theme.black)
-                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                        ChatBadge(
+                            symbol: "#",
+                            text: channel,
+                            color: Theme.blue.opacity(0.3)
+                        )
                     }
                     if let mention = message.content.mention {
-                        HStack(spacing: 3) {
-                            Text("@")
-                                .font(.system(size: 11, weight: .bold, design: .monospaced))
-                            Text(mention)
-                                .font(.system(size: 11, weight: .medium))
-                        }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background(Theme.green.opacity(0.3))
-                        .foregroundStyle(Theme.black)
-                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                        ChatBadge(
+                            symbol: "@",
+                            text: mention,
+                            color: Theme.green.opacity(0.3)
+                        )
                     }
                 }
             }

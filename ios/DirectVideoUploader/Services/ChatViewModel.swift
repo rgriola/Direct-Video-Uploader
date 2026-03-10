@@ -53,7 +53,7 @@ final class ChatViewModel {
         self.ws = ws
         setupWebSocketHandlers()
         setupConnectionHandlers()
-        checkPendingUpload() // B3: Check for interrupted uploads on launch
+        checkPendingForm() // Check for form that was pending when app was killed
     }
     
     // MARK: - WebSocket Handlers
@@ -79,7 +79,8 @@ final class ChatViewModel {
         
         ws.onFormRequest = { [weak self] data in
             guard let self else { return }
-            self.currentAssetId = data["assetId"] as? String
+            let assetId = data["assetId"] as? String
+            self.currentAssetId = assetId
             
             // Store form context for ContextFormView header
             self.formOriginalFileName = data["originalFileName"] as? String
@@ -89,34 +90,21 @@ final class ChatViewModel {
                 self.formCapturedAt = dateVal
             }
             
-            // Build only editable fields
-            var fields: [FormField] = []
-            
-            // Slug (form title — user editable, no prefill from server)
-            fields.append(FormField(id: "slug", label: "Slug / Title", type: "text", value: nil))
-            
-            // Type (Raw or Cut)
-            fields.append(FormField(
-                id: "type",
-                label: "Content Type",
-                type: "select",
-                options: ["Raw", "Cut"]
-            ))
-            
-            // Description
-            fields.append(FormField(id: "description", label: "Description / Notes", type: "textarea"))
-            
-            // Priority
-            fields.append(FormField(
-                id: "priority",
-                label: "Priority",
-                type: "select",
-                value: "Low",
-                options: ["Low", "Medium", "High", "Critical"]
-            ))
-            
-            self.formFields = fields
+            self.formFields = self.buildFormFields()
             self.showFormSheet = true
+            
+            // Persist form state so it survives app kill
+            if let assetId {
+                PendingForm.save(PendingForm(
+                    assetId: assetId,
+                    originalFileName: self.formOriginalFileName,
+                    capturedAt: self.formCapturedAt,
+                    clipCount: self.formClipCount,
+                    duration: self.formDuration,
+                    thumbnailJPEG: self.formThumbnail?.jpegData(compressionQuality: 0.5),
+                    savedAt: Date()
+                ))
+            }
         }
         
         ws.onFormConfirmed = { [weak self] data in
@@ -424,31 +412,12 @@ final class ChatViewModel {
         }
         
         do {
-            #if DEBUG
-            // In debug/dev: prefer local server upload (fast over LAN), fall back to Mux
-            do {
-                let _ = try await uploader.upload(assetId: assetId, fileURL: fileURL, token: token, metadata: metadata)
-                print("✅ [Upload] Server upload completed for asset: \(assetId)")
-            } catch {
-                print("⚠️ [Upload] Server upload failed (\(error.localizedDescription)), trying Mux...")
-                let muxResult = try await uploader.uploadViaMux(assetId: assetId, fileURL: fileURL, token: token, metadata: metadata)
-                print("✅ [Upload] Mux direct upload completed for asset: \(assetId), clipId: \(muxResult.clipId)")
-            }
-            #else
-            // In production: prefer Mux CDN (faster for remote users), fall back to server
-            do {
-                let muxResult = try await uploader.uploadViaMux(assetId: assetId, fileURL: fileURL, token: token, metadata: metadata)
-                print("✅ [Upload] Mux direct upload completed for asset: \(assetId), clipId: \(muxResult.clipId)")
-            } catch {
-                print("⚠️ [Upload] Mux direct upload failed (\(error.localizedDescription)), falling back to server upload")
-                let _ = try await uploader.upload(assetId: assetId, fileURL: fileURL, token: token, metadata: metadata)
-                print("✅ [Upload] Server upload completed for asset: \(assetId)")
-            }
-            #endif
+            // Single path: Mux direct upload via background URLSession.
+            // iOS handles network interruptions automatically (waitsForConnectivity).
+            let muxResult = try await uploader.uploadViaMux(assetId: assetId, fileURL: fileURL, token: token, metadata: metadata)
+            print("✅ [Upload] Mux direct upload completed for asset: \(assetId), clipId: \(muxResult.clipId)")
         } catch {
             print("❌ [Upload] Failed for asset \(assetId): \(error)")
-            print("❌ [Upload] Error details: \(error.localizedDescription)")
-            // Show error in chat
             appendErrorBubble("⚠️ Upload failed: \(error.localizedDescription)", assetId: assetId)
             Task {
                 await reportError(
@@ -480,6 +449,7 @@ final class ChatViewModel {
             // Form sheet closes — server will push form:confirmed via WS
             // with the "High Five!" confirmation bubble + metadata
             showFormSheet = false
+            PendingForm.clear()
         } catch {
             print("❌ Failed to submit form:", error)
             // Keep form open so user can retry — show error in chat too
@@ -586,71 +556,68 @@ final class ChatViewModel {
         stagedVideo = nil
     }
     
-    // MARK: - Pending Upload Recovery (B3)
+    // MARK: - Pending Form Recovery
     
-    /// Check for an upload that was interrupted by app crash/kill.
-    /// If found, check the asset status on the server and notify the user.
-    private func checkPendingUpload() {
-        guard let pending = PendingUpload.load() else { return }
+    /// Check for a form that was pending when app was killed.
+    private func checkPendingForm() {
+        guard let pendingForm = PendingForm.load() else { return }
         
-        let age = Date().timeIntervalSince(pending.startedAt)
-        print("🔄 [Recovery] Found pending upload: asset \(pending.assetId), age \(Int(age))s")
+        print("🔄 [Recovery] Found pending form for asset: \(pendingForm.assetId)")
         
-        // If older than 1 hour, the server cleanup job will handle it
-        if age > 3600 {
-            print("🔄 [Recovery] Pending upload is stale (>1h) — clearing")
-            PendingUpload.clear()
-            return
-        }
-        
-        // Check with server asynchronously
         Task {
-            let request = auth.authenticatedRequest(for: ServerConfig.assetURL(pending.assetId))
+            let request = auth.authenticatedRequest(for: ServerConfig.assetURL(pendingForm.assetId))
             do {
                 let (data, response) = try await URLSession.shared.data(for: request)
                 let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
                 
                 if statusCode == 200,
                    let json = try? JSONDecoder().decode(AssetDetailResponse.self, from: data) {
-                    switch json.asset.status {
-                    case .ready:
-                        // Upload actually completed (background session finished it)
-                        print("🔄 [Recovery] Asset \(pending.assetId) is READY — upload completed in background")
-                        PendingUpload.clear()
-                    case .uploading:
-                        // Upload was interrupted — attempt tus resume for Mux uploads (C3)
-                        if pending.method == "mux", pending.uploadUrl != nil {
-                            print("🔄 [Recovery] Attempting tus resume for \(pending.assetId)...")
-                            appendErrorBubble("⏳ Resuming interrupted upload for \"\(pending.fileName)\"...")
-                            do {
-                                let resumed = try await uploader.resumeMuxUpload(pending: pending)
-                                if resumed {
-                                    appendErrorBubble("✅ Upload for \"\(pending.fileName)\" resumed and completed!")
-                                } else {
-                                    appendErrorBubble("⚠️ Could not resume upload for \"\(pending.fileName)\" — file no longer available.")
-                                    PendingUpload.clear()
-                                }
-                            } catch {
-                                print("🔄 [Recovery] Tus resume failed: \(error.localizedDescription)")
-                                appendErrorBubble("⚠️ Upload resume failed for \"\(pending.fileName)\". The server will clean it up.")
-                                PendingUpload.clear()
-                            }
-                        } else {
-                            print("🔄 [Recovery] Asset \(pending.assetId) still UPLOADING — interrupted (non-resumable)")
-                            appendErrorBubble("⚠️ A previous upload for \"\(pending.fileName)\" was interrupted. The server will clean it up automatically.")
-                            PendingUpload.clear()
-                        }
-                    default:
-                        PendingUpload.clear()
+                    if json.asset.formResponse != nil {
+                        // Form already submitted — clear
+                        print("🔄 [Recovery] Form already submitted for \(pendingForm.assetId) — clearing")
+                        PendingForm.clear()
+                    } else {
+                        // Restore form UI
+                        print("🔄 [Recovery] Restoring pending form for \(pendingForm.assetId)")
+                        restoreFormFromPending(pendingForm)
                     }
                 } else {
-                    // Asset not found or error — clean up
-                    PendingUpload.clear()
+                    PendingForm.clear()
                 }
             } catch {
-                // Network error — keep state for next launch
-                print("🔄 [Recovery] Could not check pending upload: \(error.localizedDescription)")
+                print("🔄 [Recovery] Could not check pending form: \(error.localizedDescription)")
             }
         }
+    }
+    
+    /// Restore form UI from persisted PendingForm state.
+    private func restoreFormFromPending(_ pendingForm: PendingForm) {
+        currentAssetId = pendingForm.assetId
+        formOriginalFileName = pendingForm.originalFileName
+        formCapturedAt = pendingForm.capturedAt
+        formClipCount = pendingForm.clipCount
+        formDuration = pendingForm.duration
+        if let jpegData = pendingForm.thumbnailJPEG {
+            formThumbnail = UIImage(data: jpegData)
+        }
+        formFields = buildFormFields()
+        showFormSheet = true
+        
+        appendErrorBubble("📋 You have a pending form to fill out.")
+    }
+    
+    /// Build the standard form fields (used for both live and recovery).
+    private func buildFormFields() -> [FormField] {
+        var fields: [FormField] = []
+        fields.append(FormField(id: "slug", label: "Slug / Title", type: "text", value: nil))
+        fields.append(FormField(
+            id: "type", label: "Content Type", type: "select", options: ["Raw", "Cut"]
+        ))
+        fields.append(FormField(id: "description", label: "Description / Notes", type: "textarea"))
+        fields.append(FormField(
+            id: "priority", label: "Priority", type: "select", value: "Low",
+            options: ["Low", "Medium", "High", "Critical"]
+        ))
+        return fields
     }
 }
