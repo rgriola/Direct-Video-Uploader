@@ -82,6 +82,10 @@ await fastify.register(helmet, {
               },
           }
         : false, // Disable CSP in dev (allows inline scripts for dashboard)
+    // Clip viewer loads cross-origin media/scripts from Mux CDN + jsdelivr.
+    // Helmet defaults (same-origin) block those fetches independently of CSP.
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
+    crossOriginEmbedderPolicy: false,
 });
 
 // B7: Global rate limiting — sensible defaults, per-route overrides below
