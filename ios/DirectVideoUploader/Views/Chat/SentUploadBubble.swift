@@ -7,6 +7,8 @@ struct SentUploadBubble: View {
     let fileName: String
     let createdDate: String?
     let hasLocation: Bool
+    var isUploading: Bool = false
+    var uploadProgress: Double = 0
     
     var body: some View {
         HStack {
@@ -55,13 +57,38 @@ struct SentUploadBubble: View {
                         
                         Spacer()
                         
-                        // Green checkmark — sent
-                        Image(systemName: "checkmark.circle.fill")
-                            .font(Theme.iconLargeFont)
-                            .foregroundStyle(Theme.green)
+                        if isUploading {
+                            // Spinning indicator during upload
+                            ProgressView()
+                                .tint(.white)
+                        } else {
+                            // Green checkmark — sent
+                            Image(systemName: "checkmark.circle.fill")
+                                .font(Theme.iconLargeFont)
+                                .foregroundStyle(Theme.green)
+                        }
                     }
                     .padding(.horizontal, 12)
                     .padding(.vertical, 10)
+                    
+                    // Upload progress bar
+                    if isUploading {
+                        VStack(spacing: 4) {
+                            ProgressView(value: uploadProgress)
+                                .tint(.blue)
+                            HStack {
+                                Text("Uploading video…")
+                                    .font(Theme.timestampFont)
+                                    .foregroundStyle(.white.opacity(0.7))
+                                Spacer()
+                                Text("\(Int(uploadProgress * 100))%")
+                                    .font(Theme.timestampFont.monospacedDigit())
+                                    .foregroundStyle(.white.opacity(0.7))
+                            }
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.bottom, 10)
+                    }
                 }
                 .background(
                     LinearGradient(
@@ -77,7 +104,7 @@ struct SentUploadBubble: View {
                 )
                 
                 // Label
-                Text("Sent")
+                Text(isUploading ? "Uploading…" : "Sent")
                     .font(Theme.timestampFont)
                     .foregroundStyle(.white.opacity(0.3))
                     .padding(.horizontal, 4)

@@ -41,7 +41,6 @@ enum Theme {
     static let tertiaryText  = Color(hex: "636366")
     static let lightText     = Color(hex: "E5E5EA")
     static let metaText      = Color(hex: "EBEBF5")
-    static let typingDot     = Color(hex: "A0A0A0")
 
     // InputBar
     static let inputBarBg    = Color(hex: "ADADAD")
@@ -63,8 +62,8 @@ enum Theme {
     static let timestampFont     = Font.system(size: 11)
 
     // Badges
-    static let badgeFont         = Font.system(size: 11, weight: .medium)
-    static let badgeSymbolFont   = Font.system(size: 11, weight: .bold, design: .monospaced)
+    static let badgeFont         = Font.system(size: 16, weight: .medium)
+    static let badgeSymbolFont   = Font.system(size: 16, weight: .bold, design: .monospaced)
 
     // Monospaced
     static let monoSmallFont     = Font.system(size: 13, weight: .medium, design: .monospaced)

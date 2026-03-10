@@ -25,12 +25,6 @@ struct ChatView: View {
                     ScrollView {
                         LazyVStack(spacing: 2) {
                             if let vm = viewModel {
-                                // Typing indicator while awaiting server greeting
-                                if vm.isAwaitingGreeting {
-                                    TypingIndicatorBubble()
-                                        .id("typing-indicator")
-                                }
-                                
                                 ForEach(vm.messages) { message in
                                     // Outgoing video → show sent upload card with thumbnail
                                     if message.messageType == .video && message.isOutgoing,
@@ -39,7 +33,9 @@ struct ChatView: View {
                                             thumbnail: vm.sentUploadThumbnails[message.id],
                                             fileName: vm.sentUploadFileNames[message.id] ?? message.content.fileName ?? "Video",
                                             createdDate: vm.sentUploadDates[message.id],
-                                            hasLocation: vm.sentUploadHasLocation[message.id] ?? false
+                                            hasLocation: vm.sentUploadHasLocation[message.id] ?? false,
+                                            isUploading: vm.isUploading,
+                                            uploadProgress: vm.uploadProgress
                                         )
                                         .id(message.id)
                                     } else {
@@ -71,37 +67,15 @@ struct ChatView: View {
                         .padding(.vertical, 8)
                     }
                     .onChange(of: viewModel?.messages.count) { _, _ in
-                        if let lastId = viewModel?.messages.last?.id {
-                            withAnimation(.easeOut(duration: 0.3)) {
-                                proxy.scrollTo(lastId, anchor: .bottom)
-                            }
-                        }
+                        scrollToBottom(proxy: proxy)
+                    }
+                    .onChange(of: viewModel?.stagedVideo != nil) { _, _ in
+                        scrollToBottom(proxy: proxy)
+                    }
+                    .onChange(of: viewModel?.isUploading) { _, _ in
+                        scrollToBottom(proxy: proxy)
                     }
                     .scrollDismissesKeyboard(.interactively)
-                }
-                
-                // Upload progress bar
-                if let vm = viewModel, vm.isUploading {
-                    HStack(spacing: 10) {
-                        Image(systemName: "arrow.up.circle.fill")
-                            .foregroundStyle(.blue)
-                        
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Uploading video…")
-                                .font(.caption)
-                                .foregroundStyle(.white)
-                            
-                            ProgressView(value: vm.uploadProgress)
-                                .tint(.blue)
-                        }
-                        
-                        Text("\(Int(vm.uploadProgress * 100))%")
-                            .font(.caption.monospacedDigit())
-                            .foregroundStyle(.gray)
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
-                    .background(Theme.chatScreen)
                 }
                 
                 // Input bar
@@ -162,6 +136,19 @@ struct ChatView: View {
             let vm = ChatViewModel(auth: auth, ws: ws)
             viewModel = vm
             vm.connectWebSocket()
+        }
+    }
+    
+    private func scrollToBottom(proxy: ScrollViewProxy) {
+        let targetId: String? = if viewModel?.stagedVideo != nil {
+            "staged-video-preview"
+        } else {
+            viewModel?.messages.last?.id
+        }
+        if let targetId {
+            withAnimation(.easeOut(duration: 0.3)) {
+                proxy.scrollTo(targetId, anchor: .bottom)
+            }
         }
     }
 }

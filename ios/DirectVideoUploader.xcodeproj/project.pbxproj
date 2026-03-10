@@ -7,7 +7,6 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		16B9E9AFFE09EAA4C36F2A04 /* TypingIndicatorBubble.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B68CEFC9A16597DBD4C5F91 /* TypingIndicatorBubble.swift */; };
 		257DDBB48613A0897D5754F0 /* VideoLibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC53E361C83E04580CF05221 /* VideoLibraryView.swift */; };
 		25F4475ABDC354FFB218DC4B /* VideoUploadService.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA58877C26F0C09FF7DFA4DC /* VideoUploadService.swift */; };
 		2F5EB0FE2B5962DCCF6BCD5B /* LoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAA58A3F30BFA24CE268AD67 /* LoginView.swift */; };
@@ -41,7 +40,6 @@
 
 /* Begin PBXFileReference section */
 		0813D4F9F9F55CFAE78F08B5 /* WebSocketService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebSocketService.swift; sourceTree = "<group>"; };
-		0B68CEFC9A16597DBD4C5F91 /* TypingIndicatorBubble.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TypingIndicatorBubble.swift; sourceTree = "<group>"; };
 		0E996DE4500DDFF0790F62F0 /* VideoMetadataExtractor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoMetadataExtractor.swift; sourceTree = "<group>"; };
 		2796AFC62F34F3182D7CCE1C /* MetadataView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetadataView.swift; sourceTree = "<group>"; };
 		2B7EEEC345EAFF2EE3EFD9CA /* MessageBubble.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageBubble.swift; sourceTree = "<group>"; };
@@ -149,7 +147,6 @@
 				EF5B8A623A0F5AA9CA07EA1A /* InputBar.swift */,
 				2B7EEEC345EAFF2EE3EFD9CA /* MessageBubble.swift */,
 				E8F7A0FE6F16D77BFEF57574 /* SentUploadBubble.swift */,
-				0B68CEFC9A16597DBD4C5F91 /* TypingIndicatorBubble.swift */,
 				AC53E361C83E04580CF05221 /* VideoLibraryView.swift */,
 				6996828CB03A6EABFF3C473B /* VideoPreviewBubble.swift */,
 				51E2EB93368D36F22B8AC2A4 /* VideoTrimView.swift */,
@@ -291,7 +288,6 @@
 				90441C6428F48C99FEC945E7 /* SentUploadBubble.swift in Sources */,
 				889C07C34F8BFC90EF7CB2CE /* ServerConfig.swift in Sources */,
 				CC1C0E76EF9FE58674443EC5 /* Theme.swift in Sources */,
-				16B9E9AFFE09EAA4C36F2A04 /* TypingIndicatorBubble.swift in Sources */,
 				CE6C303AB52C17CF99EFD315 /* User.swift in Sources */,
 				257DDBB48613A0897D5754F0 /* VideoLibraryView.swift in Sources */,
 				B23CA5DB5C7678A863AC8029 /* VideoMetadataExtractor.swift in Sources */,

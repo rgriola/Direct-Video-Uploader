@@ -402,4 +402,56 @@ Between steps 2→3 there's typically seconds; between 3→4 it depends on video
   **_ Context _**
 - currently we are trying to impliment several upload procedures, including fire and forget uploads. This is difficult to impliment and we are still in demo building.
   **_ Instructions _**
-- evaluate the upload steps and fallbacks including how iOS uploads in a Production Environment.
+- evaluate the upload steps and fallbacks including how iOS uploads in a Production Environment;
+
+...
+
+**_ Issue _**
+
+- user clicks Archive then clicks back to Chat and chat hangs on "..." Upload appears to fail. No Greeting.  
+  **_ Context _**
+- iPhone Tethered to Local Dev Server.
+
+**_ Change _**
+
+- Proposed change videro choice: Pick Video -> Upload
+  **_ Context _**
+- Current Process Pick Photo/Video > video is prepped in iOS > select video > added to Chat Queue > Upload
+- Change: Pick Video > Open iOS Edit Video window to modify edit video > if No > add to Upload Queue, If Yes > User Trims Clip > Upload > Add Video Edit to Queue
+  ** Instructions **
+- Evaluate Proposed Change and show a plan before coding.
+- This requires Swift Video Edit Implimentation - i beleieve.
+
+...
+
+**_ Change _**
+
+- have server connection status reflected entirely in Chat Header.
+  **_ Context _**
+- Connection texts clutter the chat area, also they trigger regularly.
+
+  **_ Instructions _**
+
+- the following triggers :
+- Trigger onReconnecting > "⚠️ Connection lost. Reconnecting..."
+- onConnectionLost > "🔴 Connection lost. Please check your network and restart the app."
+- These should be reflected in the Chat Header using the *Ready, *Working, \*trying to connnect flow.
+
+**_ Change _**
+
+- Add the - Upload Progress Bar to the bottom of - Video Preview (Pre-Upload).
+
+...
+**_ Issue _**
+
+- when Video Preview (Pre-Upload) is in the chat area with a blue check sometime a second identical bubble with the green check appears > then the form. This is not consistent seems to happens with longer clips.
+
+**_ Change _**
+
+- Chat Message > Fun Follow-Up (post-confirmation) > Add a reminder at the end "Remmeber you can #Slack the clip from here."
+
+**_ Change _**
+Fun Follow-Up (post-confirmation) - this message should close the conversation for archieve, no more uploads. A user can still slack the metadata. If the user taps + button again then a new conversation should start.
+**_ Instructions _**
+
+- what would be the plan to impliment this? I have tried to think how to cleanly start new uploads. Do not code.

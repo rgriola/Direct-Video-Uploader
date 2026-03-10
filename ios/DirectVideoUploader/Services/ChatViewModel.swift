@@ -10,7 +10,6 @@ final class ChatViewModel {
     
     var messages: [ChatMessage] = []
     var isLoadingHistory = false
-    var isAwaitingGreeting = false
     var currentAssetId: String?
     var showFormSheet = false
     var showMetadataSheet = false
@@ -60,9 +59,6 @@ final class ChatViewModel {
     
     private func setupWebSocketHandlers() {
         ws.onMessage = { [weak self] message in
-            if message.messageType == .greeting {
-                self?.isAwaitingGreeting = false
-            }
             self?.messages.append(message)
         }
         
@@ -155,7 +151,7 @@ final class ChatViewModel {
                     "\(firstName), filed and processed! You make this look easy. Ready when you are.",
                     "\(firstName), boom — done! I'll just be here, staring at the upload button, waiting for you."
                 ]
-                let message = phrases.randomElement()!
+                let message = phrases.randomElement()! + "\n\nRemember you can #Slack the clip from here."
                 let followUp = ChatMessage(
                     id: UUID().uuidString,
                     userId: nil,
@@ -467,9 +463,8 @@ final class ChatViewModel {
     
     func connectWebSocket() {
         guard let token = auth.token else { return }
-        // Fresh conversation — clear old messages, show typing indicator
+        // Fresh conversation — clear old messages
         messages.removeAll()
-        isAwaitingGreeting = true
         ws.connect(token: token)
     }
     
@@ -526,14 +521,14 @@ final class ChatViewModel {
     func confirmStagedUpload() async {
         guard let staged = stagedVideo else { return }
         
-        // Clear staged preview immediately — save thumbnail + metadata for form & sent card
+        // Save thumbnail + metadata for form & sent card
         let fileURL = staged.tempFileURL
         let fileName = staged.fileName
         let metadata = staged.metadata
         formThumbnail = staged.thumbnail
         lastStagedCreatedDate = staged.createdDate
         lastStagedHasLocation = metadata.gpsLat != nil
-        stagedVideo = nil
+        stagedVideo = nil  // Clear immediately — SentUploadBubble takes over
         
         // Create asset on server
         if let asset = await createAsset(fileName: fileName, fileURL: fileURL) {
