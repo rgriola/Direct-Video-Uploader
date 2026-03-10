@@ -176,10 +176,7 @@ final class ChatViewModel {
     private func setupConnectionHandlers() {
         ws.onReconnecting = { [weak self] attempt, maxAttempts in
             guard let self else { return }
-            // Only show a bubble on the first reconnect attempt (avoid spam)
-            if attempt == 1 {
-                self.appendErrorBubble("⚠️ Connection lost. Reconnecting...")
-            }
+            // Connection state is reflected in ChatHeaderView (Ready / Working / Trying to connect)
             // Report to server DB (best-effort — may fail if offline)
             Task {
                 await self.reportError(
@@ -192,7 +189,7 @@ final class ChatViewModel {
         
         ws.onConnectionLost = { [weak self] in
             guard let self else { return }
-            self.appendErrorBubble("🔴 Connection lost. Please check your network and restart the app.")
+            // Connection state is reflected in ChatHeaderView (red dot + "Trying to connect...")
             Task {
                 await self.reportError(
                     category: "websocket",
@@ -602,8 +599,6 @@ final class ChatViewModel {
         }
         formFields = buildFormFields()
         showFormSheet = true
-        
-        appendErrorBubble("📋 You have a pending form to fill out.")
     }
     
     /// Build the standard form fields (used for both live and recovery).

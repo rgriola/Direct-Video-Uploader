@@ -47,7 +47,7 @@ function killPort(port) {
 
 function runSync(cmd, cwd) {
     try {
-        const output = execSync(cmd, { cwd, encoding: 'utf8', stdio: 'pipe', timeout: 30000 });
+        const output = execSync(cmd, { cwd, encoding: 'utf8', stdio: 'pipe', timeout: 90000 });
         return { ok: true, output };
     } catch (err) {
         return { ok: false, output: err.stderr || err.stdout || err.message };
@@ -126,9 +126,13 @@ function createServerFilter() {
         const stripped = line.replace(/\x1b\[[0-9;]*m/g, '').trim();
         if (!stripped) return;
 
-        // Condense errors — show just the message, skip stack frames
+        // Show stderr during startup, then suppress routine noise
         if (stream === 'stderr') {
             errorCount++;
+            // Always show non-empty stderr so startup errors aren't hidden
+            if (stripped && !stackLine.test(stripped) && !transientError.test(stripped)) {
+                emit(`${C.red}${stripped}${C.reset}`);
+            }
             return;
         }
 
@@ -204,20 +208,34 @@ async function main() {
 
     // ─ Step 1: Kill existing processes ────────────────────
     logTri('Cleaning up existing processes...');
+    let killed = false;
+    // Kill by port
     const k3 = killPort(3000);
     const k5 = killPort(5173);
-    if (k3) logSrv('Killed existing process on :3000');
-    if (k5) logAdm('Killed existing process on :5173');
-    if (!k3 && !k5) logTri('No stale processes found');
-    await sleep(1000);
+    if (k3) { logSrv('Killed existing process on :3000'); killed = true; }
+    if (k5) { logAdm('Killed existing process on :5173'); killed = true; }
+    // Kill by name — catches orphaned processes not yet bound to a port
+    try {
+        execSync('pkill -f "node src/index.js" 2>/dev/null');
+        killed = true;
+    } catch { /* none found */ }
+    try {
+        execSync('pkill -f "vite.*admin" 2>/dev/null');
+        killed = true;
+    } catch { /* none found */ }
+    if (!killed) logTri('No stale processes found');
+    await sleep(killed ? 2000 : 500);
 
     // ─ Step 2: Start PostgreSQL via Prisma ────────────────
-    logDB('Starting PostgreSQL (prisma dev --detach)...');
-    const dbResult = runSync('npx prisma dev --detach', SERVER_DIR);
+    logDB('Checking Homebrew PostgreSQL...');
+    // Use brew --prefix to find pg_isready regardless of PG version
+    const pgBin = runSync('brew --prefix postgresql@16', ROOT);
+    const pgIsReady = pgBin.ok ? `${pgBin.output.trim()}/bin/pg_isready` : 'pg_isready';
+    const dbResult = runSync(`${pgIsReady} -h localhost -p 5432`, ROOT);
     if (dbResult.ok) {
         logDB('PostgreSQL running ✅');
     } else {
-        logErr('Database failed to start — is Docker running?');
+        logErr('PostgreSQL is not running — try: brew services start postgresql@16');
         logErr(dbResult.output.trim());
         process.exit(1);
     }
@@ -260,14 +278,18 @@ async function main() {
     const serverProc = runProcess('node', ['src/index.js'], SERVER_DIR, 'SERVER', C.cyan, { filter: serverFilter });
 
     let serverReady = false;
-    for (let i = 0; i < 20; i++) {
+    for (let i = 0; i < 40; i++) {
+        if (serverProc.exitCode !== null) {
+            logErr(`Server process exited with code ${serverProc.exitCode} — check logs above`);
+            break;
+        }
         await sleep(1000);
         if (await checkPort(3000, '/api/health')) { serverReady = true; break; }
     }
     if (serverReady) {
         logSrv('Fastify running at http://localhost:3000 ✅');
-    } else {
-        logErr('Server did not become ready within 20s — check logs above');
+    } else if (serverProc.exitCode === null) {
+        logErr('Server did not become ready within 40s — check logs above');
     }
 
     // ─ Step 7: Start Vite admin dev server ────────────────

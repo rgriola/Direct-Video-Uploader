@@ -65,12 +65,6 @@ struct ChatView: View {
                                     )
                                     .id("staged-video-preview")
                                 }
-                                
-                                // Processing indicator while loading video from library
-                                if vm.isProcessingVideo {
-                                    TypingIndicatorBubble()
-                                        .id("processing-indicator")
-                                }
                             }
                         }
                         .padding(.horizontal, 12)

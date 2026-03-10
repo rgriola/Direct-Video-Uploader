@@ -1,6 +1,7 @@
 import SwiftUI
 import PhotosUI
 import Photos
+import UIKit
 
 /// Custom video library sheet with inline PhotosPicker — iOS 26.3 style.
 /// Provides Clear / Confirm toolbar buttons and a footer with selection count + location info.
@@ -12,6 +13,7 @@ struct VideoLibraryView: View {
     @State private var isLoadingMetadata = false
     @State private var pendingConfirm = false
     @State private var loadError: String?
+    @State private var showTrimSheet = false
 
     /// Called when user taps ✓ with a video selected.
     var onConfirm: (URL, String, VideoMetadata) -> Void
@@ -68,6 +70,22 @@ struct VideoLibraryView: View {
         }
         .presentationDetents([.large])
         .preferredColorScheme(.dark)
+        .fullScreenCover(isPresented: $showTrimSheet) {
+            if let url = loadedVideoURL,
+               UIVideoEditorController.canEditVideo(atPath: url.path) {
+                VideoTrimView(
+                    videoURL: url,
+                    onTrimmed: { trimmedURL in
+                        showTrimSheet = false
+                        handleTrimResult(trimmedURL: trimmedURL)
+                    },
+                    onCancel: {
+                        showTrimSheet = false
+                    }
+                )
+                .ignoresSafeArea()
+            }
+        }
     }
 
     // MARK: - Footer
@@ -130,7 +148,7 @@ struct VideoLibraryView: View {
                                 .scaleEffect(0.8)
                                 .frame(width: 80, height: 36)
                         } else {
-                            Text("Use Video")
+                            Label("Trim & Send", systemImage: "scissors")
                                 .font(.system(size: 15, weight: .semibold))
                                 .foregroundStyle(.white)
                                 .padding(.horizontal, 16)
@@ -156,17 +174,31 @@ struct VideoLibraryView: View {
     private func handleConfirm() {
         if selectedItems.isEmpty {
             onDismiss()
-        } else if let url = loadedVideoURL, let metadata = loadedMetadata {
-            let fileName = loadedFileName ?? url.lastPathComponent
-            onConfirm(url, fileName, metadata)
+        } else if loadedVideoURL != nil, loadedMetadata != nil {
+            // Check if video can be trimmed — present editor if yes, skip straight to upload if no
+            if UIVideoEditorController.canEditVideo(atPath: loadedVideoURL!.path) {
+                showTrimSheet = true
+            } else {
+                // Can't be edited (unsupported format) — upload original
+                let fileName = loadedFileName ?? loadedVideoURL!.lastPathComponent
+                onConfirm(loadedVideoURL!, fileName, loadedMetadata!)
+            }
         } else if isLoadingMetadata || loadedVideoURL == nil {
-            // Video still loading or load failed — set pending so it auto-confirms when ready
             pendingConfirm = true
-            // If not currently loading, retry the load
             if !isLoadingMetadata, let item = selectedItems.first {
                 loadError = nil
                 handleSelectionChange([item])
             }
+        }
+    }
+    
+    /// Handle result from the video trim editor.
+    private func handleTrimResult(trimmedURL: URL) {
+        let fileName = loadedFileName ?? loadedVideoURL?.lastPathComponent ?? trimmedURL.lastPathComponent
+        // Re-extract metadata from trimmed file (duration/fileSize changed)
+        Task {
+            let updatedMetadata = await VideoMetadataExtractor.extract(from: trimmedURL)
+            onConfirm(trimmedURL, fileName, updatedMetadata)
         }
     }
 
