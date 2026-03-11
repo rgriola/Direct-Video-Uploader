@@ -3,7 +3,7 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 77;
+	objectVersion = 63;
 	objects = {
 
 /* Begin PBXBuildFile section */
@@ -68,7 +68,7 @@
 		EA58877C26F0C09FF7DFA4DC /* VideoUploadService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoUploadService.swift; sourceTree = "<group>"; };
 		EF5B8A623A0F5AA9CA07EA1A /* InputBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InputBar.swift; sourceTree = "<group>"; };
 		F1FF094BA3F6CC3D1003E121 /* ChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatView.swift; sourceTree = "<group>"; };
-		FF11D8E240B8AF1F2DFFB68B /* DirectVideoUploader.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = DirectVideoUploader.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		FF11D8E240B8AF1F2DFFB68B /* DirectVideoUploader.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = DirectVideoUploader.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -227,7 +227,6 @@
 				LastUpgradeCheck = 1600;
 				TargetAttributes = {
 					49FA393813097910E5C66B21 = {
-						DevelopmentTeam = LW5P4PVL96;
 						ProvisioningStyle = Automatic;
 					};
 				};
@@ -242,7 +241,6 @@
 			);
 			mainGroup = 3366E68B20E69DE20BB15FCB;
 			minimizedProjectReferenceProxies = 1;
-			preferredProjectObjectVersion = 77;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
@@ -373,8 +371,10 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "Apple Development";
+				DEVELOPMENT_TEAM = LW5P4PVL96;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = Fixer;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.entertainment";
 				INFOPLIST_KEY_NSAppTransportSecurity_AllowsArbitraryLoads = YES;
 				INFOPLIST_KEY_NSCameraUsageDescription = "Record video to upload to the newsroom server.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Attach GPS coordinates to your video upload.";
@@ -399,8 +399,10 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "Apple Development";
+				DEVELOPMENT_TEAM = LW5P4PVL96;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = Fixer;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.entertainment";
 				INFOPLIST_KEY_NSAppTransportSecurity_AllowsArbitraryLoads = YES;
 				INFOPLIST_KEY_NSCameraUsageDescription = "Record video to upload to the newsroom server.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Attach GPS coordinates to your video upload.";

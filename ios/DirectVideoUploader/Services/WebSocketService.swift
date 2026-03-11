@@ -58,6 +58,9 @@ final class WebSocketService {
     private var pingWatchdog: Task<Void, Never>?
     private let pingWatchdogInterval: TimeInterval = 45
     
+    // Active connect/reconnect task — cancelled on disconnect to stop stale loops
+    private var connectTask: Task<Void, Never>?
+    
     // MARK: - Connect
     
     func connect(token: String) {
@@ -73,10 +76,11 @@ final class WebSocketService {
         print("🔌 [WS] Connecting to: \(ServerConfig.wsURL.absoluteString)")
         
         // Step 1: Socket.IO handshake via HTTP polling to get session ID
-        Task { @MainActor in
+        connectTask = Task { @MainActor in
             do {
                 try await performHandshake(token: token)
             } catch {
+                guard !Task.isCancelled else { return }
                 print("❌ [WS] Handshake failed:", error)
                 state = .disconnected
                 // Attempt reconnect on handshake failure too
@@ -91,6 +95,7 @@ final class WebSocketService {
                 print("🔄 [WS] Reconnect attempt \(reconnectAttempt)/\(maxReconnectAttempts) in \(delay)s")
                 onReconnecting?(reconnectAttempt, maxReconnectAttempts)
                 try? await Task.sleep(for: .seconds(delay))
+                guard !Task.isCancelled else { return }
                 isReconnecting = false
                 connect(token: token)
             }
@@ -495,7 +500,10 @@ final class WebSocketService {
     // MARK: - Disconnect
     
     func disconnect() {
+        connectTask?.cancel()
+        connectTask = nil
         reconnectAttempt = maxReconnectAttempts + 1  // Prevent auto-reconnect
+        isReconnecting = false
         stopNetworkMonitor()
         stopPingWatchdog() // C1
         cleanupConnection()

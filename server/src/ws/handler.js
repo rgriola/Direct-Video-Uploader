@@ -171,12 +171,18 @@ export function setupWebSocket(io, fastify) {
     fastify.decorate('iosSockets', iosSockets);
     fastify.decorate('adminSockets', adminSockets);
 
+    // Log Engine.IO-level connection errors (upgrade failures, transport issues)
+    io.engine.on('connection_error', (err) => {
+        console.error('🔌 [Engine.IO] Connection error:', err.message, err.context || '');
+    });
+
     io.use(async (socket, next) => {
         try {
             const token = socket.handshake.auth?.token
                 || socket.handshake.headers?.authorization?.replace('Bearer ', '');
 
             if (!token) {
+                console.warn('🔐 [WS Auth] No token provided — rejecting connection');
                 return next(new Error('Authentication required'));
             }
 
@@ -187,6 +193,7 @@ export function setupWebSocket(io, fastify) {
             socket.phoneNumber = decoded.phoneNumber;
             next();
         } catch (err) {
+            console.warn(`🔐 [WS Auth] Token verification failed: ${err.message}`);
             next(new Error('Invalid token'));
         }
     });
@@ -213,7 +220,7 @@ export function setupWebSocket(io, fastify) {
         connectedUsers.add(userId);
 
         if (clientType === 'ios') {
-            console.log(`✅ IOS connected: ${socket.userName} — iOS: ${iosSockets.size}`);
+            console.log(`✅ iOS connected: ${socket.userName} (userId=${userId}) — iOS clients: ${iosSockets.size}`);
 
             // Always send greeting — each app open = fresh conversation
             const greetingText = getGreeting(socket.userName);

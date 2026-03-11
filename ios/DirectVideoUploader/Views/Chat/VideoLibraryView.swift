@@ -71,10 +71,10 @@ struct VideoLibraryView: View {
         .presentationDetents([.large])
         .preferredColorScheme(.dark)
         .fullScreenCover(isPresented: $showTrimSheet) {
-            if let url = loadedVideoURL,
-               UIVideoEditorController.canEditVideo(atPath: url.path) {
+            if let url = loadedVideoURL {
                 VideoTrimView(
                     videoURL: url,
+                    originalFileName: loadedFileName ?? url.lastPathComponent,
                     onTrimmed: { trimmedURL in
                         showTrimSheet = false
                         handleTrimResult(trimmedURL: trimmedURL)
@@ -175,14 +175,7 @@ struct VideoLibraryView: View {
         if selectedItems.isEmpty {
             onDismiss()
         } else if loadedVideoURL != nil, loadedMetadata != nil {
-            // Check if video can be trimmed — present editor if yes, skip straight to upload if no
-            if UIVideoEditorController.canEditVideo(atPath: loadedVideoURL!.path) {
-                showTrimSheet = true
-            } else {
-                // Can't be edited (unsupported format) — upload original
-                let fileName = loadedFileName ?? loadedVideoURL!.lastPathComponent
-                onConfirm(loadedVideoURL!, fileName, loadedMetadata!)
-            }
+            showTrimSheet = true
         } else if isLoadingMetadata || loadedVideoURL == nil {
             pendingConfirm = true
             if !isLoadingMetadata, let item = selectedItems.first {
@@ -194,7 +187,8 @@ struct VideoLibraryView: View {
     
     /// Handle result from the video trim editor.
     private func handleTrimResult(trimmedURL: URL) {
-        let fileName = loadedFileName ?? loadedVideoURL?.lastPathComponent ?? trimmedURL.lastPathComponent
+        // Use the trimmed file's name (includes -edited suffix if trimmed)
+        let fileName = trimmedURL.lastPathComponent
         // Re-extract metadata from trimmed file (duration/fileSize changed)
         Task {
             let updatedMetadata = await VideoMetadataExtractor.extract(from: trimmedURL)

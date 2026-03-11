@@ -179,7 +179,7 @@ cd ios && xcodegen generate && xcodebuild -project DirectVideoUploader.xcodeproj
 
 **Features Added (Mar 10 — Session):**
 
-- **Clip viewer CSP fix** — Helmet's default Content-Security-Policy in production was blocking the mux-player CDN script (`script-src 'self'` rejects `cdn.jsdelivr.net`). The `<mux-player>` element silently failed to register, rendering nothing. Fixed by configuring explicit CSP directives allowing jsdelivr (scripts), stream.mux.com (media), image.mux.com (thumbnails), and *.litix.io (Mux Data analytics).
+- **Clip viewer CSP fix** — Helmet's default Content-Security-Policy in production was blocking the mux-player CDN script (`script-src 'self'` rejects `cdn.jsdelivr.net`). The `<mux-player>` element silently failed to register, rendering nothing. Fixed by configuring explicit CSP directives allowing jsdelivr (scripts), stream.mux.com (media), image.mux.com (thumbnails), and \*.litix.io (Mux Data analytics).
 - **Removed dead `<video>` fallback** — Clip viewer had a three-way conditional: mux-player → `<video>` → "not yet available". Since all clips now use Mux, the `<video>` fallback was dead code. Simplified to mux-player or "not yet available".
 - **Slack confirmation card redesign** — `MessageBubble.swift` Slack confirmation bubble redesigned with structured card layout: green accent bar, thumbnail with green stroke, channel/mention badges, clip link, and action buttons. Outgoing Slack messages simplified to plain "Sending to Slack…" indicator.
 - **WebSocket handler** — `userName` and `slug` now included in Slack confirmation message content for richer iOS display.

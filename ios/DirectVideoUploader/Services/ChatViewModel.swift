@@ -465,6 +465,8 @@ final class ChatViewModel {
         guard let token = auth.token else { return }
         // Fresh conversation — clear old messages
         messages.removeAll()
+        // Tear down any existing connection/reconnect loop before connecting with fresh token
+        ws.disconnect()
         ws.connect(token: token)
     }
     
