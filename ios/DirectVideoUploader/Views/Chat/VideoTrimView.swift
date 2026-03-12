@@ -25,6 +25,9 @@ struct VideoTrimView: View {
             VStack(spacing: 0) {
                 // Toolbar
                 trimToolbar
+                    .padding(.top, 50)
+
+                Spacer().frame(height: 200)
 
                 // Video preview
                 PlayerView(player: vm.player)
@@ -43,7 +46,7 @@ struct VideoTrimView: View {
                 TrimScrubberView(vm: vm)
                     .frame(height: 60)
                     .padding(.horizontal, 16)
-                    .padding(.bottom, 24)
+                    .padding(.bottom, 74)
             }
 
             // Export overlay
@@ -82,7 +85,7 @@ struct VideoTrimView: View {
 
             Spacer()
 
-            Button("Done") {
+            Button("Choose") {
                 handleExport()
             }
             .foregroundStyle(Theme.yellow)

@@ -455,3 +455,46 @@ Fun Follow-Up (post-confirmation) - this message should close the conversation f
 **_ Instructions _**
 
 - what would be the plan to impliment this? I have tried to think how to cleanly start new uploads. Do not code.
+
+... Mar 10 2026
+
+**_ Issue _**
+
+- Clip Viewer shows Media Error Media Failed to Decode.
+  **_ Context _**
+- Mobile Browser Both Chrome and Safari shows Media Error Media Failed to Decode.
+- Video uploaded through iOS app to Mux. Video does play on Mux.
+- See attached PNG.
+- We just worked on this >>> The actual bug: Helmet's default CSP in production was blocking the mux-player CDN script. In index.js:69-72:
+
+Dev: CSP disabled (false) → page works
+Production: CSP was undefined (Helmet defaults) → script-src 'self' silently blocks the jsdelivr CDN <script>, so the <mux-player> custom element never registers and renders as nothing
+Changes made:
+
+index.js:69-82 — Configured a proper CSP that whitelists cdn.jsdelivr.net (for the player script), stream.mux.com (for HLS media), image.mux.com (for thumbnails), \*.litix.io (for Mux Data analytics), and 'unsafe-inline' (for the copyLink script)
+
+clips.js:425-435 — Removed the dead <video> fallback and its unused videoURL/hasVideo variables + CSS. Now it's just: mux-player or "not yet available"
+
+**_ Instrcutions _**
+
+- Trouble shoot the issue.
+
+We just fixed, or tried to fix, and issue with the clip viewer. The attached png shows and playback error. \*\*\* contect
+
+....
+
+Fixer is a video upload app for Mediasource. Problem: Staff uses two methods to upload video, shot on iPhone from their phone: Slack and NewsCloud.
+
+- Using Slack had 2 main issues:
+
+1.  Video is degraded by Slack upload process.
+2.  This introduces a MANUAL 4 step process to put video on Mediasoure: Video upload to Slack, Media Manager Downloads from Slack, Media Manager Uploads to Mediasource, Fills out slug form.
+    > > Does Well - Always available, it is used becauase the user is never logged out of Slack. All editoral communication happens on Slack, alerts, meta all on Slack. Using Newscloud takes staff out of that Channel.
+
+- Using Newscloud has several issues
+
+1.  login process is 3 steps - low use awareness of app.
+2.  Allows slug/and or video to be submitted without required fields - fails silently.an aware media manager either gets a notice or lucks out to see the error, but user is not clearly notifed. Forces refeed - repeating feed steps.
+3.  No Slack integration, User waits for MS Number before moving over to slack to send out MS number.
+
+It features: lossless video upload is to provide lossless video uploads to Mediasource

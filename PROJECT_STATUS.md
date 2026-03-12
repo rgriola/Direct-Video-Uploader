@@ -1,8 +1,8 @@
 # Direct Video Uploader — Project Status
 
-> **Last Updated:** March 10, 2026 · MST
+> **Last Updated:** March 10, 2026 (evening) · MST
 > **Current Phase:** Phase 3 (Render + Cloud + Mux) — Mux pipeline fully operational + Stability Phases A–C complete + Upload simplified
-> **Overall Progress:** ████████████████████ 100% (Phase 2) · Phase 3 ~92%
+> **Overall Progress:** ████████████████████ 100% (Phase 2) · Phase 3 ~93%
 
 ---
 
@@ -176,13 +176,17 @@ cd ios && xcodegen generate && xcodebuild -project DirectVideoUploader.xcodeproj
 | TestFlight build                   | 🔲 Not started     | For demo distribution                                  |
 | Xcode automatic code signing       | ✅ Done            | Team `LW5P4PVL96`, auto signing in project.yml         |
 | Centralized Theme + Formatting     | ✅ Done            | Theme.swift, DVUDateFormatting.swift, UserDefaultsKeys |
+| Video trim (pre-upload)            | ✅ Done            | UIVideoEditorController via modal host VC, .typeHigh   |
 
 **Features Added (Mar 10 — Session):**
 
-- **Clip viewer CSP fix** — Helmet's default Content-Security-Policy in production was blocking the mux-player CDN script (`script-src 'self'` rejects `cdn.jsdelivr.net`). The `<mux-player>` element silently failed to register, rendering nothing. Fixed by configuring explicit CSP directives allowing jsdelivr (scripts), stream.mux.com (media), image.mux.com (thumbnails), and \*.litix.io (Mux Data analytics).
-- **Removed dead `<video>` fallback** — Clip viewer had a three-way conditional: mux-player → `<video>` → "not yet available". Since all clips now use Mux, the `<video>` fallback was dead code. Simplified to mux-player or "not yet available".
+- **Clip viewer CSP fix (3 rounds)** — Helmet's default Content-Security-Policy in production was blocking the mux-player CDN script (`script-src 'self'` rejects `cdn.jsdelivr.net`). Fixed with explicit CSP directives allowing jsdelivr (scripts), stream.mux.com (media), image.mux.com (thumbnails), \*.litix.io (Mux Data analytics). Second round: CORP set to `cross-origin`, COEP disabled. Third round: added `*.edgemv.mux.com` for multi-level subdomain HLS segments. Commits: `57fcb9e`, `0beba37`, `18f0ef4`.
+- **Removed dead `<video>` fallback** — Clip viewer simplified to mux-player or "not yet available" (removed dead `<video>` path).
 - **Slack confirmation card redesign** — `MessageBubble.swift` Slack confirmation bubble redesigned with structured card layout: green accent bar, thumbnail with green stroke, channel/mention badges, clip link, and action buttons. Outgoing Slack messages simplified to plain "Sending to Slack…" indicator.
 - **WebSocket handler** — `userName` and `slug` now included in Slack confirmation message content for richer iOS display.
+- **Video trim (UIVideoEditorController)** — `VideoTrimView.swift` rewritten with `VideoEditorHostController` that presents `UIVideoEditorController` modally via `present(_:animated:)`. Previous approach embedding UIVideoEditorController as direct `UIViewControllerRepresentable` crashed (it's a UINavigationController subclass that must be presented modally). Uses `.typeHigh` quality setting.
+- **WebSocket auth logging** — Server `handler.js` now logs auth rejections (no token, invalid token) and Engine.IO `connection_error` events. Previously auth failures were completely silent in Render logs.
+- **iOS WebSocket reconnect fix** — `connect(token:)` guard was blocking fresh tokens while `isReconnecting == true`. Fixed: `connectWebSocket()` now calls `disconnect()` first (which cancels the reconnect `Task`, resets `isReconnecting`), then connects with the fresh token. Commit: `6e92dc2`.
 
 **Features Added (Mar 9 — Session):**
 
@@ -335,6 +339,8 @@ Render is the preview environment (stand-in for eventual company production syst
 | TestFlight build         | ⚠️ Needs rebuild | Production URL changed to `rodgriola.com`. New archive + upload to App Store Connect needed.                                                |
 | Admin UI (expanded)      | ⚠️ Partial       | React dashboard running; needs asset detail, log persistence                                                                                |
 | Stability (Phases A–C)   | ✅ Done          | WS reliability, upload resilience, security hardening. See `STABILITY_PLAN.md`.                                                             |
+| WS auth logging          | ✅ Done          | Server logs auth rejections + Engine.IO connection errors. Commit `6e92dc2`.                                                                |
+| iOS WS reconnect fix     | ✅ Done          | `disconnect()` cancels reconnect Task; `connectWebSocket()` disconnects before fresh connect. Commit `6e92dc2`.                             |
 | Idempotent Mux upload    | ✅ Done          | Duplicate clip prevention on retry/reconnect. Commit `3fbb632`.                                                                             |
 | Upload recovery prompt   | ✅ Done          | iOS prompts user to resume or discard interrupted uploads on relaunch.                                                                      |
 | Form state persistence   | ✅ Done          | `PendingForm` persisted to disk; restored on relaunch if form not yet submitted.                                                            |
@@ -394,23 +400,23 @@ A profile screen accessible from the chat header. Houses personal info, credenti
 
 ## Tech Stack (Current)
 
-| Layer                | Technology                                   | Status            |
-| -------------------- | -------------------------------------------- | ----------------- |
-| **Server**           | Node.js + Fastify                            | ✅ Running        |
-| **WebSocket**        | Socket.IO                                    | ✅ Running        |
-| **Database**         | PostgreSQL (Prisma 7)                        | ✅ Running        |
-| **ORM**              | Prisma (pg adapter)                          | ✅ Running        |
-| **Auth**             | JWT (@fastify/jwt)                           | ✅ Running        |
-| **Dashboard**        | React 19 + Vite 6 + TypeScript + Tailwind v4 | ✅ Running        |
-| **Chat Demo**        | Vanilla HTML/CSS/JS                          | ✅ Complete       |
-| **iOS App**          | SwiftUI + `URLSessionWebSocketTask`          | ✅ Core complete  |
-| **Web Viewer**       | Server-rendered HTML at `/clips/:slug`       | ✅ Working        |
-| **Video Service**    | Mux (direct upload + HLS playback)           | ✅ Integrated     |
-| **Storage**          | Cloudflare R2 or Backblaze B2 (planned)      | 🔲 Not started    |
-| **Hosting (Server)** | Render (rodgriola.com)                       | ✅ Live           |
-| **Hosting (Web)**    | Vercel (planned)                             | 🔲 Not started    |
-| **Slack**            | Incoming Webhooks (planned)                  | 🔲 Simulated only |
-| **Stability**        | STABILITY_PLAN.md Phases A–C                 | ✅ Complete       |
+| Layer                | Technology                                   | Status           |
+| -------------------- | -------------------------------------------- | ---------------- |
+| **Server**           | Node.js + Fastify                            | ✅ Running       |
+| **WebSocket**        | Socket.IO                                    | ✅ Running       |
+| **Database**         | PostgreSQL (Prisma 7)                        | ✅ Running       |
+| **ORM**              | Prisma (pg adapter)                          | ✅ Running       |
+| **Auth**             | JWT (@fastify/jwt)                           | ✅ Running       |
+| **Dashboard**        | React 19 + Vite 6 + TypeScript + Tailwind v4 | ✅ Running       |
+| **Chat Demo**        | Vanilla HTML/CSS/JS                          | ✅ Complete      |
+| **iOS App**          | SwiftUI + `URLSessionWebSocketTask`          | ✅ Core complete |
+| **Web Viewer**       | Server-rendered HTML at `/clips/:slug`       | ✅ Working       |
+| **Video Service**    | Mux (direct upload + HLS playback)           | ✅ Integrated    |
+| **Storage**          | Cloudflare R2 or Backblaze B2 (planned)      | 🔲 Not started   |
+| **Hosting (Server)** | Render (rodgriola.com)                       | ✅ Live          |
+| **Hosting (Web)**    | Vercel (planned)                             | 🔲 Not started   |
+| **Slack**            | Bot API (`fixer-video` in Sea Lion Media)    | ✅ Integrated    |
+| **Stability**        | STABILITY_PLAN.md Phases A–C                 | ✅ Complete      |
 
 ---
 
@@ -488,67 +494,72 @@ Direct-Video-Uploader/
 
 ## Decision Log
 
-| Date   | Decision                             | Rationale                                                                                   |
-| ------ | ------------------------------------ | ------------------------------------------------------------------------------------------- |
-| Feb 28 | Pivot from MMS to Direct Upload      | MMS caps at 3.5 MB; direct upload gives full resolution + richer UX                         |
-| Mar 1  | "App IS a text conversation"         | Simplest mental model for field crew; reduces training friction                             |
-| Mar 1  | Mediasource Fixer branding           | Familiar identity for newsroom users                                                        |
-| Mar 2  | WebSocket (Socket.IO)                | Real-time bidirectional messaging; no polling overhead                                      |
-| Mar 2  | Fastify over Express                 | Faster, better plugin system, async-first                                                   |
-| Mar 2  | Prisma 7 with pg adapter             | Type-safe ORM, great migrations, Prisma 7 requires driver adapters                          |
-| Mar 2  | Render for hosting                   | WebSocket support, managed PostgreSQL, persistent services (vs Vercel serverless)           |
-| Mar 2  | Simple auth (Phone# + PIN)           | Demo-appropriate; no SMS verification overhead                                              |
-| Mar 2  | Local file uploads (demo)            | Production will use R2/B2; no cloud setup needed for Phase 1                                |
-| Mar 2  | Mock metadata (demo)                 | Production will use ffprobe; keeps Phase 1 simple                                           |
-| Mar 2  | Native WS over Socket.IO Swift       | `URLSessionWebSocketTask` with manual Socket.IO protocol framing; no third-party dependency |
-| Mar 2  | `127.0.0.1` not `localhost`          | iOS Simulator resolves `localhost` to IPv6 `::1`; Node server binds IPv4 only               |
-| Mar 2  | Copilot instructions file            | Moved from `agent-guide.md` to `.github/copilot-instructions.md` (auto-loaded)              |
-| Mar 2  | DB pool size 5 → 20                  | Concurrent dashboard + WS queries exhausted small pool, causing 5s timeouts                 |
-| Mar 2  | `PhotosPicker` not `PHPicker`        | SwiftUI-native picker avoids UIKit bridging; `.videos` filter, `Transferable` protocol      |
-| Mar 2  | Stream multipart to temp file        | `VideoUploadService` writes multipart body to disk in 1MB chunks — avoids memory pressure   |
-| Mar 2  | Codable fields must be optional      | Server responses vary by endpoint; non-optional fields cause silent `JSONDecoder` failures  |
-| Mar 3  | React admin dashboard                | Replaced vanilla HTML with React 19 + Vite 6 + TypeScript + Tailwind v4 + TanStack Query    |
-| Mar 3  | Triad launcher (`scripts/dev.js`)    | Single `npm run dev` command orchestrates DB + Server + Admin with smart log filtering      |
-| Mar 3  | Live-only dashboard                  | Removed all simulated actions; dashboard shows only real data with neutral fallback states  |
-| Mar 3  | WS client type tracking              | Socket.IO connections tagged as `ios` or `admin`; enables accurate triad status reporting   |
-| Mar 3  | Remove client-side WS ping           | Engine.IO 4 uses server-initiated pings; client ping timer caused 25s disconnect loop       |
-| Mar 3  | `io.of('/').sockets.size` metric     | Replaced `engine.clientsCount` — gives accurate authenticated socket count, not transports  |
-| Mar 3  | Admin uses Admin User credentials    | Dashboard auto-logins as Admin User (`8001234567`) not David Burgess                        |
-| Mar 3  | Stale asset cleanup endpoint         | `POST /api/admin/cleanup-assets` — Prisma ORM delete of stuck UPLOADING assets              |
-| Mar 3  | Real file size in WS event           | iOS `FileManager.attributesOfItem` gets actual bytes before `sendVideoUpload`               |
-| Mar 3  | Server response intelligence         | Time-of-day greeting, debounce (3s window), personalization, fires once per session         |
-| Mar 3  | Remove auto-Slack post               | Replaced with explicit "Post to Slack" button — user controls when Slack is notified        |
-| Mar 3  | Real metadata via AVAsset            | iOS extracts duration, resolution, codec, GPS, device info natively — no ffprobe needed     |
-| Mar 3  | iOS form restructuring               | Read-only metadata fields above editable fields; MetadataView wired to show extracted data  |
-| Mar 3  | Web clip viewer (server-rendered)    | `GET /clips/:slug` — dark theme, metadata grid, video player, no auth required              |
-| Mar 3  | Separate Prisma queries              | `findFirst` with `include` times out in Prisma 7 + pg adapter — split into sequential calls |
-| Mar 3  | `wildcard: false` on static          | `@fastify/static` was intercepting dynamic routes; fixed with wildcard option               |
-| Mar 3  | Admin links to clip viewer           | Asset list rows are `<a href="/clips/:slug">` opening in new tab                            |
-| Mar 3  | Git repo initialized                 | `.gitignore` (68 files committed), reference/design files excluded                          |
-| Mar 3  | Full 25-issue security/perf audit    | See `TODO.md` — 20 of 25 fixed. Covers auth, XSS, JWT, WS leaks, DB indexes, dead code      |
-| Mar 3  | Random JWT secret fallback           | `crypto.randomBytes(64)` when `JWT_SECRET` not set — warns in console                       |
-| Mar 3  | Admin route auth hardening           | All 7 admin routes now require JWT `preHandler`                                             |
-| Mar 3  | XSS escaping in clip viewer          | `escapeHtml()` on all user-controlled interpolations                                        |
-| Mar 3  | WS exponential backoff               | Max 10 retries, delay doubles each attempt (3s → 60s cap)                                   |
-| Mar 3  | URLSession leak fix                  | `invalidateAndCancel()` on reconnect + cleanup                                              |
-| Mar 3  | Upload handler DB optimization       | Merged 6 sequential queries → 3 (clip create with metadata, single asset update)            |
-| Mar 3  | DB indexes on FK columns             | `@@index` on `assets.userId`, `clips.assetId`, `chat_messages.userId`                       |
-| Mar 3  | Dead code removal                    | Removed `slack:post` handler, `greeting` handler, `sendFormSubmit`, `sendSlackPost`         |
-| Mar 3  | Selective dashboard invalidation     | `refreshDashboard(eventType)` invalidates only relevant query keys per socket event         |
-| Mar 4  | Client error logging to DB           | `POST /api/errors` persists iOS errors to `client_errors` table; `reportError()` utility    |
-| Mar 4  | View + Metadata buttons on High Five | Confirmation bubble has green View (opens clip) and blue Metadata (opens sheet) buttons     |
-| Mar 4  | View button URL string interpolation | `appendingPathComponent` percent-encodes slashes; switched to `URL(string:)` interpolation  |
-| Mar 4  | Random follow-up phrases (10)        | 1s after High Five, random `.greeting` bubble from 10 funny phrases using `randomElement()` |
-| Mar 4  | Bottom tab bar (Chat \| Archive)     | `TabView` in `ContentView`; Archive fetches `GET /api/assets/mine` with expandable rows     |
-| Mar 4  | `FormResponse` model on Asset        | Codable struct for form response data; `Asset.formResponse` optional field for archive rows |
-| Mar 4  | Render = preview environment         | Render deployment is a stand-in for company production; TestFlight couples with live stack  |
-| Mar 4  | `render.yaml` Blueprint              | Defines web service + PostgreSQL DB; auto-deploys from GitHub `main` branch                 |
-| Mar 4  | `render-build.sh` script             | Build: install deps, build admin, generate Prisma, push schema, seed DB — all in one        |
-| Mar 4  | SSL-aware pg Pool                    | `ssl: { rejectUnauthorized: false }` when `NODE_ENV=production` (Render managed PG)         |
-| Mar 4  | Conditional pino-pretty              | Pretty logs in dev, raw JSON in production (Render captures structured logs)                |
-| Mar 4  | `trustProxy` in production           | Fastify trusts Render's reverse proxy for correct client IP headers                         |
-| Mar 4  | `url(for:)` string interpolation     | ServerConfig.url(for:) switched from `appendingPathComponent` to `URL(string:)` for safety  |
-| Mar 4  | `.env.example` for documentation     | Template with all env vars (DB, auth, Slack, Mux, R2) — gitignored `.env` stays local       |
+| Date   | Decision                             | Rationale                                                                                                                                                                   |
+| ------ | ------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Feb 28 | Pivot from MMS to Direct Upload      | MMS caps at 3.5 MB; direct upload gives full resolution + richer UX                                                                                                         |
+| Mar 1  | "App IS a text conversation"         | Simplest mental model for field crew; reduces training friction                                                                                                             |
+| Mar 1  | Mediasource Fixer branding           | Familiar identity for newsroom users                                                                                                                                        |
+| Mar 2  | WebSocket (Socket.IO)                | Real-time bidirectional messaging; no polling overhead                                                                                                                      |
+| Mar 2  | Fastify over Express                 | Faster, better plugin system, async-first                                                                                                                                   |
+| Mar 2  | Prisma 7 with pg adapter             | Type-safe ORM, great migrations, Prisma 7 requires driver adapters                                                                                                          |
+| Mar 2  | Render for hosting                   | WebSocket support, managed PostgreSQL, persistent services (vs Vercel serverless)                                                                                           |
+| Mar 2  | Simple auth (Phone# + PIN)           | Demo-appropriate; no SMS verification overhead                                                                                                                              |
+| Mar 2  | Local file uploads (demo)            | Production will use R2/B2; no cloud setup needed for Phase 1                                                                                                                |
+| Mar 2  | Mock metadata (demo)                 | Production will use ffprobe; keeps Phase 1 simple                                                                                                                           |
+| Mar 2  | Native WS over Socket.IO Swift       | `URLSessionWebSocketTask` with manual Socket.IO protocol framing; no third-party dependency                                                                                 |
+| Mar 2  | `127.0.0.1` not `localhost`          | iOS Simulator resolves `localhost` to IPv6 `::1`; Node server binds IPv4 only                                                                                               |
+| Mar 2  | Copilot instructions file            | Moved from `agent-guide.md` to `.github/copilot-instructions.md` (auto-loaded)                                                                                              |
+| Mar 2  | DB pool size 5 → 20                  | Concurrent dashboard + WS queries exhausted small pool, causing 5s timeouts                                                                                                 |
+| Mar 2  | `PhotosPicker` not `PHPicker`        | SwiftUI-native picker avoids UIKit bridging; `.videos` filter, `Transferable` protocol                                                                                      |
+| Mar 2  | Stream multipart to temp file        | `VideoUploadService` writes multipart body to disk in 1MB chunks — avoids memory pressure                                                                                   |
+| Mar 2  | Codable fields must be optional      | Server responses vary by endpoint; non-optional fields cause silent `JSONDecoder` failures                                                                                  |
+| Mar 3  | React admin dashboard                | Replaced vanilla HTML with React 19 + Vite 6 + TypeScript + Tailwind v4 + TanStack Query                                                                                    |
+| Mar 3  | Triad launcher (`scripts/dev.js`)    | Single `npm run dev` command orchestrates DB + Server + Admin with smart log filtering                                                                                      |
+| Mar 3  | Live-only dashboard                  | Removed all simulated actions; dashboard shows only real data with neutral fallback states                                                                                  |
+| Mar 3  | WS client type tracking              | Socket.IO connections tagged as `ios` or `admin`; enables accurate triad status reporting                                                                                   |
+| Mar 3  | Remove client-side WS ping           | Engine.IO 4 uses server-initiated pings; client ping timer caused 25s disconnect loop                                                                                       |
+| Mar 3  | `io.of('/').sockets.size` metric     | Replaced `engine.clientsCount` — gives accurate authenticated socket count, not transports                                                                                  |
+| Mar 3  | Admin uses Admin User credentials    | Dashboard auto-logins as Admin User (`8001234567`) not David Burgess                                                                                                        |
+| Mar 3  | Stale asset cleanup endpoint         | `POST /api/admin/cleanup-assets` — Prisma ORM delete of stuck UPLOADING assets                                                                                              |
+| Mar 3  | Real file size in WS event           | iOS `FileManager.attributesOfItem` gets actual bytes before `sendVideoUpload`                                                                                               |
+| Mar 3  | Server response intelligence         | Time-of-day greeting, debounce (3s window), personalization, fires once per session                                                                                         |
+| Mar 3  | Remove auto-Slack post               | Replaced with explicit "Post to Slack" button — user controls when Slack is notified                                                                                        |
+| Mar 3  | Real metadata via AVAsset            | iOS extracts duration, resolution, codec, GPS, device info natively — no ffprobe needed                                                                                     |
+| Mar 3  | iOS form restructuring               | Read-only metadata fields above editable fields; MetadataView wired to show extracted data                                                                                  |
+| Mar 3  | Web clip viewer (server-rendered)    | `GET /clips/:slug` — dark theme, metadata grid, video player, no auth required                                                                                              |
+| Mar 3  | Separate Prisma queries              | `findFirst` with `include` times out in Prisma 7 + pg adapter — split into sequential calls                                                                                 |
+| Mar 3  | `wildcard: false` on static          | `@fastify/static` was intercepting dynamic routes; fixed with wildcard option                                                                                               |
+| Mar 3  | Admin links to clip viewer           | Asset list rows are `<a href="/clips/:slug">` opening in new tab                                                                                                            |
+| Mar 3  | Git repo initialized                 | `.gitignore` (68 files committed), reference/design files excluded                                                                                                          |
+| Mar 3  | Full 25-issue security/perf audit    | See `TODO.md` — 20 of 25 fixed. Covers auth, XSS, JWT, WS leaks, DB indexes, dead code                                                                                      |
+| Mar 3  | Random JWT secret fallback           | `crypto.randomBytes(64)` when `JWT_SECRET` not set — warns in console                                                                                                       |
+| Mar 3  | Admin route auth hardening           | All 7 admin routes now require JWT `preHandler`                                                                                                                             |
+| Mar 3  | XSS escaping in clip viewer          | `escapeHtml()` on all user-controlled interpolations                                                                                                                        |
+| Mar 3  | WS exponential backoff               | Max 10 retries, delay doubles each attempt (3s → 60s cap)                                                                                                                   |
+| Mar 3  | URLSession leak fix                  | `invalidateAndCancel()` on reconnect + cleanup                                                                                                                              |
+| Mar 3  | Upload handler DB optimization       | Merged 6 sequential queries → 3 (clip create with metadata, single asset update)                                                                                            |
+| Mar 3  | DB indexes on FK columns             | `@@index` on `assets.userId`, `clips.assetId`, `chat_messages.userId`                                                                                                       |
+| Mar 3  | Dead code removal                    | Removed `slack:post` handler, `greeting` handler, `sendFormSubmit`, `sendSlackPost`                                                                                         |
+| Mar 3  | Selective dashboard invalidation     | `refreshDashboard(eventType)` invalidates only relevant query keys per socket event                                                                                         |
+| Mar 4  | Client error logging to DB           | `POST /api/errors` persists iOS errors to `client_errors` table; `reportError()` utility                                                                                    |
+| Mar 4  | View + Metadata buttons on High Five | Confirmation bubble has green View (opens clip) and blue Metadata (opens sheet) buttons                                                                                     |
+| Mar 4  | View button URL string interpolation | `appendingPathComponent` percent-encodes slashes; switched to `URL(string:)` interpolation                                                                                  |
+| Mar 4  | Random follow-up phrases (10)        | 1s after High Five, random `.greeting` bubble from 10 funny phrases using `randomElement()`                                                                                 |
+| Mar 4  | Bottom tab bar (Chat \| Archive)     | `TabView` in `ContentView`; Archive fetches `GET /api/assets/mine` with expandable rows                                                                                     |
+| Mar 4  | `FormResponse` model on Asset        | Codable struct for form response data; `Asset.formResponse` optional field for archive rows                                                                                 |
+| Mar 4  | Render = preview environment         | Render deployment is a stand-in for company production; TestFlight couples with live stack                                                                                  |
+| Mar 4  | `render.yaml` Blueprint              | Defines web service + PostgreSQL DB; auto-deploys from GitHub `main` branch                                                                                                 |
+| Mar 4  | `render-build.sh` script             | Build: install deps, build admin, generate Prisma, push schema, seed DB — all in one                                                                                        |
+| Mar 4  | SSL-aware pg Pool                    | `ssl: { rejectUnauthorized: false }` when `NODE_ENV=production` (Render managed PG)                                                                                         |
+| Mar 4  | Conditional pino-pretty              | Pretty logs in dev, raw JSON in production (Render captures structured logs)                                                                                                |
+| Mar 4  | `trustProxy` in production           | Fastify trusts Render's reverse proxy for correct client IP headers                                                                                                         |
+| Mar 4  | `url(for:)` string interpolation     | ServerConfig.url(for:) switched from `appendingPathComponent` to `URL(string:)` for safety                                                                                  |
+| Mar 4  | `.env.example` for documentation     | Template with all env vars (DB, auth, Slack, Mux, R2) — gitignored `.env` stays local                                                                                       |
+| Mar 10 | UIVideoEditorController modal host   | Embedding UIVideoEditorController as UIViewControllerRepresentable crashes (UINavigationController subclass must be presented modally). VideoEditorHostController wraps it. |
+| Mar 10 | CSP: `*.edgemv.mux.com` wildcard     | Helmet's `*.mux.com` wildcard doesn't match multi-level subdomains. HLS segments served from `chunk-gcp-us-east4-vop1.edgemv.mux.com` require explicit allowlist.           |
+| Mar 10 | COEP disabled, CORP cross-origin     | Clip viewer loads cross-origin media/scripts from Mux CDN + jsdelivr. Helmet defaults (`same-origin`) block those fetches.                                                  |
+| Mar 10 | WS `connect()` guard fix             | `isReconnecting` flag blocked fresh token from `connect(token:)`. Fix: `disconnect()` cancels `connectTask`, resets `isReconnecting`, then connects.                        |
+| Mar 10 | Server WS auth logging               | Auth middleware had zero logging — auth failures invisible in Render logs. Added `console.warn` on rejection + Engine.IO `connection_error` handler.                        |
 
 ---
 
