@@ -30,13 +30,9 @@ struct LoginView: View {
                     Text("🎬")
                         .font(Theme.loginEmojiFont)
                     
-                    Text("Direct Video")
+                    Text("Fixer")
                         .font(Theme.loginTitleFont)
                         .foregroundStyle(.white)
-                    
-                    Text("Uploader")
-                        .font(Theme.loginSubtitleFont)
-                        .foregroundStyle(.white.opacity(0.7))
                     
                     Text("Send. Confirm. Done.")
                         .font(Theme.loginTaglineFont)

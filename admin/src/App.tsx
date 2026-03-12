@@ -94,7 +94,7 @@ function Dashboard() {
     setLoggedIn(true);
     addLog("auth", `Dashboard auth: ${userName}`);
     connect();
-  }, [addLog, connect]);
+  }, [addLog, connect, setLoggedIn]);
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);

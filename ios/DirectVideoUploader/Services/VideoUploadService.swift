@@ -81,6 +81,13 @@ final class VideoUploadService: NSObject {
         createRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
         
         // Send metadata + file info as JSON
+        // Get file size once — used for both metadata payload and Content-Length header
+        let fileSize: Int64 = {
+            if let attrs = try? FileManager.default.attributesOfItem(atPath: fileURL.path),
+               let size = attrs[.size] as? Int64 { return size }
+            return 0
+        }()
+
         var metaDict: [String: Any] = [:]
         if let meta = metadata {
             metaDict = [
@@ -96,12 +103,7 @@ final class VideoUploadService: NSObject {
             if let lat = meta.gpsLat { metaDict["gpsLat"] = lat }
             if let lon = meta.gpsLon { metaDict["gpsLon"] = lon }
             if let alt = meta.gpsAltitude { metaDict["gpsAltitude"] = alt }
-            
-            // File size
-            if let attrs = try? FileManager.default.attributesOfItem(atPath: fileURL.path),
-               let size = attrs[.size] as? Int64 {
-                metaDict["fileSize"] = size
-            }
+            if fileSize > 0 { metaDict["fileSize"] = fileSize }
         }
         createRequest.httpBody = try JSONSerialization.data(withJSONObject: ["metadata": metaDict])
         
@@ -121,13 +123,6 @@ final class VideoUploadService: NSObject {
         }
         
         print("📤 [Mux] Got upload URL, uploading directly to Mux CDN...")
-        
-        // Get file size for tus headers
-        let fileSize: Int64 = {
-            if let attrs = try? FileManager.default.attributesOfItem(atPath: fileURL.path),
-               let size = attrs[.size] as? Int64 { return size }
-            return 0
-        }()
         
         // Simple PUT to Mux direct upload URL (no tus headers needed)
         var putRequest = URLRequest(url: uploadUrl)

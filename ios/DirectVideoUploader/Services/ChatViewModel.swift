@@ -258,12 +258,16 @@ final class ChatViewModel {
     
     // MARK: - Send Text Message
     
+    // Matches #channel or @mention anywhere in the text (mirrors server-side regex)
+    private static let slackCommandPattern = try? NSRegularExpression(pattern: "[#@][\\w.-]+")
+    
     func sendTextMessage(_ text: String) {
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         
-        // Detect Slack commands: #channel or @user
+        // Detect Slack commands: #channel or @user (anywhere in the message, matching server-side regex)
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        let isSlackCommand = trimmed.hasPrefix("#") || trimmed.hasPrefix("@")
+        let range = NSRange(trimmed.startIndex..., in: trimmed)
+        let isSlackCommand = Self.slackCommandPattern?.firstMatch(in: trimmed, range: range) != nil
         
         // Optimistic UI — add message locally
         let localMessage = ChatMessage(

@@ -279,6 +279,7 @@ export default async function adminRoutes(fastify) {
         const { status, team, email } = request.body || {};
 
         // Validate status value if provided
+        // ACTIVE — normal account access; SUSPENDED — prevents login
         const ALLOWED_STATUSES = ['ACTIVE', 'SUSPENDED'];
         if (status && !ALLOWED_STATUSES.includes(status)) {
             return reply.status(400).send({
