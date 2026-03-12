@@ -94,17 +94,17 @@ struct MessageBubble: View {
                         .font(Theme.monoIdFont)
                         .foregroundStyle(Theme.incomingText)
                     
-                    if let slug = message.content.slug {
-                        Text(ServerConfig.baseURL.absoluteString + "/clips/" + slug)
+                    if let clipURL = ServerConfig.clipURL(msId) {
+                        Text(clipURL.absoluteString)
                             .font(Theme.urlFont)
                             .foregroundStyle(Theme.incomingText)
                             .lineLimit(1)
                             .truncationMode(.middle)
                     }
                     
-                    // Copy button
+                    // Copy button — copies the full clip viewer URL
                     Button {
-                        let link = message.content.slug.map { ServerConfig.baseURL.absoluteString + "/clips/" + $0 } ?? msId
+                        let link = ServerConfig.clipURL(msId)?.absoluteString ?? msId
                         UIPasteboard.general.string = link
                     } label: {
                         Image(systemName: "doc.on.doc")
@@ -159,17 +159,17 @@ struct MessageBubble: View {
                         .font(Theme.monoIdFont)
                         .foregroundStyle(Theme.incomingText)
                     
-                    if let slug = message.content.slug {
-                        Text(ServerConfig.baseURL.absoluteString + "/clips/" + slug)
+                    if let clipURL = ServerConfig.clipURL(msId) {
+                        Text(clipURL.absoluteString)
                             .font(Theme.urlFont)
                             .foregroundStyle(Theme.incomingText)
                             .lineLimit(1)
                             .truncationMode(.middle)
                     }
                     
-                    // Copy button
+                    // Copy button — copies the full clip viewer URL
                     Button {
-                        let link = message.content.slug.map { ServerConfig.baseURL.absoluteString + "/clips/" + $0 } ?? msId
+                        let link = ServerConfig.clipURL(msId)?.absoluteString ?? msId
                         UIPasteboard.general.string = link
                     } label: {
                         Image(systemName: "doc.on.doc")

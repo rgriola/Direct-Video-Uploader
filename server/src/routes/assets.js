@@ -393,13 +393,10 @@ export default async function assetRoutes(fastify) {
 
         // Fallback: if slug or description are missing (app crash, battery death, etc.)
         // use the authenticated user's name so the record isn't left blank.
-        if (!slug || !slug.trim()) {
+        if (!slug?.trim() || !description?.trim()) {
             const user = await prisma.user.findUnique({ where: { id: request.user.id } });
-            slug = user?.name || 'Untitled';
-        }
-        if (!description || !description.trim()) {
-            const user = await prisma.user.findUnique({ where: { id: request.user.id } });
-            description = user?.name || 'No description';
+            if (!slug?.trim()) slug = user?.name || 'Untitled';
+            if (!description?.trim()) description = user?.name || 'No description';
         }
 
         // Upsert form response

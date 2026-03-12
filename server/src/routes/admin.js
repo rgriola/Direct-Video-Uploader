@@ -3,6 +3,7 @@
  * All data is LIVE — no simulated actions.
  */
 import prisma from '../lib/prisma.js';
+import { hashPin } from '../lib/utils.js';
 
 export default async function adminRoutes(fastify) {
 
@@ -240,8 +241,6 @@ export default async function adminRoutes(fastify) {
             });
         }
 
-        const { hashPin } = await import('../lib/utils.js');
-
         const existing = await prisma.user.findUnique({ where: { phoneNumber } });
         if (existing) {
             return reply.status(409).send({ error: 'Phone number already registered' });
@@ -278,6 +277,15 @@ export default async function adminRoutes(fastify) {
     }, async (request, reply) => {
         const { id } = request.params;
         const { status, team, email } = request.body || {};
+
+        // Validate status value if provided
+        // ACTIVE — normal account access; SUSPENDED — prevents login
+        const ALLOWED_STATUSES = ['ACTIVE', 'SUSPENDED'];
+        if (status && !ALLOWED_STATUSES.includes(status)) {
+            return reply.status(400).send({
+                error: `Invalid status — must be one of: ${ALLOWED_STATUSES.join(', ')}`,
+            });
+        }
 
         const user = await prisma.user.findUnique({ where: { id } });
         if (!user) {

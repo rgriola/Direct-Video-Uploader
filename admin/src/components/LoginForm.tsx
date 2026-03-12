@@ -1,0 +1,105 @@
+import { useState, FormEvent } from "react";
+import { login, setToken } from "@/lib/api";
+
+interface LoginFormProps {
+  onSuccess: (userName: string) => void;
+}
+
+export function LoginForm({ onSuccess }: LoginFormProps) {
+  const [phoneNumber, setPhoneNumber] = useState("");
+  const [pin, setPin] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setLoading(true);
+
+    try {
+      const res = await login(phoneNumber.trim(), pin.trim());
+      setToken(res.token);
+      onSuccess(res.user.name);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Login failed");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen flex items-center justify-center p-4">
+      <div className="w-full max-w-sm">
+        {/* Logo */}
+        <div className="flex flex-col items-center gap-3 mb-8">
+          <div className="w-16 h-16 rounded-2xl bg-linear-to-br from-(--accent-blue) to-(--accent-purple) flex items-center justify-center text-4xl shadow-[0_8px_32px_rgba(74,158,255,0.3)]">
+            🎬
+          </div>
+          <div className="text-center">
+            <h1 className="text-2xl font-bold tracking-tight">Fixer</h1>
+            <p className="text-sm text-(--muted-foreground) mt-1">Admin Dashboard</p>
+          </div>
+        </div>
+
+        {/* Form */}
+        <form
+          onSubmit={handleSubmit}
+          className="bg-(--card) border border-(--border) rounded-2xl p-6 space-y-4 shadow-xl"
+        >
+          <div className="space-y-1.5">
+            <label
+              htmlFor="phone"
+              className="block text-sm font-medium text-(--muted-foreground)"
+            >
+              Phone Number
+            </label>
+            <input
+              id="phone"
+              type="tel"
+              autoComplete="username"
+              required
+              value={phoneNumber}
+              onChange={(e) => setPhoneNumber(e.target.value)}
+              placeholder="e.g. 8001234567"
+              className="w-full px-3.5 py-2.5 rounded-lg bg-(--secondary) border border-(--border) text-(--foreground) text-sm placeholder:text-(--muted-foreground) focus:outline-none focus:ring-2 focus:ring-(--accent-blue) focus:border-transparent transition-all"
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <label
+              htmlFor="pin"
+              className="block text-sm font-medium text-(--muted-foreground)"
+            >
+              PIN
+            </label>
+            <input
+              id="pin"
+              type="password"
+              autoComplete="current-password"
+              required
+              value={pin}
+              onChange={(e) => setPin(e.target.value)}
+              placeholder="••••"
+              maxLength={10}
+              className="w-full px-3.5 py-2.5 rounded-lg bg-(--secondary) border border-(--border) text-(--foreground) text-sm placeholder:text-(--muted-foreground) focus:outline-none focus:ring-2 focus:ring-(--accent-blue) focus:border-transparent transition-all"
+            />
+          </div>
+
+          {error && (
+            <p className="text-sm text-(--accent-red) bg-(--accent-red-glow) border border-[rgba(248,113,113,0.2)] rounded-lg px-3 py-2">
+              {error}
+            </p>
+          )}
+
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full py-2.5 rounded-lg bg-(--accent-blue) text-white text-sm font-semibold tracking-wide hover:opacity-90 active:opacity-75 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+          >
+            {loading ? "Signing in…" : "Sign In"}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}

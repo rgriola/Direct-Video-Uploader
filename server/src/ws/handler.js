@@ -301,7 +301,7 @@ export function setupWebSocket(io, fastify) {
                             assetId: assetId || null,
                             direction: 'OUTGOING',
                             messageType: 'TEXT',
-                            content: { text },
+                            content: { text: sanitized },
                         },
                     });
                 } catch (dbErr) {
