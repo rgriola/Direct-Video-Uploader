@@ -2,11 +2,12 @@ import { useEffect, useState, useCallback } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster, toast } from "sonner";
 
-import { login, setToken, fetchHealth, fetchMe, cleanupAssets } from "@/lib/api";
+import { setToken, getToken, fetchHealth, fetchMe, cleanupAssets } from "@/lib/api";
 import { useStats, useUsers, useAssets, useRefreshDashboard, useTriadStatus } from "@/hooks/use-dashboard";
 import { useSocket } from "@/hooks/use-socket";
 
 import { Header } from "@/components/Header";
+import { LoginForm } from "@/components/LoginForm";
 import { TriadStatusPanel } from "@/components/TriadStatus";
 import { StatsGrid } from "@/components/StatsGrid";
 import { QuickActions } from "@/components/QuickActions";
@@ -16,6 +17,8 @@ import { ActivityLog } from "@/components/ActivityLog";
 import { EndpointTable } from "@/components/EndpointTable";
 import { ChatHistory } from "@/components/ChatHistory";
 import { ErrorLog } from "@/components/ErrorLog";
+
+const AUTH_TOKEN_KEY = "fixer_admin_token";
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 10_000, retry: 1 } },
@@ -56,22 +59,41 @@ function Dashboard() {
     refreshDashboard("upload:complete");
   });
 
-  // Auto-login on mount (admin auth — uses Admin User credentials)
+  // Restore saved token on mount (avoids re-login on page refresh)
   useEffect(() => {
-    async function bootstrap() {
+    const saved = localStorage.getItem(AUTH_TOKEN_KEY);
+    if (!saved) return;
+
+    async function restoreSession(token: string) {
       try {
-        const res = await login("8001234567", "0000");
-        if (res.token) {
-          setToken(res.token);
+        setToken(token);
+        const { user } = await fetchMe();
+        if (user) {
           setLoggedIn(true);
-          addLog("auth", `Dashboard auth: ${res.user.name}`);
+          addLog("auth", `Session restored: ${user.name}`);
           connect();
         }
-      } catch {
-        addLog("error", "Dashboard auth failed — is the server running?");
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "";
+        // Only clear the saved token on definitive auth rejections (401/403),
+        // not on transient network errors — so the session persists through
+        // server restarts or brief connectivity issues.
+        if (msg === "HTTP 401" || msg === "HTTP 403" || msg === "Unauthorized" || msg === "Admin access required") {
+          localStorage.removeItem(AUTH_TOKEN_KEY);
+        }
       }
     }
-    void bootstrap();
+
+    void restoreSession(saved);
+  }, [addLog, connect]);
+
+  const handleLoginSuccess = useCallback((userName: string) => {
+    // Token is already set in api.ts by the LoginForm; mirror it to localStorage
+    const token = getToken();
+    if (token) localStorage.setItem(AUTH_TOKEN_KEY, token);
+    setLoggedIn(true);
+    addLog("auth", `Dashboard auth: ${userName}`);
+    connect();
   }, [addLog, connect]);
 
   const handleRefresh = useCallback(async () => {
@@ -123,6 +145,10 @@ function Dashboard() {
     },
     [loggedIn, addLog],
   );
+
+  if (!loggedIn) {
+    return <LoginForm onSuccess={handleLoginSuccess} />;
+  }
 
   return (
     <div className="max-w-330 mx-auto px-4 sm:px-6 pt-8 pb-16">
