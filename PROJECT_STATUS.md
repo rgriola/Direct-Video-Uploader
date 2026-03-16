@@ -17,6 +17,12 @@ We've completed the **interactive chat demo** (HTML prototype), **project specif
 ## Running the Project
 
 ```bash
+# render deploy commands
+./server
+npm ci && npx prisma generate
+npm run start
+
+
 # Daily workflow — launches the full triad (DB + Server + Admin)
 npm run dev
 

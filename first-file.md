@@ -495,6 +495,16 @@ Fixer is a video upload app for Mediasource. Problem: Staff uses two methods to 
 
 1.  login process is 3 steps - low use awareness of app.
 2.  Allows slug/and or video to be submitted without required fields - fails silently.an aware media manager either gets a notice or lucks out to see the error, but user is not clearly notifed. Forces refeed - repeating feed steps.
-3.  No Slack integration, User waits for MS Number before moving over to slack to send out MS number.
+3.  No EXIF Data. Most metadata we add is available in the video file itself, not a secret, but never implimented. This saves time and is far more accurate than human input.
+4.  No Slack integration, User waits for MS Number before moving over to slack to send out MS number.
 
+Fixer is a video upload app for Mediasource to solve several workflow issues: Direct to Mediasource - removes current 3 Step manual process in Slack. Sends highest Quaility iPhone Video possible, Slack compresses then sent through manual process. Reads all EXIF data and merges it automatically to mediasource sheet reducing human error.
+
+Fixer allows staff to alert slack channels (#storms) or DM (@carrie.smaith) with current upload metadata and clip url in Fixer via text interface.
+
+What I am missing; Mediasource API endpoint - how mediassource receives video, Mediasource number generation and tracking/coorditation of assets.
+
+My Fixer dev setup has a Mediasource catch server stand-in > Mux, a process server on Render/Postgres - managing the Mux events, Database and iOS App connection. But really I am guessing how the backend works in production.
+
+Problem: Staff uses two methods to upload video, shot on iPhone from their phone: Slack and NewsCloud.
 It features: lossless video upload is to provide lossless video uploads to Mediasource
