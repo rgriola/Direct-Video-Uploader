@@ -20,7 +20,7 @@ We've completed the **interactive chat demo** (HTML prototype), **project specif
 # render deploy commands
 ./server
 npm ci && npx prisma generate
-npm run start
+npm run startnp
 
 
 # Daily workflow — launches the full triad (DB + Server + Admin)

@@ -12,12 +12,12 @@ services:
   - type: web
     name: direct-video-uploader
     runtime: node
-    plan: free
+    plan: starter
     region: oregon
     branch: main
-    rootDir: .
-    buildCommand: ./scripts/render-build.sh
-    startCommand: cd server && node src/index.js
+    rootDir: server
+    buildCommand: npm ci && npx prisma generate
+    startCommand: npm run start
     healthCheckPath: /api/health
     envVars:
       - key: NODE_ENV
