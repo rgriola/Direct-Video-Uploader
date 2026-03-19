@@ -56,3 +56,9 @@ TEXT UI
 - When a user emotionally connects with tech it is embraced more, this is a basic product design principle and should be implimented in enterprise products.
 - The goal is adoption and self guided training of this app - people want to use it.
 - Slack integration is critical because most editoral communication happens on Slack channels and threads. Our previous video control methods take us out of the Slack UI and connection - no bueno. Good idea's wrong platform.
+
+**_ Task _**
+
+- on iOS app conform video confirmed bubble font sizes to the same as the other message bubbles
+- Mediasource number should look like the High Five Text witgh the Link Icon.
+- Move View button to float to the right placing it on the same line as the Mediasource Link.

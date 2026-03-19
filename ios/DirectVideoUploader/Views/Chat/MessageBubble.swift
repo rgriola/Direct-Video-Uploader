@@ -65,7 +65,7 @@ struct MessageBubble: View {
             Image(systemName: "video.fill")
                 .font(Theme.iconFont)
             Text(message.content.displayText)
-                .font(Theme.bodyMediumFont)
+                .font(Theme.bodyFont)
         }
         .foregroundStyle(isOutgoing ? .white : Theme.incomingText)
     }
@@ -74,7 +74,7 @@ struct MessageBubble: View {
         VStack(alignment: .leading, spacing: 8) {
             // Main confirmation text
             Text(message.content.text ?? "Upload confirmed")
-                .font(Theme.bodySmallFont)
+                .font(Theme.bodyFont)
                 .foregroundStyle(Theme.incomingText)
             
             // Slug
@@ -85,7 +85,7 @@ struct MessageBubble: View {
                     .lineLimit(1)
             }
             
-            // Mediasource ID
+            // Mediasource ID + Metadata button on same line
             if let msId = message.content.mediasourceId {
                 HStack(spacing: 4) {
                     Text("🔗")
@@ -93,18 +93,17 @@ struct MessageBubble: View {
                     Text(msId)
                         .font(Theme.monoIdFont)
                         .foregroundStyle(Theme.incomingText)
-                }
-            }
-            
-            // Action button — Metadata
-            HStack(spacing: 12) {
-                if let onTapMetadata {
-                    ChatActionButton(
-                        icon: "info.circle.fill",
-                        label: "Metadata",
-                        color: Theme.actionBlue,
-                        action: onTapMetadata
-                    )
+                    
+                    Spacer()
+                    
+                    if let onTapMetadata {
+                        ChatActionButton(
+                            icon: "info.circle.fill",
+                            label: "Metadata",
+                            color: Theme.actionBlue,
+                            action: onTapMetadata
+                        )
+                    }
                 }
             }
         }
@@ -196,7 +195,7 @@ struct MessageBubble: View {
                             .foregroundStyle(.white.opacity(0.7))
                     }
                     Text(message.content.text ?? "")
-                        .font(Theme.bodySmallFont)
+                        .font(Theme.bodyFont)
                         .foregroundStyle(.white)
                 }
             } else {
@@ -347,45 +346,6 @@ struct ChatBubbleShape: Shape {
     let isOutgoing: Bool
     
     func path(in rect: CGRect) -> Path {
-        let radius: CGFloat = 18
-        let tailRadius: CGFloat = 6
-        
-        var path = Path()
-        
-        if isOutgoing {
-            // Rounded rect with tail on bottom-right
-            path.addRoundedRect(
-                in: CGRect(x: 0, y: 0, width: rect.width - tailRadius, height: rect.height),
-                cornerSize: CGSize(width: radius, height: radius)
-            )
-            // Small tail
-            path.move(to: CGPoint(x: rect.width - tailRadius, y: rect.height - radius))
-            path.addQuadCurve(
-                to: CGPoint(x: rect.width, y: rect.height),
-                control: CGPoint(x: rect.width - tailRadius, y: rect.height)
-            )
-            path.addQuadCurve(
-                to: CGPoint(x: rect.width - tailRadius * 2, y: rect.height),
-                control: CGPoint(x: rect.width - tailRadius, y: rect.height)
-            )
-        } else {
-            // Rounded rect with tail on bottom-left
-            path.addRoundedRect(
-                in: CGRect(x: tailRadius, y: 0, width: rect.width - tailRadius, height: rect.height),
-                cornerSize: CGSize(width: radius, height: radius)
-            )
-            // Small tail
-            path.move(to: CGPoint(x: tailRadius, y: rect.height - radius))
-            path.addQuadCurve(
-                to: CGPoint(x: 0, y: rect.height),
-                control: CGPoint(x: tailRadius, y: rect.height)
-            )
-            path.addQuadCurve(
-                to: CGPoint(x: tailRadius * 2, y: rect.height),
-                control: CGPoint(x: tailRadius, y: rect.height)
-            )
-        }
-        
-        return path
+        Path(roundedRect: rect, cornerRadius: 18)
     }
 }

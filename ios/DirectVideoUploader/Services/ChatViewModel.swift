@@ -54,6 +54,7 @@ final class ChatViewModel {
     /// Temp staging data preserved across confirmStagedUpload → createAsset
     private var lastStagedCreatedDate: String?
     private var lastStagedHasLocation: Bool = false
+    private var pendingPHAssetIdentifier: String?
     
     // MARK: - Dependencies
     
@@ -215,7 +216,7 @@ final class ChatViewModel {
                     "\(firstName), filed and processed! You make this look easy. Ready when you are.",
                     "\(firstName), boom — done! I'll just be here, staring at the upload button, waiting for you."
                 ]
-                let message = phrases.randomElement()! + "\n\nRemember you can #Slack the clip from here."
+                let message = phrases.randomElement()! + "\n\nGo ahead and #Slack this."
                 let followUp = ChatMessage(
                     id: UUID().uuidString,
                     userId: nil,
@@ -518,6 +519,28 @@ final class ChatViewModel {
         progressTask.cancel()
     }
     
+    // MARK: - Cancel Form (skip details → archive)
+    
+    /// User chose to skip the form. Archive the conversation immediately.
+    /// PendingForm stays on disk so the form can be reopened later from Archive.
+    /// Video continues uploading in background.
+    func cancelForm() {
+        showFormSheet = false
+        isArchived = true
+        
+        // Add a chat bubble confirming the skip
+        let msg = ChatMessage(
+            id: UUID().uuidString,
+            userId: nil,
+            assetId: currentAssetId,
+            direction: .incoming,
+            messageType: .greeting,
+            content: MessageContent(text: "No worries — your video is still uploading. You can add details from your Archive anytime."),
+            createdAt: ISO8601DateFormatter().string(from: Date())
+        )
+        messages.append(msg)
+    }
+    
     // MARK: - Submit Form
     
     func submitForm(assetId: String, formData: [String: String]) async {
@@ -590,7 +613,7 @@ final class ChatViewModel {
     // MARK: - Video Staging (iOS 26.3 Flow)
     
     /// Stage a video for preview in chat — called after user confirms in the library picker.
-    func stageVideo(fileURL: URL, fileName: String, metadata: VideoMetadata) async {
+    func stageVideo(fileURL: URL, fileName: String, metadata: VideoMetadata, phAssetIdentifier: String? = nil) async {
         // If a conversation is archived, start fresh
         if isArchived {
             startNewConversation()
@@ -598,6 +621,9 @@ final class ChatViewModel {
         
         isProcessingVideo = true
         defer { isProcessingVideo = false }
+        
+        // Store PHAsset identifier for re-upload recovery
+        self.pendingPHAssetIdentifier = phAssetIdentifier
         
         // Generate thumbnail from video
         let thumbnail = await StagedVideo.generateThumbnail(from: fileURL)
@@ -633,6 +659,11 @@ final class ChatViewModel {
         // Create asset on server
         if let asset = await createAsset(fileName: fileName, fileURL: fileURL) {
             print("✅ Asset created: \(asset.mediasourceId ?? asset.id)")
+            // Save PHAsset identifier so re-upload can find the original video
+            if let phId = pendingPHAssetIdentifier {
+                PHAssetIdentifierStore.save(assetId: asset.id, phAssetIdentifier: phId)
+            }
+            pendingPHAssetIdentifier = nil
             await uploadVideo(assetId: asset.id, fileURL: fileURL, metadata: metadata)
             
             // Clean up temp video file after upload (#18)
@@ -757,7 +788,7 @@ final class ChatViewModel {
             assetId: nil,
             direction: .incoming,
             messageType: .greeting,
-            content: MessageContent(text: "Hey \(firstName)! Ready for your next upload."),
+            content: MessageContent(text: "Hey \(firstName)! You are busy today. Upload away."),
             createdAt: ISO8601DateFormatter().string(from: Date())
         )
         messages.append(greeting)

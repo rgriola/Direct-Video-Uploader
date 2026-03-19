@@ -16,7 +16,7 @@ struct VideoLibraryView: View {
     @State private var showTrimSheet = false
 
     /// Called when user taps ✓ with a video selected.
-    var onConfirm: (URL, String, VideoMetadata) -> Void
+    var onConfirm: (URL, String, VideoMetadata, String?) -> Void
     /// Called when user taps ✓ with nothing selected, or the sheet is dismissed.
     var onDismiss: () -> Void
 
@@ -189,10 +189,12 @@ struct VideoLibraryView: View {
     private func handleTrimResult(trimmedURL: URL) {
         // Use the trimmed file's name (includes -edited suffix if trimmed)
         let fileName = trimmedURL.lastPathComponent
+        // Resolve PHAsset identifier for re-upload recovery
+        let phAssetId = selectedItems.first.flatMap { $0.itemIdentifier }
         // Re-extract metadata from trimmed file (duration/fileSize changed)
         Task {
             let updatedMetadata = await VideoMetadataExtractor.extract(from: trimmedURL)
-            onConfirm(trimmedURL, fileName, updatedMetadata)
+            onConfirm(trimmedURL, fileName, updatedMetadata, phAssetId)
         }
     }
 

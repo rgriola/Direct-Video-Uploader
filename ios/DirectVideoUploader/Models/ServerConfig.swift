@@ -45,9 +45,9 @@ enum ServerConfig {
         #else
         // 4. Physical device → production in Release, dev-friendly in Debug
         #if DEBUG
-        // In Debug builds on a physical device, use Bonjour hostname (stable across networks).
+        // In Debug builds on a physical device, use the Mac's LAN IP.
         // The user can also change this via the server URL editor on the login screen.
-        return URL(string: "http://Richards-MacBook-Air.local:3000")!
+        return URL(string: "http://192.168.0.100:3000")!
         #else
         return URL(string: productionURL)!
         #endif

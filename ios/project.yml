@@ -25,13 +25,21 @@ targets:
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
         INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UILaunchScreen_BackgroundColor: LaunchBg
+        INFOPLIST_KEY_UILaunchScreen_ImageName: Image
+        INFOPLIST_KEY_UILaunchScreen_ImageRespectsSafeAreaInsets: NO
         INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
         INFOPLIST_KEY_NSPhotoLibraryUsageDescription: "Select videos to upload to the newsroom server."
         INFOPLIST_KEY_NSCameraUsageDescription: "Record video to upload to the newsroom server."
         INFOPLIST_KEY_NSLocationWhenInUseUsageDescription: "Attach GPS coordinates to your video upload."
-        INFOPLIST_KEY_NSAppTransportSecurity_AllowsArbitraryLoads: YES
         PRODUCT_BUNDLE_IDENTIFIER: com.directvideo.uploader
         TARGETED_DEVICE_FAMILY: "1"
         GENERATE_INFOPLIST_FILE: YES
         CODE_SIGN_IDENTITY: "Apple Development"
+    info:
+      path: DirectVideoUploader/Info.plist
+      properties:
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
+          NSAllowsLocalNetworking: true

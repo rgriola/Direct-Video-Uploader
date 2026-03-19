@@ -50,9 +50,9 @@ enum Theme {
     // MARK: - Typography
 
     // Body
-    static let bodyFont          = Font.system(size: 16)
-    static let bodyMediumFont    = Font.system(size: 15, weight: .medium)
-    static let bodySmallFont     = Font.system(size: 15)
+    static let bodyFont          = Font.system(size: 18)
+    static let bodyMediumFont    = Font.system(size: 18, weight: .medium)
+    static let bodySmallFont     = Font.system(size: 18)
 
     // Captions
     static let captionFont       = Font.system(size: 13)

@@ -227,10 +227,17 @@ export default async function assetRoutes(fastify) {
         }));
 
         if (existingClip) {
-            // Look up the Mux upload to get the URL (still valid if < 1h old)
+            // Look up the Mux upload to check if it's still usable
             const { getMuxUpload } = await import('../lib/mux.js');
-            const upload = await getMuxUpload(existingClip.muxUploadId);
-            if (upload?.url && upload.status !== 'asset_created' && upload.status !== 'errored') {
+            let upload;
+            try {
+                upload = await getMuxUpload(existingClip.muxUploadId);
+            } catch (err) {
+                console.warn(`🎬 Could not fetch Mux upload ${existingClip.muxUploadId}: ${err.message}`);
+            }
+            
+            // Only reuse if Mux upload is still in 'waiting' state (accepting bytes)
+            if (upload?.url && upload.status === 'waiting') {
                 console.log(`🎬 Reusing existing PROCESSING clip ${existingClip.id} for asset #${asset.mediasourceId}`);
                 return {
                     uploadUrl: upload.url,
@@ -238,7 +245,14 @@ export default async function assetRoutes(fastify) {
                     muxUploadId: existingClip.muxUploadId,
                 };
             }
-            // Upload expired or already used — fall through to create a new one
+            // Upload expired, cancelled, timed-out, errored, or already used —
+            // delete the stale clip and create a fresh one below
+            console.log(`🎬 Mux upload ${existingClip.muxUploadId} status: ${upload?.status ?? 'unknown'} — creating fresh upload for asset #${asset.mediasourceId}`);
+            await dbRetry(() => prisma.clip.delete({ where: { id: existingClip.id } }));
+            await dbRetry(() => prisma.asset.update({
+                where: { id },
+                data: { clipCount: { decrement: 1 } },
+            }));
         }
 
         const clientMeta = request.body?.metadata || {};
@@ -308,7 +322,7 @@ export default async function assetRoutes(fastify) {
             where: { userId: request.user.id },
             orderBy: { createdAt: 'desc' },
             include: {
-                clips: { take: 1 },
+                clips: { take: 1, orderBy: { createdAt: 'desc' } },
                 formResponse: true,
             },
         });
@@ -385,7 +399,7 @@ export default async function assetRoutes(fastify) {
 
         const asset = await prisma.asset.findUnique({
             where: { id },
-            include: { clips: { take: 1 } },
+            include: { clips: { take: 1, orderBy: { createdAt: 'desc' } } },
         });
         if (!asset || asset.userId !== request.user.id) {
             return reply.status(404).send({ error: 'Asset not found' });
@@ -432,7 +446,7 @@ export default async function assetRoutes(fastify) {
                     formType: formResponse.type,
                     formDescription: formResponse.description,
                     formPriority: formResponse.priority,
-                    message: `🙌 High Five! I received slug form. Keep the app open to finish the upload. I'll text when the video is ready. Here is your metadata.`,
+                    message: `🙌 High Five! I received the slug form. Keep Fixer open to finish the upload. I'll text when the video is ready. Here is your metadata. You can share it to #Slack.`,
                 });
             }
         }

@@ -55,7 +55,7 @@ export default async function clipRoutes(fastify) {
             }
 
             // Fetch relations separately (Prisma 7 + pg adapter has issues with include in some contexts)
-            const clips = await prisma.clip.findMany({ where: { assetId: asset.id } });
+            const clips = await prisma.clip.findMany({ where: { assetId: asset.id }, orderBy: { createdAt: 'desc' } });
             const formResponse = await prisma.formResponse.findFirst({ where: { assetId: asset.id } });
             const user = await prisma.user.findFirst({ where: { id: asset.userId }, select: { name: true, team: true } });
 

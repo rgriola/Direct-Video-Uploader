@@ -11,12 +11,13 @@ struct ContextFormView: View {
     let thumbnail: UIImage?
     var submitError: String?
     var onSubmit: ([String: String]) -> Void
+    var onCancel: (() -> Void)?
     
     @Environment(\.dismiss) private var dismiss
     @State private var formValues: [String: String] = [:]
     @State private var selectedPriority: String = "Low"
     @State private var hasAttemptedSubmit = false
-    @State private var showDismissAlert = false
+    @State private var showCancelConfirm = false
     
     /// Only letters, numbers, dashes, and periods allowed
     private static let allowedCharacters = CharacterSet.alphanumerics
@@ -261,7 +262,7 @@ struct ContextFormView: View {
                         if canSubmit {
                             dismiss()
                         } else {
-                            showDismissAlert = true
+                            showCancelConfirm = true
                         }
                     } label: {
                         Image(systemName: "xmark")
@@ -269,13 +270,16 @@ struct ContextFormView: View {
                     }
                 }
             }
-            .alert("Required Fields", isPresented: $showDismissAlert) {
-                Button("OK", role: .cancel) { }
+            .alert("Skip Details?", isPresented: $showCancelConfirm) {
+                Button("Keep Editing", role: .cancel) { }
+                Button("Skip for Now", role: .destructive) {
+                    onCancel?()
+                    dismiss()
+                }
             } message: {
-                Text("Please fill out Slug and Description before closing the form.")
+                Text("Your video is still uploading. You can add details later from your Archive.")
             }
         }
-        .interactiveDismissDisabled(!canSubmit)
         .onAppear {
             // Initialize form values from field defaults — slug starts empty
             for field in fields {

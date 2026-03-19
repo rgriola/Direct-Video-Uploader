@@ -606,3 +606,12 @@ High Five Message: Remove the Copy URL
   **_ Context _**
 - New conversation should clean any metadata and message there is no metadata to add to a slack channel or thead.
 - ie; a clean conversation, new upload, if user @rodczaro > response should be "Upload a video then I can grab the metadata and you can slack it. Previous uploads are in your archieve you can slack from there."
+
+...
+
+**_ Task _**
+
+- Video Confirmed bubble conform the width to the same size as other bubbles.
+- High Five Bubble, move metadata button float right so it is on the same line as the Mediasource number
+
+...

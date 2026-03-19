@@ -34,7 +34,24 @@ struct ConversationSummaryBubble: View {
                     metaRow(icon: "doc.fill", label: name)
                 }
                 if let msId = mediasourceId {
-                    metaRow(icon: "number", label: msId)
+                    HStack {
+                        Text("🔗")
+                            .font(Theme.iconSmallFont)
+                        Text(msId)
+                            .font(Theme.monoIdFont)
+                            .foregroundStyle(Theme.incomingText)
+                        
+                        Spacer()
+                        
+                        if let url = ServerConfig.clipURL(msId) {
+                            ChatActionButton(
+                                icon: "play.circle.fill",
+                                label: "View",
+                                color: Theme.green,
+                                action: { UIApplication.shared.open(url) }
+                            )
+                        }
+                    }
                 }
                 if let type = formType {
                     let priority = formPriority ?? ""
@@ -49,38 +66,13 @@ struct ConversationSummaryBubble: View {
                 }
             }
             
-            // Action buttons
-            HStack(spacing: 10) {
-                if let msId = mediasourceId,
-                   let url = ServerConfig.clipURL(msId) {
-                    ChatActionButton(
-                        icon: "play.circle.fill",
-                        label: "View",
-                        color: Theme.green,
-                        action: { UIApplication.shared.open(url) }
-                    )
-                }
-            }
-            
 
         }
         .padding(14)
         .background(Theme.incomingBubble)
         .clipShape(RoundedRectangle(cornerRadius: 16))
         .padding(.horizontal, 4)
-    }
-    
-    // MARK: - Helpers
-    
-    @ViewBuilder
-    private func metaRow(icon: String, label: String) -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: icon)
-                .font(Theme.iconSmallFont)
-                .foregroundStyle(Theme.incomingText.opacity(0.5))
-                .frame(width: 16)
-            Text(label)
-                .font(Theme.archiveMetaValueFont)
+                .font(Theme.bodyFont)
                 .foregroundStyle(Theme.incomingText)
                 .lineLimit(2)
         }

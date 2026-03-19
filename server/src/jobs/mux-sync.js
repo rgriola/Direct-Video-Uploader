@@ -107,8 +107,8 @@ async function syncProcessingClips(io) {
                     // Still processing after threshold — log warning (only once per cycle)
                     console.warn(`🔄 Mux sync: clip ${clip.id} (#${clip.asset.mediasourceId}) still processing after ${ageMin}min (Mux status: ${muxAsset?.status || 'unknown'})`);
                 }
-            } else if (age > 30 * 60 * 1000) {
-                // No muxAssetId after 30 min — upload never completed, mark as ERROR
+            } else if (age > 15 * 60 * 1000) {
+                // No muxAssetId after 15 min — upload never completed, mark as ERROR
                 console.error(`🔄 Mux sync: clip ${clip.id} (#${clip.asset.mediasourceId}) has no Mux asset after ${ageMin}min — marking ERROR`);
                 await dbRetry(() => prisma.clip.update({
                     where: { id: clip.id },

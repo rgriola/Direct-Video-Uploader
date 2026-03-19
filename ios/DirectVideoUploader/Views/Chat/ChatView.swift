@@ -107,10 +107,10 @@ struct ChatView: View {
         }
         .sheet(isPresented: $showVideoLibrary) {
             VideoLibraryView(
-                onConfirm: { fileURL, fileName, metadata in
+                onConfirm: { fileURL, fileName, metadata, phAssetId in
                     showVideoLibrary = false
                     Task {
-                        await viewModel?.stageVideo(fileURL: fileURL, fileName: fileName, metadata: metadata)
+                        await viewModel?.stageVideo(fileURL: fileURL, fileName: fileName, metadata: metadata, phAssetIdentifier: phAssetId)
                     }
                 },
                 onDismiss: {
@@ -134,6 +134,9 @@ struct ChatView: View {
                     onSubmit: { formData in
                         vm.formSubmitError = nil  // Clear previous error
                         Task { await vm.submitForm(assetId: assetId, formData: formData) }
+                    },
+                    onCancel: {
+                        vm.cancelForm()
                     }
                 )
             }
