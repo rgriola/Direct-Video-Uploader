@@ -81,6 +81,20 @@ async function handleSlackCommand(socket, userId, assetId, channels, mentions, o
         console.error('Failed to look up asset for Slack:', err.message);
     }
 
+    // No asset found — tell user to upload first
+    if (!mediasourceId) {
+        socket.emit('message:new', {
+            id: crypto.randomUUID(),
+            userId: null,
+            assetId: null,
+            direction: 'INCOMING',
+            messageType: 'TEXT',
+            content: { text: 'Upload a video first and I can grab the metadata so you can Slack it. Previous uploads are in your Archive — you can Slack from there.' },
+            createdAt: now,
+        });
+        return;
+    }
+
     // Build Slack mention string (resolve display names to <@USERID> for channel posts)
     let slackMentionStr = null;
     if (mentions.length > 0 && channels.length > 0) {

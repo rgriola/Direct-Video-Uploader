@@ -85,7 +85,7 @@ struct MessageBubble: View {
                     .lineLimit(1)
             }
             
-            // Mediasource ID + URL link + copy button
+            // Mediasource ID
             if let msId = message.content.mediasourceId {
                 HStack(spacing: 4) {
                     Text("🔗")
@@ -93,47 +93,17 @@ struct MessageBubble: View {
                     Text(msId)
                         .font(Theme.monoIdFont)
                         .foregroundStyle(Theme.incomingText)
-                    
-                    if let clipURL = ServerConfig.clipURL(msId) {
-                        Text(clipURL.absoluteString)
-                            .font(Theme.urlFont)
-                            .foregroundStyle(Theme.incomingText)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                    }
-                    
-                    // Copy button — copies the full clip viewer URL
-                    Button {
-                        let link = ServerConfig.clipURL(msId)?.absoluteString ?? msId
-                        UIPasteboard.general.string = link
-                    } label: {
-                        Image(systemName: "doc.on.doc")
-                            .font(Theme.iconSmallFont)
-                            .foregroundStyle(Theme.incomingText.opacity(0.6))
-                    }
                 }
             }
             
-            // Action buttons — Metadata (left) + View (right)
+            // Action button — Metadata
             HStack(spacing: 12) {
-                // Metadata button — opens metadata sheet
                 if let onTapMetadata {
                     ChatActionButton(
                         icon: "info.circle.fill",
                         label: "Metadata",
                         color: Theme.actionBlue,
                         action: onTapMetadata
-                    )
-                }
-                
-                // View button — opens clip in browser
-                if let msId = message.content.mediasourceId,
-                   let clipURL = ServerConfig.clipURL(msId) {
-                    ChatActionButton(
-                        icon: "play.circle.fill",
-                        label: "View",
-                        color: Theme.green,
-                        action: { UIApplication.shared.open(clipURL) }
                     )
                 }
             }

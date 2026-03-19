@@ -566,3 +566,43 @@ Play/pause overlay — persistent play icon visible when paused (opacity 0.7), i
 - in Trim Mode > default video to paused showing pause state
 
 Change Video State to Paused on load in the Trim Video
+
+**_ Task _**
+
+- on iOS > Upload conversation needs better interaction.
+  **_ Context _**
+- When the iOS connects to the server user gets the Greeting. But when the user leaves and comes back the greeting repeats: see image.
+- Remember these chats are similar to alerts for the user.
+  **_ Instructions _**
+- Review how we can prevent this behavior when the server is connected and user switches back and forth. The greeting should only show once in the conversation.
+
+**_ Task _**
+
+- Move finished conversation to archive
+  **_ Context _**
+- Currently there is no hard close to an upload conversation.
+  **_ Instructions _**
+- determine when a hard end should logically happen in code and gracefully archive the upload.
+- I think this conversation should end when the video is confirmed on the mux server (mediasource) or when the user taps the + button to upload another video.
+- in archive retain metadata and allow user to slack metadata for that specific upload.
+- Show a plan to gracefully close the conversation and move it to archive, and how to handle the archive slack feature.
+
+....
+Video confirmed Card: Remove the Slack button.
+
+High Five Chat Bubble: Remove View Button
+
+Video confirmed Card: the theme colors should match the other message bubbles.
+
+High Five Message: Remove the Copy URL
+
+- know I changed the high five message.
+- The last message bubble "David... " this should be the final text after the Video Confirmed Message.
+- Video Confirmed : remove the Upload Another Video Button.
+
+**_ Task _**
+
+- New conversation retains previous upload metadata.
+  **_ Context _**
+- New conversation should clean any metadata and message there is no metadata to add to a slack channel or thead.
+- ie; a clean conversation, new upload, if user @rodczaro > response should be "Upload a video then I can grab the metadata and you can slack it. Previous uploads are in your archieve you can slack from there."

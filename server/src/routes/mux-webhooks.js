@@ -154,17 +154,32 @@ export default async function muxWebhookRoutes(fastify) {
                         data: { status: 'READY' },
                     }));
 
-                    // Notify connected clients via WebSocket
-                    const asset = await prisma.asset.findUnique({ where: { id: clip.assetId } });
+                    // Notify the asset owner via WebSocket (not all clients)
+                    const asset = await prisma.asset.findUnique({
+                        where: { id: clip.assetId },
+                        include: { formResponse: true },
+                    });
                     if (asset) {
-                        fastify.io?.emit('mux:ready', {
-                            assetId: asset.id,
-                            clipId: clip.id,
-                            mediasourceId: asset.mediasourceId,
-                            muxPlaybackId,
-                            streamUrl,
-                            thumbnailUrl,
-                        });
+                        const ownerSockets = fastify.userSockets?.get(asset.userId);
+                        if (ownerSockets) {
+                            for (const sid of ownerSockets) {
+                                fastify.io.to(sid).emit('mux:ready', {
+                                    assetId: asset.id,
+                                    clipId: clip.id,
+                                    mediasourceId: asset.mediasourceId,
+                                    originalFileName: asset.originalFileName,
+                                    muxPlaybackId,
+                                    streamUrl,
+                                    thumbnailUrl,
+                                    formType: asset.formResponse?.type || null,
+                                    formDescription: asset.formResponse?.description || null,
+                                    formPriority: asset.formResponse?.priority || null,
+                                    duration: clip.duration,
+                                    resolution: clip.resolution,
+                                    fileSize: clip.fileSize?.toString() || null,
+                                });
+                            }
+                        }
                     }
                 } else {
                     console.warn(`🎬 Mux asset ${muxAssetId} ready but no matching clip found`);

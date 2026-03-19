@@ -23,6 +23,20 @@ final class ChatViewModel {
     var stagedVideo: StagedVideo?
     var isProcessingVideo = false
     
+    // Archive state — conversation closed after mux:ready or new upload
+    var isArchived = false
+    var showSlackShareSheet = false
+    var archivedAssetId: String?
+    var archivedMediasourceId: String?
+    var archivedOriginalFileName: String?
+    var archivedThumbnailUrl: String?
+    var archivedFormType: String?
+    var archivedFormDescription: String?
+    var archivedFormPriority: String?
+    var archivedDuration: Int?
+    var archivedResolution: String?
+    var archivedFileSize: String?
+    
     // Form context (passed to ContextFormView header)
     var formOriginalFileName: String?
     var formCapturedAt: String?
@@ -134,8 +148,58 @@ final class ChatViewModel {
                 createdAt: ISO8601DateFormatter().string(from: Date())
             )
             self.messages.append(confirmation)
+        }
+        
+        ws.onMuxReady = { [weak self] data in
+            guard let self else { return }
+            let assetId = data["assetId"] as? String
+            let mediasourceId = data["mediasourceId"] as? String
+            let originalFileName = data["originalFileName"] as? String
+            let thumbnailUrl = data["thumbnailUrl"] as? String
+            let formType = data["formType"] as? String
+            let formDescription = data["formDescription"] as? String
+            let formPriority = data["formPriority"] as? String
+            let duration = data["duration"] as? Int
+            let resolution = data["resolution"] as? String
+            let fileSize = data["fileSize"] as? String
             
-            // After 1 second, append a random fun follow-up message
+            print("✅ [Mux Ready] Asset \(assetId ?? "?") confirmed on Mediasource")
+            
+            // Store archive metadata
+            self.archivedAssetId = assetId
+            self.archivedMediasourceId = mediasourceId
+            self.archivedOriginalFileName = originalFileName
+            self.archivedThumbnailUrl = thumbnailUrl
+            self.archivedFormType = formType
+            self.archivedFormDescription = formDescription
+            self.archivedFormPriority = formPriority
+            self.archivedDuration = duration
+            self.archivedResolution = resolution
+            self.archivedFileSize = fileSize
+            
+            // Append the summary bubble as a chat message
+            let summaryMessage = ChatMessage(
+                id: UUID().uuidString,
+                userId: nil,
+                assetId: assetId,
+                direction: .incoming,
+                messageType: .muxReady,
+                content: MessageContent(
+                    text: "✅ Video confirmed on Mediasource",
+                    mediasourceId: mediasourceId,
+                    originalFileName: originalFileName,
+                    duration: duration,
+                    resolution: resolution,
+                    formType: formType,
+                    formDescription: formDescription,
+                    formPriority: formPriority
+                ),
+                createdAt: ISO8601DateFormatter().string(from: Date())
+            )
+            self.messages.append(summaryMessage)
+            self.isArchived = true
+            
+            // After 1 second, append a random fun follow-up as the final message
             let firstName = self.auth.currentUser?.name.components(separatedBy: " ").first ?? "Friend"
             Task { @MainActor in
                 try? await Task.sleep(for: .seconds(1))
@@ -268,6 +332,31 @@ final class ChatViewModel {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         let range = NSRange(trimmed.startIndex..., in: trimmed)
         let isSlackCommand = Self.slackCommandPattern?.firstMatch(in: trimmed, range: range) != nil
+        
+        // If Slack command but no current upload, tell user to upload first
+        if isSlackCommand && currentAssetId == nil && !isArchived {
+            let localOut = ChatMessage(
+                id: UUID().uuidString,
+                userId: auth.currentUser?.id,
+                assetId: nil,
+                direction: .outgoing,
+                messageType: .slackPost,
+                content: MessageContent(text: text),
+                createdAt: ISO8601DateFormatter().string(from: Date())
+            )
+            messages.append(localOut)
+            let reply = ChatMessage(
+                id: UUID().uuidString,
+                userId: nil,
+                assetId: nil,
+                direction: .incoming,
+                messageType: .text,
+                content: MessageContent(text: "Upload a video first and I can grab the metadata so you can Slack it. Previous uploads are in your Archive — you can Slack from there."),
+                createdAt: ISO8601DateFormatter().string(from: Date())
+            )
+            messages.append(reply)
+            return
+        }
         
         // Optimistic UI — add message locally
         let localMessage = ChatMessage(
@@ -502,6 +591,11 @@ final class ChatViewModel {
     
     /// Stage a video for preview in chat — called after user confirms in the library picker.
     func stageVideo(fileURL: URL, fileName: String, metadata: VideoMetadata) async {
+        // If a conversation is archived, start fresh
+        if isArchived {
+            startNewConversation()
+        }
+        
         isProcessingVideo = true
         defer { isProcessingVideo = false }
         
@@ -615,5 +709,78 @@ final class ChatViewModel {
             options: ["Low", "Medium", "High", "Critical"]
         ))
         return fields
+    }
+    
+    // MARK: - Archive / New Conversation
+    
+    /// Clear current conversation and start fresh for a new upload.
+    func startNewConversation() {
+        messages.removeAll()
+        currentAssetId = nil
+        isArchived = false
+        archivedAssetId = nil
+        archivedMediasourceId = nil
+        archivedOriginalFileName = nil
+        archivedThumbnailUrl = nil
+        archivedFormType = nil
+        archivedFormDescription = nil
+        archivedFormPriority = nil
+        archivedDuration = nil
+        archivedResolution = nil
+        archivedFileSize = nil
+        formThumbnail = nil
+        formOriginalFileName = nil
+        formCapturedAt = nil
+        formClipCount = nil
+        formDuration = nil
+        formSubmitError = nil
+        lastAsset = nil
+        lastClip = nil
+        stagedVideo = nil
+        isUploading = false
+        uploadProgress = 0
+        showFormSheet = false
+        showMetadataSheet = false
+        showSlackShareSheet = false
+        sentUploadThumbnails.removeAll()
+        sentUploadFileNames.removeAll()
+        sentUploadDates.removeAll()
+        sentUploadHasLocation.removeAll()
+        lastStagedCreatedDate = nil
+        lastStagedHasLocation = false
+        
+        // Re-send greeting for the fresh conversation
+        let firstName = auth.currentUser?.name.components(separatedBy: " ").first ?? "there"
+        let greeting = ChatMessage(
+            id: UUID().uuidString,
+            userId: nil,
+            assetId: nil,
+            direction: .incoming,
+            messageType: .greeting,
+            content: MessageContent(text: "Hey \(firstName)! Ready for your next upload."),
+            createdAt: ISO8601DateFormatter().string(from: Date())
+        )
+        messages.append(greeting)
+    }
+    
+    /// Send a Slack share for the archived asset.
+    func shareToSlack(text: String) {
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        
+        // Optimistic UI — add Slack post message locally
+        let localMessage = ChatMessage(
+            id: UUID().uuidString,
+            userId: auth.currentUser?.id,
+            assetId: archivedAssetId,
+            direction: .outgoing,
+            messageType: .slackPost,
+            content: MessageContent(text: text),
+            createdAt: ISO8601DateFormatter().string(from: Date())
+        )
+        messages.append(localMessage)
+        showSlackShareSheet = false
+        
+        // Send via WebSocket — server detects #channel/@mention pattern
+        ws.sendMessage(text: text)
     }
 }

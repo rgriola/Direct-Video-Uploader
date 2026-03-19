@@ -38,6 +38,21 @@ struct ChatView: View {
                                             uploadProgress: vm.uploadProgress
                                         )
                                         .id(message.id)
+                                    } else if message.messageType == .muxReady {
+                                        // Archive summary card
+                                        ConversationSummaryBubble(
+                                            mediasourceId: vm.archivedMediasourceId,
+                                            originalFileName: vm.archivedOriginalFileName,
+                                            formType: vm.archivedFormType,
+                                            formDescription: vm.archivedFormDescription,
+                                            formPriority: vm.archivedFormPriority,
+                                            duration: vm.archivedDuration,
+                                            resolution: vm.archivedResolution,
+                                            fileSize: vm.archivedFileSize,
+                                            thumbnailUrl: vm.archivedThumbnailUrl,
+                                            onView: nil
+                                        )
+                                        .id(message.id)
                                     } else {
                                         MessageBubble(
                                             message: message,
@@ -79,7 +94,7 @@ struct ChatView: View {
                     .scrollDismissesKeyboard(.interactively)
                 }
                 
-                // Input bar
+                // Input bar — always visible so user can text or #Slack after archive
                 InputBar(
                     onSend: { text in
                         viewModel?.sendTextMessage(text)
@@ -129,6 +144,19 @@ struct ChatView: View {
         )) {
             if let vm = viewModel, let clip = vm.lastClip {
                 MetadataView(clip: clip, asset: vm.lastAsset, thumbnail: vm.formThumbnail)
+            }
+        }
+        .sheet(isPresented: Binding(
+            get: { viewModel?.showSlackShareSheet ?? false },
+            set: { viewModel?.showSlackShareSheet = $0 }
+        )) {
+            if let vm = viewModel {
+                SlackShareSheet(
+                    mediasourceId: vm.archivedMediasourceId,
+                    originalFileName: vm.archivedOriginalFileName,
+                    onSend: { text in vm.shareToSlack(text: text) },
+                    onDismiss: { vm.showSlackShareSheet = false }
+                )
             }
         }
         .task {

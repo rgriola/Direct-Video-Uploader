@@ -432,7 +432,7 @@ export default async function assetRoutes(fastify) {
                     formType: formResponse.type,
                     formDescription: formResponse.description,
                     formPriority: formResponse.priority,
-                    message: `🙌 High Five! I received your sheet, thank you. I'll text when the video is done.`,
+                    message: `🙌 High Five! I received slug form. Keep the app open to finish the upload. I'll text when the video is ready. Here is your metadata.`,
                 });
             }
         }

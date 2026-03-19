@@ -3,7 +3,9 @@ import SwiftUI
 /// A single expandable row in the archive list showing upload metadata and actions.
 struct ArchiveRowView: View {
     let asset: Asset
+    @Environment(WebSocketService.self) private var ws
     @State private var isExpanded = false
+    @State private var showSlackShare = false
     
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -124,6 +126,16 @@ struct ArchiveRowView: View {
                             )
                         }
                         
+                        // Share to Slack button
+                        if asset.status == .ready {
+                            ChatActionButton(
+                                icon: "paperplane.fill",
+                                label: "Slack",
+                                color: Theme.purple,
+                                action: { showSlackShare = true }
+                            )
+                        }
+                        
                         // Status pill
                         Text("\(asset.status.icon) \(asset.status.displayName)")
                             .font(Theme.archiveStatusFont)
@@ -143,6 +155,17 @@ struct ArchiveRowView: View {
         }
         .background(Theme.darkBg)
         .clipShape(RoundedRectangle(cornerRadius: 12))
+        .sheet(isPresented: $showSlackShare) {
+            SlackShareSheet(
+                mediasourceId: asset.mediasourceId,
+                originalFileName: asset.originalFileName,
+                onSend: { text in
+                    showSlackShare = false
+                    ws.sendMessage(text: text)
+                },
+                onDismiss: { showSlackShare = false }
+            )
+        }
     }
     
     // MARK: - Helpers

@@ -30,6 +30,7 @@ final class WebSocketService {
     var onUploadComplete: (@MainActor ([String: Any]) -> Void)?
     var onFormRequest: (@MainActor ([String: Any]) -> Void)?
     var onFormConfirmed: (@MainActor ([String: Any]) -> Void)?
+    var onMuxReady: (@MainActor ([String: Any]) -> Void)?
     var onReconnecting: (@MainActor (Int, Int) -> Void)?       // (attempt, maxAttempts)
     var onConnectionLost: (@MainActor () -> Void)?              // max retries exhausted
     
@@ -326,6 +327,11 @@ final class WebSocketService {
         case "form:confirmed":
             if let dict = payload as? [String: Any] {
                 onFormConfirmed?(dict)
+            }
+            
+        case "mux:ready":
+            if let dict = payload as? [String: Any] {
+                onMuxReady?(dict)
             }
             
         default:
