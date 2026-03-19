@@ -5,6 +5,7 @@ struct ContentView: View {
     @Environment(AuthService.self) private var auth
     @Environment(WebSocketService.self) private var ws
     @Environment(\.scenePhase) private var scenePhase
+    @State private var backgroundDisconnectTask: Task<Void, Never>?
     
     var body: some View {
         Group {
@@ -37,16 +38,23 @@ struct ContentView: View {
         .onChange(of: scenePhase) { _, newPhase in
             switch newPhase {
             case .active:
-                // Reconnect WebSocket if it died while backgrounded
+                // Cancel pending disconnect — user came back quickly
+                backgroundDisconnectTask?.cancel()
+                backgroundDisconnectTask = nil
+                // Reconnect only if socket actually closed
                 if auth.isAuthenticated, let token = auth.token, !ws.isConnected {
                     print("🔄 [Scene] Returned to foreground — reconnecting WebSocket")
                     ws.reconnectFromForeground(token: token)
                 }
             case .background:
-                // Graceful close — saves server resources, triggers clean disconnect
+                // 30s grace period — quick tab switches won't disconnect
                 if ws.isConnected {
-                    print("💤 [Scene] Entering background — closing WebSocket gracefully")
-                    ws.backgroundDisconnect()
+                    backgroundDisconnectTask = Task {
+                        try? await Task.sleep(for: .seconds(30))
+                        guard !Task.isCancelled else { return }
+                        print("💤 [Scene] Background timeout — closing WebSocket")
+                        ws.backgroundDisconnect()
+                    }
                 }
             default:
                 break

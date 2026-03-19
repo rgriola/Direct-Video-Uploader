@@ -16,6 +16,7 @@ struct VideoTrimView: View {
 
     @StateObject private var vm = TrimViewModel()
     @State private var isExporting = false
+    @State private var exportProgress: Double = 0
     @State private var exportError: String?
 
     var body: some View {
@@ -27,13 +28,22 @@ struct VideoTrimView: View {
                 trimToolbar
                     .padding(.top, 50)
 
-                Spacer().frame(height: 200)
+                Spacer(minLength: 12)
 
-                // Video preview
-                PlayerView(player: vm.player)
-                    .aspectRatio(vm.videoAspect, contentMode: .fit)
-                    .clipped()
-                    .padding(.horizontal, 4)
+                // Video preview — tap to toggle play/pause
+                ZStack {
+                    PlayerView(player: vm.player)
+                        .aspectRatio(vm.videoAspect, contentMode: .fit)
+                        .clipped()
+
+                    // Play/pause toggle overlay — visible when paused
+                    Image(systemName: vm.isPlaying ? "pause.fill" : "play.fill")
+                        .font(.system(size: 44, weight: .bold))
+                        .foregroundStyle(.white.opacity(vm.isPlaying ? 0 : 0.7))
+                        .animation(.easeInOut(duration: 0.2), value: vm.isPlaying)
+                }
+                .onTapGesture { vm.togglePlayPause() }
+                .padding(.horizontal, 4)
 
                 Spacer(minLength: 12)
 
@@ -56,7 +66,7 @@ struct VideoTrimView: View {
         }
         .preferredColorScheme(.dark)
         .onAppear { vm.load(url: videoURL) }
-        .onDisappear { vm.pause() }
+        .onDisappear { vm.cleanup() }
         .alert("Export Failed", isPresented: Binding(
             get: { exportError != nil },
             set: { if !$0 { exportError = nil } }
@@ -126,10 +136,11 @@ struct VideoTrimView: View {
         ZStack {
             Color.black.opacity(0.6).ignoresSafeArea()
             VStack(spacing: 16) {
-                ProgressView()
-                    .scaleEffect(1.4)
-                    .tint(.white)
-                Text("Exporting…")
+                ProgressView(value: exportProgress)
+                    .progressViewStyle(.linear)
+                    .tint(Theme.yellow)
+                    .frame(width: 180)
+                Text("Exporting… \(Int(exportProgress * 100))%")
                     .font(.system(size: 15, weight: .medium))
                     .foregroundStyle(.white)
             }
@@ -143,6 +154,7 @@ struct VideoTrimView: View {
     private func handleExport() {
         vm.pause()
         isExporting = true
+        exportProgress = 0
 
         Task {
             do {
@@ -150,7 +162,12 @@ struct VideoTrimView: View {
                     source: videoURL,
                     originalFileName: originalFileName,
                     startTime: vm.trimStart,
-                    endTime: vm.trimEnd
+                    endTime: vm.trimEnd,
+                    onProgress: { progress in
+                        Task { @MainActor in
+                            exportProgress = progress
+                        }
+                    }
                 )
                 await MainActor.run {
                     isExporting = false
@@ -186,14 +203,22 @@ final class TrimViewModel: ObservableObject {
     @Published var currentTime: Double = 0
     @Published var thumbnails: [UIImage] = []
     @Published var videoAspect: CGFloat = 16.0 / 9.0
+    @Published var isPlaying: Bool = true
 
     let player = AVPlayer()
     private var asset: AVURLAsset?
-    private nonisolated(unsafe) var timeObserver: Any?
+    private var timeObserver: Any?
 
     static let thumbnailCount = 12
+    static let minimumTrimDuration: Double = 1.0
+
+    private let haptic = UIImpactFeedbackGenerator(style: .light)
 
     func load(url: URL) {
+        // Enable audio playback even in silent mode
+        try? AVAudioSession.sharedInstance().setCategory(.playback)
+        try? AVAudioSession.sharedInstance().setActive(true)
+
         let asset = AVURLAsset(url: url)
         self.asset = asset
 
@@ -222,14 +247,38 @@ final class TrimViewModel: ObservableObject {
             // Generate thumbnails
             await generateThumbnails(asset: asset)
 
-            // Start playback and looping
+            // Set up looping observer (but don't auto-play)
             setupLooping()
-            player.play()
+            // Default to paused — user taps play when ready
+            player.pause()
+            isPlaying = false
         }
     }
 
     func pause() {
         player.pause()
+        isPlaying = false
+    }
+
+    func cleanup() {
+        player.pause()
+        if let obs = timeObserver {
+            player.removeTimeObserver(obs)
+            timeObserver = nil
+        }
+    }
+
+    func togglePlayPause() {
+        if isPlaying {
+            player.pause()
+        } else {
+            player.play()
+        }
+        isPlaying.toggle()
+    }
+
+    func fireHaptic() {
+        haptic.impactOccurred()
     }
 
     func seekToTrimStart() {
@@ -239,6 +288,12 @@ final class TrimViewModel: ObservableObject {
 
     func seekToTrimEnd() {
         let time = CMTime(seconds: trimEnd, preferredTimescale: 600)
+        player.seek(to: time, toleranceBefore: .zero, toleranceAfter: .zero)
+    }
+
+    func seekTo(_ seconds: Double) {
+        let clamped = Swift.min(Swift.max(seconds, trimStart), trimEnd)
+        let time = CMTime(seconds: clamped, preferredTimescale: 600)
         player.seek(to: time, toleranceBefore: .zero, toleranceAfter: .zero)
     }
 
@@ -292,11 +347,6 @@ final class TrimViewModel: ObservableObject {
         }
     }
 
-    deinit {
-        if let obs = timeObserver {
-            player.removeTimeObserver(obs)
-        }
-    }
 }
 
 // MARK: - PlayerView (AVPlayerLayer wrapper)
@@ -338,17 +388,26 @@ private struct TrimScrubberView: View {
             let totalW = geo.size.width
             let usableW = totalW - handleWidth * 2  // space between handles
             let pxPerSec = vm.duration > 0 ? usableW / vm.duration : 0
+            let minTrim = TrimViewModel.minimumTrimDuration
 
             let leftX = handleWidth + vm.trimStart * pxPerSec
             let rightX = handleWidth + vm.trimEnd * pxPerSec
 
             ZStack(alignment: .leading) {
-                // Filmstrip background
+                // Filmstrip background — tap to seek
                 filmstrip(width: totalW, height: geo.size.height)
+                    .onTapGesture { location in
+                        let tappedTime = (location.x - handleWidth) / pxPerSec
+                        vm.seekTo(tappedTime)
+                    }
 
                 // Dimmed regions outside trim
-                dimRegion(x: 0, width: leftX - handleWidth, height: geo.size.height)
-                dimRegion(x: rightX + handleWidth, width: totalW - rightX - handleWidth, height: geo.size.height)
+                dimRegion(centerX: (leftX - handleWidth) / 2,
+                          width: max(leftX - handleWidth, 0),
+                          height: geo.size.height)
+                dimRegion(centerX: (rightX + handleWidth + totalW) / 2,
+                          width: max(totalW - rightX - handleWidth, 0),
+                          height: geo.size.height)
 
                 // Trim border (top + bottom yellow lines)
                 trimBorder(leftX: leftX - handleWidth, rightX: rightX + handleWidth, height: geo.size.height)
@@ -359,14 +418,17 @@ private struct TrimScrubberView: View {
                     .gesture(
                         DragGesture(minimumDistance: 0)
                             .onChanged { val in
+                                if activeDrag == nil { vm.fireHaptic() }
                                 activeDrag = .start
-                                let newStart = clamp((val.location.x - handleWidth / 2) / pxPerSec, min: 0, max: vm.trimEnd - 0.5)
+                                let newStart = clamp((val.location.x - handleWidth) / pxPerSec, min: 0, max: vm.trimEnd - minTrim)
                                 vm.trimStart = newStart
                                 vm.seekToTrimStart()
                             }
                             .onEnded { _ in
+                                vm.fireHaptic()
                                 activeDrag = nil
                                 vm.player.play()
+                                vm.isPlaying = true
                             }
                     )
 
@@ -376,25 +438,49 @@ private struct TrimScrubberView: View {
                     .gesture(
                         DragGesture(minimumDistance: 0)
                             .onChanged { val in
+                                if activeDrag == nil { vm.fireHaptic() }
                                 activeDrag = .end
-                                let newEnd = clamp((val.location.x - handleWidth / 2) / pxPerSec, min: vm.trimStart + 0.5, max: vm.duration)
+                                let newEnd = clamp((val.location.x - handleWidth) / pxPerSec, min: vm.trimStart + minTrim, max: vm.duration)
                                 vm.trimEnd = newEnd
                                 vm.seekToTrimEnd()
                             }
                             .onEnded { _ in
+                                vm.fireHaptic()
                                 activeDrag = nil
                                 vm.player.play()
+                                vm.isPlaying = true
                             }
                     )
 
-                // Playhead indicator
+                // Playhead indicator — draggable
                 if vm.duration > 0 {
                     let playX = handleWidth + vm.currentTime * pxPerSec
                     Rectangle()
                         .fill(.white)
-                        .frame(width: 2, height: geo.size.height + 8)
+                        .frame(width: 14, height: geo.size.height + 8)
+                        .contentShape(Rectangle())
                         .position(x: playX, y: geo.size.height / 2)
-                        .allowsHitTesting(false)
+                        .gesture(
+                            DragGesture(minimumDistance: 0)
+                                .onChanged { val in
+                                    let wasPlaying = vm.isPlaying
+                                    if wasPlaying {
+                                        vm.player.pause()
+                                        vm.isPlaying = false
+                                    }
+                                    let newTime = clamp((val.location.x - handleWidth) / pxPerSec, min: vm.trimStart, max: vm.trimEnd)
+                                    vm.currentTime = newTime
+                                    vm.seekTo(newTime)
+                                }
+                        )
+                        // Visual: thin white line drawn over the wider hit target
+                        .overlay {
+                            Rectangle()
+                                .fill(.white)
+                                .frame(width: 2, height: geo.size.height + 8)
+                                .position(x: playX, y: geo.size.height / 2)
+                                .allowsHitTesting(false)
+                        }
                 }
             }
         }
@@ -408,7 +494,7 @@ private struct TrimScrubberView: View {
             if vm.thumbnails.isEmpty {
                 // Placeholder while loading
                 ForEach(0..<TrimViewModel.thumbnailCount, id: \.self) { _ in
-                    Color(hex: "2C2C2E")
+                    Theme.cardBg
                         .frame(width: width / CGFloat(TrimViewModel.thumbnailCount), height: height)
                 }
             } else {
@@ -425,12 +511,12 @@ private struct TrimScrubberView: View {
     }
 
     @ViewBuilder
-    private func dimRegion(x: CGFloat, width: CGFloat, height: CGFloat) -> some View {
+    private func dimRegion(centerX: CGFloat, width: CGFloat, height: CGFloat) -> some View {
         if width > 0 {
             Rectangle()
                 .fill(Color.black.opacity(0.6))
-                .frame(width: max(width, 0), height: height)
-                .offset(x: x)
+                .frame(width: width, height: height)
+                .position(x: centerX, y: height / 2)
                 .allowsHitTesting(false)
         }
     }
@@ -494,7 +580,8 @@ enum PassthroughExporter {
         source: URL,
         originalFileName: String,
         startTime: Double,
-        endTime: Double
+        endTime: Double,
+        onProgress: (@Sendable (Double) -> Void)? = nil
     ) async throws -> URL {
         let asset = AVURLAsset(url: source)
 
@@ -531,8 +618,14 @@ enum PassthroughExporter {
         let end = CMTime(seconds: endTime, preferredTimescale: 600)
         session.timeRange = CMTimeRange(start: start, end: end)
 
-        // Export
+        // Export with progress polling via Timer on main run loop
+        nonisolated(unsafe) let unsafeSession = session
+        let progressTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { _ in
+            onProgress?(Double(unsafeSession.progress))
+        }
         await session.export()
+        progressTimer.invalidate()
+        onProgress?(1.0)
 
         switch session.status {
         case .completed:

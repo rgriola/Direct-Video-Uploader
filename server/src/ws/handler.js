@@ -220,19 +220,24 @@ export function setupWebSocket(io, fastify) {
         connectedUsers.add(userId);
 
         if (clientType === 'ios') {
-            console.log(`✅ iOS connected: ${socket.userName} (userId=${userId}) — iOS clients: ${iosSockets.size}`);
+            const socketCount = userSockets.get(userId)?.size ?? 0;
+            console.log(`✅ iOS connected: ${socket.userName} (userId=${userId}) — iOS clients: ${iosSockets.size}, user sockets: ${socketCount}`);
 
-            // Always send greeting — each app open = fresh conversation
-            const greetingText = getGreeting(socket.userName);
-            socket.emit('message:new', {
-                id: crypto.randomUUID(),
-                userId: null,
-                assetId: null,
-                direction: 'INCOMING',
-                messageType: 'GREETING',
-                content: { text: greetingText },
-                createdAt: new Date().toISOString(),
-            });
+            // Only send greeting on fresh connections (not reconnects from tab switch / background return)
+            if (socketCount <= 1) {
+                const greetingText = getGreeting(socket.userName);
+                socket.emit('message:new', {
+                    id: crypto.randomUUID(),
+                    userId: null,
+                    assetId: null,
+                    direction: 'INCOMING',
+                    messageType: 'GREETING',
+                    content: { text: greetingText },
+                    createdAt: new Date().toISOString(),
+                });
+            } else {
+                console.log(`↩️ Reconnect for ${socket.userName} — skipping greeting`);
+            }
 
             // Greeting is ephemeral — not persisted (Option B: only persist meaningful events)
         }

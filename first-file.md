@@ -508,3 +508,61 @@ My Fixer dev setup has a Mediasource catch server stand-in > Mux, a process serv
 
 Problem: Staff uses two methods to upload video, shot on iPhone from their phone: Slack and NewsCloud.
 It features: lossless video upload is to provide lossless video uploads to Mediasource
+
+...
+
+Back to work Thur March 19, 2026
+
+**_ Task _**
+
+- in iOS > trim video; Create a plan to correct and test these identified issues for me to approve.
+
+**_ Context _**
+
+- This is for iOS App
+  Bugs / correctness:
+
+Color(hex: "2C2C2E") at VideoTrimView.swift:351 — violates the Theme convention. Should use a Theme constant.
+
+Dim region positioning is fragile — uses .offset(x:) inside a .leading-aligned ZStack. The right dim region's offset is calculated from the ZStack's leading edge, but offset is relative to natural position, which can misalign on different screen sizes.
+
+Handle drag coordinate math — val.location.x is in the GeometryReader's coordinate space, but the formula (val.location.x - handleWidth/2) / pxPerSec doesn't fully account for the left handle's width offset, causing slight inaccuracy especially near the edges.
+
+nonisolated(unsafe) on timeObserver — the copilot instructions flag this pattern. The property is only set/read on MainActor, so it could be a regular optional with the observer removal moved to a cleanup() method called from onDisappear.
+
+UX gaps:
+
+No play/pause toggle — video auto-plays with no way to pause for precise handle positioning.
+
+No haptic feedback on handle drag start/end — Apple's trim UIs use light haptics.
+
+Minimum trim 0.5s is very short — could produce unusable clips. Consider 1s minimum.
+
+No scrub-to-seek — tapping the filmstrip doesn't seek the playhead to that position.
+
+Export shows spinner only — no progress bar. AVAssetExportSession supports progress observation.
+
+...
+
+Vertical Video displays too low in the view.
+
+Couple changes > 5. Play/pause toggle — tap video preview to pause/play with fade-in/out icon overlay: This needs a Play/Pause Toggle overlay on the video frame.
+
+Horizontal video positioning is good. Vertical is too low in the view. Essentially vertical and horizontal video center points should be the same in the view.
+
+...
+**_ Task _**
+Change Video State to Paused on load in the Trim Video
+
+Play/pause overlay — persistent play icon visible when paused (opacity 0.7), invisible when playing (opacity 0). Fades smoothly on tap. No more flash-and-disappear.
+
+**_ Task _**
+
+- on iOS > have playhead scrollable in Trim Video Mode
+  **_ Context _**
+- The Edit Handle will scroll with the playhead. this behavior is fine.
+  **_ Instructions _**
+- Make playhead scrollable with touch.
+- in Trim Mode > default video to paused showing pause state
+
+Change Video State to Paused on load in the Trim Video
