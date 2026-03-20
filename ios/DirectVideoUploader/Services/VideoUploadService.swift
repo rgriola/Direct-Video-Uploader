@@ -96,9 +96,6 @@ final class VideoUploadService: NSObject {
     
     // MARK: - Private
     
-    private var continuation: CheckedContinuation<Data, Error>?
-    private var progressContinuation: AsyncStream<Double>.Continuation?
-    
     // MARK: - Mux Direct Upload
     
     /// Upload via Mux direct upload: ask server for a Mux upload URL, then PUT file directly to Mux CDN.

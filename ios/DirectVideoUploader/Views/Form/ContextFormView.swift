@@ -315,12 +315,4 @@ struct ContextFormView: View {
             content()
         }
     }
-    
-    private func formatDuration(_ seconds: Int) -> String {
-        DVUDateFormatting.duration(seconds)
-    }
-    
-    private func formatDate(_ isoString: String) -> String {
-        DVUDateFormatting.longDate(isoString)
-    }
 }

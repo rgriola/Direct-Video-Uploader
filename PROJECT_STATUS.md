@@ -1,8 +1,8 @@
 # Direct Video Uploader — Project Status
 
-> **Last Updated:** March 10, 2026 (evening) · MST
-> **Current Phase:** Phase 3 (Render + Cloud + Mux) — Mux pipeline fully operational + Stability Phases A–C complete + Upload simplified
-> **Overall Progress:** ████████████████████ 100% (Phase 2) · Phase 3 ~93%
+> **Last Updated:** March 19, 2026 (evening) · MST
+> **Current Phase:** Phase 3 (Render + Cloud + Mux) — Mux pipeline fully operational + Stability Phases A–C complete + Upload simplified + Re-upload + Archive polish
+> **Overall Progress:** ████████████████████ 100% (Phase 2) · Phase 3 ~95%
 
 ---
 
@@ -10,7 +10,7 @@
 
 The **Direct Video Uploader** is a mobile-first video upload platform disguised as a text conversation. Field crew members "text" videos to the **Mediasource Fixer** server, which processes them the way a news assignment desk operates — fast, structured, and integrated with Slack.
 
-We've completed the **interactive chat demo** (HTML prototype), **project specification** (v4), the **Phase 1 server foundation** (Node.js API, WebSocket, PostgreSQL, auth, admin dashboard), the **Phase 2 — iOS Demo App** core flow (login → chat → video upload → form → confirmation → archive), and the **Web Clip Viewer** (server-rendered at `/clips/:slug`). Latest session (Mar 9): **Upload pipeline simplified** — collapsed 4 upload paths (server direct, Mux direct, server-side ingest, tus resume) to a single Mux direct upload path. Removed `PendingUpload` persistence, tus resume, server multipart upload, and DEBUG/RELEASE branching. Also simplified chat header to show clear connection status (Ready/Working/Trying to connect).
+We've completed the **interactive chat demo** (HTML prototype), **project specification** (v4), the **Phase 1 server foundation** (Node.js API, WebSocket, PostgreSQL, auth, admin dashboard), the **Phase 2 — iOS Demo App** core flow (login → chat → video upload → form → confirmation → archive), and the **Web Clip Viewer** (server-rendered at `/clips/:slug`). Latest session (Mar 19): **Archive UI polish + Re-upload feature** — archive rows now show status dots (green Ready, amber Needs Details, red Upload Failed, spinner Processing), thumbnails, 7-day filter, equal-width action buttons, and a full re-upload flow with PHAsset auto-reconnect for stuck/errored uploads. Fixed Swift 6 concurrency crash, ERROR status handling in iOS, server Mux upload idempotency (only reuse `waiting` uploads), and clip ordering (newest first). Bubble tails removed (clean rounded rectangles). Launch screen + ATS/Info.plist networking fix for physical device.
 
 ---
 
@@ -184,6 +184,27 @@ cd ios && xcodegen generate && xcodebuild -project DirectVideoUploader.xcodeproj
 | Centralized Theme + Formatting     | ✅ Done            | Theme.swift, DVUDateFormatting.swift, UserDefaultsKeys |
 | Video trim (pre-upload)            | ✅ Done            | UIVideoEditorController via modal host VC, .typeHigh   |
 
+**Features Added (Mar 19 — Session):**
+
+- **Archive row status dots** — Collapsed row shows colored status dot: green (Ready), amber (Needs Details — no form response), red (Upload Failed — ERROR or stuck PROCESSING >5min), spinner (Processing/Uploading). Status text matches dot color.
+- **Archive thumbnails** — AsyncImage loads Mux thumbnail (`image.mux.com/{playbackId}/thumbnail.png?width=640`) in archive rows.
+- **Archive 7-day filter** — `recentAssets` computed property filters to last 7 days. Stuck uploads banner shows count with red background.
+- **Archive equal-width action buttons** — View, Slack, Details buttons use `frame(maxWidth: .infinity)` for uniform width.
+- **Re-upload feature (PHAsset auto-connect)** — 3-tier auto-reconnect: (1) stored PHAsset identifier from original upload, (2) auto-discovery by `capturedAt` date ±2s match in Photos library, (3) fallback to PhotosPicker. `PHAssetIdentifierStore` persists `[assetId: phAssetIdentifier]` to `Documents/phasset-identifiers.json`.
+- **Swift 6 concurrency crash fix** — `PHImageManager.requestAVAsset` callback runs on background queue. Moved export to standalone `phAssetToTempFile()` function outside the View struct to avoid MainActor isolation conflict.
+- **ERROR status handling in iOS** — Added `.error` case to status dot and action button cascades. Previously fell through to green "Ready".
+- **Processing spinner fix** — Changed from `reuploadComplete || asset.status == .processing` to just `asset.status == .processing` so spinner clears when server data refreshes.
+- **Form submission from archive** — `showFormSheet` + `ContextFormView` sheet with `submitFormFromArchive()`. Local `formSubmitted` @State tracks submission before server refresh.
+- **Bubble tail removal** — `ChatBubbleShape` simplified to `RoundedRectangle(cornerRadius: 18)`. Clean rounded rectangles for all message bubbles.
+- **Launch screen** — `project.yml` `info:` section with `LaunchBg` color, `Image` asset, no safe area insets.
+- **Info.plist ATS fix** — `INFOPLIST_KEY_NSAppTransportSecurity_AllowsArbitraryLoads` build setting never worked for nested plist dictionaries. Fixed with proper `info:` section in `project.yml` containing `NSAppTransportSecurity: { NSAllowsArbitraryLoads: true, NSAllowsLocalNetworking: true }`.
+- **Physical device URL fix** — Switched from Bonjour hostname (`Richards-MacBook-Air.local`) to LAN IP (`192.168.0.100:3000`) for reliable tethered device connections.
+- **Server Mux upload idempotency** — Only reuse existing Mux upload if `status === 'waiting'`. Stale uploads (any other status) are deleted and recreated.
+- **Clip ordering fix** — All clip queries (`/api/assets/mine`, form-submit, clip viewer) now use `orderBy: { createdAt: 'desc' }` to return newest clip first. Previously returned oldest (ERROR) clip, hiding the new READY one.
+- **Mux-sync timeout reduced** — No-asset ERROR timeout changed from 30min to 15min in `mux-sync.js`.
+- **ConversationSummaryBubble** — Mediasource ID row redesigned with 🔗 emoji, mono font ID, inline View button. `metaRow` helper restored after merge conflict damage.
+- **Greeting text updated** — "Hey {name}! You are busy today. Upload away."
+
 **Features Added (Mar 10 — Session):**
 
 - **Clip viewer CSP fix (3 rounds)** — Helmet's default Content-Security-Policy in production was blocking the mux-player CDN script (`script-src 'self'` rejects `cdn.jsdelivr.net`). Fixed with explicit CSP directives allowing jsdelivr (scripts), stream.mux.com (media), image.mux.com (thumbnails), \*.litix.io (Mux Data analytics). Second round: CORP set to `cross-origin`, COEP disabled. Third round: added `*.edgemv.mux.com` for multi-level subdomain HLS segments. Commits: `57fcb9e`, `0beba37`, `18f0ef4`.
@@ -349,6 +370,12 @@ Render is the preview environment (stand-in for eventual company production syst
 | iOS WS reconnect fix     | ✅ Done          | `disconnect()` cancels reconnect Task; `connectWebSocket()` disconnects before fresh connect. Commit `6e92dc2`.                             |
 | Idempotent Mux upload    | ✅ Done          | Duplicate clip prevention on retry/reconnect. Commit `3fbb632`.                                                                             |
 | Upload recovery prompt   | ✅ Done          | iOS prompts user to resume or discard interrupted uploads on relaunch.                                                                      |
+| Re-upload (stuck/error)  | ✅ Done          | PHAsset auto-reconnect (3-tier), archive re-upload button, Swift 6 safe export                                                              |
+| Archive status dots      | ✅ Done          | Green Ready, amber Needs Details, red Upload Failed, spinner Processing                                                                     |
+| Archive thumbnails       | ✅ Done          | Mux thumbnails via AsyncImage in archive rows                                                                                               |
+| Bubble tail removal      | ✅ Done          | Clean rounded rectangles, no tail triangles                                                                                                 |
+| Launch screen            | ✅ Done          | LaunchBg color + Image asset via project.yml info section                                                                                   |
+| ATS / Info.plist fix     | ✅ Done          | Proper NSAppTransportSecurity dict in Info.plist via xcodegen                                                                               |
 | Form state persistence   | ✅ Done          | `PendingForm` persisted to disk; restored on relaunch if form not yet submitted.                                                            |
 | Real metadata extraction | ✅ Done          | iOS AVAsset extracts real metadata (not ffprobe — native iOS)                                                                               |
 | Parallel form + upload   | 🔲 Not started   | Show form at upload start (not after); wait for both to finalize asset. Needed when real transcoding adds latency.                          |

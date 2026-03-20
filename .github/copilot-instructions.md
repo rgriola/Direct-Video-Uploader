@@ -86,6 +86,10 @@ const result = await prisma.$queryRawUnsafe(
 13. **DVUDateFormatting.swift** — Cached date/time formatters. Use `DVUDateFormatting.longDate(_:)`, `.duration(_:)`, `.fileSize(_:)`, etc. Never create inline `DateFormatter` or `ISO8601DateFormatter` instances.
 14. **UserDefaultsKeys** — Enum in `ServerConfig.swift`. Use `UserDefaultsKeys.authToken` / `.serverURL` instead of hardcoded strings.
 15. **Clip URLs** — Use `ServerConfig.clipURL(_:slug)` to build clip viewer URLs. Never hand-build `/clips/` URLs inline.
+16. **Re-upload (PHAsset auto-connect)** — `PHAssetIdentifierStore` in `VideoUploadService.swift` persists `[assetId: phAssetIdentifier]` to `Documents/phasset-identifiers.json`. `ArchiveRowView.handleAutoReupload()` uses 3-tier lookup: stored PHAsset ID → auto-discovery by `capturedAt` ±2s → PhotosPicker fallback.
+17. **Swift 6 + PHImageManager** — `PHImageManager.requestAVAsset` callback runs on a background queue. Never call it from inside a `@MainActor` View struct's method — move export logic to a standalone file-scope `async` function to avoid actor isolation conflicts.
+18. **Info.plist / ATS** — `INFOPLIST_KEY_NSAppTransportSecurity_AllowsArbitraryLoads` build setting does NOT work for nested plist dictionaries. Use `info:` section in `project.yml` with `NSAppTransportSecurity: { NSAllowsArbitraryLoads: true, NSAllowsLocalNetworking: true }` instead.
+19. **Archive status cascade** — ArchiveRowView status dot/button logic follows strict if/else order: needsDetails → amber | error/stuckProcessing → red | isReuploading → spinner | processing → spinner | else → green Ready. Always check `.error` status explicitly — it won't match `.processing`.
 
 ---
 
@@ -95,8 +99,10 @@ const result = await prisma.$queryRawUnsafe(
 2. **Webhook signature** — `muxClient.webhooks.verifySignature()` (instance method). NOT `Mux.Webhooks.verifySignature()` (old static API, does not exist in v12).
 3. **Direct upload** — iOS uploads directly to Mux CDN via `createDirectUpload()`. Server creates clip in PROCESSING state.
 4. **Webhook events** — `video.upload.asset_created` links muxAssetId, `video.asset.ready` sets clip+asset to READY, `video.asset.errored` sets ERROR.
-5. **Background sync** — `server/src/jobs/mux-sync.js` polls Mux every 2min for stuck PROCESSING clips (fallback if webhooks fail). Alerts via Slack.
+5. **Background sync** — `server/src/jobs/mux-sync.js` polls Mux every 2min for stuck PROCESSING clips (fallback if webhooks fail). No-asset clips auto-error after 15min. Alerts via Slack.
 6. **Mux helpers** — `server/src/lib/mux.js` exports `getMuxAsset()`, `getMuxUpload()`, `createDirectUpload()`, `ingestVideo()`, `isMuxEnabled`, `MUX_ENV_KEY`.
+7. **Upload idempotency** — `POST /api/assets/:id/mux-upload` only reuses existing Mux upload if `status === 'waiting'`. Stale uploads (any other status) are deleted and recreated.
+8. **Clip ordering** — All clip queries must use `orderBy: { createdAt: 'desc' }` to return newest clip first. Without this, re-uploaded assets show the old ERROR clip instead of the new READY one.
 
 ---
 

@@ -2,15 +2,11 @@
  * Asset routes — Create, upload, retrieve, submit form.
  */
 import { randomUUID } from 'crypto';
-import path from 'path';
-import fs from 'fs/promises';
-import { pipeline } from 'stream/promises';
-import { fileTypeFromFile } from 'file-type';
 import prisma from '../lib/prisma.js';
 import { generateMediasourceId, dbRetry, parseClientMetadata, serializeClip, notifyUserSockets } from '../lib/utils.js';
-import { ingestVideo, isMuxEnabled, createDirectUpload } from '../lib/mux.js';
+import { isMuxEnabled, createDirectUpload } from '../lib/mux.js';
 
-// Allowed video MIME types (B5: file upload validation)
+// Allowed video MIME types — kept for reference if local upload is re-enabled
 const ALLOWED_VIDEO_MIMES = new Set([
     'video/mp4',
     'video/quicktime',
@@ -55,144 +51,6 @@ export default async function assetRoutes(fastify) {
                 status: asset.status,
                 clipCount: asset.clipCount,
                 totalDuration: asset.totalDuration,
-            },
-        };
-    });
-
-    /**
-     * POST /api/assets/:id/upload
-     * Upload a video file (multipart).
-     */
-    fastify.post('/api/assets/:id/upload', {
-        preHandler: [fastify.authenticate],
-        config: {
-            rateLimit: { max: 10, timeWindow: '1 minute' },
-        },
-    }, async (request, reply) => {
-        const { id } = request.params;
-
-        // Verify asset exists and belongs to user
-        const asset = await dbRetry(() => prisma.asset.findUnique({ where: { id } }));
-        if (!asset || asset.userId !== request.user.id) {
-            return reply.status(404).send({ error: 'Asset not found' });
-        }
-
-        const data = await request.file();
-        if (!data) {
-            return reply.status(400).send({ error: 'No file uploaded' });
-        }
-
-        // Collect metadata fields sent alongside the file
-        const clientMeta = {};
-        for (const [key, field] of Object.entries(data.fields || {})) {
-            if (field?.value) clientMeta[key] = field.value;
-        }
-
-        // Save file to local uploads directory (demo — production would use R2/S3)
-        // B5: Sanitize filename — strip path components, limit length, remove null bytes
-        const safeOriginal = (data.filename || 'upload.mp4')
-            .replace(/\0/g, '')
-            .replace(/[/\\]/g, '_')
-            .slice(0, 255);
-        const ext = path.extname(safeOriginal) || '.mp4';
-        const clipId = randomUUID();
-        const fileName = `${clipId}${ext}`;
-        const uploadDir = path.resolve(process.cwd(), 'uploads');
-        const filePath = path.join(uploadDir, fileName);
-
-        await fs.mkdir(uploadDir, { recursive: true });
-
-        // Stream file to disk
-        const writeStream = (await import('fs')).createWriteStream(filePath);
-        await pipeline(data.file, writeStream);
-
-        // B5: Validate file is actually a video (magic byte check)
-        const fileType = await fileTypeFromFile(filePath);
-        if (!fileType || !ALLOWED_VIDEO_MIMES.has(fileType.mime)) {
-            await fs.unlink(filePath).catch(() => {});
-            return reply.status(415).send({
-                error: 'Invalid file type — only video files are accepted',
-                detected: fileType?.mime || 'unknown',
-            });
-        }
-
-        // Get file stats
-        const stats = await fs.stat(filePath);
-
-        const metadata = parseClientMetadata(clientMeta);
-        console.log(`📊 Metadata for ${asset.mediasourceId}:`, metadata);
-
-        // Create clip with metadata in one call (merged from 2 separate calls — #9)
-        const clip = await dbRetry(() => prisma.clip.create({
-            data: {
-                id: clipId,
-                assetId: id,
-                clipIndex: 0,
-                originalFileName: safeOriginal || asset.originalFileName || null,
-                storageUrl: `/uploads/${fileName}`,
-                fileSize: BigInt(stats.size),
-                ...metadata,
-                status: 'READY',
-            },
-        }));
-
-        // Single asset update (merged from 2 separate calls — #9)
-        const updatedAsset = await dbRetry(() => prisma.asset.update({
-            where: { id },
-            data: {
-                status: 'READY',
-                clipCount: { increment: 1 },
-                totalDuration: metadata.duration,
-            },
-            include: { clips: true },
-        }));
-
-        // Push metadata + form request via WebSocket
-        const originalName = clip.originalFileName || asset.originalFileName || asset.mediasourceId;
-
-        notifyUserSockets(fastify.io, fastify.userSockets?.get(request.user.id), {
-            assetId: id,
-            asset: { mediasourceId: asset.mediasourceId, mediasourceUrl: asset.mediasourceUrl, originalFileName: originalName },
-            userName: request.user.name,
-            metadata,
-            clip: { id: clipId, storageUrl: clip.storageUrl, fileSize: stats.size.toString() },
-            messageText: `🎬 #${asset.mediasourceId} is being processed, here are the Mediasource details.`,
-        });
-
-        // FORM_REQUEST is ephemeral — sent via WebSocket only, not persisted (Option B)
-
-        // ─── Mux Video Ingestion (fire-and-forget) ──────────────────
-        // Don't await — let Mux process in the background. Webhook updates the clip when ready.
-        if (isMuxEnabled) {
-            ingestVideo(filePath, { clipId, assetId: id }).then(async (result) => {
-                if (result?.muxUploadId) {
-                    await dbRetry(() => prisma.clip.update({
-                        where: { id: clipId },
-                        data: {
-                            muxUploadId: result.muxUploadId,
-                            // Don't change status — local file is already READY and playable.
-                            // Mux webhook will add muxPlaybackId when processing completes.
-                        },
-                    }));
-                    console.log(`🎬 Mux ingestion queued for clip ${clipId}`);
-                }
-            }).catch(err => {
-                console.error(`🎬 Mux ingestion failed for clip ${clipId}:`, err.message);
-            });
-        }
-
-        return {
-            clip: {
-                id: clipId,
-                storageUrl: `/uploads/${fileName}`,
-                fileSize: stats.size.toString(),
-                metadata: metadata,
-            },
-            asset: {
-                id: updatedAsset.id,
-                mediasourceId: updatedAsset.mediasourceId,
-                mediasourceUrl: updatedAsset.mediasourceUrl,
-                status: updatedAsset.status,
             },
         };
     });

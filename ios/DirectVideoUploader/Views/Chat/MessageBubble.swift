@@ -6,7 +6,6 @@ struct MessageBubble: View {
     var thumbnail: UIImage?
     var onTapMetadata: (() -> Void)?
     var onTapForm: (() -> Void)?
-    var onTapViewClip: (() -> Void)?
     
     private var isOutgoing: Bool { message.isOutgoing }
     
@@ -166,20 +165,6 @@ struct MessageBubble: View {
     }
     
     // MARK: - Helpers
-    
-    private func metaSummaryRow(icon: String, text: String) -> some View {
-        HStack(spacing: 6) {
-            Text(icon)
-                .font(Theme.iconSmallFont)
-            Text(text)
-                .font(Theme.captionFont)
-                .foregroundStyle(Theme.secondaryText)
-        }
-    }
-    
-    private func formatShortDate(_ isoString: String) -> String {
-        DVUDateFormatting.longDate(isoString)
-    }
     
     private var slackContent: some View {
         Group {
