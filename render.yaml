@@ -16,7 +16,7 @@ services:
     region: oregon
     branch: main
     rootDir: server
-    buildCommand: npm ci && npx prisma generate
+    buildCommand: npm ci && cd ../admin && npm ci && npm run build && cd ../server && npx prisma generate
     startCommand: npm run start
     healthCheckPath: /api/health
     envVars:
