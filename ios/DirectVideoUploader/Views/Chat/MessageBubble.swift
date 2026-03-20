@@ -194,41 +194,19 @@ struct MessageBubble: View {
     private var slackCardContent: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .top, spacing: 10) {
-                // Thumbnail — local UIImage first, then remote URL, then placeholder
+                // Thumbnail — downloaded UIImage or placeholder
                 if let thumb = thumbnail {
                     Image(uiImage: thumb)
                         .resizable()
                         .aspectRatio(contentMode: .fill)
                         .frame(width: 64, height: 64)
                         .clipShape(RoundedRectangle(cornerRadius: 8))
-                } else if let urlStr = message.content.thumbnailUrl, let url = URL(string: urlStr) {
-                    AsyncImage(url: url) { phase in
-                        switch phase {
-                        case .success(let image):
-                            image
-                                .resizable()
-                                .aspectRatio(contentMode: .fill)
-                                .frame(width: 64, height: 64)
-                                .clipShape(RoundedRectangle(cornerRadius: 8))
-                        default:
-                            RoundedRectangle(cornerRadius: 8)
-                                .fill(Color.black.opacity(0.15))
-                                .frame(width: 64, height: 64)
-                                .overlay(
-                                    Image(systemName: "video.fill")
-                                        .font(Theme.bodyFont)
-                                        .foregroundStyle(Theme.secondaryText)
-                                )
-                        }
-                    }
                 } else {
                     RoundedRectangle(cornerRadius: 8)
                         .fill(Color.black.opacity(0.15))
                         .frame(width: 64, height: 64)
                         .overlay(
-                            Image(systemName: "video.fill")
-                                .font(Theme.bodyFont)
-                                .foregroundStyle(Theme.secondaryText)
+                            ProgressView()
                         )
                 }
 

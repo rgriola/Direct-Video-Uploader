@@ -50,6 +50,9 @@ final class ChatViewModel {
     var sentUploadFileNames: [String: String] = [:]
     var sentUploadDates: [String: String] = [:]
     var sentUploadHasLocation: [String: Bool] = [:]
+
+    /// Cached thumbnails for Slack confirmation bubbles, keyed by message ID
+    var slackThumbnails: [String: UIImage] = [:]
     
     /// Temp staging data preserved across confirmStagedUpload → createAsset
     private var lastStagedCreatedDate: String?
@@ -75,6 +78,13 @@ final class ChatViewModel {
     private func setupWebSocketHandlers() {
         ws.onMessage = { [weak self] message in
             self?.messages.append(message)
+            // Auto-download thumbnail for Slack confirmation bubbles
+            if message.messageType == .slackPost,
+               message.direction == .incoming,
+               let urlStr = message.content.thumbnailUrl,
+               let url = URL(string: urlStr) {
+                self?.downloadSlackThumbnail(url: url, messageId: message.id)
+            }
         }
         
         ws.onUploadComplete = { [weak self] data in
@@ -812,6 +822,22 @@ final class ChatViewModel {
         showSlackShareSheet = false
         
         // Send via WebSocket — server detects #channel/@mention pattern
-        ws.sendMessage(text: text)
+        ws.sendMessage(text: text, assetId: archivedAssetId)
+    }
+
+    /// Download a thumbnail image and cache it for the Slack bubble.
+    private func downloadSlackThumbnail(url: URL, messageId: String) {
+        Task {
+            do {
+                let (data, _) = try await URLSession.shared.data(from: url)
+                if let image = UIImage(data: data) {
+                    await MainActor.run {
+                        self.slackThumbnails[messageId] = image
+                    }
+                }
+            } catch {
+                print("⚠️ Failed to download Slack thumbnail: \(error.localizedDescription)")
+            }
+        }
     }
 }

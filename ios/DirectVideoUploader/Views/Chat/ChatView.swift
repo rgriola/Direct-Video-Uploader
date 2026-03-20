@@ -56,7 +56,7 @@ struct ChatView: View {
                                     } else {
                                         MessageBubble(
                                             message: message,
-                                            thumbnail: message.messageType == .slackPost ? vm.formThumbnail : nil,
+                                            thumbnail: message.messageType == .slackPost ? (vm.slackThumbnails[message.id] ?? vm.formThumbnail) : nil,
                                             onTapMetadata: (message.messageType == .formRequest || message.messageType == .confirmation) ? { vm.showMetadata() } : nil,
                                             onTapForm: message.messageType == .formRequest ? { vm.showFormSheet = true } : nil
                                         )
