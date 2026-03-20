@@ -315,8 +315,6 @@ struct ArchiveRowView: View {
                 onDismiss: { showSlackShare = false }
             )
         }
-<<<<<<< HEAD
-=======
         .sheet(isPresented: $showFormSheet) {
             ContextFormView(
                 fields: buildFormFields(),
@@ -339,7 +337,6 @@ struct ArchiveRowView: View {
             selectedVideoItem = nil
             Task { await handleReupload(item: newItem) }
         }
->>>>>>> b5e0699 (Archive UI, re-upload, server fixes: status dots, thumbnails, 7-day filter, PHAsset auto-reconnect, Swift 6 crash fix, ERROR status handling, bubble cleanup, launch screen, ATS fix, Mux idempotency, clip ordering)
     }
     
     // MARK: - Helpers

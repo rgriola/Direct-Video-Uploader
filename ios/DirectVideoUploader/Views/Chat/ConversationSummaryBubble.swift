@@ -72,7 +72,19 @@ struct ConversationSummaryBubble: View {
         .background(Theme.incomingBubble)
         .clipShape(RoundedRectangle(cornerRadius: 16))
         .padding(.horizontal, 4)
-                .font(Theme.bodyFont)
+    }
+    
+    // MARK: - Helpers
+    
+    @ViewBuilder
+    private func metaRow(icon: String, label: String) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: icon)
+                .font(Theme.iconSmallFont)
+                .foregroundStyle(Theme.incomingText.opacity(0.5))
+                .frame(width: 16)
+            Text(label)
+                .font(Theme.archiveMetaValueFont)
                 .foregroundStyle(Theme.incomingText)
                 .lineLimit(2)
         }
