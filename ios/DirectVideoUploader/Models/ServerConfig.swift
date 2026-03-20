@@ -27,7 +27,8 @@ enum ServerConfig {
     
     /// Base URL for HTTP API calls — resolved dynamically on every access
     static var baseURL: URL {
-        // 1. User-saved override (from settings on login screen)
+        #if DEBUG
+        // 1. User-saved override (from settings on login screen) — Debug only
         if let saved = UserDefaults.standard.string(forKey: serverURLKey),
            let url = URL(string: saved) {
             return url
@@ -43,14 +44,13 @@ enum ServerConfig {
         #if targetEnvironment(simulator)
         return URL(string: "http://127.0.0.1:3000")!
         #else
-        // 4. Physical device → production in Release, dev-friendly in Debug
-        #if DEBUG
-        // In Debug builds on a physical device, use the Mac's LAN IP.
-        // The user can also change this via the server URL editor on the login screen.
+        // 4. Physical device in Debug → Mac's LAN IP
         return URL(string: "http://192.168.0.100:3000")!
-        #else
-        return URL(string: productionURL)!
         #endif
+        
+        #else
+        // Release builds always use production
+        return URL(string: productionURL)!
         #endif
     }
     

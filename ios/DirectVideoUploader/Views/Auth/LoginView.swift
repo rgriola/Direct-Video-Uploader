@@ -180,6 +180,7 @@ struct LoginView: View {
     
     private var serverURLIndicator: some View {
         VStack(spacing: 8) {
+            #if DEBUG
             if showServerEditor {
                 // Editable URL field
                 HStack(spacing: 8) {
@@ -249,6 +250,19 @@ struct LoginView: View {
                     .foregroundStyle(.white.opacity(0.25))
                 }
             }
+            #else
+            // Release: show production URL (read-only)
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(Color.green.opacity(0.6))
+                    .frame(width: 6, height: 6)
+                Image(systemName: "server.rack")
+                    .font(Theme.iconTinyFont)
+                Text(ServerConfig.currentURLString)
+                    .font(Theme.loginServerFont)
+            }
+            .foregroundStyle(.white.opacity(0.25))
+            #endif
         }
     }
     
