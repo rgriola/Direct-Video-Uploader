@@ -129,24 +129,18 @@ function escapeSlackMrkdwn(str) {
 
 /**
  * Build a rich Slack message for a mediasource asset.
- * @param {{ userName: string, mediasourceId: string, clipUrl: string, mention?: string }} opts
+ * Layout: Thumbnail + ▶ Play side-by-side, then metadata lines with clipboard on MS#.
+ * @param {{ userName: string, mediasourceId: string, clipUrl: string, mention?: string, thumbnailUrl?: string, slug?: string, capturedAt?: string }} opts
  * @returns {{ text: string, blocks: object[] }}
  */
-export function buildAssetMessage({ userName, mediasourceId, clipUrl, mention, thumbnailUrl }) {
+export function buildAssetMessage({ userName, mediasourceId, clipUrl, mention, thumbnailUrl, slug, capturedAt }) {
     // C5: Escape user-provided strings before inserting into mrkdwn
     const safeName = escapeSlackMrkdwn(userName);
     const safeId = escapeSlackMrkdwn(mediasourceId);
+    const safeSlug = escapeSlackMrkdwn(slug);
     const safeMention = escapeSlackMrkdwn(mention);
     const mentionLine = mention ? `\n${safeMention} please review` : '';
     const text = `🎬 New Video from ${safeName}\n🔗 ${clipUrl}${mentionLine}`;
-
-    const sectionBlock = {
-        type: 'section',
-        text: {
-            type: 'mrkdwn',
-            text: `*MS#* \`${safeId}\` by: @${safeName}`,
-        },
-    };
 
     // Thumbnail — use Mux thumbnail if available, otherwise a film placeholder
     const baseUrl = process.env.NODE_ENV === 'production'
@@ -154,22 +148,44 @@ export function buildAssetMessage({ userName, mediasourceId, clipUrl, mention, t
         : `http://localhost:${process.env.PORT || 3000}`;
     const imageUrl = thumbnailUrl || `${baseUrl}/assets/film-placeholder.svg`;
 
-    sectionBlock.accessory = {
-        type: 'image',
-        image_url: imageUrl,
-        alt_text: `Video thumbnail for ${safeId}`,
-    };
+    // Format production date/time from capturedAt
+    let prodDateTime = '';
+    if (capturedAt) {
+        const d = new Date(capturedAt);
+        prodDateTime = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+            + ' ' + d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+    }
+
+    // Build metadata text (left side) — each field on its own line
+    const metaLines = [`*@${safeName}*`, `MS# \`${safeId}\``];
+    if (safeSlug) metaLines.push(safeSlug);
+    if (prodDateTime) metaLines.push(prodDateTime);
+    const metaText = metaLines.join('\n');
 
     const blocks = [
-        sectionBlock,
+        // Metadata left, thumbnail right
+        {
+            type: 'section',
+            text: {
+                type: 'mrkdwn',
+                text: metaText,
+            },
+            accessory: {
+                type: 'image',
+                image_url: imageUrl,
+                alt_text: safeId,
+            },
+        },
+        // Play button (green)
         {
             type: 'actions',
             elements: [
                 {
                     type: 'button',
-                    text: { type: 'plain_text', text: '▶️ View Clip' },
+                    text: { type: 'plain_text', text: '▶️ Play' },
+                    style: 'primary',
                     url: clipUrl,
-                    action_id: 'view_clip',
+                    action_id: 'play_clip',
                 },
             ],
         },

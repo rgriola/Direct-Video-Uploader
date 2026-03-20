@@ -60,11 +60,16 @@ async function handleSlackCommand(socket, userId, assetId, channels, mentions, o
     let mediasourceId = null;
     let clipUrl = null;
     let thumbnailUrl = null;
+    let asset = null;
     try {
-        const asset = await prisma.asset.findFirst({
+        asset = await prisma.asset.findFirst({
             where: { userId, status: 'READY' },
             orderBy: { createdAt: 'desc' },
-            select: { mediasourceId: true, clips: { select: { muxPlaybackId: true }, take: 1 } },
+            select: {
+                mediasourceId: true,
+                formResponse: { select: { slug: true } },
+                clips: { select: { muxPlaybackId: true, capturedAt: true }, take: 1, orderBy: { createdAt: 'desc' } },
+            },
         });
         if (asset?.mediasourceId) {
             mediasourceId = asset.mediasourceId;
@@ -114,6 +119,8 @@ async function handleSlackCommand(socket, userId, assetId, channels, mentions, o
         clipUrl: clipUrl || '(no clip ready)',
         mention: slackMentionStr,
         thumbnailUrl,
+        slug: asset?.formResponse?.slug,
+        capturedAt: asset?.clips?.[0]?.capturedAt,
     });
 
     const results = [];
