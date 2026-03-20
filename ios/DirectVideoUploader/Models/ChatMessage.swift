@@ -46,6 +46,7 @@ struct MessageContent: Codable {
     let formFields: [FormField]?
     let channel: String?
     let mention: String?
+    let thumbnailUrl: String?
     
     // Form response data (populated on confirmation bubbles)
     let formType: String?
@@ -73,6 +74,7 @@ struct MessageContent: Codable {
         formFields: [FormField]? = nil,
         channel: String? = nil,
         mention: String? = nil,
+        thumbnailUrl: String? = nil,
         originalFileName: String? = nil,
         userName: String? = nil,
         clipCount: Int? = nil,
@@ -95,6 +97,7 @@ struct MessageContent: Codable {
         self.formFields = formFields
         self.channel = channel
         self.mention = mention
+        self.thumbnailUrl = thumbnailUrl
         self.originalFileName = originalFileName
         self.userName = userName
         self.clipCount = clipCount

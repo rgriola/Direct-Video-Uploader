@@ -615,3 +615,40 @@ High Five Message: Remove the Copy URL
 - High Five Bubble, move metadata button float right so it is on the same line as the Mediasource number
 
 ...
+
+In this plan can we place a cancel into archive with option A ? what would this look like?
+
+My recommendation: Option A. It's the cleanest because:
+
+You already have the fallback slug/description logic for app-kill scenarios
+The form-request bubble already has onTapForm wired — tapping it reopens the sheet
+Zero new server work
+Zero wasted bandwidth
+Implementation is just removing the dismiss-prevention on the form and maybe showing a soft warning: "You can fill this out later by tapping the message"
+The only code change would be in ContextFormView.swift — swap the hard-block (interactiveDismissDisabled / alert) for a softer flow that lets the user swipe down, with a brief toast or note that they can reopen it.
+
+...
+
+In Archive > the "needs details" archive lines > the buttons do not layout correctly, the button text are bunched up and unreadable.
+
+- Remove the ready check at the bottom. The user can see "needs attention" or "ready" at the top in the Archive header.
+- Change the "Raw" Green Check to Ready Green Check
+- reorder the buttons to read "View", "Slack", "Add Details/Details"
+- For archived uploads with confirmed data/video place a green button filler with no action. - The buttons should be the same size for a consistent layout.
+
+...
+**_ Task _**
+
+- Create a new layout slack message. I have attached and image how the current message appears in slack message from Fixer.
+
+**_ Instructions _**
+
+- Before coding show me a plan
+- Move the Thumbnail to the left side of the message
+- Turn the thumbail into a button with the Play Icon
+- Increase the size of the thumbnail by 5 px
+- Remove View Clip Button
+- To the right of the Thumbnail: Justify the following data in this order:
+  - [User Name ie; @rodczaro ][time message sent]
+  - MS#[000000000] This needs to be easy to copy for the catch producer. Copy/paste in iOS can be difficult at times) Maybe Add a Copy icon
+  - [Clip Slug Name] [Produciton Date/Time]

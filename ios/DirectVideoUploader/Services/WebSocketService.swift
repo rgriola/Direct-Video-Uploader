@@ -341,8 +341,9 @@ final class WebSocketService {
     
     // MARK: - Send
     
-    func sendMessage(text: String) {
-        let payload: [String: Any] = ["text": text]
+    func sendMessage(text: String, assetId: String? = nil) {
+        var payload: [String: Any] = ["text": text]
+        if let assetId { payload["assetId"] = assetId }
         guard let jsonData = try? JSONSerialization.data(withJSONObject: payload),
               let jsonString = String(data: jsonData, encoding: .utf8) else { return }
         enqueueOrSend("42[\"message:send\",\(jsonString)]")

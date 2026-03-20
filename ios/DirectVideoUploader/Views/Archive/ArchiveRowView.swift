@@ -310,7 +310,7 @@ struct ArchiveRowView: View {
                 originalFileName: asset.originalFileName,
                 onSend: { text in
                     showSlackShare = false
-                    ws.sendMessage(text: text)
+                    ws.sendMessage(text: text, assetId: asset.id)
                 },
                 onDismiss: { showSlackShare = false }
             )

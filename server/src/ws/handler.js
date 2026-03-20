@@ -56,14 +56,17 @@ async function handleSlackCommand(socket, userId, assetId, channels, mentions, o
         return;
     }
 
-    // Resolve the most recent READY asset for this user to build the clip URL
+    // Resolve asset — use explicit assetId if provided (archive), else most recent READY
     let mediasourceId = null;
     let clipUrl = null;
     let thumbnailUrl = null;
     let asset = null;
     try {
+        const where = assetId
+            ? { id: assetId, userId }
+            : { userId, status: 'READY' };
         asset = await prisma.asset.findFirst({
-            where: { userId, status: 'READY' },
+            where,
             orderBy: { createdAt: 'desc' },
             select: {
                 mediasourceId: true,
@@ -172,6 +175,8 @@ async function handleSlackCommand(socket, userId, assetId, channels, mentions, o
             mediasourceId,
             userName: socket.userName,
             slug: mediasourceId,
+            thumbnailUrl: thumbnailUrl || null,
+            capturedAt: asset?.clips?.[0]?.capturedAt?.toISOString?.() ?? asset?.clips?.[0]?.capturedAt ?? null,
         },
         createdAt: now,
     });
