@@ -329,6 +329,45 @@ export default async function assetRoutes(fastify) {
     });
 
     /**
+     * PATCH /api/assets/:id/transcript
+     * Save transcript text + timestamped segments to the first clip.
+     * Body: { transcript: string, segments: [{word, start, end, confidence}, ...] }
+     */
+    fastify.patch('/api/assets/:id/transcript', {
+        preHandler: [fastify.authenticate],
+    }, async (request, reply) => {
+        const { id } = request.params;
+        const { transcript, segments } = request.body || {};
+
+        if (!transcript || typeof transcript !== 'string') {
+            return reply.code(400).send({ error: 'transcript is required' });
+        }
+
+        // Find the first clip for this asset
+        const clip = await prisma.clip.findFirst({
+            where: { assetId: id },
+            orderBy: { clipIndex: 'asc' },
+        });
+
+        if (!clip) {
+            return reply.code(404).send({ error: 'No clip found for this asset' });
+        }
+
+        // Update transcript text + segments JSON
+        await prisma.clip.update({
+            where: { id: clip.id },
+            data: {
+                transcript: transcript.slice(0, 10000),
+                transcriptSegments: Array.isArray(segments) ? segments : undefined,
+            },
+        });
+
+        console.log(`📝 Transcript saved for clip ${clip.id} (${segments?.length ?? 0} segments)`);
+
+        return { ok: true, clipId: clip.id, segmentCount: segments?.length ?? 0 };
+    });
+
+    /**
      * GET /api/messages
      * Get chat message history for the authenticated user.
      */

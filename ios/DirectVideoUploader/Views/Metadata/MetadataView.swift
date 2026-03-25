@@ -121,6 +121,32 @@ struct MetadataView: View {
                             }
                             .clipShape(RoundedRectangle(cornerRadius: 14))
                             .padding(.horizontal, 16)
+                            
+                            // Transcript section
+                            if let transcript = clip.transcript, !transcript.isEmpty {
+                                VStack(alignment: .leading, spacing: 6) {
+                                    HStack(spacing: 4) {
+                                        Image(systemName: "text.quote")
+                                            .font(Theme.iconMediumFont)
+                                            .foregroundStyle(Theme.tint)
+                                        Text("Transcript")
+                                            .font(Theme.captionBoldFont)
+                                            .foregroundStyle(.white)
+                                    }
+                                    
+                                    Text(transcript)
+                                        .font(Theme.captionFont)
+                                        .foregroundStyle(Theme.secondaryText)
+                                        .lineLimit(20)
+                                        .textSelection(.enabled)
+                                }
+                                .padding(16)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(Color.white.opacity(0.05))
+                                .clipShape(RoundedRectangle(cornerRadius: 14))
+                                .padding(.horizontal, 16)
+                                .padding(.top, 12)
+                            }
                         } else {
                             // No metadata fallback
                             VStack(spacing: 12) {

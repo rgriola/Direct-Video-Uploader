@@ -10,12 +10,17 @@ export function getToken(): string | null {
   return authToken;
 }
 
+export function clearToken() {
+  authToken = null;
+}
+
 async function api<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  const headers: Record<string, string> = {};
   if (authToken) headers["Authorization"] = `Bearer ${authToken}`;
 
   const opts: RequestInit = { method, headers };
   if (body && (method === "POST" || method === "PUT" || method === "PATCH")) {
+    headers["Content-Type"] = "application/json";
     opts.body = JSON.stringify(body);
   }
 
@@ -78,4 +83,16 @@ export async function cleanupAssets() {
 
 export async function fetchErrors() {
   return api<{ errors: Array<{ id: string; source: string; category: string; message: string; severity: string; createdAt: string; userId?: string | null }> }>("GET", "/api/admin/errors");
+}
+
+export async function nuclearReset() {
+  return api<{
+    message: string;
+    deleted: { assets: number; clips: number; formResponses: number; chatMessages: number; errorLogs: number };
+    mux: { deleted: number; failed: number; skipped: boolean };
+  }>("POST", "/api/admin/nuclear-reset");
+}
+
+export async function createUser(data: { name: string; phoneNumber: string; email?: string; team?: string }) {
+  return api<{ user: { id: string; name: string; phoneNumber: string }; message: string }>("POST", "/api/admin/users", data);
 }

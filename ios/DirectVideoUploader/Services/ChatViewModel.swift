@@ -22,6 +22,7 @@ final class ChatViewModel {
     // Staged video — preview before upload (iOS 26.3 flow)
     var stagedVideo: StagedVideo?
     var isProcessingVideo = false
+    var transcribeOnUpload = false
     
     // Archive state — conversation closed after mux:ready or new upload
     var isArchived = false
@@ -64,6 +65,7 @@ final class ChatViewModel {
     let auth: AuthService
     let ws: WebSocketService
     let uploader = VideoUploadService()
+    let transcriber = TranscriptionService()
     
     init(auth: AuthService, ws: WebSocketService) {
         self.auth = auth
@@ -529,6 +531,33 @@ final class ChatViewModel {
         progressTask.cancel()
     }
     
+    // MARK: - Send Transcript
+    
+    /// Send transcript text + timestamped segments to the server (non-fatal).
+    func sendTranscript(assetId: String, result: TranscriptionResult) async {
+        var request = auth.authenticatedRequest(for: ServerConfig.transcriptURL(assetId), method: "PATCH")
+        
+        // Encode segments as JSON array
+        let segmentsData = try? JSONEncoder().encode(result.segments)
+        let segmentsJSON = segmentsData.flatMap { try? JSONSerialization.jsonObject(with: $0) }
+        
+        let body: [String: Any] = [
+            "transcript": result.text,
+            "segments": segmentsJSON ?? []
+        ]
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        
+        do {
+            let (_, response) = try await URLSession.shared.data(for: request)
+            if let http = response as? HTTPURLResponse, http.statusCode == 200 {
+                print("✅ Transcript saved for asset \(assetId) (\(result.segments.count) segments)")
+            }
+        } catch {
+            print("⚠️ Failed to save transcript: \(error)")
+            // Non-fatal — don't show error bubble for transcript failure
+        }
+    }
+    
     // MARK: - Cancel Form (skip details → archive)
     
     /// User chose to skip the form. Archive the conversation immediately.
@@ -676,7 +705,61 @@ final class ChatViewModel {
             pendingPHAssetIdentifier = nil
             await uploadVideo(assetId: asset.id, fileURL: fileURL, metadata: metadata)
             
-            // Clean up temp video file after upload (#18)
+            // Transcribe audio if user opted in via the toggle
+            if transcribeOnUpload {
+                // Show user that transcription is starting
+                let transcribingMsg = ChatMessage(
+                    id: UUID().uuidString,
+                    userId: nil,
+                    assetId: asset.id,
+                    direction: .incoming,
+                    messageType: .text,
+                    content: MessageContent(text: "🎙️ Transcribing audio..."),
+                    createdAt: ISO8601DateFormatter().string(from: Date())
+                )
+                messages.append(transcribingMsg)
+                
+                if let result = await transcriber.transcribe(videoURL: fileURL) {
+                    await sendTranscript(assetId: asset.id, result: result)
+                    // Update the transcribing message to show success
+                    if let idx = messages.firstIndex(where: { $0.id == transcribingMsg.id }) {
+                        messages[idx] = ChatMessage(
+                            id: transcribingMsg.id,
+                            userId: nil,
+                            assetId: asset.id,
+                            direction: .incoming,
+                            messageType: .text,
+                            content: MessageContent(text: "✅ Transcript saved (\(result.segments.count) words)"),
+                            createdAt: transcribingMsg.createdAt
+                        )
+                    }
+                } else {
+                    // Update message with the reason
+                    let statusText: String
+                    switch transcriber.state {
+                    case .noSpeech:
+                        statusText = "🎙️ No speech detected in video"
+                    case .failed(let reason):
+                        statusText = "⚠️ Transcription failed: \(reason)"
+                    default:
+                        statusText = "⚠️ Transcription did not produce results"
+                    }
+                    if let idx = messages.firstIndex(where: { $0.id == transcribingMsg.id }) {
+                        messages[idx] = ChatMessage(
+                            id: transcribingMsg.id,
+                            userId: nil,
+                            assetId: asset.id,
+                            direction: .incoming,
+                            messageType: .text,
+                            content: MessageContent(text: statusText),
+                            createdAt: transcribingMsg.createdAt
+                        )
+                    }
+                }
+                transcribeOnUpload = false  // Reset for next upload
+            }
+            
+            // Clean up temp video file after upload + transcription (#18)
             try? FileManager.default.removeItem(at: fileURL)
         }
     }

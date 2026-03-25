@@ -64,6 +64,8 @@ struct Clip: Codable, Identifiable {
     let orientation: String?
     let duration: Int?
     let fileSize: String?
+    let transcript: String?
+    let transcriptSegments: [TranscriptSegment]?
     let status: String?
     let storageUrl: String?
     let streamUrl: String?

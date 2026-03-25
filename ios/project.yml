@@ -33,6 +33,8 @@ targets:
         INFOPLIST_KEY_NSPhotoLibraryUsageDescription: "Select videos to upload to the newsroom server."
         INFOPLIST_KEY_NSCameraUsageDescription: "Record video to upload to the newsroom server."
         INFOPLIST_KEY_NSLocationWhenInUseUsageDescription: "Attach GPS coordinates to your video upload."
+        INFOPLIST_KEY_NSSpeechRecognitionUsageDescription: "Transcribe audio from your uploaded videos for searchable captions."
+        INFOPLIST_KEY_NSMicrophoneUsageDescription: "Required by the speech recognition framework for audio processing."
         PRODUCT_BUNDLE_IDENTIFIER: com.directvideo.uploader
         TARGETED_DEVICE_FAMILY: "1"
         GENERATE_INFOPLIST_FILE: YES

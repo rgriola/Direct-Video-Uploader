@@ -14,8 +14,10 @@ struct StagedVideo {
 /// Appears in the message list after the user picks a video from the library.
 struct VideoPreviewBubble: View {
     let stagedVideo: StagedVideo
-    var onSend: () -> Void
+    var onSend: (_ transcribe: Bool) -> Void
     var onCancel: () -> Void
+    
+    @State private var transcribeEnabled = false
 
     var body: some View {
         HStack {
@@ -77,9 +79,27 @@ struct VideoPreviewBubble: View {
 
                         Spacer()
 
+                        // Transcribe toggle
+                        Button {
+                            transcribeEnabled.toggle()
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: transcribeEnabled ? "mic.fill" : "mic.slash")
+                                    .font(Theme.iconFont)
+                                Text("Transcribe")
+                                    .font(Theme.captionFont)
+                            }
+                            .foregroundStyle(transcribeEnabled ? Theme.blue : .white.opacity(0.4))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(transcribeEnabled ? Theme.blue.opacity(0.15) : Color.clear)
+                            .clipShape(Capsule())
+                            .overlay(Capsule().stroke(transcribeEnabled ? Theme.blue.opacity(0.4) : .white.opacity(0.2), lineWidth: 1))
+                        }
+
                         // Send button 
                         Button {
-                            onSend()
+                            onSend(transcribeEnabled)
                         } label: {
                             Image(systemName: "arrow.up.circle.fill")
                                 .font(Theme.iconLargeFont)

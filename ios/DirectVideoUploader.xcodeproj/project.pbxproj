@@ -14,6 +14,7 @@
 		3397724BA17E25882518C0BD /* ConversationSummaryBubble.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC2A1D0A89F18984A90B5686 /* ConversationSummaryBubble.swift */; };
 		37912629DFC4719F11FEB3F5 /* MetadataView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2796AFC62F34F3182D7CCE1C /* MetadataView.swift */; };
 		4B254383C12F662D1C19C869 /* ChatButtonStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = E40A97DC8EDA46629FA1ACA5 /* ChatButtonStyle.swift */; };
+		610ABA84479B55060D56C3FD /* TranscriptionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = E0F22B2B9DC29CAFA863CDB2 /* TranscriptionService.swift */; };
 		6D33A3123AE13D1CADF387DC /* ChatViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66AE6120B342F8FBF6D9F832 /* ChatViewModel.swift */; };
 		6E552E05D744677CF4C5DA6A /* ChatMessage.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC18F5FFC74280EFFEB0BE65 /* ChatMessage.swift */; };
 		7D6C4ADE8374C39A5C0B5DDB /* ArchiveRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5BE16E72579F144A61F60847 /* ArchiveRowView.swift */; };
@@ -65,6 +66,7 @@
 		CE10509FD1B4B7983FB58B3D /* DirectVideoUploaderApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DirectVideoUploaderApp.swift; sourceTree = "<group>"; };
 		D56F342EB8CB3B26EC77BBF3 /* ServerConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerConfig.swift; sourceTree = "<group>"; };
 		DC2A1D0A89F18984A90B5686 /* ConversationSummaryBubble.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationSummaryBubble.swift; sourceTree = "<group>"; };
+		E0F22B2B9DC29CAFA863CDB2 /* TranscriptionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptionService.swift; sourceTree = "<group>"; };
 		E2F7D1991BA8E3668878BC47 /* KeychainHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainHelper.swift; sourceTree = "<group>"; };
 		E3899E53553FC5E50293A8E8 /* ContextFormView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContextFormView.swift; sourceTree = "<group>"; };
 		E40A97DC8EDA46629FA1ACA5 /* ChatButtonStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatButtonStyle.swift; sourceTree = "<group>"; };
@@ -92,6 +94,7 @@
 				86A11FF4693D09E9320E8C07 /* AuthService.swift */,
 				66AE6120B342F8FBF6D9F832 /* ChatViewModel.swift */,
 				E2F7D1991BA8E3668878BC47 /* KeychainHelper.swift */,
+				E0F22B2B9DC29CAFA863CDB2 /* TranscriptionService.swift */,
 				0E996DE4500DDFF0790F62F0 /* VideoMetadataExtractor.swift */,
 				EA58877C26F0C09FF7DFA4DC /* VideoUploadService.swift */,
 				0813D4F9F9F55CFAE78F08B5 /* WebSocketService.swift */,
@@ -298,6 +301,7 @@
 				889C07C34F8BFC90EF7CB2CE /* ServerConfig.swift in Sources */,
 				87ACFBE05C9BBA14AF4A07E1 /* SlackShareSheet.swift in Sources */,
 				CC1C0E76EF9FE58674443EC5 /* Theme.swift in Sources */,
+				610ABA84479B55060D56C3FD /* TranscriptionService.swift in Sources */,
 				CE6C303AB52C17CF99EFD315 /* User.swift in Sources */,
 				257DDBB48613A0897D5754F0 /* VideoLibraryView.swift in Sources */,
 				B23CA5DB5C7678A863AC8029 /* VideoMetadataExtractor.swift in Sources */,
@@ -388,7 +392,9 @@
 				INFOPLIST_KEY_CFBundleDisplayName = Fixer;
 				INFOPLIST_KEY_NSCameraUsageDescription = "Record video to upload to the newsroom server.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Attach GPS coordinates to your video upload.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Required by the speech recognition framework for audio processing.";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Select videos to upload to the newsroom server.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Transcribe audio from your uploaded videos for searchable captions.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_BackgroundColor = LaunchBg;
@@ -417,7 +423,9 @@
 				INFOPLIST_KEY_CFBundleDisplayName = Fixer;
 				INFOPLIST_KEY_NSCameraUsageDescription = "Record video to upload to the newsroom server.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Attach GPS coordinates to your video upload.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Required by the speech recognition framework for audio processing.";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Select videos to upload to the newsroom server.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Transcribe audio from your uploaded videos for searchable captions.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_BackgroundColor = LaunchBg;

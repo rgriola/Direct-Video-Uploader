@@ -91,6 +91,8 @@ model Clip {
   orientation      String?    @default("landscape")
   duration         Int?       @map("duration_seconds")
   fileSize         BigInt?    @map("file_size_bytes")
+  transcript       String?    @map("transcript")
+  transcriptSegments Json?    @map("transcript_segments")
   status           ClipStatus @default(UPLOADING)
   createdAt        DateTime   @default(now()) @map("created_at")
 

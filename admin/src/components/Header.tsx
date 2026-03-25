@@ -1,14 +1,15 @@
-import { RefreshCw } from "lucide-react";
+import { RefreshCw, LogOut } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface HeaderProps {
   wsConnected: boolean;
   onRefresh: () => void;
+  onLogout: () => void;
   refreshing: boolean;
   iosClients?: number;
 }
 
-export function Header({ wsConnected, onRefresh, refreshing, iosClients = 0 }: HeaderProps) {
+export function Header({ wsConnected, onRefresh, onLogout, refreshing, iosClients = 0 }: HeaderProps) {
   return (
     <header className="flex flex-wrap items-center justify-between gap-4 mb-10 pb-6 border-b border-(--border-subtle)">
       <div className="flex items-center gap-4 min-w-0">
@@ -66,6 +67,15 @@ export function Header({ wsConnected, onRefresh, refreshing, iosClients = 0 }: H
         >
           <RefreshCw className={cn("w-3.5 h-3.5", refreshing && "animate-spin-once")} />
           Refresh
+        </button>
+
+        {/* Logout button */}
+        <button
+          onClick={onLogout}
+          className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-[13px] font-medium bg-(--card) border border-(--border) text-(--muted-foreground) hover:bg-(--card-hover) hover:text-red-400 hover:border-red-400/50 transition-all cursor-pointer"
+        >
+          <LogOut className="w-3.5 h-3.5" />
+          Logout
         </button>
       </div>
     </header>

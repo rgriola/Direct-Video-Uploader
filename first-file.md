@@ -652,3 +652,41 @@ In Archive > the "needs details" archive lines > the buttons do not layout corre
   - [User Name ie; @rodczaro ][time message sent]
   - MS#[000000000] This needs to be easy to copy for the catch producer. Copy/paste in iOS can be difficult at times) Maybe Add a Copy icon
   - [Clip Slug Name] [Produciton Date/Time]
+
+March 25 2026
+
+**_ Task _**
+
+- Add Admin Panel for Demo User - Rod Griola "@rodczaro"
+- Create a plan to impliment a new Admin Panel and tools
+
+**_ Context _**
+
+- There is no way to clean the database, reset, for clean testing
+- Deleting video on Mux requires individually deleting each clip one by one which is time consuming for testing
+
+**_ Instructions _**
+
+- Add Demo Admin User with full access Name: Rod Griola, email: rodczaro@gmail.com, username: rodczaro, password: 3218
+- Admins can create new accounts.
+- all demo accounts except rodczaro will default password 0000 and be non Admins
+- Admin needs nuclear option to clean Mux and Database Tables (except users)
+- the Admin Panel can be an UI on the Dashboard.
+- Do no over reach with features this is a demo project and this admin panel is to make it easier to reset the database and add testing users.
+
+**_ Copilot Feedback _**
+
+- please make suggestions as needed or ask questions.
+
+**_ Issue _**
+
+- Apple Transcribe feature is not working
+  **_ Context _**
+- Apple Speech requires iOS permission
+- Both times the feature was tested the iOS App Crashed
+- Transcribe did not process
+  **_ Instructions _**
+- Review Transcription implimentation to try and solve the crash issue then we can work on if the transcribe feature is working properly.
+
+....
+This is the issue I am refering to > clip URL on Dev > http://localhost:3000/clips/8. Typical Clip URL on production > https://rodgriola.com/clips/100000045 . The 9 digit number at the end is the mediasource ID, it is always 9 numbers, on the dev server it started generating single digits where http://localhost:3000/clips/8 should be http://localhost:3000/clips/100000008. I am concenred we changed something in the schemea or on the server that is now incorrectly populating the mediasource ID on the dev server and this will then become the production server issue too when we push the update to Render

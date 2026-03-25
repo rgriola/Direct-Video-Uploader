@@ -3,6 +3,8 @@
  * All data is LIVE — no simulated actions.
  */
 import prisma from '../lib/prisma.js';
+import { hashPin } from '../lib/utils.js';
+import { deleteMuxAsset, isMuxEnabled } from '../lib/mux.js';
 
 export default async function adminRoutes(fastify) {
 
@@ -222,6 +224,111 @@ export default async function adminRoutes(fastify) {
             cleaned: ids.length,
             message: `Removed ${ids.length} stale UPLOADING asset(s)`,
             assetIds: ids,
+        };
+    });
+
+    /**
+     * POST /api/admin/users
+     * Create a new demo user. Defaults: PIN 0000, role USER.
+     */
+    fastify.post('/api/admin/users', {
+        preHandler: [fastify.authenticate, fastify.authorizeAdmin],
+    }, async (request, reply) => {
+        const { name, phoneNumber, email, team } = request.body || {};
+
+        if (!name || !phoneNumber) {
+            return reply.status(400).send({ error: 'name and phoneNumber are required' });
+        }
+
+        // Check phone uniqueness
+        const existing = await prisma.user.findUnique({
+            where: { phoneNumber },
+        });
+        if (existing) {
+            return reply.status(409).send({ error: `Phone number ${phoneNumber} already exists` });
+        }
+
+        const user = await prisma.user.create({
+            data: {
+                phoneNumber,
+                name,
+                email: email || null,
+                team: team || null,
+                pinHash: await hashPin('0000'),
+                role: 'USER',
+            },
+        });
+
+        console.log(`👤 Admin created user: ${name} (${phoneNumber})`);
+
+        return {
+            user: {
+                id: user.id,
+                name: user.name,
+                phoneNumber: user.phoneNumber,
+                email: user.email,
+                team: user.team,
+                role: user.role,
+            },
+            message: `Created user ${name} (PIN: 0000)`,
+        };
+    });
+
+    /**
+     * POST /api/admin/nuclear-reset
+     * Delete ALL assets, clips, form responses, chat messages, error logs.
+     * Also deletes all Mux assets. Preserves user accounts.
+     */
+    fastify.post('/api/admin/nuclear-reset', {
+        preHandler: [fastify.authenticate, fastify.authorizeAdmin],
+    }, async () => {
+        const results = { muxDeleted: 0, muxFailed: 0, muxSkipped: false };
+
+        // 1. Collect all Mux asset IDs from clips before deleting DB rows
+        const clipsWithMux = await prisma.clip.findMany({
+            where: { muxAssetId: { not: null } },
+            select: { muxAssetId: true },
+        });
+
+        // 2. Delete Mux assets
+        if (isMuxEnabled && clipsWithMux.length > 0) {
+            for (const clip of clipsWithMux) {
+                const ok = await deleteMuxAsset(clip.muxAssetId);
+                if (ok) results.muxDeleted++;
+                else results.muxFailed++;
+            }
+        } else if (!isMuxEnabled) {
+            results.muxSkipped = true;
+        }
+
+        // 3. Delete DB tables in FK-safe order
+        const chatDeleted = await prisma.chatMessage.deleteMany({});
+        const errorDeleted = await prisma.errorLog.deleteMany({});
+        const formDeleted = await prisma.formResponse.deleteMany({});
+        const clipDeleted = await prisma.clip.deleteMany({});
+        const assetDeleted = await prisma.asset.deleteMany({});
+
+        // 4. Reset mediasource_id sequence counter (must start at 100000001 for 9-digit IDs)
+        try {
+            await prisma.$queryRawUnsafe(`ALTER SEQUENCE IF EXISTS mediasource_id_seq RESTART WITH 100000001`);
+        } catch { /* sequence may not exist — safe to ignore */ }
+
+        console.log(`☢️  Nuclear reset by admin — ${assetDeleted.count} assets, ${clipDeleted.count} clips, ${results.muxDeleted} Mux assets deleted`);
+
+        return {
+            message: 'Nuclear reset complete — all data wiped except users',
+            deleted: {
+                assets: assetDeleted.count,
+                clips: clipDeleted.count,
+                formResponses: formDeleted.count,
+                chatMessages: chatDeleted.count,
+                errorLogs: errorDeleted.count,
+            },
+            mux: {
+                deleted: results.muxDeleted,
+                failed: results.muxFailed,
+                skipped: results.muxSkipped,
+            },
         };
     });
 

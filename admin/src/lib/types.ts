@@ -6,6 +6,7 @@ export interface User {
   phoneNumber: string;
   email?: string | null;
   team?: string | null;
+  role?: string;
   status: string;
   assetCount?: number;
   createdAt?: string;

@@ -201,6 +201,48 @@ struct ArchiveRowView: View {
                         }
                     }
                     
+                    // Transcript panel (only if transcript exists)
+                    if let clip = asset.clips?.first,
+                       let transcript = clip.transcript, !transcript.isEmpty {
+                        Divider()
+                            .background(Theme.separator)
+                        
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack(spacing: 6) {
+                                Image(systemName: "text.quote")
+                                    .font(Theme.iconFont)
+                                    .foregroundStyle(Theme.tint)
+                                Text("Transcript")
+                                    .font(Theme.captionBoldFont)
+                                    .foregroundStyle(.white)
+                                
+                                Spacer()
+                                
+                                // Copy button
+                                Button {
+                                    UIPasteboard.general.string = transcript
+                                } label: {
+                                    Image(systemName: "doc.on.doc")
+                                        .font(Theme.iconFont)
+                                        .foregroundStyle(Theme.secondaryText)
+                                }
+                            }
+                            
+                            // Scrollable transcript text
+                            ScrollView {
+                                Text(transcript)
+                                    .font(Theme.captionFont)
+                                    .foregroundStyle(Theme.metaText)
+                                    .textSelection(.enabled)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                            .frame(maxHeight: 200)
+                            .padding(10)
+                            .background(Color.black.opacity(0.3))
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                        }
+                    }
+                    
                     // Action buttons — equal width
                     if asset.status == .error || isStuckProcessing {
                         // Only show Re-upload when stuck

@@ -158,3 +158,37 @@ export async function getMuxUpload(muxUploadId) {
         return null;
     }
 }
+
+/**
+ * Delete a Mux asset by ID.
+ * @param {string} muxAssetId
+ * @returns {Promise<boolean>} true if deleted, false on error or not configured
+ */
+export async function deleteMuxAsset(muxAssetId) {
+    if (!muxClient || !muxAssetId) return false;
+    try {
+        await muxClient.video.assets.delete(muxAssetId);
+        return true;
+    } catch (err) {
+        // 404 = already gone, treat as success
+        if (err.status === 404) return true;
+        console.error('🎬 Mux asset delete error:', err.message);
+        return false;
+    }
+}
+
+/**
+ * List all Mux assets (paginated, returns first page).
+ * Used by nuclear reset to catch orphaned assets.
+ * @returns {Promise<Array|null>}
+ */
+export async function listMuxAssets() {
+    if (!muxClient) return null;
+    try {
+        const page = await muxClient.video.assets.list({ limit: 100 });
+        return page.data || [];
+    } catch (err) {
+        console.error('🎬 Mux list assets error:', err.message);
+        return null;
+    }
+}

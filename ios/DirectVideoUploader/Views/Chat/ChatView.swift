@@ -68,7 +68,8 @@ struct ChatView: View {
                                 if let staged = vm.stagedVideo {
                                     VideoPreviewBubble(
                                         stagedVideo: staged,
-                                        onSend: {
+                                        onSend: { transcribe in
+                                            vm.transcribeOnUpload = transcribe
                                             Task { await vm.confirmStagedUpload() }
                                         },
                                         onCancel: {

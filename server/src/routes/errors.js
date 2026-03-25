@@ -49,7 +49,7 @@ export default async function errorRoutes(fastify) {
      * Retrieve recent errors (admin only — useful for dashboard).
      */
     fastify.get('/api/admin/errors', {
-        preHandler: [fastify.authenticate],
+        preHandler: [fastify.authenticate, fastify.authorizeAdmin],
     }, async (request) => {
         const errors = await prisma.errorLog.findMany({
             orderBy: { createdAt: 'desc' },

@@ -458,6 +458,15 @@ export default async function clipRoutes(fastify) {
         </div>
         ` : ''}
 
+        ${clip?.transcript ? `
+        <div class="section">
+            <h3>📝 Transcript</h3>
+            <div class="meta-grid" style="padding:16px">
+                <p style="font-size:14px;line-height:1.6;color:rgba(255,255,255,0.8);white-space:pre-wrap;max-height:300px;overflow-y:auto;grid-column:1/-1">${escapeHtml(clip.transcript)}</p>
+            </div>
+        </div>
+        ` : ''}
+
         ${assetRows.length > 0 ? `
         <div class="section">
             <h3>Asset</h3>

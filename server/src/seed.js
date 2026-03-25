@@ -28,6 +28,14 @@ const DEMO_USERS = [
         pin: '0000',
         role: 'ADMIN',
     },
+    {
+        phoneNumber: '9176717330',
+        name: 'Rod Griola',
+        email: 'rodczaro@gmail.com',
+        team: 'Engineering',
+        pin: '3218',
+        role: 'ADMIN',
+    },
 ];
 
 async function seed() {
@@ -71,6 +79,7 @@ async function seed() {
     console.log('  David Burgess  →  Phone: 5055034455  PIN: 1234');
     console.log('  Carrie Smith   →  Phone: 5055551234  PIN: 1234');
     console.log('  Admin User     →  Phone: 8001234567  PIN: 0000');
+    console.log('  Rod Griola     →  Phone: 9176717330  PIN: 3218  (ADMIN)');
 }
 
 seed()

@@ -7,6 +7,7 @@ import { useStats, useUsers, useAssets, useRefreshDashboard, useTriadStatus } fr
 import { useSocket } from "@/hooks/use-socket";
 
 import { Header } from "@/components/Header";
+import { clearToken } from "@/lib/api";
 import { LoginForm } from "@/components/LoginForm";
 import { TriadStatusPanel } from "@/components/TriadStatus";
 import { StatsGrid } from "@/components/StatsGrid";
@@ -17,6 +18,7 @@ import { ActivityLog } from "@/components/ActivityLog";
 import { EndpointTable } from "@/components/EndpointTable";
 import { ChatHistory } from "@/components/ChatHistory";
 import { ErrorLog } from "@/components/ErrorLog";
+import { AdminTools } from "@/components/AdminTools";
 
 const AUTH_TOKEN_KEY = "fixer_admin_token";
 
@@ -155,6 +157,11 @@ function Dashboard() {
       <Header
         wsConnected={connected}
         onRefresh={handleRefresh}
+        onLogout={() => {
+          clearToken();
+          localStorage.removeItem(AUTH_TOKEN_KEY);
+          setLoggedIn(false);
+        }}
         refreshing={refreshing}
         iosClients={stats?.iosClients}
       />
@@ -166,6 +173,8 @@ function Dashboard() {
       <QuickActions onAction={handleAction} addLog={addLog} />
 
       {showChatHistory && <ChatHistory onClose={() => setShowChatHistory(false)} />}
+
+      <AdminTools onReset={() => { refreshDashboard(); addLog("http", "Nuclear reset executed"); }} />
 
       <div className="grid grid-cols-2 gap-6 mb-8 max-[900px]:grid-cols-1">
         <UserList users={users} isLoading={usersLoading} />
