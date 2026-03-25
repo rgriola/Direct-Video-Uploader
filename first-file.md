@@ -690,3 +690,33 @@ March 25 2026
 
 ....
 This is the issue I am refering to > clip URL on Dev > http://localhost:3000/clips/8. Typical Clip URL on production > https://rodgriola.com/clips/100000045 . The 9 digit number at the end is the mediasource ID, it is always 9 numbers, on the dev server it started generating single digits where http://localhost:3000/clips/8 should be http://localhost:3000/clips/100000008. I am concenred we changed something in the schemea or on the server that is now incorrectly populating the mediasource ID on the dev server and this will then become the production server issue too when we push the update to Render
+
+**_ Task _**
+
+- Add Logout button
+  **_ Instructions _**
+- Add Logout button to top right corner of Dashboard
+
+...
+
+**_ Issue _**
+
+- production server kicked back an error
+- File upload failed: Upload failed (HTTP 500): {"statusCode":500,"code":"P2022","error":"Internal Server Error","message":"\nInvalid `prisma.clip.findFirst()` invocation:\n\n\nThe column `(not available)` does not exist in the current database."}
+
+3/25/2026, 4:06:53 PM
+
+**_ Context _**
+
+- this was generated and posted in the dashboard and iOS app.
+- Production server was used
+- Database had been reset so this was first new assest
+- Transcription worked in iOS
+- error posted after I selected transcribe and submitted
+- Context Form never popped up
+
+**_ Instructions _**
+
+- Try to resolve the issue.
+
+...

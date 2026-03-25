@@ -109,6 +109,8 @@ final class TranscriptionService {
         let request = SFSpeechURLRecognitionRequest(url: videoURL)
         request.shouldReportPartialResults = false
         request.taskHint = .dictation
+        request.addsPunctuation = true
+        request.contextualStrings = ["mediasource", "Mediasource", "b-roll", "B-roll", "slug", "standup", "Fixer", "breaking"]
 
         if onDevice {
             if #available(iOS 16, *) {

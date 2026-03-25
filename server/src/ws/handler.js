@@ -246,11 +246,13 @@ export function setupWebSocket(io, fastify) {
         connectedUsers.add(userId);
 
         if (clientType === 'ios') {
-            const socketCount = userSockets.get(userId)?.size ?? 0;
-            console.log(`✅ iOS connected: ${socket.userName} (userId=${userId}) — iOS clients: ${iosSockets.size}, user sockets: ${socketCount}`);
+            // Count only iOS sockets for this user (ignore admin dashboard connections)
+            const allUserSockets = userSockets.get(userId) ?? new Set();
+            const iosCountForUser = [...allUserSockets].filter(id => iosSockets.has(id)).length;
+            console.log(`✅ iOS connected: ${socket.userName} (userId=${userId}) — iOS clients: ${iosSockets.size}, user iOS sockets: ${iosCountForUser}`);
 
-            // Only send greeting on fresh connections (not reconnects from tab switch / background return)
-            if (socketCount <= 1) {
+            // Only send greeting on fresh iOS connections (not reconnects from tab switch / background return)
+            if (iosCountForUser <= 1) {
                 const greetingText = getGreeting(socket.userName);
                 socket.emit('message:new', {
                     id: crypto.randomUUID(),
