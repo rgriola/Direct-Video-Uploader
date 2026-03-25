@@ -16,7 +16,7 @@ services:
     region: oregon
     branch: main
     rootDir: server
-    buildCommand: npm ci --include=dev && cd ../admin && npm ci --include=dev && npm run build && cd ../server && npx prisma generate
+    buildCommand: npm ci --include=dev && cd ../admin && npm ci --include=dev && npm run build && cd ../server && npx prisma generate && npx prisma db push --accept-data-loss && node src/seed.js
     startCommand: npm run start
     healthCheckPath: /api/health
     envVars:
