@@ -187,6 +187,28 @@ function Dashboard() {
       </div>
 
       <EndpointTable />
+
+      <footer className="mt-16 pt-6 border-t border-(--border-subtle) flex flex-wrap items-center justify-between gap-3">
+        <p className="text-xs text-(--muted-foreground)">© 2025 Sea Lion Media LLC. All rights reserved.</p>
+        <div className="flex items-center gap-4">
+          <a
+            href="/privacy-policy.html"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-xs text-(--accent-blue) hover:underline"
+          >
+            Privacy Policy
+          </a>
+          <a
+            href="/privacy-policy.html#support"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-xs text-(--accent-blue) hover:underline"
+          >
+            Support
+          </a>
+        </div>
+      </footer>
     </div>
   );
 }

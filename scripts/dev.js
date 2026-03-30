@@ -241,8 +241,10 @@ async function main() {
     }
 
     // ─ Step 3: Push schema ────────────────────────────────
+    // Use local binary directly — avoids npx resolution overhead (~5-10s)
+    const prismaBin = path.join(SERVER_DIR, 'node_modules', '.bin', 'prisma');
     logDB('Syncing schema (prisma db push)...');
-    const pushResult = runSync('npx prisma db push 2>&1', SERVER_DIR);
+    const pushResult = runSync(`${prismaBin} db push --skip-generate 2>&1`, SERVER_DIR);
     if (pushResult.ok) {
         logDB('Schema synced ✅');
     } else if (pushResult.output.includes('already in sync')) {
@@ -252,13 +254,26 @@ async function main() {
         // Don't exit — often just "already in sync"
     }
 
-    // ─ Step 4: Generate Prisma client ─────────────────────
-    logDB('Generating Prisma client...');
-    const genResult = runSync('npx prisma generate 2>&1', SERVER_DIR);
-    if (genResult.ok) {
-        logDB('Client generated ✅');
+    // ─ Step 4: Generate Prisma client (only if schema changed) ───────────
+    const schemaPath = path.join(SERVER_DIR, 'prisma', 'schema.prisma');
+    const clientPath = path.join(SERVER_DIR, 'node_modules', '.prisma', 'client', 'index.js');
+    let needsGenerate = true;
+    try {
+        const { statSync } = await import('fs');
+        const schemaMtime = statSync(schemaPath).mtimeMs;
+        const clientMtime = statSync(clientPath).mtimeMs;
+        needsGenerate = schemaMtime > clientMtime;
+    } catch { /* client doesn't exist yet — generate */ }
+    if (needsGenerate) {
+        logDB('Generating Prisma client (schema changed)...');
+        const genResult = runSync(`${prismaBin} generate 2>&1`, SERVER_DIR);
+        if (genResult.ok) {
+            logDB('Client generated ✅');
+        } else {
+            logErr('Prisma generate failed');
+        }
     } else {
-        logErr('Prisma generate failed');
+        logDB('Prisma client up to date — skipping generate ✅');
     }
 
     // ─ Step 5: Seed if empty ──────────────────────────────
