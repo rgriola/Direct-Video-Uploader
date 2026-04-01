@@ -90,6 +90,8 @@ const result = await prisma.$queryRawUnsafe(
 17. **Swift 6 + PHImageManager** — `PHImageManager.requestAVAsset` callback runs on a background queue. Never call it from inside a `@MainActor` View struct's method — move export logic to a standalone file-scope `async` function to avoid actor isolation conflicts.
 18. **Info.plist / ATS** — `INFOPLIST_KEY_NSAppTransportSecurity_AllowsArbitraryLoads` build setting does NOT work for nested plist dictionaries. Use `info:` section in `project.yml` with `NSAppTransportSecurity: { NSAllowsArbitraryLoads: true, NSAllowsLocalNetworking: true }` instead.
 19. **Archive status cascade** — ArchiveRowView status dot/button logic follows strict if/else order: needsDetails → amber | error/stuckProcessing → red | isReuploading → spinner | processing → spinner | else → green Ready. Always check `.error` status explicitly — it won't match `.processing`.
+20. **Transcription** — `TranscriptionService.swift` uses `SFSpeechRecognizer` with dual-attempt strategy: server-based first, on-device fallback. `addsPunctuation = true` for sentence formatting. `contextualStrings` for newsroom terms. Opt-in via Transcribe toggle on `VideoPreviewBubble`. Saves via `PATCH /api/assets/:id/transcript` to `clips.transcript` + `clips.transcript_segments`.
+21. **WS greeting** — Server greeting uses `iosSockets` count per user (not total `userSockets`) to decide if it's a fresh connection. Admin dashboard sockets must not block the iOS greeting.
 
 ---
 
@@ -100,7 +102,7 @@ const result = await prisma.$queryRawUnsafe(
 3. **Direct upload** — iOS uploads directly to Mux CDN via `createDirectUpload()`. Server creates clip in PROCESSING state.
 4. **Webhook events** — `video.upload.asset_created` links muxAssetId, `video.asset.ready` sets clip+asset to READY, `video.asset.errored` sets ERROR.
 5. **Background sync** — `server/src/jobs/mux-sync.js` polls Mux every 2min for stuck PROCESSING clips (fallback if webhooks fail). No-asset clips auto-error after 15min. Alerts via Slack.
-6. **Mux helpers** — `server/src/lib/mux.js` exports `getMuxAsset()`, `getMuxUpload()`, `createDirectUpload()`, `ingestVideo()`, `isMuxEnabled`, `MUX_ENV_KEY`.
+6. **Mux helpers** — `server/src/lib/mux.js` exports `getMuxAsset()`, `getMuxUpload()`, `createDirectUpload()`, `deleteMuxAsset()`, `listMuxAssets()`, `ingestVideo()`, `isMuxEnabled`, `MUX_ENV_KEY`.
 7. **Upload idempotency** — `POST /api/assets/:id/mux-upload` only reuses existing Mux upload if `status === 'waiting'`. Stale uploads (any other status) are deleted and recreated.
 8. **Clip ordering** — All clip queries must use `orderBy: { createdAt: 'desc' }` to return newest clip first. Without this, re-uploaded assets show the old ERROR clip instead of the new READY one.
 
@@ -126,16 +128,19 @@ const result = await prisma.$queryRawUnsafe(
 
 - **Vercel** → Web UI / Clip Viewer
 - **Render** → Server + PostgreSQL + WebSocket
+- **Render buildCommand** must include `npx prisma db push --accept-data-loss` to sync schema changes to production DB. Without it, new columns exist in Prisma Client but not PostgreSQL → P2022 errors.
+- **Render `render.yaml`** buildCommand: `npm ci --include=dev && cd ../admin && npm ci --include=dev && npm run build && cd ../server && npx prisma generate && npx prisma db push --accept-data-loss && node src/seed.js`
 
 ---
 
 ## Demo Credentials
 
-| User          | Phone        | PIN    |
-| ------------- | ------------ | ------ |
-| David Burgess | `5055034455` | `1234` |
-| Carrie Smith  | `5055551234` | `1234` |
-| Admin User    | `8001234567` | `0000` |
+| User          | Phone        | PIN    | Role  |
+| ------------- | ------------ | ------ | ----- |
+| David Burgess | `5055034455` | `1234` | USER  |
+| Carrie Smith  | `5055551234` | `1234` | USER  |
+| Admin User    | `8001234567` | `0000` | ADMIN |
+| Rod Griola    | `9176717330` | `3218` | ADMIN |
 
 ---
 
@@ -148,3 +153,6 @@ const result = await prisma.$queryRawUnsafe(
 - `server/src/lib/slack.js` — Slack bot integration (channel posts, DMs, alerts)
 - `server/src/jobs/mux-sync.js` — Background worker for stuck PROCESSING clips
 - `server/src/routes/mux-webhooks.js` — Mux webhook handler + polling fallback
+- `server/src/routes/admin.js` — Admin endpoints: stats, users, assets, nuclear reset, create user
+- `ios/DirectVideoUploader/Services/TranscriptionService.swift` — Apple Speech transcription (dual-attempt, punctuation, domain vocabulary)
+- `docs/APPLE_SPEECH_IMPLEMENTATION.md` — Transcription implementation plan + agent prompts

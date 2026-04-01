@@ -7,7 +7,11 @@ Fixer is an iOS app designed for uploading video directly to Mediasource. It sol
     •    Original Quality: Video is sent lossless in original iPhone quality, avoiding the compression Slack applies during manual uploads.
     •    Automated Metadata: Reads all EXIF data and merges it automatically with the Mediasource sheet.
     •    Simplified Input: The user only needs to add a Slug and Description.
-    •    Integrated Notifications: Lets staff slack directly to channels > #storms - or threads > @carrie.smith. The direct alert provides the upload Mediasource ID > a “copy" button, and a "View Clip” button > the Mediasource URL. 
+    •    Slack Integration: Metadata can be directly sent to channels i > #storms - or producer > @carrie.smith. The direct alert provides the upload Mediasource ID > a “copy" button, and a "View Clip” button > the Mediasource URL.
+
+Added Features:
+Clip editing - Long clips can cut down and then uploaded.
+Transcribe - Optional Transcribe feature will add the transcription to the metadata form.
 
 The piece I am missing is the Mediasource API endpoint—specifically, the protocol for how Mediasource receives video, generates IDs, and tracks/coordinates assets. 
 

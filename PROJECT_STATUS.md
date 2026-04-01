@@ -1,8 +1,8 @@
 # Direct Video Uploader — Project Status
 
-> **Last Updated:** March 19, 2026 (evening) · MST
-> **Current Phase:** Phase 3 (Render + Cloud + Mux) — Mux pipeline fully operational + Stability Phases A–C complete + Upload simplified + Re-upload + Archive polish
-> **Overall Progress:** ████████████████████ 100% (Phase 2) · Phase 3 ~95%
+> **Last Updated:** March 25, 2026 · MST
+> **Current Phase:** Phase 3 (Render + Cloud + Mux) — Mux pipeline fully operational + Stability Phases A–C complete + Upload simplified + Re-upload + Archive polish + Admin tools + Transcription
+> **Overall Progress:** ████████████████████ 100% (Phase 2) · Phase 3 ~97%
 
 ---
 
@@ -10,7 +10,7 @@
 
 The **Direct Video Uploader** is a mobile-first video upload platform disguised as a text conversation. Field crew members "text" videos to the **Mediasource Fixer** server, which processes them the way a news assignment desk operates — fast, structured, and integrated with Slack.
 
-We've completed the **interactive chat demo** (HTML prototype), **project specification** (v4), the **Phase 1 server foundation** (Node.js API, WebSocket, PostgreSQL, auth, admin dashboard), the **Phase 2 — iOS Demo App** core flow (login → chat → video upload → form → confirmation → archive), and the **Web Clip Viewer** (server-rendered at `/clips/:slug`). Latest session (Mar 19): **Archive UI polish + Re-upload feature** — archive rows now show status dots (green Ready, amber Needs Details, red Upload Failed, spinner Processing), thumbnails, 7-day filter, equal-width action buttons, and a full re-upload flow with PHAsset auto-reconnect for stuck/errored uploads. Fixed Swift 6 concurrency crash, ERROR status handling in iOS, server Mux upload idempotency (only reuse `waiting` uploads), and clip ordering (newest first). Bubble tails removed (clean rounded rectangles). Launch screen + ATS/Info.plist networking fix for physical device.
+We've completed the **interactive chat demo** (HTML prototype), **project specification** (v4), the **Phase 1 server foundation** (Node.js API, WebSocket, PostgreSQL, auth, admin dashboard), the **Phase 2 — iOS Demo App** core flow (login → chat → video upload → form → confirmation → archive), and the **Web Clip Viewer** (server-rendered at `/clips/:slug`). Latest session (Mar 25): **Admin panel + Apple Speech transcription + production fixes**. Admin panel: Rod Griola admin user, nuclear reset (wipes all data + Mux assets, preserves users, resets mediasource ID sequence), create user. Apple Speech: opt-in on-device transcription with dual-attempt strategy (server-based first, on-device fallback), `addsPunctuation` for proper sentence formatting, `contextualStrings` for newsroom vocabulary, `PATCH /api/assets/:id/transcript` endpoint. Fixed: Render `buildCommand` missing `prisma db push` (P2022 column error in production), greeting not showing when admin dashboard open (socketCount included admin sockets), mediasource ID counter resetting to 1. Dashboard: logout button, nuclear reset 400 fix (Content-Type on empty body).
 
 ---
 
@@ -112,58 +112,61 @@ cd ios && xcodegen generate && xcodebuild -project DirectVideoUploader.xcodeproj
 
 **Completed: Mar 2, 2026**
 
-| Deliverable                      | Status       | File                                              |
-| -------------------------------- | ------------ | ------------------------------------------------- |
-| Node.js + Fastify server         | ✅ Running   | `server/src/index.js`                             |
-| PostgreSQL database (Prisma 7)   | ✅ Running   | `server/prisma/schema.prisma`                     |
-| Database schema (6 models)       | ✅ Synced    | Users, Assets, Clips, FormResponses, ChatMessages |
-| Auth: Phone# + PIN → JWT         | ✅ Working   | `server/src/routes/auth.js`                       |
-| Asset CRUD + Upload              | ✅ Working   | `server/src/routes/assets.js`                     |
-| Form submission                  | ✅ Working   | `POST /api/assets/:id/form`                       |
-| Chat message history             | ✅ Working   | `GET /api/messages`                               |
-| WebSocket (Socket.IO)            | ✅ Connected | `server/src/ws/handler.js`                        |
-| Real-time greeting message       | ✅ Working   | Sent on WS connect                                |
-| Slack post simulation            | ✅ Working   | `slack:post` → `slack:confirmed` events           |
-| Admin API (stats, users, assets) | ✅ Working   | `server/src/routes/admin.js`                      |
-| Admin triad status endpoint      | ✅ Working   | `GET /api/admin/status` — DB, Server, iOS, Admin  |
-| Admin dashboard (React)          | ✅ Working   | React 19 + Vite 6 + TypeScript + Tailwind v4      |
-| Demo users seeded (3)            | ✅ Seeded    | David Burgess, Carrie Smith, Admin User           |
-| Local dev database               | ✅ Running   | `prisma dev` (PostgreSQL on port 51214)           |
+| Deliverable                      | Status       | File                                                        |
+| -------------------------------- | ------------ | ----------------------------------------------------------- |
+| Node.js + Fastify server         | ✅ Running   | `server/src/index.js`                                       |
+| PostgreSQL database (Prisma 7)   | ✅ Running   | `server/prisma/schema.prisma`                               |
+| Database schema (6 models)       | ✅ Synced    | Users, Assets, Clips, FormResponses, ChatMessages           |
+| Auth: Phone# + PIN → JWT         | ✅ Working   | `server/src/routes/auth.js`                                 |
+| Asset CRUD + Upload              | ✅ Working   | `server/src/routes/assets.js`                               |
+| Form submission                  | ✅ Working   | `POST /api/assets/:id/form`                                 |
+| Chat message history             | ✅ Working   | `GET /api/messages`                                         |
+| WebSocket (Socket.IO)            | ✅ Connected | `server/src/ws/handler.js`                                  |
+| Real-time greeting message       | ✅ Working   | Sent on WS connect                                          |
+| Slack post simulation            | ✅ Working   | `slack:post` → `slack:confirmed` events                     |
+| Admin API (stats, users, assets) | ✅ Working   | `server/src/routes/admin.js`                                |
+| Admin triad status endpoint      | ✅ Working   | `GET /api/admin/status` — DB, Server, iOS, Admin            |
+| Admin dashboard (React)          | ✅ Working   | React 19 + Vite 6 + TypeScript + Tailwind v4                |
+| Demo users seeded (4)            | ✅ Seeded    | David Burgess, Carrie Smith, Admin User, Rod Griola (ADMIN) |
+| Local dev database               | ✅ Running   | `prisma dev` (PostgreSQL on port 51214)                     |
 
 **Server Endpoints Verified:**
 
-| Method | Path                         | Status                     |
-| ------ | ---------------------------- | -------------------------- |
-| `GET`  | `/api/health`                | ✅                         |
-| `POST` | `/api/auth/login`            | ✅                         |
-| `GET`  | `/api/auth/me`               | ✅                         |
-| `POST` | `/api/assets`                | ✅                         |
-| `POST` | `/api/assets/:id/upload`     | ✅                         |
-| `GET`  | `/api/assets/:id`            | ✅                         |
-| `POST` | `/api/assets/:id/form`       | ✅                         |
-| `GET`  | `/api/messages`              | ✅                         |
-| `GET`  | `/api/admin/stats`           | ✅                         |
-| `GET`  | `/api/admin/users`           | ✅                         |
-| `GET`  | `/api/admin/assets`          | ✅                         |
-| `GET`  | `/api/admin/status`          | ✅ Triad health            |
-| `WS`   | `/socket.io/`                | ✅                         |
-| `POST` | `/api/admin/cleanup-assets`  | ✅ Stale asset cleanup     |
-| `GET`  | `/api/assets/mine`           | ✅ User's assets list      |
-| `POST` | `/api/errors`                | ✅ Client error log        |
-| `GET`  | `/api/admin/errors`          | ✅ Retrieve errors         |
-| `POST` | `/api/assets/:id/mux-upload` | ✅ Mux direct upload       |
-| `POST` | `/api/webhooks/mux`          | ✅ Mux webhook handler     |
-| `GET`  | `/api/mux/status/:clipId`    | ✅ Mux polling fallback    |
-| `GET`  | `/api/mux/env-key`           | ✅ Mux env key (public)    |
-| `POST` | `/api/admin/sync-mux-status` | ✅ Force-sync stuck assets |
-| `GET`  | `/`                          | ✅ Dashboard               |
-| `GET`  | `/clips/:slug`               | ✅ Web clip viewer         |
+| Method  | Path                         | Status                     |
+| ------- | ---------------------------- | -------------------------- |
+| `GET`   | `/api/health`                | ✅                         |
+| `POST`  | `/api/auth/login`            | ✅                         |
+| `GET`   | `/api/auth/me`               | ✅                         |
+| `POST`  | `/api/assets`                | ✅                         |
+| `POST`  | `/api/assets/:id/upload`     | ✅                         |
+| `GET`   | `/api/assets/:id`            | ✅                         |
+| `POST`  | `/api/assets/:id/form`       | ✅                         |
+| `GET`   | `/api/messages`              | ✅                         |
+| `GET`   | `/api/admin/stats`           | ✅                         |
+| `GET`   | `/api/admin/users`           | ✅                         |
+| `GET`   | `/api/admin/assets`          | ✅                         |
+| `GET`   | `/api/admin/status`          | ✅ Triad health            |
+| `WS`    | `/socket.io/`                | ✅                         |
+| `POST`  | `/api/admin/cleanup-assets`  | ✅ Stale asset cleanup     |
+| `GET`   | `/api/assets/mine`           | ✅ User's assets list      |
+| `POST`  | `/api/errors`                | ✅ Client error log        |
+| `GET`   | `/api/admin/errors`          | ✅ Retrieve errors         |
+| `PATCH` | `/api/assets/:id/transcript` | ✅ Save transcript         |
+| `POST`  | `/api/admin/users`           | ✅ Create user (admin)     |
+| `POST`  | `/api/admin/nuclear-reset`   | ✅ Wipe all data + Mux     |
+| `POST`  | `/api/assets/:id/mux-upload` | ✅ Mux direct upload       |
+| `POST`  | `/api/webhooks/mux`          | ✅ Mux webhook handler     |
+| `GET`   | `/api/mux/status/:clipId`    | ✅ Mux polling fallback    |
+| `GET`   | `/api/mux/env-key`           | ✅ Mux env key (public)    |
+| `POST`  | `/api/admin/sync-mux-status` | ✅ Force-sync stuck assets |
+| `GET`   | `/`                          | ✅ Dashboard               |
+| `GET`   | `/clips/:slug`               | ✅ Web clip viewer         |
 
 ---
 
 ### � Milestone 4 — iOS Demo App (Phase 2)
 
-**In Progress: Mar 2–14, 2026**
+**In Progress: Mar 2–25, 2026**
 
 | Deliverable                        | Status             | Notes                                                  |
 | ---------------------------------- | ------------------ | ------------------------------------------------------ |
@@ -183,6 +186,17 @@ cd ios && xcodegen generate && xcodebuild -project DirectVideoUploader.xcodeproj
 | Xcode automatic code signing       | ✅ Done            | Team `LW5P4PVL96`, auto signing in project.yml         |
 | Centralized Theme + Formatting     | ✅ Done            | Theme.swift, DVUDateFormatting.swift, UserDefaultsKeys |
 | Video trim (pre-upload)            | ✅ Done            | UIVideoEditorController via modal host VC, .typeHigh   |
+
+**Features Added (Mar 25 — Session):**
+
+- **Admin Panel** — New admin tools UI on the dashboard. Rod Griola added as ADMIN user (phone: 9176717330, PIN: 3218). `POST /api/admin/users` creates new accounts (default PIN 0000, USER role). `POST /api/admin/nuclear-reset` wipes all assets, clips, form responses, chat messages, error logs, and Mux assets — preserves users, resets mediasource ID sequence to 100000001. `AdminTools.tsx` component with confirmation dialogs.
+- **Apple Speech Transcription** — On-device video transcription using `SFSpeechRecognizer`. New `TranscriptionService.swift` with `@MainActor @Observable` pattern. Dual-attempt strategy: server-based recognition first (more accurate), on-device fallback (works offline). `addsPunctuation = true` for proper sentence formatting. `contextualStrings` for newsroom vocabulary (mediasource, b-roll, slug, standup, Fixer, breaking). Opt-in via Transcribe toggle on VideoPreviewBubble. Saves to `clips.transcript` + `clips.transcript_segments` (per-word timestamps). `PATCH /api/assets/:id/transcript` server endpoint. Transcript displayed in Archive, MetadataView, and web clip viewer.
+- **Render buildCommand fix** — `render.yaml` was missing `prisma db push` in the `buildCommand`. Prisma Client expected `transcript`/`transcript_segments` columns but they didn't exist in production PostgreSQL — P2022 error on every `clip.findFirst()`. Fixed by adding `npx prisma db push --accept-data-loss && node src/seed.js` to the Render buildCommand.
+- **Greeting fix** — Greeting was not showing when admin dashboard was open. `userSockets` tracked both admin and iOS sockets for the same user. Fixed to count only iOS sockets per user.
+- **Mediasource ID sequence fix** — Nuclear reset `ALTER SEQUENCE` used `RESTART WITH 1` instead of `RESTART WITH 100000001`. Fixed in `admin.js` + reset local dev DB sequence.
+- **Dashboard logout button** — Added LogOut icon button to admin dashboard header.
+- **Nuclear reset 400 fix** — `api()` function always set `Content-Type: application/json` even for empty-body POSTs. Fastify rejects with `FST_ERR_CTP_EMPTY_JSON_BODY`. Fixed to only set Content-Type when body exists.
+- **Admin dashboard rebuilt** — Fresh Vite build deployed to `server/public/`.
 
 **Features Added (Mar 19 — Session):**
 
@@ -377,6 +391,9 @@ Render is the preview environment (stand-in for eventual company production syst
 | Launch screen            | ✅ Done          | LaunchBg color + Image asset via project.yml info section                                                                                   |
 | ATS / Info.plist fix     | ✅ Done          | Proper NSAppTransportSecurity dict in Info.plist via xcodegen                                                                               |
 | Form state persistence   | ✅ Done          | `PendingForm` persisted to disk; restored on relaunch if form not yet submitted.                                                            |
+| Admin tools (nuclear)    | ✅ Done          | Nuclear reset wipes all data + Mux assets, preserves users, resets mediasource sequence. Admin create user.                                 |
+| Transcription (Speech)   | ✅ Done          | On-device Apple Speech transcription. Opt-in toggle, dual-attempt (server + on-device), punctuation, domain vocabulary.                     |
+| Render schema sync       | ✅ Done          | `render.yaml` buildCommand now includes `prisma db push --accept-data-loss` + `seed.js`. Previously only ran `prisma generate`.             |
 | Real metadata extraction | ✅ Done          | iOS AVAsset extracts real metadata (not ffprobe — native iOS)                                                                               |
 | Parallel form + upload   | 🔲 Not started   | Show form at upload start (not after); wait for both to finalize asset. Needed when real transcoding adds latency.                          |
 | Ephemeral chat cleanup   | ✅ Done          | Option B: greeting, auto-reply, form-request, confirmation no longer persisted to DB — sent via WS only.                                    |
@@ -517,11 +534,12 @@ Direct-Video-Uploader/
 
 ## Demo Credentials
 
-| User          | Phone        | PIN    | Team        |
-| ------------- | ------------ | ------ | ----------- |
-| David Burgess | `5055034455` | `1234` | Field       |
-| Carrie Smith  | `5055551234` | `1234` | Editorial   |
-| Admin User    | `8001234567` | `0000` | Engineering |
+| User          | Phone        | PIN    | Role  |
+| ------------- | ------------ | ------ | ----- |
+| David Burgess | `5055034455` | `1234` | USER  |
+| Carrie Smith  | `5055551234` | `1234` | USER  |
+| Admin User    | `8001234567` | `0000` | ADMIN |
+| Rod Griola    | `9176717330` | `3218` | ADMIN |
 
 ---
 

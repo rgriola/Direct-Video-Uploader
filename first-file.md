@@ -720,3 +720,15 @@ This is the issue I am refering to > clip URL on Dev > http://localhost:3000/cli
 - Try to resolve the issue.
 
 ...
+
+**_ Task _**
+
+- On the dashboard create a page for the iOS privacy policy
+  **_ Context _**
+- for app store distribution a privacy policy is required
+  **_ Instructions _**
+- Create the page /privacy-policy.html
+- This should have a modern professoinal layout, similar to the dashboard
+- On the dashboard page add a footer and a link to the privacy policy page.
+- the privacy policy is in this markdown file > privacy-policy.md
+- Any questions please ask.

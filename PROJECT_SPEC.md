@@ -479,31 +479,33 @@ Prisma uses **PascalCase** model names and **camelCase** field names. PostgreSQL
 
 ## 12. API Surface
 
-| Method       | Endpoint                    | Auth | Description                                 |
-| ------------ | --------------------------- | ---- | ------------------------------------------- |
-| **Auth**     |                             |      |                                             |
-| `POST`       | `/api/auth/login`           | —    | Phone# + PIN → JWT token                    |
-| `GET`        | `/api/auth/me`              | JWT  | Current user profile                        |
-| **Assets**   |                             |      |                                             |
-| `POST`       | `/api/assets`               | JWT  | Create a new asset (returns `assetId`)      |
-| `POST`       | `/api/assets/:id/upload`    | JWT  | Upload video file (multipart)               |
-| `GET`        | `/api/assets/:id`           | JWT  | Get asset details + clip metadata           |
-| `POST`       | `/api/assets/:id/form`      | JWT  | Submit completed context form               |
-| `POST`       | `/api/assets/:id/slack`     | JWT  | Post asset to Slack channel                 |
-| **Messages** |                             |      |                                             |
-| `GET`        | `/api/messages`             | JWT  | Chat message history                        |
-| **Admin**    |                             |      |                                             |
-| `GET`        | `/api/admin/stats`          | —    | Dashboard stats (users, assets, messages)   |
-| `GET`        | `/api/admin/users`          | —    | List all users                              |
-| `POST`       | `/api/admin/users`          | —    | Create a user                               |
-| `PATCH`      | `/api/admin/users/:id`      | —    | Update user status/team                     |
-| `GET`        | `/api/admin/assets`         | —    | List assets with clips + form responses     |
-| `POST`       | `/api/admin/cleanup-assets` | —    | Delete stale UPLOADING assets with no clips |
-| **System**   |                             |      |                                             |
-| `GET`        | `/api/health`               | —    | Server health check                         |
-| `GET`        | `/api/admin/status`         | —    | Triad health (database, server, iOS, admin) |
-| `WS`         | `/socket.io/`               | JWT  | WebSocket connection (Socket.IO)            |
-| `GET`        | `/`                         | —    | Admin dashboard UI                          |
+| Method       | Endpoint                     | Auth | Description                                 |
+| ------------ | ---------------------------- | ---- | ------------------------------------------- |
+| **Auth**     |                              |      |                                             |
+| `POST`       | `/api/auth/login`            | —    | Phone# + PIN → JWT token                    |
+| `GET`        | `/api/auth/me`               | JWT  | Current user profile                        |
+| **Assets**   |                              |      |                                             |
+| `POST`       | `/api/assets`                | JWT  | Create a new asset (returns `assetId`)      |
+| `POST`       | `/api/assets/:id/upload`     | JWT  | Upload video file (multipart)               |
+| `GET`        | `/api/assets/:id`            | JWT  | Get asset details + clip metadata           |
+| `POST`       | `/api/assets/:id/form`       | JWT  | Submit completed context form               |
+| `POST`       | `/api/assets/:id/slack`      | JWT  | Post asset to Slack channel                 |
+| **Messages** |                              |      |                                             |
+| `GET`        | `/api/messages`              | JWT  | Chat message history                        |
+| **Admin**    |                              |      |                                             |
+| `GET`        | `/api/admin/stats`           | —    | Dashboard stats (users, assets, messages)   |
+| `GET`        | `/api/admin/users`           | —    | List all users                              |
+| `POST`       | `/api/admin/users`           | —    | Create a user                               |
+| `PATCH`      | `/api/admin/users/:id`       | —    | Update user status/team                     |
+| `GET`        | `/api/admin/assets`          | —    | List assets with clips + form responses     |
+| `POST`       | `/api/admin/cleanup-assets`  | —    | Delete stale UPLOADING assets with no clips |
+| `POST`       | `/api/admin/nuclear-reset`   | JWT  | Wipe all data + Mux assets, preserve users  |
+| `PATCH`      | `/api/assets/:id/transcript` | JWT  | Save transcript text + timestamped segments |
+| **System**   |                              |      |                                             |
+| `GET`        | `/api/health`                | —    | Server health check                         |
+| `GET`        | `/api/admin/status`          | —    | Triad health (database, server, iOS, admin) |
+| `WS`         | `/socket.io/`                | JWT  | WebSocket connection (Socket.IO)            |
+| `GET`        | `/`                          | —    | Admin dashboard UI                          |
 
 ---
 
@@ -563,4 +565,4 @@ Hosted on **Vercel** as a static Next.js/Vite app that reads from the PostgreSQL
 
 ---
 
-_Spec v6 — March 3, 2026 — iOS demo verified end-to-end, removed simulate-upload endpoint, added cleanup-assets + status endpoints, Engine.IO 4 protocol notes_
+_Spec v7 — March 25, 2026 — Admin panel (nuclear reset, create user), Apple Speech transcription endpoint, Render buildCommand fix, greeting socket fix_

@@ -1,6 +1,8 @@
 # Apple Speech Framework — Transcription Implementation
 
 > **Purpose**: Add automatic video transcription to the upload workflow using Apple's native `Speech` framework. Zero third-party dependencies. On-device processing (iOS 17+).
+>
+> **Status**: ✅ IMPLEMENTED (March 25, 2026) — Dual-attempt strategy (server-based → on-device fallback), `addsPunctuation` for sentence formatting, `contextualStrings` for newsroom vocabulary.
 
 ---
 
@@ -341,7 +343,7 @@ func sendTranscript(assetId: String, result: TranscriptionResult) async {
     // Send both plain text and per-word timestamp segments
     let segmentsData = try? JSONEncoder().encode(result.segments)
     let segmentsJSON = segmentsData.flatMap { try? JSONSerialization.jsonObject(with: $0) }
-    
+
     let body: [String: Any] = [
         "transcript": result.text,
         "segments": segmentsJSON ?? []
@@ -367,40 +369,44 @@ func sendTranscript(assetId: String, result: TranscriptionResult) async {
 In [server/src/routes/assets.js](../server/src/routes/assets.js), add:
 
 ```javascript
-import prisma from '../lib/prisma.js';  // Use direct import (matches existing routes)
+import prisma from "../lib/prisma.js"; // Use direct import (matches existing routes)
 
 // PATCH /api/assets/:id/transcript — Save transcript + timestamped segments
-fastify.patch('/api/assets/:id/transcript', {
+fastify.patch(
+  "/api/assets/:id/transcript",
+  {
     preHandler: [fastify.authenticate],
-}, async (request, reply) => {
+  },
+  async (request, reply) => {
     const { id } = request.params;
     const { transcript, segments } = request.body;
 
-    if (!transcript || typeof transcript !== 'string') {
-        return reply.code(400).send({ error: 'transcript is required' });
+    if (!transcript || typeof transcript !== "string") {
+      return reply.code(400).send({ error: "transcript is required" });
     }
 
     // Find the first clip for this asset
     const clip = await prisma.clip.findFirst({
-        where: { assetId: id },
-        orderBy: { clipIndex: 'asc' },
+      where: { assetId: id },
+      orderBy: { clipIndex: "asc" },
     });
 
     if (!clip) {
-        return reply.code(404).send({ error: 'No clip found for this asset' });
+      return reply.code(404).send({ error: "No clip found for this asset" });
     }
 
     // Update transcript text + segments JSON
     await prisma.clip.update({
-        where: { id: clip.id },
-        data: {
-            transcript: transcript.slice(0, 10000),             // Cap plain text at 10K chars
-            transcriptSegments: Array.isArray(segments) ? segments : undefined,  // [{word, start, end, confidence}]
-        },
+      where: { id: clip.id },
+      data: {
+        transcript: transcript.slice(0, 10000), // Cap plain text at 10K chars
+        transcriptSegments: Array.isArray(segments) ? segments : undefined, // [{word, start, end, confidence}]
+      },
     });
 
     return { ok: true, clipId: clip.id, segmentCount: segments?.length ?? 0 };
-});
+  },
+);
 ```
 
 ---
@@ -455,7 +461,7 @@ if let clip = asset.clips?.first,
    let transcript = clip.transcript, !transcript.isEmpty {
     Divider()
         .background(Theme.separator)
-    
+
     VStack(alignment: .leading, spacing: 8) {
         HStack(spacing: 6) {
             Image(systemName: "text.quote")
@@ -464,9 +470,9 @@ if let clip = asset.clips?.first,
             Text("Transcript")
                 .font(Theme.captionBoldFont)
                 .foregroundStyle(.white)
-            
+
             Spacer()
-            
+
             // Copy button
             Button {
                 UIPasteboard.general.string = transcript
@@ -476,7 +482,7 @@ if let clip = asset.clips?.first,
                     .foregroundStyle(Theme.secondaryText)
             }
         }
-        
+
         // Scrollable transcript text
         ScrollView {
             Text(transcript)
@@ -542,35 +548,38 @@ static func transcriptURL(_ assetId: String) -> URL {
 
 ## Implementation Checklist
 
-| #   | Task                                                       | File(s)                                | Notes                             |
-| --- | ---------------------------------------------------------- | -------------------------------------- | --------------------------------- |
-| 1   | Create `TranscriptionService.swift`                        | `ios/.../Services/`                    | New file — code in §1 above       |
-| 2   | Add `NSSpeechRecognitionUsageDescription` to `project.yml` | `ios/project.yml`                      | Then `xcodegen generate`          |
-| 3   | Add `transcript` + `transcriptSegments` to Clip schema     | `server/prisma/schema.prisma`          | Then `npx prisma db push`         |
-| 4   | Add `transcript` to iOS `Clip` struct                      | `ios/.../Models/Asset.swift`           | `String?` + `[TranscriptSegment]?`|
-| 5   | Add transcribe toggle to `VideoPreviewBubble`              | `ios/.../Views/Chat/`                  | Opt-in mic button, default off    |
-| 6   | Add `TranscriptionService` call in `confirmStagedUpload()` | `ios/.../Services/ChatViewModel.swift` | Only if toggle on                 |
-| 7   | Add `sendTranscript()` method                              | `ios/.../Services/ChatViewModel.swift` | PATCH text + segments to server   |
-| 8   | Add `transcriptURL()` to `ServerConfig`                    | `ios/.../Models/ServerConfig.swift`    | Convenience URL                   |
-| 9   | Add `PATCH /api/assets/:id/transcript` route               | `server/src/routes/assets.js`          | Authenticated, caps at 10K chars  |
-| 10  | Include transcript in `GET /api/assets/me` response        | `server/src/routes/assets.js`          | Add to clip select                |
-| 11  | Show transcript in `ArchiveRowView.swift`                  | `ios/.../Views/Archive/`               | Scrollable panel + copy button    |
-| 12  | Show transcript in `MetadataView.swift`                    | `ios/.../Views/Metadata/`              | Collapsible text block            |
-| 13  | Show transcript in clip web viewer                         | `server/src/routes/clips.js`           | HTML section                      |
+| #   | Task                                                       | File(s)                                | Notes                              |
+| --- | ---------------------------------------------------------- | -------------------------------------- | ---------------------------------- |
+| 1   | Create `TranscriptionService.swift`                        | `ios/.../Services/`                    | New file — code in §1 above        |
+| 2   | Add `NSSpeechRecognitionUsageDescription` to `project.yml` | `ios/project.yml`                      | Then `xcodegen generate`           |
+| 3   | Add `transcript` + `transcriptSegments` to Clip schema     | `server/prisma/schema.prisma`          | Then `npx prisma db push`          |
+| 4   | Add `transcript` to iOS `Clip` struct                      | `ios/.../Models/Asset.swift`           | `String?` + `[TranscriptSegment]?` |
+| 5   | Add transcribe toggle to `VideoPreviewBubble`              | `ios/.../Views/Chat/`                  | Opt-in mic button, default off     |
+| 6   | Add `TranscriptionService` call in `confirmStagedUpload()` | `ios/.../Services/ChatViewModel.swift` | Only if toggle on                  |
+| 7   | Add `sendTranscript()` method                              | `ios/.../Services/ChatViewModel.swift` | PATCH text + segments to server    |
+| 8   | Add `transcriptURL()` to `ServerConfig`                    | `ios/.../Models/ServerConfig.swift`    | Convenience URL                    |
+| 9   | Add `PATCH /api/assets/:id/transcript` route               | `server/src/routes/assets.js`          | Authenticated, caps at 10K chars   |
+| 10  | Include transcript in `GET /api/assets/me` response        | `server/src/routes/assets.js`          | Add to clip select                 |
+| 11  | Show transcript in `ArchiveRowView.swift`                  | `ios/.../Views/Archive/`               | Scrollable panel + copy button     |
+| 12  | Show transcript in `MetadataView.swift`                    | `ios/.../Views/Metadata/`              | Collapsible text block             |
+| 13  | Show transcript in clip web viewer                         | `server/src/routes/clips.js`           | HTML section                       |
 
 ---
 
 ## Constraints & Edge Cases
 
-| Scenario                                            | Behavior                                                                                                                                    |
-| --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| **No audio track** (screen recording, silent video) | `SFSpeechRecognizer` returns error code 203 → `state = .noSpeech`, transcript = nil                                                         |
-| **Permission denied**                               | User sees no transcript; no error bubble. Fails silently.                                                                                   |
-| **Video > 1 hour**                                  | Apple Speech has a ~1 hour limit per request. For longer videos, split with `AVAssetExportSession` into segments. Not needed for this demo. |
-| **Non-English audio**                               | `SFSpeechRecognizer(locale: Locale(identifier: "es-MX"))` — could be configurable per user. Default: device locale.                         |
-| **Offline**                                         | iOS 17+ on-device model works offline. If `requiresOnDeviceRecognition = true` is set, no network needed.                                   |
-| **Slow device**                                     | Transcription runs async after upload. UI is not blocked. Progress indicator optional.                                                      |
-| **Transcript too long**                             | Server caps at 10,000 characters. Could paginate or summarize later.                                                                        |
+| Scenario                                            | Behavior                                                                                                                                     |
+| --------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| **No audio track** (screen recording, silent video) | `SFSpeechRecognizer` returns error code 203 → `state = .noSpeech`, transcript = nil                                                          |
+| **Permission denied**                               | User sees no transcript; no error bubble. Fails silently.                                                                                    |
+| **Video > 1 hour**                                  | Apple Speech has a ~1 hour limit per request. For longer videos, split with `AVAssetExportSession` into segments. Not needed for this demo.  |
+| **Non-English audio**                               | `SFSpeechRecognizer(locale: Locale(identifier: "es-MX"))` — could be configurable per user. Default: device locale.                          |
+| **Offline**                                         | Dual-attempt: server-based first (more accurate, needs network), on-device fallback (works offline). If both fail, no transcript.            |
+| **Slow device**                                     | Transcription runs async after upload. UI is not blocked. Progress indicator optional.                                                       |
+| **Transcript too long**                             | Server caps at 10,000 characters. Could paginate or summarize later.                                                                         |
+| **Punctuation**                                     | `addsPunctuation = true` on `SFSpeechRecognitionRequest` enables automatic period/comma/question mark insertion (iOS 16+).                   |
+| **Domain vocabulary**                               | `contextualStrings` biases recognizer toward newsroom terms: mediasource, b-roll, slug, standup, Fixer, breaking.                            |
+| **Swift 6 concurrency**                             | `recognitionTask` callback runs on background queue. `nonisolated` methods + `ResumeGuard` class (`@unchecked Sendable`) prevent data races. |
 
 ---
 
