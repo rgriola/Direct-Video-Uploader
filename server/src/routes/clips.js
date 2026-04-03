@@ -250,8 +250,13 @@ export default async function clipRoutes(fastify) {
         }
         /* ── Clip title block ── */
         .clip-title-block {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 12px;
             margin-bottom: 20px;
         }
+        .clip-title-left { flex: 1; min-width: 0; }
         .clip-title-block h1 {
             font-size: 22px;
             font-weight: 700;
@@ -264,6 +269,23 @@ export default async function clipRoutes(fastify) {
             color: var(--muted-foreground);
             margin-top: 4px;
         }
+        .dashboard-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--accent-blue);
+            text-decoration: none;
+            white-space: nowrap;
+            padding: 6px 12px;
+            border: 1px solid var(--border-subtle);
+            border-radius: 8px;
+            background: var(--card);
+            flex-shrink: 0;
+            margin-top: 4px;
+        }
+        .dashboard-link:hover { border-color: var(--accent-blue); }
         /* ── Card panel ── */
         .card {
             background: var(--card);
@@ -411,15 +433,10 @@ export default async function clipRoutes(fastify) {
         @media (max-width: 640px) {
             .container { padding: 16px 16px 48px; }
 
-            /* Stack topbar vertically */
             .topbar {
-                flex-direction: column;
-                align-items: flex-start;
-                gap: 10px;
                 padding-bottom: 16px;
                 margin-bottom: 20px;
             }
-            .topbar-right { text-align: left; }
             .topbar-title { font-size: 17px; }
 
             .clip-title-block h1 { font-size: 18px; }
@@ -474,8 +491,11 @@ export default async function clipRoutes(fastify) {
         </div>
 
         <div class="clip-title-block">
-            <h1>${escapeHtml(displayTitle)}</h1>
-            ${asset.mediasourceId ? `<div class="msid">#${escapeHtml(asset.mediasourceId)}</div>` : ''}
+            <div class="clip-title-left">
+                <h1>${escapeHtml(displayTitle)}</h1>
+                ${asset.mediasourceId ? `<div class="msid">#${escapeHtml(asset.mediasourceId)}</div>` : ''}
+            </div>
+            <a href="/" class="dashboard-link">← Dashboard</a>
         </div>
 
         <div class="card">
