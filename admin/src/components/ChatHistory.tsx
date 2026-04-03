@@ -68,16 +68,16 @@ export function ChatHistory({ onClose }: ChatHistoryProps) {
 
   return (
     <div className="bg-(--card) border border-(--border-subtle) rounded-(--radius) overflow-hidden mb-8">
-      <div className="flex items-center justify-between px-5.5 py-4.5 border-b border-(--border-subtle)">
-        <span className="text-[15px] font-semibold flex items-center gap-2">
+      <div className="flex items-center justify-between px-6 py-4 border-b border-(--border-subtle)">
+        <h2 className="text-lg font-semibold flex items-center gap-2">
           💬 Chat History
           <span className="text-[11px] bg-(--secondary) text-(--muted-foreground) px-2 py-0.5 rounded-[10px] font-semibold">
             {messages.length} messages
           </span>
-        </span>
+        </h2>
         <button
           onClick={onClose}
-          className="px-2.5 py-1 rounded-lg text-[11px] font-medium bg-(--card) border border-(--border) text-(--muted-foreground) hover:bg-(--card-hover) hover:text-(--foreground) transition-all cursor-pointer"
+          className="px-2 py-1 rounded-lg text-[11px] font-medium bg-(--card) border border-(--border) text-(--muted-foreground) hover:bg-(--card-hover) hover:text-(--foreground) transition-all cursor-pointer"
         >
           Close
         </button>
@@ -85,25 +85,25 @@ export function ChatHistory({ onClose }: ChatHistoryProps) {
 
       <div className="max-h-100 overflow-y-auto scrollbar-hide">
         {loading ? (
-          <div className="py-10 text-center text-(--muted-foreground) text-[13px]">
-            <div className="text-[32px] mb-2.5 opacity-50">💬</div>
+          <div className="py-10 text-center text-(--muted-foreground) text-sm">
+            <div className="text-[32px] mb-2 opacity-50">💬</div>
             Loading messages...
           </div>
         ) : error ? (
-          <div className="py-10 text-center text-(--accent-red) text-[13px]">
-            <div className="text-[32px] mb-2.5">❌</div>
+          <div className="py-10 text-center text-(--accent-red) text-sm">
+            <div className="text-[32px] mb-2">❌</div>
             {error}
           </div>
         ) : messages.length === 0 ? (
-          <div className="py-10 text-center text-(--muted-foreground) text-[13px]">
-            <div className="text-[32px] mb-2.5 opacity-50">💬</div>
+          <div className="py-10 text-center text-(--muted-foreground) text-sm">
+            <div className="text-[32px] mb-2 opacity-50">💬</div>
             No messages yet. Send a text from the iOS app.
           </div>
         ) : (
           messages.map((msg) => (
             <div
               key={msg.id}
-              className="flex items-start gap-3 px-5.5 py-3 border-b border-(--border-subtle) last:border-b-0 hover:bg-(--card-hover) transition-colors"
+              className="flex items-start gap-3 px-6 py-3 border-b border-(--border-subtle) last:border-b-0 hover:bg-(--card-hover) transition-colors"
             >
               <span className="text-lg shrink-0 mt-0.5">
                 {directionIcon[msg.direction] ?? "💬"}
@@ -126,7 +126,7 @@ export function ChatHistory({ onClose }: ChatHistoryProps) {
                     {formatTime(msg.createdAt)}
                   </span>
                 </div>
-                <p className="text-[13px] text-(--foreground) wrap-break-word">
+                <p className="text-sm text-(--foreground) wrap-break-word">
                   {msg.content?.text ?? "(no text)"}
                 </p>
                 {msg.content?.fileName && (

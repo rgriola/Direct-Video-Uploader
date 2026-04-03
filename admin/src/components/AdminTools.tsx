@@ -5,16 +5,16 @@ import { nuclearReset, createUser } from "@/lib/api";
 export function AdminTools({ onReset }: { onReset: () => void }) {
   return (
     <div className="bg-(--card) border border-(--border-subtle) rounded-(--radius) overflow-hidden mb-8">
-      <div className="flex items-center justify-between px-5.5 py-4.5 border-b border-(--border-subtle)">
-        <span className="text-[15px] font-semibold flex items-center gap-2">
+      <div className="flex items-center justify-between px-6 py-4 border-b border-(--border-subtle)">
+        <h2 className="text-lg font-semibold flex items-center gap-2">
           🔧 Admin Tools
-        </span>
+        </h2>
         <span className="text-[11px] bg-(--secondary) text-(--muted-foreground) px-2 py-0.5 rounded-[10px] font-semibold">
           Demo Management
         </span>
       </div>
 
-      <div className="grid grid-cols-2 gap-6 px-5.5 py-4.5 max-[900px]:grid-cols-1">
+      <div className="grid grid-cols-2 gap-6 px-6 py-4 max-[900px]:grid-cols-1">
         <NuclearReset onReset={onReset} />
         <CreateUser />
       </div>
@@ -52,26 +52,26 @@ function NuclearReset({ onReset }: { onReset: () => void }) {
 
   return (
     <div className="flex flex-col gap-3">
-      <h3 className="text-[13px] font-semibold text-(--muted-foreground) uppercase tracking-wide">
+      <h3 className="text-sm font-semibold text-(--muted-foreground) uppercase tracking-wide">
         ☢️ Nuclear Reset
       </h3>
-      <p className="text-[12px] text-(--muted-foreground) leading-relaxed">
+      <p className="text-sm text-(--muted-foreground) leading-relaxed">
         Wipe all assets, clips, Mux videos, chat messages, form responses, and
         error logs. <strong>User accounts are preserved.</strong>
       </p>
       {confirming && !running && (
-        <p className="text-[12px] text-red-400 font-semibold">
+        <p className="text-xs text-(--accent-red) font-semibold">
           ⚠️ This cannot be undone. Click again to confirm.
         </p>
       )}
       <div className="flex gap-2">
-        <button
+        <button 
           onClick={handleReset}
           disabled={running}
-          className={`px-4 py-2 rounded-lg text-[13px] font-semibold border transition-all cursor-pointer ${
+          className={`px-4 py-2 rounded-lg text-sm font-semibold border transition-all cursor-pointer ${
             confirming
-              ? "bg-red-600 border-red-500 text-white hover:bg-red-700"
-              : "bg-(--secondary) border-(--border) text-(--foreground) hover:bg-red-600/20 hover:border-red-500/50 hover:text-red-400"
+              ? "bg-(--accent-red) border-(--accent-red) text-white hover:opacity-90"
+              : "bg-(--secondary) border-(--border) text-(--foreground) hover:bg-(--accent-red-glow) hover:border-(--accent-red)/50 hover:text-(--accent-red)"
           } disabled:opacity-50 disabled:cursor-not-allowed`}
         >
           {running ? "Resetting..." : confirming ? "Confirm Reset" : "Reset Everything"}
@@ -79,7 +79,7 @@ function NuclearReset({ onReset }: { onReset: () => void }) {
         {confirming && !running && (
           <button
             onClick={() => setConfirming(false)}
-            className="px-4 py-2 rounded-lg text-[13px] font-medium bg-(--secondary) border border-(--border) text-(--muted-foreground) hover:text-(--foreground) transition-all cursor-pointer"
+            className="px-4 py-2 rounded-lg text-sm font-medium bg-(--secondary) border border-(--border) text-(--muted-foreground) hover:text-(--foreground) transition-all cursor-pointer"
           >
             Cancel
           </button>
@@ -125,14 +125,14 @@ function CreateUser() {
   }
 
   const inputClass =
-    "w-full px-3 py-1.5 rounded-lg text-[13px] bg-(--secondary) border border-(--border) text-(--foreground) placeholder:text-(--muted-foreground) focus:outline-none focus:border-(--accent-blue) transition-colors";
+    "w-full px-3 py-1.5 rounded-lg text-sm bg-(--secondary) border border-(--border) text-(--foreground) placeholder:text-(--muted-foreground) focus:outline-none focus:border-(--accent-blue) transition-colors";
 
   return (
     <div className="flex flex-col gap-3">
-      <h3 className="text-[13px] font-semibold text-(--muted-foreground) uppercase tracking-wide">
+      <h3 className="text-sm font-semibold text-(--muted-foreground) uppercase tracking-wide">
         👤 Create Demo User
       </h3>
-      <p className="text-[12px] text-(--muted-foreground)">
+      <p className="text-sm text-(--muted-foreground)">
         PIN defaults to <strong>0000</strong>, role defaults to <strong>USER</strong>.
       </p>
       <form onSubmit={handleCreate} className="flex flex-col gap-2">
@@ -169,7 +169,7 @@ function CreateUser() {
         <button
           type="submit"
           disabled={creating}
-          className="self-start px-4 py-2 rounded-lg text-[13px] font-semibold bg-(--accent-blue) text-white border border-(--accent-blue) hover:brightness-110 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+          className="self-start px-4 py-2 rounded-lg text-sm font-semibold bg-(--accent-blue) text-white border border-(--accent-blue) hover:brightness-110 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {creating ? "Creating..." : "Create User"}
         </button>

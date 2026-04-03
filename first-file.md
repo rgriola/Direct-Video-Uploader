@@ -732,3 +732,42 @@ This is the issue I am refering to > clip URL on Dev > http://localhost:3000/cli
 - On the dashboard page add a footer and a link to the privacy policy page.
 - the privacy policy is in this markdown file > privacy-policy.md
 - Any questions please ask.
+
+...
+Apr 3 2026 - UI improvements for the Login - Dashboard - Clip Viewer
+
+**_ Task _**
+
+- Looking at the login page, dashboard and clip viewer page evaluate the overall stlying and user experience.
+
+**_ Instructions _**
+
+- Report back on the number of fonts
+- Remove any use of full black >#000000 and change to #111111.
+- Report on how spacing is handled, margins and padding. I would like to use 8px grid.
+- Report on how many Fonts Family are used, size and weight. If we use more than 2 font families we will reduce this to 2, I just need to know which they are. Also these should be google fonts.
+- Report on Text hierarchy, are headings, subheadings, body text, etc. clearly distinguishable? Suggest improvements.
+- Report on the color system, are the colors used consistently? Suggest improvements.
+- Our colors should follow the 60-30-10 rule.
+- Report on line length ie; body text should be around 50-75 characters per line for optimal readability.
+- We need a visual hierarchy, headings should be larger than body text, subheadings should be between headings and body text, etc.
+- Show me a review then a phased plan for improvements.
+
+...
+
+**_ Task _**
+
+- Make the Admin Tools available only to users defined as Admin
+  **_ Instructions _**
+- Evaluate the Dashboard user permissions
+- Admin Tools should be hidden and inaccessable to non-admin users.
+- Assets and clips should be available to all users for viewing, playback. It appears this is permission based.
+- Report back to me the findings and a plan to change and update.
+
+...
+Let me define what I need in the Dashboard. All users can log into the Dashboard, only Admin Users can have access to the Admin Tools - this resets the database and can add new users, this is one panel in the Dashboard.
+
+All users can see all the other panels and any assets and clips available.
+
+Lets get this aligned then we will do some more work on the dashboard.
+...

@@ -2,7 +2,7 @@ import { useState, FormEvent } from "react";
 import { login, setToken } from "@/lib/api";
 
 interface LoginFormProps {
-  onSuccess: (userName: string) => void;
+  onSuccess: (userName: string, role?: string) => void;
 }
 
 export function LoginForm({ onSuccess }: LoginFormProps) {
@@ -19,7 +19,7 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
     try {
       const res = await login(phoneNumber.trim(), pin.trim());
       setToken(res.token);
-      onSuccess(res.user.name);
+      onSuccess(res.user.name, res.user.role);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed");
     } finally {
@@ -28,10 +28,10 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4">
+    <div className="min-h-screen flex items-center justify-center p-4 bg-[radial-gradient(ellipse_at_top,_rgba(74,158,255,0.08)_0%,_transparent_60%)]">
       <div className="w-full max-w-sm">
         {/* Logo */}
-        <div className="flex flex-col items-center gap-3 mb-8">
+        <div className="flex flex-col items-center gap-4 mb-8">
           <div className="w-16 h-16 rounded-2xl bg-linear-to-br from-(--accent-blue) to-(--accent-purple) flex items-center justify-center text-4xl shadow-[0_8px_32px_rgba(74,158,255,0.3)]">
             🎬
           </div>
@@ -46,7 +46,7 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
           onSubmit={handleSubmit}
           className="bg-(--card) border border-(--border) rounded-2xl p-6 space-y-4 shadow-xl"
         >
-          <div className="space-y-1.5">
+          <div className="space-y-2">
             <label
               htmlFor="phone"
               className="block text-sm font-medium text-(--muted-foreground)"
@@ -61,11 +61,11 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
               value={phoneNumber}
               onChange={(e) => setPhoneNumber(e.target.value)}
               placeholder="e.g. 8001234567"
-              className="w-full px-3.5 py-2.5 rounded-lg bg-(--secondary) border border-(--border) text-(--foreground) text-sm placeholder:text-(--muted-foreground) focus:outline-none focus:ring-2 focus:ring-(--accent-blue) focus:border-transparent transition-all"
+              className="w-full px-4 py-2 rounded-lg bg-(--secondary) border border-(--border) text-(--foreground) text-sm placeholder:text-(--muted-foreground) focus:outline-none focus:ring-2 focus:ring-(--accent-blue) focus:border-transparent transition-all"
             />
           </div>
 
-          <div className="space-y-1.5">
+          <div className="space-y-2">
             <label
               htmlFor="pin"
               className="block text-sm font-medium text-(--muted-foreground)"
@@ -81,7 +81,7 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
               onChange={(e) => setPin(e.target.value)}
               placeholder="••••"
               maxLength={10}
-              className="w-full px-3.5 py-2.5 rounded-lg bg-(--secondary) border border-(--border) text-(--foreground) text-sm placeholder:text-(--muted-foreground) focus:outline-none focus:ring-2 focus:ring-(--accent-blue) focus:border-transparent transition-all"
+              className="w-full px-4 py-2 rounded-lg bg-(--secondary) border border-(--border) text-(--foreground) text-sm placeholder:text-(--muted-foreground) focus:outline-none focus:ring-2 focus:ring-(--accent-blue) focus:border-transparent transition-all"
             />
           </div>
 
@@ -94,7 +94,7 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
           <button
             type="submit"
             disabled={loading}
-            className="w-full py-2.5 rounded-lg bg-(--accent-blue) text-white text-sm font-semibold tracking-wide hover:opacity-90 active:opacity-75 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+            className="w-full py-2 rounded-lg bg-(--accent-blue) text-white text-sm font-semibold tracking-wide hover:opacity-90 active:opacity-75 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
           >
             {loading ? "Signing in…" : "Sign In"}
           </button>

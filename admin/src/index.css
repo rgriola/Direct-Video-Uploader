@@ -4,8 +4,8 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
-  --font-mono: "SF Mono", "Fira Code", "JetBrains Mono", monospace;
+  --font-sans: "Outfit", sans-serif;
+  --font-mono: "JetBrains Mono", monospace;
 
   /* Base colors — dark mode always */
   --background: oklch(60% 0.10763 250.447);

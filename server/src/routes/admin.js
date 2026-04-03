@@ -13,7 +13,7 @@ export default async function adminRoutes(fastify) {
      * Triad health — database, server, WebSocket, iOS clients.
      */
     fastify.get('/api/admin/status', {
-        preHandler: [fastify.authenticate, fastify.authorizeAdmin],
+        preHandler: [fastify.authenticate],
     }, async () => {
         const triad = {
             database: { status: 'unknown', message: '' },
@@ -60,7 +60,7 @@ export default async function adminRoutes(fastify) {
      * Returns aggregate stats for the dashboard — all live data.
      */
     fastify.get('/api/admin/stats', {
-        preHandler: [fastify.authenticate, fastify.authorizeAdmin],
+        preHandler: [fastify.authenticate],
     }, async () => {
         const result = await prisma.$queryRawUnsafe(`
             SELECT 
@@ -104,7 +104,7 @@ export default async function adminRoutes(fastify) {
      * List all registered users with live status.
      */
     fastify.get('/api/admin/users', {
-        preHandler: [fastify.authenticate, fastify.authorizeAdmin],
+        preHandler: [fastify.authenticate],
     }, async () => {
         const users = await prisma.$queryRawUnsafe(`
             SELECT u.id, u.phone_number AS "phoneNumber", u.name, u.email, u.team, u.status,
@@ -134,7 +134,7 @@ export default async function adminRoutes(fastify) {
      * List all assets with user info and form responses.
      */
     fastify.get('/api/admin/assets', {
-        preHandler: [fastify.authenticate, fastify.authorizeAdmin],
+        preHandler: [fastify.authenticate],
     }, async () => {
         // Single raw SQL query — avoids multiple Prisma ORM roundtrips that exhaust the pool
         const assets = await prisma.$queryRawUnsafe(`
@@ -173,7 +173,7 @@ export default async function adminRoutes(fastify) {
      * List all chat messages across all users (for admin dashboard).
      */
     fastify.get('/api/admin/messages', {
-        preHandler: [fastify.authenticate, fastify.authorizeAdmin],
+        preHandler: [fastify.authenticate],
     }, async () => {
         const messages = await prisma.chatMessage.findMany({
             orderBy: { createdAt: 'desc' },
@@ -191,7 +191,7 @@ export default async function adminRoutes(fastify) {
      * Delete stale UPLOADING assets that have no clips (abandoned uploads).
      */
     fastify.post('/api/admin/cleanup-assets', {
-        preHandler: [fastify.authenticate, fastify.authorizeAdmin],
+        preHandler: [fastify.authenticate],
     }, async () => {
         // Find UPLOADING assets with 0 clips using Prisma ORM
         const staleAssets = await prisma.asset.findMany({

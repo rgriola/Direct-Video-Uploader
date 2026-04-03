@@ -244,7 +244,7 @@ async function main() {
     // Use local binary directly — avoids npx resolution overhead (~5-10s)
     const prismaBin = path.join(SERVER_DIR, 'node_modules', '.bin', 'prisma');
     logDB('Syncing schema (prisma db push)...');
-    const pushResult = runSync(`${prismaBin} db push --skip-generate 2>&1`, SERVER_DIR);
+    const pushResult = runSync(`${prismaBin} db push 2>&1`, SERVER_DIR);
     if (pushResult.ok) {
         logDB('Schema synced ✅');
     } else if (pushResult.output.includes('already in sync')) {

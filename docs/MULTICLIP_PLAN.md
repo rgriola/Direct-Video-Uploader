@@ -86,7 +86,7 @@ if (allReady) {
 
 ## Verification Checklist
 
-- [ ] **Single-clip regression** — default mode unchanged
+- [ ] **Single-clip regression** — default mode unchanged 
 - [ ] **Mode toggle** — switches picker between single/multi select
 - [ ] **Multi-select + trim** — sequential trim view per clip
 - [ ] **Sequential upload** — 1 asset, N clips with correct `clip_index`

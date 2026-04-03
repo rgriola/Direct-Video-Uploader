@@ -11,7 +11,7 @@ interface HeaderProps {
 
 export function Header({ wsConnected, onRefresh, onLogout, refreshing, iosClients = 0 }: HeaderProps) {
   return (
-    <header className="flex flex-wrap items-center justify-between gap-4 mb-10 pb-6 border-b border-(--border-subtle)">
+    <header className="flex flex-wrap items-center justify-between gap-4 mb-8 pb-6 border-b border-(--border-subtle)">
       <div className="flex items-center gap-4 min-w-0">
         <div className="w-12 h-12 shrink-0 rounded-xl bg-linear-to-br from-(--accent-blue) to-(--accent-purple) flex items-center justify-center text-2xl shadow-[0_4px_16px_rgba(74,158,255,0.25)]">
           🎬
@@ -24,13 +24,13 @@ export function Header({ wsConnected, onRefresh, onLogout, refreshing, iosClient
 
       <div className="flex flex-wrap items-center gap-3">
         {/* iOS client indicator */}
-        <div className="flex items-center gap-1.5 text-xs text-(--muted-foreground)">
+        <div className="flex items-center gap-1 text-xs text-(--muted-foreground)">
           <span>📱</span>
           <span>{iosClients > 0 ? `${iosClients} iOS` : "No iOS"}</span>
         </div>
 
         {/* WS indicator */}
-        <div className="flex items-center gap-1.5 text-xs text-(--muted-foreground)">
+        <div className="flex items-center gap-1 text-xs text-(--muted-foreground)">
           <span
             className={cn(
               "w-2 h-2 rounded-full transition-all",
@@ -45,7 +45,7 @@ export function Header({ wsConnected, onRefresh, onLogout, refreshing, iosClient
         {/* Server status badge */}
         <span
           className={cn(
-            "inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold tracking-wide border",
+            "inline-flex items-center gap-1 px-4 py-1 rounded-full text-xs font-semibold tracking-wide border",
             wsConnected
               ? "bg-(--accent-green-glow) text-(--accent-green) border-[rgba(52,211,153,0.2)]"
               : "bg-(--secondary) text-(--muted-foreground) border-(--border)",
@@ -63,7 +63,7 @@ export function Header({ wsConnected, onRefresh, onLogout, refreshing, iosClient
         {/* Refresh button */}
         <button
           onClick={onRefresh}
-          className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-[13px] font-medium bg-(--card) border border-(--border) text-(--muted-foreground) hover:bg-(--card-hover) hover:text-(--foreground) hover:border-(--accent-blue) transition-all cursor-pointer"
+          className="flex items-center gap-1 px-4 py-2 rounded-lg text-sm font-medium bg-(--card) border border-(--border) text-(--muted-foreground) hover:bg-(--card-hover) hover:text-(--foreground) hover:border-(--accent-blue) transition-all cursor-pointer"
         >
           <RefreshCw className={cn("w-3.5 h-3.5", refreshing && "animate-spin-once")} />
           Refresh
@@ -72,7 +72,7 @@ export function Header({ wsConnected, onRefresh, onLogout, refreshing, iosClient
         {/* Logout button */}
         <button
           onClick={onLogout}
-          className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-[13px] font-medium bg-(--card) border border-(--border) text-(--muted-foreground) hover:bg-(--card-hover) hover:text-red-400 hover:border-red-400/50 transition-all cursor-pointer"
+          className="flex items-center gap-1 px-4 py-2 rounded-lg text-sm font-medium bg-(--card) border border-(--border) text-(--muted-foreground) hover:bg-(--card-hover) hover:text-(--accent-red) hover:border-(--accent-red)/50 transition-all cursor-pointer"
         >
           <LogOut className="w-3.5 h-3.5" />
           Logout

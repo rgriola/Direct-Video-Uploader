@@ -29,7 +29,7 @@ export default async function clipRoutes(fastify) {
             reply.status(404).type('text/html').send(`
                 <!DOCTYPE html>
                 <html><head><title>Not Found</title>
-                <style>body{background:#0A0E1A;color:#fff;font-family:system-ui;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}
+                <style>body{background:#0A0E1A;color:#fff;font-family:'Outfit',sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}
                 h1{font-size:1.5rem;opacity:0.7}</style></head>
                 <body><h1>Clip not found</h1></body></html>
             `);
@@ -47,7 +47,7 @@ export default async function clipRoutes(fastify) {
                 reply.status(404).type('text/html').send(`
                     <!DOCTYPE html>
                     <html><head><title>Not Found</title>
-                    <style>body{background:#0A0E1A;color:#fff;font-family:system-ui;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}
+                    <style>body{background:#0A0E1A;color:#fff;font-family:'Outfit',sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}
                     h1{font-size:1.5rem;opacity:0.7}</style></head>
                     <body><h1>Clip not found</h1></body></html>
                 `);
@@ -65,7 +65,7 @@ export default async function clipRoutes(fastify) {
             reply.status(500).type('text/html').send(`
                 <!DOCTYPE html>
                 <html><head><title>Error</title>
-                <style>body{background:#0A0E1A;color:#fff;font-family:system-ui;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}
+                <style>body{background:#0A0E1A;color:#fff;font-family:'Outfit',sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}
                 pre{font-size:0.9rem;opacity:0.7;max-width:600px;white-space:pre-wrap}</style></head>
                 <body><pre>DB Error: ${escapeHtml(err.message)}</pre></body></html>
             `);
@@ -161,12 +161,15 @@ export default async function clipRoutes(fastify) {
             ? `<script src="https://cdn.jsdelivr.net/npm/@mux/mux-player@latest"></script>`
             : '';
 
+        const googleFontsLink = `<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">`;
+
         const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>${escapeHtml(displayTitle)} — Mediasource Viewer</title>
+    ${googleFontsLink}
     ${muxPlayerScript}
     <style>
         *, *::before, *::after { box-sizing: border-box; }
@@ -174,9 +177,13 @@ export default async function clipRoutes(fastify) {
         body {
             background: #0A0E1A;
             color: #E5E5EA;
-            font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', system-ui, sans-serif;
+            font-family: 'Outfit', sans-serif;
             min-height: 100vh;
             -webkit-text-size-adjust: 100%;
+            --accent-blue: #4a9eff;
+            --accent-green: #34d399;
+            --accent-amber: #fbbf24;
+            --accent-red: #f87171;
         }
         a { color: #ccc; }
         .container {
@@ -191,7 +198,7 @@ export default async function clipRoutes(fastify) {
             align-items: flex-start;
             padding: 24px 0 16px;
             border-bottom: 1px solid rgba(255,255,255,0.08);
-            margin-bottom: 20px;
+            margin-bottom: 24px;
         }
         .header-left {
             display: flex;
@@ -212,7 +219,7 @@ export default async function clipRoutes(fastify) {
             word-break: break-word;
         }
         .header-left .msid {
-            font-family: 'SF Mono', ui-monospace, monospace;
+            font-family: 'JetBrains Mono', monospace;
             font-size: 13px;
             color: rgba(255,255,255,0.5);
         }
@@ -232,7 +239,7 @@ export default async function clipRoutes(fastify) {
         }
         /* Video */
         .video-wrap {
-            background: #000;
+            background: #111111;
             border-radius: 14px;
             overflow: hidden;
             margin-bottom: 8px;
@@ -255,22 +262,22 @@ export default async function clipRoutes(fastify) {
         .video-bar {
             display: flex;
             align-items: center;
-            gap: 12px;
-            padding: 8px 0 20px;
+            gap: 8px;
+            padding: 8px 0 24px;
         }
         /* Status pill */
         .status {
             display: inline-block;
-            padding: 4px 14px;
+            padding: 4px 16px;
             border-radius: 20px;
             font-size: 12px;
             font-weight: 600;
             vertical-align: middle;
         }
-        .status-READY { background: rgba(48,209,88,0.15); color: #30D158; }
-        .status-PROCESSING { background: rgba(255,159,10,0.15); color: #FF9F0A; }
-        .status-UPLOADING { background: rgba(0,122,255,0.15); color: #7ABAFF; }
-        .status-ERROR { background: rgba(255,69,58,0.15); color: #FF453A; }
+        .status-READY { background: rgba(52,211,153,0.15); color: var(--accent-green); }
+        .status-PROCESSING { background: rgba(251,191,36,0.15); color: var(--accent-amber); }
+        .status-UPLOADING { background: rgba(74,158,255,0.15); color: var(--accent-blue); }
+        .status-ERROR { background: rgba(248,113,113,0.15); color: var(--accent-red); }
         /* Copy link button */
         .copy-link {
             display: inline-flex;
@@ -280,7 +287,7 @@ export default async function clipRoutes(fastify) {
             color: #fff;
             border: 1px solid rgba(255,255,255,0.15);
             border-radius: 8px;
-            padding: 5px 12px;
+            padding: 8px 16px;
             font-size: 12px;
             font-weight: 500;
             cursor: pointer;
@@ -299,12 +306,12 @@ export default async function clipRoutes(fastify) {
             margin-bottom: 24px;
         }
         .section h3 {
-            font-size: 11px;
+            font-size: 12px;
             font-weight: 600;
             letter-spacing: 1.5px;
             text-transform: uppercase;
             color: rgba(255,255,255,0.35);
-            margin-bottom: 10px;
+            margin-bottom: 8px;
             padding-left: 4px;
         }
         /* Metadata */
@@ -318,47 +325,49 @@ export default async function clipRoutes(fastify) {
             grid-template-columns: 28px 120px 1fr;
             align-items: center;
             gap: 0 8px;
-            padding: 12px 16px;
+            padding: 16px;
             border-bottom: 1px solid rgba(255,255,255,0.04);
         }
         .meta-row:last-child { border-bottom: none; }
         .meta-icon { font-size: 15px; line-height: 1; }
         .meta-label {
-            font-size: 13px;
+            font-size: 14px;
             color: rgba(255,255,255,0.45);
         }
         .meta-value {
-            font-size: 13px;
+            font-size: 14px;
             font-weight: 500;
             color: #fff;
             min-width: 0;
             overflow-wrap: break-word;
+            max-width: 65ch;
         }
         /* Priority badges */
-        .priority-critical { color: #FF453A; }
-        .priority-high { color: #FF9F0A; }
-        .priority-medium { color: #30D158; }
+        .priority-critical { color: var(--accent-red); }
+        .priority-high { color: var(--accent-amber); }
+        .priority-medium { color: var(--accent-green); }
         .priority-low { color: rgba(255,255,255,0.5); }
         /* Alert banner */
         .alert-banner {
             display: flex;
             align-items: center;
-            gap: 10px;
-            padding: 14px 18px;
+            gap: 8px;
+            padding: 16px;
             border-radius: 12px;
-            background: rgba(255,69,58,0.10);
-            border: 1px solid rgba(255,69,58,0.25);
+            background: rgba(248,113,113,0.10);
+            border: 1px solid rgba(248,113,113,0.25);
             margin-bottom: 24px;
         }
         .alert-banner .alert-icon { font-size: 20px; flex-shrink: 0; }
         .alert-banner .alert-title {
             font-size: 14px;
             font-weight: 600;
-            color: #FF453A;
+            color: var(--accent-red);
         }
         .alert-banner .alert-detail {
-            font-size: 13px;
+            font-size: 14px;
             color: rgba(255,255,255,0.5);
+            max-width: 65ch;
         }
         /* Footer */
         .footer {
@@ -368,14 +377,14 @@ export default async function clipRoutes(fastify) {
             margin-top: 16px;
         }
         .footer .logo {
-            font-size: 13px;
+            font-size: 14px;
             font-weight: 600;
             color: rgba(255,255,255,0.25);
             letter-spacing: 1px;
         }
         /* ── Mobile ── */
         @media (max-width: 480px) {
-            .container { padding: 16px 14px 48px; }
+            .container { padding: 16px 16px 48px; }
             .header { padding: 16px 0 12px; margin-bottom: 16px; flex-direction: column; gap: 8px; }
             .header-right { text-align: left; }
             .header-left h1 { font-size: 18px; }

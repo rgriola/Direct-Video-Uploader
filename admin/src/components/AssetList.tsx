@@ -16,9 +16,9 @@ const statusClasses: Record<string, string> = {
 };
 
 const priorityColors: Record<string, string> = {
-  CRITICAL: "text-[#FF453A]",
-  HIGH: "text-[#FF9F0A]",
-  MEDIUM: "text-[#30D158]",
+  CRITICAL: "text-(--accent-red)",
+  HIGH: "text-(--accent-amber)",
+  MEDIUM: "text-(--accent-green)",
   LOW: "text-(--muted-foreground)",
 };
 
@@ -32,13 +32,13 @@ export function AssetList({ assets, isLoading }: AssetListProps) {
 
   return (
     <div className="bg-(--card) border border-(--border-subtle) rounded-(--radius) overflow-hidden">
-      <div className="flex items-center justify-between px-5.5 py-4.5 border-b border-(--border-subtle)">
-        <span className="text-[15px] font-semibold flex items-center gap-2">
+      <div className="flex items-center justify-between px-6 py-4 border-b border-(--border-subtle)">
+        <h2 className="text-lg font-semibold flex items-center gap-2">
           📦 Assets{" "}
           <span className="text-[11px] bg-(--secondary) text-(--muted-foreground) px-2 py-0.5 rounded-[10px] font-semibold">
             {assets?.length ?? 0}
           </span>
-        </span>
+        </h2>
       </div>
 
       <div className="max-h-100 overflow-y-auto scrollbar-hide">
@@ -69,11 +69,11 @@ export function AssetList({ assets, isLoading }: AssetListProps) {
             const isExpanded = expandedId === asset.id;
 
             return (
-              <div key={asset.id} className={`border-b border-(--border-subtle) last:border-b-0 ${missingForm ? "border-l-3 border-l-[#FF453A] bg-[#FF453A]/5" : ""}`}>
+              <div key={asset.id} className={`border-b border-(--border-subtle) last:border-b-0 ${missingForm ? "border-l-3 border-l-(--accent-red) bg-(--accent-red-glow)" : ""}`}>
                 {/* Row header — click to expand/collapse */}
                 <button
                   onClick={() => setExpandedId(isExpanded ? null : asset.id)}
-                  className="flex items-center w-full px-5.5 py-3.5 hover:bg-(--card-hover) transition-colors cursor-pointer text-left bg-transparent border-0 text-inherit font-inherit"
+                  className="flex items-center w-full px-6 py-4 hover:bg-(--card-hover) transition-colors cursor-pointer text-left bg-transparent border-0 text-inherit font-inherit"
                 >
                   <div className="w-10.5 h-10.5 rounded-[10px] bg-(--secondary) flex items-center justify-center text-lg mr-3.5 shrink-0">
                     {statusIcons[asset.status] ?? "📦"}
@@ -88,12 +88,12 @@ export function AssetList({ assets, isLoading }: AssetListProps) {
 
                   <div className="shrink-0 flex items-center gap-2">
                     {missingForm && (
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-[#FF453A]/15 text-[#FF453A]">
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-(--accent-red-glow) text-(--accent-red)">
                         ⚠️ No Form
                       </span>
                     )}
                     <span
-                      className={`inline-flex items-center gap-1.25 px-2.5 py-0.5 rounded-md text-[11px] font-semibold ${statusClasses[asset.status] ?? ""}`}
+                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold ${statusClasses[asset.status] ?? ""}`}
                     >
                       {asset.status}
                     </span>
@@ -103,13 +103,13 @@ export function AssetList({ assets, isLoading }: AssetListProps) {
 
                 {/* Expanded detail panel */}
                 {isExpanded && (
-                  <div className="px-5.5 pb-4 pt-1 bg-(--secondary)/30 border-t border-(--border-subtle)">
+                  <div className="px-6 pb-4 pt-1 bg-(--secondary)/30 border-t border-(--border-subtle)">
                     {/* Missing form alert */}
                     {missingForm && (
-                      <div className="flex items-center gap-2 mb-3 px-3 py-2.5 rounded-lg bg-[#FF453A]/10 border border-[#FF453A]/25">
+                      <div className="flex items-center gap-2 mb-4 px-4 py-2 rounded-lg bg-(--accent-red-glow) border border-(--accent-red)/25">
                         <span className="text-base">🚨</span>
                         <div className="text-xs">
-                          <span className="font-semibold text-[#FF453A]">NO CONTEXT FORM</span>
+                          <span className="font-semibold text-(--accent-red)">NO CONTEXT FORM</span>
                           <span className="text-(--muted-foreground)"> Slug and description are missing for this asset.</span>
                         </div>
                       </div>
@@ -143,7 +143,7 @@ export function AssetList({ assets, isLoading }: AssetListProps) {
                             <DetailRow label="Priority" value={asset.formResponse.priority} className={priorityColors[asset.formResponse.priority] ?? ""} />
                           )}
                           {asset.formResponse.description && (
-                            <div className="col-span-2">
+                            <div className="col-span-2 max-w-[65ch]">
                               <DetailRow label="Description" value={asset.formResponse.description} />
                             </div>
                           )}
@@ -160,7 +160,7 @@ export function AssetList({ assets, isLoading }: AssetListProps) {
                         href={asset.mediasourceUrl || `/clips/${asset.mediasourceId || asset.id}`}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-[11px] font-semibold text-[#007AFF] hover:underline no-underline"
+                        className="text-[11px] font-semibold text-(--accent-blue) hover:underline no-underline"
                       >
                         Open Clip Viewer ↗
                       </a>
@@ -187,8 +187,8 @@ function DetailRow({ label, value, className = "" }: { label: string; value: str
 
 function Empty({ icon, text }: { icon: string; text: string }) {
   return (
-    <div className="py-10 px-5.5 text-center text-(--muted-foreground) text-[13px]">
-      <div className="text-[32px] mb-2.5 opacity-50">{icon}</div>
+    <div className="py-10 px-6 text-center text-(--muted-foreground) text-sm">
+      <div className="text-[32px] mb-2 opacity-50">{icon}</div>
       {text}
     </div>
   );

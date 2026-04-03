@@ -49,6 +49,7 @@ export default function App() {
 function Dashboard() {
   const [refreshing, setRefreshing] = useState(false);
   const [loggedIn, setLoggedIn] = useState(false);
+  const [userRole, setUserRole] = useState<string | null>(null);
   const [showChatHistory, setShowChatHistory] = useState(false);
 
   const { data: stats } = useStats(loggedIn);
@@ -72,6 +73,7 @@ function Dashboard() {
         const { user } = await fetchMe();
         if (user) {
           setLoggedIn(true);
+          setUserRole(user.role ?? null);
           addLog("auth", `Session restored: ${user.name}`);
           connect();
         }
@@ -89,11 +91,12 @@ function Dashboard() {
     void restoreSession(saved);
   }, [addLog, connect]);
 
-  const handleLoginSuccess = useCallback((userName: string) => {
+  const handleLoginSuccess = useCallback((userName: string, role?: string) => {
     // Token is already set in api.ts by the LoginForm; mirror it to localStorage
     const token = getToken();
     if (token) localStorage.setItem(AUTH_TOKEN_KEY, token);
     setLoggedIn(true);
+    setUserRole(role ?? null);
     addLog("auth", `Dashboard auth: ${userName}`);
     connect();
   }, [addLog, connect, setLoggedIn]);
@@ -174,7 +177,9 @@ function Dashboard() {
 
       {showChatHistory && <ChatHistory onClose={() => setShowChatHistory(false)} />}
 
-      <AdminTools onReset={() => { refreshDashboard(); addLog("http", "Nuclear reset executed"); }} />
+      {userRole === "ADMIN" && (
+        <AdminTools onReset={() => { refreshDashboard(); addLog("http", "Nuclear reset executed"); }} />
+      )}
 
       <div className="grid grid-cols-2 gap-6 mb-8 max-[900px]:grid-cols-1">
         <UserList users={users} isLoading={usersLoading} />

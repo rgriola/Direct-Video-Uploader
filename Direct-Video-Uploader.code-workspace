@@ -1,0 +1,15 @@
+{
+	"folders": [
+		{
+			"path": "."
+		}
+	],
+	"settings": {
+		"liveServer.settings.multiRootWorkspaceName": "weird-julian-project",
+		"chat.tools.terminal.autoApprove": {
+			"xcodebuild": true,
+			"psql": true,
+			"/opt/homebrew/opt/postgresql@17/bin/psql": true
+		}
+	}
+}

@@ -30,13 +30,13 @@ interface UserListProps {
 export function UserList({ users, isLoading }: UserListProps) {
   return (
     <div className="bg-(--card) border border-(--border-subtle) rounded-(--radius) overflow-hidden">
-      <div className="flex items-center justify-between px-5.5 py-4.5 border-b border-(--border-subtle)">
-        <span className="text-[15px] font-semibold flex items-center gap-2">
+      <div className="flex items-center justify-between px-6 py-4 border-b border-(--border-subtle)">
+        <h2 className="text-lg font-semibold flex items-center gap-2">
           👥 Users{" "}
           <span className="text-[11px] bg-(--secondary) text-(--muted-foreground) px-2 py-0.5 rounded-[10px] font-semibold">
             {users?.length ?? 0}
           </span>
-        </span>
+        </h2>
       </div>
 
       <div>
@@ -56,7 +56,7 @@ export function UserList({ users, isLoading }: UserListProps) {
             return (
               <div
                 key={user.id}
-                className="flex items-center px-5.5 py-3.5 border-b border-(--border-subtle) last:border-b-0 hover:bg-(--card-hover) transition-colors"
+                className="flex items-center px-6 py-4 border-b border-(--border-subtle) last:border-b-0 hover:bg-(--card-hover) transition-colors"
               >
                 {/* Avatar with online indicator */}
                 <div className="relative mr-3.5 shrink-0">
@@ -75,7 +75,7 @@ export function UserList({ users, isLoading }: UserListProps) {
                   <p className="text-sm font-semibold truncate flex items-center gap-2">
                     {user.name}
                     {user.hasIosConnection && (
-                      <span className="text-[10px] bg-(--accent-blue-glow) text-(--accent-blue) px-1.5 py-px rounded font-semibold">
+                      <span className="text-[11px] bg-(--accent-blue-glow) text-(--accent-blue) px-1.5 py-px rounded font-semibold">
                         iOS
                       </span>
                     )}
@@ -94,20 +94,20 @@ export function UserList({ users, isLoading }: UserListProps) {
                 </div>
 
                 <div className="flex items-center gap-2.5 shrink-0">
-                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-md text-[11px] font-semibold tracking-wide bg-(--secondary) text-(--muted-foreground)">
+                  <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold tracking-wide bg-(--secondary) text-(--muted-foreground)">
                     {user.team ?? "—"}
                   </span>
                   {user.isOnline ? (
-                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-[11px] font-semibold tracking-wide bg-(--accent-green-glow) text-(--accent-green)">
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold tracking-wide bg-(--accent-green-glow) text-(--accent-green)">
                       <span className="w-1.5 h-1.5 rounded-full bg-(--accent-green) animate-pulse-dot" />
                       ONLINE
                     </span>
                   ) : user.lastLoginAt ? (
-                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-md text-[11px] font-semibold tracking-wide bg-(--secondary) text-(--muted-foreground)">
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold tracking-wide bg-(--secondary) text-(--muted-foreground)">
                       OFFLINE
                     </span>
                   ) : (
-                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-md text-[11px] font-semibold tracking-wide bg-(--secondary) text-(--muted-foreground) opacity-50">
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold tracking-wide bg-(--secondary) text-(--muted-foreground) opacity-50">
                       NEVER SEEN
                     </span>
                   )}
@@ -123,8 +123,8 @@ export function UserList({ users, isLoading }: UserListProps) {
 
 function Empty({ icon, text }: { icon: string; text: string }) {
   return (
-    <div className="py-10 px-5.5 text-center text-(--muted-foreground) text-[13px]">
-      <div className="text-[32px] mb-2.5 opacity-50">{icon}</div>
+    <div className="py-10 px-6 text-center text-(--muted-foreground) text-sm">
+      <div className="text-[32px] mb-2 opacity-50">{icon}</div>
       {text}
     </div>
   );

@@ -54,10 +54,10 @@ function statusTextColor(status: string) {
 export function TriadStatusPanel({ triad, isLoading }: TriadStatusProps) {
   return (
     <div className="bg-(--card) border border-(--border-subtle) rounded-(--radius) overflow-hidden mb-8">
-      <div className="flex items-center justify-between px-5.5 py-4.5 border-b border-(--border-subtle)">
-        <span className="text-[15px] font-semibold flex items-center gap-2">
+      <div className="flex items-center justify-between px-6 py-4 border-b border-(--border-subtle)">
+        <h2 className="text-lg font-semibold flex items-center gap-2">
           🔺 Triad Status
-        </span>
+        </h2>
         <span className="text-[11px] bg-(--secondary) text-(--muted-foreground) px-2 py-0.5 rounded-[10px] font-semibold">
           Live
         </span>
@@ -81,7 +81,7 @@ export function TriadStatusPanel({ triad, isLoading }: TriadStatusProps) {
                   <span
                     className={`w-2 h-2 rounded-full shrink-0 ${isLoading ? "bg-(--muted-foreground)" : statusDot(status)}`}
                   />
-                  <span className="text-[13px] font-semibold">{svc.label}</span>
+                  <span className="text-sm font-semibold">{svc.label}</span>
                   <span
                     className={`text-[11px] font-semibold ${isLoading ? "text-(--muted-foreground)" : statusTextColor(status)}`}
                   >

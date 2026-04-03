@@ -77,11 +77,11 @@ export function StatsGrid({ stats, wsConnected, wsId }: StatsGridProps) {
               style={{ background: `linear-gradient(90deg, ${accentVar(card.color)}, transparent)` }}
             />
 
-            <p className="text-xs text-(--muted-foreground) uppercase tracking-[0.8px] font-semibold mb-2.5 flex items-center gap-1.5">
+            <p className="text-xs text-(--muted-foreground) uppercase tracking-[0.8px] font-semibold mb-2 flex items-center gap-1">
               {card.label}
             </p>
             <p
-              className="text-4xl font-extrabold tracking-tight leading-none"
+              className="text-[32px] font-bold tracking-tight leading-none"
               style={{ color: accentVar(card.color) }}
             >
               {value}

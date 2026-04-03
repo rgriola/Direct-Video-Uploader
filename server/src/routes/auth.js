@@ -91,6 +91,7 @@ export default async function authRoutes(fastify) {
                 name: user.name,
                 phoneNumber: user.phoneNumber,
                 team: user.team,
+                role: user.role,
             },
         };
     });
@@ -111,6 +112,7 @@ export default async function authRoutes(fastify) {
                 phoneNumber: true,
                 email: true,
                 team: true,
+                role: true,
                 status: true,
                 createdAt: true,
             },
