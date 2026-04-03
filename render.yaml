@@ -36,3 +36,5 @@ services:
         sync: false
       - key: SLACK_BOT_TOKEN
         sync: false
+      - key: PUBLIC_URL
+        value: https://ms-fixer.com

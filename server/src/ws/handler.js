@@ -5,6 +5,7 @@
 import crypto from 'node:crypto';
 import prisma from '../lib/prisma.js';
 import * as slack from '../lib/slack.js';
+import { PUBLIC_URL } from '../lib/config.js';
 
 /** Return a time-of-day greeting personalised with the user's first name. */
 function getGreeting(name) {
@@ -76,10 +77,7 @@ async function handleSlackCommand(socket, userId, assetId, channels, mentions, o
         });
         if (asset?.mediasourceId) {
             mediasourceId = asset.mediasourceId;
-            const baseUrl = process.env.NODE_ENV === 'production'
-                ? 'https://rodgriola.com'
-                : `http://localhost:${process.env.PORT || 3000}`;
-            clipUrl = `${baseUrl}/clips/${mediasourceId}`;
+            clipUrl = `${PUBLIC_URL}/clips/${mediasourceId}`;
             const playbackId = asset.clips?.[0]?.muxPlaybackId;
             if (playbackId) {
                 thumbnailUrl = `https://image.mux.com/${playbackId}/thumbnail.png?width=640`;

@@ -18,7 +18,7 @@ enum ServerConfig {
     // MARK: - Production URL (update when deployed to Render)
     
     /// The production server URL. Used as the default for physical devices in Release builds.
-    private static let productionURL = "https://rodgriola.com"
+    private static let productionURL = "https://ms-fixer.com"
     
     /// UserDefaults key for the user-saved server URL override
     private static let serverURLKey = UserDefaultsKeys.serverURL

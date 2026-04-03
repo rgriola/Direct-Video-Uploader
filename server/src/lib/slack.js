@@ -5,6 +5,7 @@
  * Bot scopes needed: chat:write, users:read, im:write
  */
 import { WebClient } from '@slack/web-api';
+import { PUBLIC_URL } from './config.js';
 
 const token = process.env.SLACK_BOT_TOKEN;
 const slack = token ? new WebClient(token) : null;
@@ -143,10 +144,7 @@ export function buildAssetMessage({ userName, mediasourceId, clipUrl, mention, t
     const text = `🎬 New Video from ${safeName}\n🔗 ${clipUrl}${mentionLine}`;
 
     // Thumbnail — use Mux thumbnail if available, otherwise a film placeholder
-    const baseUrl = process.env.NODE_ENV === 'production'
-        ? 'https://rodgriola.com'
-        : `http://localhost:${process.env.PORT || 3000}`;
-    const imageUrl = thumbnailUrl || `${baseUrl}/assets/film-placeholder.svg`;
+    const imageUrl = thumbnailUrl || `${PUBLIC_URL}/assets/film-placeholder.svg`;
 
     // Format production date/time from capturedAt
     let prodDateTime = '';

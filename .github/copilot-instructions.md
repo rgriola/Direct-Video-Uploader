@@ -15,7 +15,7 @@
 ## Live Host
 
 - RENDER PAID ACCOUNT (no cold starts)
-- Custom domain: `rodgriola.com`
+- Custom domain: `ms-fixer.com`
 - Auto-deploys from `main` branch
 
 ---

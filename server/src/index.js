@@ -26,6 +26,7 @@ import muxWebhookRoutes from './routes/mux-webhooks.js';
 import { setupWebSocket } from './ws/handler.js';
 import { startMuxSync, stopMuxSync } from './jobs/mux-sync.js';
 import { startUploadCleanup, stopUploadCleanup } from './jobs/upload-cleanup.js';
+import { CORS_ORIGINS, WS_CORS_ORIGINS } from './lib/config.js';
 
 // ─── Global Crash Protection ─────────────────────────────
 // Prevent the process from dying on unhandled errors (Render shows 502 when this happens)
@@ -60,9 +61,7 @@ const fastify = Fastify({
 
 // ─── Plugins ─────────────────────────────────────────────
 await fastify.register(cors, {
-    origin: isProduction
-        ? ['https://rodgriola.com', 'https://www.rodgriola.com']
-        : true,
+    origin: CORS_ORIGINS,
     credentials: true,
 });
 
@@ -154,9 +153,7 @@ fastify.decorate('authorizeAdmin', async function (request, reply) {
 // ─── Socket.IO ───────────────────────────────────────────
 const io = new SocketIOServer(fastify.server, {
     cors: {
-        origin: isProduction
-            ? ['https://rodgriola.com', 'https://www.rodgriola.com']
-            : '*',
+        origin: WS_CORS_ORIGINS,
         methods: ['GET', 'POST'],
     },
     transports: ['websocket', 'polling'],
