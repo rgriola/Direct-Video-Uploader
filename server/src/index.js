@@ -73,11 +73,11 @@ await fastify.register(helmet, {
               directives: {
                   defaultSrc: ["'self'"],
                   scriptSrc: ["'self'", "'unsafe-inline'", 'https://cdn.jsdelivr.net'],
-                  styleSrc: ["'self'", "'unsafe-inline'"],
+                  styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
                   imgSrc: ["'self'", 'data:', 'https://image.mux.com', 'https://*.mux.com'],
                   mediaSrc: ["'self'", 'https://*.mux.com', 'https://*.edgemv.mux.com', 'blob:'],
                   connectSrc: ["'self'", 'https://*.mux.com', 'https://*.edgemv.mux.com', 'https://*.litix.io'],
-                  fontSrc: ["'self'"],
+                  fontSrc: ["'self'", 'https://fonts.gstatic.com'],
                   frameSrc: ["'none'"],
               },
           }
