@@ -47,9 +47,10 @@ export default function App() {
 }
 
 function Dashboard() {
-  const [refreshing, setRefreshing] = useState(false);
   const [loggedIn, setLoggedIn] = useState(false);
   const [userRole, setUserRole] = useState<string | null>(null);
+  const [userName, setUserName] = useState<string | null>(null);
+  const [userPhone, setUserPhone] = useState<string | null>(null);
   const [showChatHistory, setShowChatHistory] = useState(false);
 
   const { data: stats } = useStats(loggedIn);
@@ -74,6 +75,8 @@ function Dashboard() {
         if (user) {
           setLoggedIn(true);
           setUserRole(user.role ?? null);
+          setUserName(user.name ?? null);
+          setUserPhone(user.phoneNumber ?? null);
           addLog("auth", `Session restored: ${user.name}`);
           connect();
         }
@@ -91,22 +94,17 @@ function Dashboard() {
     void restoreSession(saved);
   }, [addLog, connect]);
 
-  const handleLoginSuccess = useCallback((userName: string, role?: string) => {
+  const handleLoginSuccess = useCallback((userName: string, role?: string, phone?: string) => {
     // Token is already set in api.ts by the LoginForm; mirror it to localStorage
     const token = getToken();
     if (token) localStorage.setItem(AUTH_TOKEN_KEY, token);
     setLoggedIn(true);
     setUserRole(role ?? null);
+    setUserName(userName);
+    setUserPhone(phone ?? null);
     addLog("auth", `Dashboard auth: ${userName}`);
     connect();
   }, [addLog, connect, setLoggedIn]);
-
-  const handleRefresh = useCallback(async () => {
-    setRefreshing(true);
-    refreshDashboard();
-    addLog("http", "Dashboard refreshed");
-    setTimeout(() => setRefreshing(false), 600);
-  }, [refreshDashboard, addLog]);
 
   const handleAction = useCallback(
     async (action: string) => {
@@ -158,33 +156,34 @@ function Dashboard() {
   return (
     <div className="max-w-330 mx-auto px-4 sm:px-6 pt-8 pb-16">
       <Header
-        wsConnected={connected}
-        onRefresh={handleRefresh}
         onLogout={() => {
           clearToken();
           localStorage.removeItem(AUTH_TOKEN_KEY);
           setLoggedIn(false);
+          setUserName(null);
+          setUserPhone(null);
         }}
-        refreshing={refreshing}
+        userName={userName}
+        userPhone={userPhone}
+      />
+
+      <TriadStatusPanel
+        triad={triadStatus}
+        isLoading={triadLoading}
+        wsConnected={connected}
         iosClients={stats?.iosClients}
       />
 
-      <TriadStatusPanel triad={triadStatus} isLoading={triadLoading} />
-
-      <StatsGrid stats={stats} wsConnected={connected} wsId={socketId} />
-
-      <QuickActions onAction={handleAction} addLog={addLog} />
+      <StatsGrid stats={stats} />
 
       {showChatHistory && <ChatHistory onClose={() => setShowChatHistory(false)} />}
-
-      {userRole === "ADMIN" && (
-        <AdminTools onReset={() => { refreshDashboard(); addLog("http", "Nuclear reset executed"); }} />
-      )}
 
       <div className="grid grid-cols-2 gap-6 mb-8 max-[900px]:grid-cols-1">
         <UserList users={users} isLoading={usersLoading} />
         <AssetList assets={assets} isLoading={assetsLoading} />
       </div>
+
+      <QuickActions onAction={handleAction} addLog={addLog} />
 
       <div className="grid grid-cols-2 gap-6 mb-8 max-[900px]:grid-cols-1">
         <ActivityLog logs={logs} onClear={clearLogs} />
@@ -193,6 +192,12 @@ function Dashboard() {
 
       <EndpointTable />
 
+      {userRole === "ADMIN" && (
+        <div className="mt-8">
+          <AdminTools onReset={() => { refreshDashboard(); addLog("http", "Nuclear reset executed"); }} />
+        </div>
+      )}
+
       <footer className="mt-16 pt-6 border-t border-(--border-subtle) flex flex-wrap items-center justify-between gap-3">
         <p className="text-xs text-(--muted-foreground)">© 2025 Sea Lion Media LLC. All rights reserved.</p>
         <div className="flex items-center gap-4">
@@ -200,7 +205,7 @@ function Dashboard() {
             href="/privacy-policy.html"
             target="_blank"
             rel="noopener noreferrer"
-            className="text-xs text-(--accent-blue) hover:underline"
+            className="text-xs text-white hover:underline"
           >
             Privacy Policy
           </a>
@@ -208,7 +213,7 @@ function Dashboard() {
             href="/privacy-policy.html#support"
             target="_blank"
             rel="noopener noreferrer"
-            className="text-xs text-(--accent-blue) hover:underline"
+            className="text-xs text-white hover:underline"
           >
             Support
           </a>

@@ -8,12 +8,12 @@
   --font-mono: "JetBrains Mono", monospace;
 
   /* Base colors — dark mode always */
-  --background: oklch(60% 0.10763 250.447);
-  --foreground: oklch(0.93 0.01 270);
+  --background: oklch(70.499% 0.11489 254.082);
+  --foreground: oklch(93.014% 0.00759 260.883);
 
-  --card: oklch(45.098% 0.0965 268.459);
+  --card: oklch(46.562% 0.09735 268.744);
   --card-foreground: oklch(0.93 0.01 270);
-  --card-hover: oklch(31.301% 0.04089 262.916);
+  --card-hover: oklch(44.844% 0.04091 263.273);
 
   --popover: oklch(45.475% 0.03397 269.908);
   --popover-foreground: oklch(0.93 0.01 270);

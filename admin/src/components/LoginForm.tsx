@@ -2,7 +2,7 @@ import { useState, FormEvent } from "react";
 import { login, setToken } from "@/lib/api";
 
 interface LoginFormProps {
-  onSuccess: (userName: string, role?: string) => void;
+  onSuccess: (userName: string, role?: string, phone?: string) => void;
 }
 
 export function LoginForm({ onSuccess }: LoginFormProps) {
@@ -19,7 +19,7 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
     try {
       const res = await login(phoneNumber.trim(), pin.trim());
       setToken(res.token);
-      onSuccess(res.user.name, res.user.role);
+      onSuccess(res.user.name, res.user.role, res.user.phoneNumber);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed");
     } finally {
@@ -28,14 +28,14 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4 bg-[radial-gradient(ellipse_at_top,_rgba(74,158,255,0.08)_0%,_transparent_60%)]">
+    <div className="min-h-screen flex items-center justify-center p-4 bg-[radial-gradient(ellipse_at_top,rgba(74,158,255,0.08)_0%,transparent_60%)]">
       <div className="w-full max-w-sm">
         {/* Logo */}
-        <div className="flex flex-col items-center gap-4 mb-8">
-          <div className="w-16 h-16 rounded-2xl bg-linear-to-br from-(--accent-blue) to-(--accent-purple) flex items-center justify-center text-4xl shadow-[0_8px_32px_rgba(74,158,255,0.3)]">
-            🎬
+        <div className="flex items-center gap-4 mb-8">
+          <div className="w-16 h-16 rounded-2xl overflow-hidden shadow-[0_8px_32px_rgba(74,158,255,0.3)] shrink-0">
+            <img src="/fixer-icon.png" alt="Fixer" className="w-full h-full object-cover" />
           </div>
-          <div className="text-center">
+          <div className="ml-auto text-right">
             <h1 className="text-2xl font-bold tracking-tight">Fixer</h1>
             <p className="text-sm text-(--muted-foreground) mt-1">Admin Dashboard</p>
           </div>

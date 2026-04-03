@@ -55,6 +55,7 @@ export interface Stats {
   readyAssets: number;
   uploadingAssets: number;
   messages: number;
+  clips: number;
   iosClients: number;
   wsConnections: number;
 }

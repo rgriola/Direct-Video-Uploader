@@ -70,7 +70,8 @@ export default async function adminRoutes(fastify) {
                 (SELECT COUNT(*)::int FROM assets) as assets,
                 (SELECT COUNT(*)::int FROM assets WHERE status = 'READY') as "readyAssets",
                 (SELECT COUNT(*)::int FROM assets WHERE status = 'UPLOADING') as "uploadingAssets",
-                (SELECT COUNT(*)::int FROM chat_messages) as messages
+                (SELECT COUNT(*)::int FROM chat_messages) as messages,
+                (SELECT COUNT(*)::int FROM clips WHERE status = 'READY') as clips
         `);
 
         const stats = result[0] || {};
@@ -94,6 +95,7 @@ export default async function adminRoutes(fastify) {
             readyAssets: stats.readyAssets || 0,
             uploadingAssets: stats.uploadingAssets || 0,
             messages: stats.messages || 0,
+            clips: stats.clips || 0,
             iosClients: iosSockets.size,
             wsConnections: fastify.io?.of('/')?.sockets?.size || 0,
         };

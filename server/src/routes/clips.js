@@ -29,7 +29,7 @@ export default async function clipRoutes(fastify) {
             reply.status(404).type('text/html').send(`
                 <!DOCTYPE html>
                 <html><head><title>Not Found</title>
-                <style>body{background:#0A0E1A;color:#fff;font-family:'Outfit',sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}
+                <style>body{background:oklch(70.499% 0.11489 254.082);color:oklch(93.014% 0.00759 260.883);font-family:'Outfit',sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}
                 h1{font-size:1.5rem;opacity:0.7}</style></head>
                 <body><h1>Clip not found</h1></body></html>
             `);
@@ -47,7 +47,7 @@ export default async function clipRoutes(fastify) {
                 reply.status(404).type('text/html').send(`
                     <!DOCTYPE html>
                     <html><head><title>Not Found</title>
-                    <style>body{background:#0A0E1A;color:#fff;font-family:'Outfit',sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}
+                    <style>body{background:oklch(70.499% 0.11489 254.082);color:oklch(93.014% 0.00759 260.883);font-family:'Outfit',sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}
                     h1{font-size:1.5rem;opacity:0.7}</style></head>
                     <body><h1>Clip not found</h1></body></html>
                 `);
@@ -65,7 +65,7 @@ export default async function clipRoutes(fastify) {
             reply.status(500).type('text/html').send(`
                 <!DOCTYPE html>
                 <html><head><title>Error</title>
-                <style>body{background:#0A0E1A;color:#fff;font-family:'Outfit',sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}
+                <style>body{background:oklch(70.499% 0.11489 254.082);color:oklch(93.014% 0.00759 260.883);font-family:'Outfit',sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}
                 pre{font-size:0.9rem;opacity:0.7;max-width:600px;white-space:pre-wrap}</style></head>
                 <body><pre>DB Error: ${escapeHtml(err.message)}</pre></body></html>
             `);
@@ -174,77 +174,119 @@ export default async function clipRoutes(fastify) {
     <style>
         *, *::before, *::after { box-sizing: border-box; }
         body, h1, h2, h3, p, div, span { margin: 0; padding: 0; }
-        body {
-            background: #0A0E1A;
-            color: #E5E5EA;
-            font-family: 'Outfit', sans-serif;
-            min-height: 100vh;
-            -webkit-text-size-adjust: 100%;
+        :root {
+            --background: oklch(70.499% 0.11489 254.082);
+            --foreground: oklch(93.014% 0.00759 260.883);
+            --card: oklch(46.562% 0.09735 268.744);
+            --card-hover: oklch(44.844% 0.04091 263.273);
+            --border: oklch(0.22 0.02 270);
+            --border-subtle: oklch(0.17 0.01 270);
+            --muted-foreground: oklch(91.646% 0.01404 272.677);
+            --secondary: oklch(0.16 0.01 270);
             --accent-blue: #4a9eff;
             --accent-green: #34d399;
             --accent-amber: #fbbf24;
             --accent-red: #f87171;
+            --accent-green-glow: rgba(52, 211, 153, 0.15);
+            --accent-red-glow: rgba(248, 113, 113, 0.10);
+            --radius: 0.875rem;
         }
-        a { color: #ccc; }
+        body {
+            background: var(--background);
+            color: var(--foreground);
+            font-family: 'Outfit', sans-serif;
+            min-height: 100vh;
+            -webkit-text-size-adjust: 100%;
+        }
+        a { color: var(--muted-foreground); }
         .container {
-            max-width: 800px;
+            max-width: 820px;
             margin: 0 auto;
-            padding: 24px 20px 64px;
+            padding: 32px 20px 64px;
         }
-        /* Header — split layout */
-        .header {
+        /* ── Top nav bar ── */
+        .topbar {
             display: flex;
+            align-items: center;
             justify-content: space-between;
-            align-items: flex-start;
-            padding: 24px 0 16px;
-            border-bottom: 1px solid rgba(255,255,255,0.08);
-            margin-bottom: 24px;
+            padding-bottom: 24px;
+            margin-bottom: 32px;
+            border-bottom: 1px solid var(--border-subtle);
         }
-        .header-left {
+        .topbar-brand {
             display: flex;
-            flex-direction: column;
-            gap: 4px;
+            align-items: center;
+            gap: 12px;
         }
-        .header-left .brand {
-            font-size: 11px;
-            font-weight: 600;
-            letter-spacing: 2px;
-            text-transform: uppercase;
-            color: rgba(255,255,255,0.35);
-        }
-        .header-left h1 {
-            font-size: 22px;
-            font-weight: 700;
-            color: #fff;
-            word-break: break-word;
-        }
-        .header-left .msid {
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 13px;
-            color: rgba(255,255,255,0.5);
-        }
-        .header-right {
-            text-align: right;
+        .topbar-icon {
+            width: 44px;
+            height: 44px;
+            border-radius: 10px;
+            overflow: hidden;
             flex-shrink: 0;
-            padding-top: 4px;
+            box-shadow: 0 4px 16px rgba(74,158,255,0.25);
         }
-        .header-right .owner {
+        .topbar-icon img { width: 100%; height: 100%; object-fit: cover; }
+        .topbar-title {
+            font-size: 20px;
+            font-weight: 700;
+            letter-spacing: -0.01em;
+        }
+        .topbar-sub {
+            font-size: 11px;
+            color: var(--muted-foreground);
+            margin-top: 2px;
+        }
+        .topbar-right {
+            text-align: right;
+        }
+        .topbar-right .owner {
             font-size: 15px;
             font-weight: 600;
-            color: #fff;
         }
-        .header-right .team {
+        .topbar-right .team {
             font-size: 12px;
-            color: rgba(255,255,255,0.4);
+            color: var(--muted-foreground);
         }
-        /* Video */
-        .video-wrap {
-            background: #111111;
-            border-radius: 14px;
+        /* ── Clip title block ── */
+        .clip-title-block {
+            margin-bottom: 20px;
+        }
+        .clip-title-block h1 {
+            font-size: 22px;
+            font-weight: 700;
+            letter-spacing: -0.01em;
+            word-break: break-word;
+        }
+        .clip-title-block .msid {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px;
+            color: var(--muted-foreground);
+            margin-top: 4px;
+        }
+        /* ── Card panel ── */
+        .card {
+            background: var(--card);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius);
             overflow: hidden;
-            margin-bottom: 8px;
-            position: relative;
+            margin-bottom: 20px;
         }
+        .card-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 14px 20px;
+            border-bottom: 1px solid var(--border-subtle);
+        }
+        .card-header h3 {
+            font-size: 14px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        /* ── Video ── */
         .video-wrap mux-player {
             width: 100%;
             display: block;
@@ -255,144 +297,126 @@ export default async function clipRoutes(fastify) {
         .no-video {
             padding: 60px 20px;
             text-align: center;
-            color: rgba(255,255,255,0.3);
+            color: var(--muted-foreground);
             font-size: 14px;
         }
-        /* Below video — status + copy link */
+        /* ── Video bar (status + copy link) ── */
         .video-bar {
             display: flex;
             align-items: center;
             gap: 8px;
-            padding: 8px 0 24px;
+            padding: 12px 20px;
         }
         /* Status pill */
         .status {
             display: inline-block;
-            padding: 4px 16px;
+            padding: 3px 14px;
             border-radius: 20px;
-            font-size: 12px;
+            font-size: 11px;
             font-weight: 600;
-            vertical-align: middle;
+            letter-spacing: 0.05em;
         }
-        .status-READY { background: rgba(52,211,153,0.15); color: var(--accent-green); }
-        .status-PROCESSING { background: rgba(251,191,36,0.15); color: var(--accent-amber); }
-        .status-UPLOADING { background: rgba(74,158,255,0.15); color: var(--accent-blue); }
-        .status-ERROR { background: rgba(248,113,113,0.15); color: var(--accent-red); }
+        .status-READY { background: var(--accent-green-glow); color: var(--accent-green); border: 1px solid rgba(52,211,153,0.2); }
+        .status-PROCESSING { background: rgba(251,191,36,0.12); color: var(--accent-amber); border: 1px solid rgba(251,191,36,0.2); }
+        .status-UPLOADING { background: rgba(74,158,255,0.12); color: var(--accent-blue); border: 1px solid rgba(74,158,255,0.2); }
+        .status-ERROR { background: rgba(248,113,113,0.12); color: var(--accent-red); border: 1px solid rgba(248,113,113,0.2); }
         /* Copy link button */
         .copy-link {
             display: inline-flex;
             align-items: center;
             gap: 6px;
-            background: rgba(255,255,255,0.08);
-            color: #fff;
-            border: 1px solid rgba(255,255,255,0.15);
+            background: var(--secondary);
+            color: var(--foreground);
+            border: 1px solid var(--border);
             border-radius: 8px;
-            padding: 8px 16px;
+            padding: 6px 14px;
             font-size: 12px;
             font-weight: 500;
             cursor: pointer;
             transition: all 0.2s;
             font-family: inherit;
         }
-        .copy-link:hover { background: rgba(255,255,255,0.14); }
+        .copy-link:hover { background: var(--card-hover); border-color: var(--accent-blue); }
         .copy-link:active { transform: scale(0.96); }
         .copy-link.copied {
-            background: rgba(48,209,88,0.15);
-            color: #30D158;
-            border-color: rgba(48,209,88,0.3);
+            background: var(--accent-green-glow);
+            color: var(--accent-green);
+            border-color: rgba(52,211,153,0.3);
         }
-        /* Sections */
-        .section {
-            margin-bottom: 24px;
-        }
-        .section h3 {
-            font-size: 12px;
-            font-weight: 600;
-            letter-spacing: 1.5px;
-            text-transform: uppercase;
-            color: rgba(255,255,255,0.35);
-            margin-bottom: 8px;
-            padding-left: 4px;
-        }
-        /* Metadata */
-        .meta-grid {
-            background: rgba(255,255,255,0.04);
-            border-radius: 14px;
-            overflow: hidden;
-        }
+        /* ── Metadata rows ── */
         .meta-row {
             display: grid;
-            grid-template-columns: 28px 120px 1fr;
+            grid-template-columns: 28px 130px 1fr;
             align-items: center;
             gap: 0 8px;
-            padding: 16px;
-            border-bottom: 1px solid rgba(255,255,255,0.04);
+            padding: 14px 20px;
+            border-bottom: 1px solid var(--border-subtle);
         }
         .meta-row:last-child { border-bottom: none; }
         .meta-icon { font-size: 15px; line-height: 1; }
         .meta-label {
-            font-size: 14px;
-            color: rgba(255,255,255,0.45);
+            font-size: 13px;
+            color: var(--muted-foreground);
         }
         .meta-value {
-            font-size: 14px;
+            font-size: 13px;
             font-weight: 500;
-            color: #fff;
+            color: var(--foreground);
             min-width: 0;
             overflow-wrap: break-word;
             max-width: 65ch;
         }
+        .meta-value a { color: var(--accent-blue); text-underline-offset: 2px; }
         /* Priority badges */
         .priority-critical { color: var(--accent-red); }
         .priority-high { color: var(--accent-amber); }
         .priority-medium { color: var(--accent-green); }
-        .priority-low { color: rgba(255,255,255,0.5); }
-        /* Alert banner */
+        .priority-low { color: var(--muted-foreground); }
+        /* ── Alert banner ── */
         .alert-banner {
             display: flex;
             align-items: center;
-            gap: 8px;
-            padding: 16px;
-            border-radius: 12px;
-            background: rgba(248,113,113,0.10);
+            gap: 10px;
+            padding: 14px 20px;
+            border-radius: var(--radius);
+            background: rgba(248,113,113,0.08);
             border: 1px solid rgba(248,113,113,0.25);
-            margin-bottom: 24px;
+            margin-bottom: 20px;
         }
         .alert-banner .alert-icon { font-size: 20px; flex-shrink: 0; }
         .alert-banner .alert-title {
-            font-size: 14px;
+            font-size: 13px;
             font-weight: 600;
             color: var(--accent-red);
         }
         .alert-banner .alert-detail {
-            font-size: 14px;
-            color: rgba(255,255,255,0.5);
-            max-width: 65ch;
+            font-size: 13px;
+            color: var(--muted-foreground);
         }
-        /* Footer */
+        /* ── Footer ── */
         .footer {
             text-align: center;
             padding-top: 32px;
-            border-top: 1px solid rgba(255,255,255,0.06);
-            margin-top: 16px;
+            border-top: 1px solid var(--border-subtle);
+            margin-top: 8px;
         }
         .footer .logo {
-            font-size: 14px;
+            font-size: 13px;
             font-weight: 600;
-            color: rgba(255,255,255,0.25);
+            color: var(--muted-foreground);
             letter-spacing: 1px;
+            opacity: 0.5;
         }
         /* ── Mobile ── */
         @media (max-width: 480px) {
             .container { padding: 16px 16px 48px; }
-            .header { padding: 16px 0 12px; margin-bottom: 16px; flex-direction: column; gap: 8px; }
-            .header-right { text-align: left; }
-            .header-left h1 { font-size: 18px; }
-            .video-wrap { border-radius: 10px; }
+            .topbar { padding-bottom: 16px; margin-bottom: 20px; }
+            .topbar-title { font-size: 17px; }
+            .clip-title-block h1 { font-size: 18px; }
             .meta-row {
                 grid-template-columns: 28px 1fr;
                 gap: 2px 8px;
-                padding: 10px 12px;
+                padding: 10px 16px;
             }
             .meta-label {
                 grid-column: 2;
@@ -400,47 +424,48 @@ export default async function clipRoutes(fastify) {
                 text-transform: uppercase;
                 letter-spacing: 0.5px;
             }
-            .meta-value {
-                grid-column: 2;
-                font-size: 13px;
-            }
+            .meta-value { grid-column: 2; font-size: 13px; }
             .meta-icon { grid-row: span 2; align-self: start; padding-top: 2px; }
-            .meta-grid { border-radius: 10px; }
-            .section h3 { margin-bottom: 8px; }
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <div class="header">
-            <div class="header-left">
-                <div class="brand">Mediasource Viewer</div>
-                <h1>${escapeHtml(displayTitle)}</h1>
-                ${asset.mediasourceId ? `<div class="msid">#${escapeHtml(asset.mediasourceId)}</div>` : ''}
+        <div class="topbar">
+            <div class="topbar-brand">
+                <div class="topbar-icon"><img src="/fixer-icon.png" alt="Fixer" /></div>
+                <div>
+                    <div class="topbar-title">Fixer</div>
+                    <div class="topbar-sub">Mediasource Viewer</div>
+                </div>
             </div>
-            ${asset.user ? `<div class="header-right">
+            ${asset.user ? `<div class="topbar-right">
                 <div class="owner">@${escapeHtml(asset.user.name)}</div>
                 ${asset.user.team ? `<div class="team">${escapeHtml(asset.user.team)}</div>` : ''}
             </div>` : ''}
         </div>
 
-        <div class="video-wrap">
+        <div class="clip-title-block">
+            <h1>${escapeHtml(displayTitle)}</h1>
+            ${asset.mediasourceId ? `<div class="msid">#${escapeHtml(asset.mediasourceId)}</div>` : ''}
+        </div>
+
+        <div class="card">
             ${hasMuxPlayback
                 ? `<mux-player
                     stream-type="on-demand"
                     playback-id="${escapeHtml(muxPlaybackId)}"
                     ${MUX_ENV_KEY ? `env-key="${escapeHtml(MUX_ENV_KEY)}"` : ''}
                     metadata-video-title="${escapeHtml(displayTitle)}"
-                    accent-color="#007AFF"
+                    accent-color="#4a9eff"
                     preload="auto"
                   ></mux-player>`
                 : `<div class="no-video">🎬 Video not yet available</div>`
             }
-        </div>
-
-        <div class="video-bar">
-            <span class="status status-${escapeHtml(asset.status)}">${escapeHtml(asset.status)}</span>
-            <button class="copy-link" onclick="copyLink(this)">📋 Copy Link</button>
+            <div class="video-bar">
+                <span class="status status-${escapeHtml(asset.status)}">${escapeHtml(asset.status)}</span>
+                <button class="copy-link" onclick="copyLink(this)">📋 Copy Link</button>
+            </div>
         </div>
 
         ${!form && asset.status === 'READY' ? `
@@ -454,32 +479,32 @@ export default async function clipRoutes(fastify) {
         ` : ''}
 
         ${clipRows.length > 0 ? `
-        <div class="section">
-            <h3>Video / Clip</h3>
-            <div class="meta-grid">${renderRows(clipRows)}</div>
+        <div class="card">
+            <div class="card-header"><h3>🎥 Video / Clip</h3></div>
+            ${renderRows(clipRows)}
         </div>
         ` : ''}
 
         ${formRows.length > 0 ? `
-        <div class="section">
-            <h3>Context Form</h3>
-            <div class="meta-grid">${renderRows(formRows)}</div>
+        <div class="card">
+            <div class="card-header"><h3>📋 Context Form</h3></div>
+            ${renderRows(formRows)}
         </div>
         ` : ''}
 
         ${clip?.transcript ? `
-        <div class="section">
-            <h3>📝 Transcript</h3>
-            <div class="meta-grid" style="padding:16px">
-                <p style="font-size:14px;line-height:1.6;color:rgba(255,255,255,0.8);white-space:pre-wrap;max-height:300px;overflow-y:auto;grid-column:1/-1">${escapeHtml(clip.transcript)}</p>
+        <div class="card">
+            <div class="card-header"><h3>📝 Transcript</h3></div>
+            <div style="padding:16px">
+                <p style="font-size:14px;line-height:1.6;color:var(--foreground);white-space:pre-wrap;max-height:300px;overflow-y:auto">${escapeHtml(clip.transcript)}</p>
             </div>
         </div>
         ` : ''}
 
         ${assetRows.length > 0 ? `
-        <div class="section">
-            <h3>Asset</h3>
-            <div class="meta-grid">${renderRows(assetRows)}</div>
+        <div class="card">
+            <div class="card-header"><h3>📦 Asset</h3></div>
+            ${renderRows(assetRows)}
         </div>
         ` : ''}
 

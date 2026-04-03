@@ -771,3 +771,16 @@ All users can see all the other panels and any assets and clips available.
 
 Lets get this aligned then we will do some more work on the dashboard.
 ...
+**_ Task _**
+
+- On the Dashboard Review the Triad Status panel to and the header status indicators.
+
+** context **
+
+- There appears to be duplicate displays. I want to simplify the Triad Status in the Dashboard and Quick Actions
+
+**_ instructions _**
+
+- Review the Dashboard displays to remove duplications
+- Do not code anything.
+- for example there is a panel display for iOS Clients, then in the header iOS status.

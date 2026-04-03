@@ -1,8 +1,11 @@
+import { cn } from "@/lib/utils";
 import type { TriadStatus as TriadStatusType } from "@/lib/types";
 
 interface TriadStatusProps {
   triad?: TriadStatusType;
   isLoading: boolean;
+  wsConnected?: boolean;
+  iosClients?: number;
 }
 
 const serviceConfig = [
@@ -51,16 +54,38 @@ function statusTextColor(status: string) {
   }
 }
 
-export function TriadStatusPanel({ triad, isLoading }: TriadStatusProps) {
+export function TriadStatusPanel({ triad, isLoading, wsConnected = false, iosClients = 0 }: TriadStatusProps) {
   return (
     <div className="bg-(--card) border border-(--border-subtle) rounded-(--radius) overflow-hidden mb-8">
       <div className="flex items-center justify-between px-6 py-4 border-b border-(--border-subtle)">
         <h2 className="text-lg font-semibold flex items-center gap-2">
           🔺 Triad Status
         </h2>
-        <span className="text-[11px] bg-(--secondary) text-(--muted-foreground) px-2 py-0.5 rounded-[10px] font-semibold">
-          Live
-        </span>
+        <div className="flex items-center gap-3">
+          {/* iOS client indicator */}
+          <div className="flex items-center gap-1 text-xs text-(--muted-foreground)">
+            <span>📱</span>
+            <span>{iosClients > 0 ? `${iosClients} iOS` : "No iOS"}</span>
+          </div>
+
+          {/* WebSocket status badge */}
+          <span
+            className={cn(
+              "inline-flex items-center gap-1 px-3 py-0.5 rounded-full text-xs font-semibold tracking-wide border",
+              wsConnected
+                ? "bg-(--accent-green-glow) text-(--accent-green) border-[rgba(52,211,153,0.2)]"
+                : "bg-(--secondary) text-(--muted-foreground) border-(--border)",
+            )}
+          >
+            <span
+              className={cn(
+                "w-1.5 h-1.5 rounded-full",
+                wsConnected ? "bg-(--accent-green) animate-pulse-dot" : "bg-(--muted-foreground)",
+              )}
+            />
+            {wsConnected ? "LIVE" : "CONNECTING"}
+          </span>
+        </div>
       </div>
 
       <div className="grid grid-cols-4 gap-0 max-[900px]:grid-cols-2 max-[600px]:grid-cols-1">

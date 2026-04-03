@@ -2,8 +2,6 @@ import type { Stats } from "@/lib/types";
 
 interface StatsGridProps {
   stats?: Stats;
-  wsConnected: boolean;
-  wsId: string | null;
 }
 
 const cards = [
@@ -36,10 +34,10 @@ const cards = [
     detailFn: () => "all time",
   },
   {
-    key: null,
-    label: "📱 iOS Clients",
+    key: "clips" as const,
+    label: "🎬 Clips",
     color: "purple",
-    detailFn: null,
+    detailFn: (s: Stats) => `${s.readyAssets} ready asset${s.readyAssets !== 1 ? "s" : ""}`,
   },
 ] as const;
 
@@ -47,24 +45,12 @@ function accentVar(color: string) {
   return `var(--accent-${color})`;
 }
 
-export function StatsGrid({ stats, wsConnected, wsId }: StatsGridProps) {
+export function StatsGrid({ stats }: StatsGridProps) {
   return (
     <div className="grid grid-cols-4 gap-4 mb-8 max-[900px]:grid-cols-2 max-[600px]:grid-cols-1">
       {cards.map((card) => {
-        let value: string | number;
-        let detail: string;
-
-        if (card.key === null) {
-          // iOS clients card
-          const iosCount = stats?.iosClients ?? 0;
-          value = iosCount > 0 ? `${iosCount}` : "—";
-          detail = iosCount > 0
-            ? `${iosCount} device${iosCount !== 1 ? "s" : ""} connected`
-            : "No iOS clients connected";
-        } else {
-          value = stats?.[card.key] ?? "—";
-          detail = stats && card.detailFn ? card.detailFn(stats) : "—";
-        }
+        const value = stats?.[card.key] ?? "—";
+        const detail = stats && card.detailFn ? card.detailFn(stats) : "—";
 
         return (
           <div
