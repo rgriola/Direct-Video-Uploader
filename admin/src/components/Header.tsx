@@ -8,7 +8,7 @@ interface HeaderProps {
 
 export function Header({ onLogout, userName, userPhone }: HeaderProps) {
   return (
-    <header className="flex flex-wrap items-center justify-between gap-4 mb-8 pb-6 border-b border-(--border-subtle)">
+    <header className="flex flex-wrap items-center justify-between gap-3 mb-6 pb-5 border-b border-(--border-subtle) sm:mb-8 sm:pb-6 sm:gap-4">
       <div className="flex items-center gap-4 min-w-0">
         <div className="w-12 h-12 shrink-0 rounded-xl overflow-hidden shadow-[0_4px_16px_rgba(74,158,255,0.25)]">
           <img src="/fixer-icon.png" alt="Fixer" className="w-full h-full object-cover" />
@@ -23,7 +23,7 @@ export function Header({ onLogout, userName, userPhone }: HeaderProps) {
         {/* Logged-in user identity */}
         {userName && (
           <div className="flex flex-col items-end leading-tight">
-            <span className="text-2xl max-[480px]:text-xl font-bold tracking-tight text-(--foreground)">{userName}</span>
+            <span className="text-xl max-[640px]:text-base font-bold tracking-tight text-(--foreground)">{userName}</span>
             {userPhone && <span className="text-xs text-(--muted-foreground) mt-0.5">{userPhone}</span>}
           </div>
         )}

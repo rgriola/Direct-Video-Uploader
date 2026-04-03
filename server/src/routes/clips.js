@@ -408,11 +408,36 @@ export default async function clipRoutes(fastify) {
             opacity: 0.5;
         }
         /* ── Mobile ── */
-        @media (max-width: 480px) {
+        @media (max-width: 640px) {
             .container { padding: 16px 16px 48px; }
-            .topbar { padding-bottom: 16px; margin-bottom: 20px; }
+
+            /* Stack topbar vertically */
+            .topbar {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 10px;
+                padding-bottom: 16px;
+                margin-bottom: 20px;
+            }
+            .topbar-right { text-align: left; }
             .topbar-title { font-size: 17px; }
+
             .clip-title-block h1 { font-size: 18px; }
+
+            /* Card header: allow wrapping */
+            .card-header {
+                flex-wrap: wrap;
+                gap: 6px;
+                padding: 12px 16px;
+            }
+
+            /* Video bar: stack status + button */
+            .video-bar {
+                padding: 10px 16px;
+                gap: 8px;
+            }
+
+            /* Meta rows: collapse to 2-column (icon | label+value stacked) */
             .meta-row {
                 grid-template-columns: 28px 1fr;
                 gap: 2px 8px;
@@ -426,6 +451,9 @@ export default async function clipRoutes(fastify) {
             }
             .meta-value { grid-column: 2; font-size: 13px; }
             .meta-icon { grid-row: span 2; align-self: start; padding-top: 2px; }
+
+            /* Alert banner */
+            .alert-banner { padding: 12px 16px; }
         }
     </style>
 </head>

@@ -154,7 +154,7 @@ function Dashboard() {
   }
 
   return (
-    <div className="max-w-330 mx-auto px-4 sm:px-6 pt-8 pb-16">
+    <div className="max-w-330 mx-auto px-4 sm:px-6 pt-5 sm:pt-8 pb-12 sm:pb-16">
       <Header
         onLogout={() => {
           clearToken();
