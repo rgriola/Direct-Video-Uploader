@@ -9,12 +9,12 @@ interface HeaderProps {
 export function Header({ onLogout, userName, userPhone }: HeaderProps) {
   return (
     <header className="flex items-center justify-between gap-2 mb-6 pb-5 border-b border-(--border-subtle) sm:mb-8 sm:pb-6 sm:gap-4">
-      <div className="flex items-center gap-3 min-w-0 flex-1">
-        <div className="w-10 h-10 sm:w-12 sm:h-12 shrink-0 rounded-xl overflow-hidden shadow-[0_4px_16px_rgba(74,158,255,0.25)]">
+      <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+        <div className="w-8 h-8 sm:w-12 sm:h-12 shrink-0 rounded-xl overflow-hidden shadow-[0_4px_16px_rgba(74,158,255,0.25)]">
           <img src="/fixer-icon.png" alt="Fixer" className="w-full h-full object-cover" />
         </div>
-        <div className="min-w-0">
-          <h1 className="text-xl sm:text-2xl font-bold tracking-tight truncate">Fixer</h1>
+        <div>
+          <h1 className="text-lg sm:text-2xl font-bold tracking-tight">Fixer</h1>
           <p className="text-xs text-(--muted-foreground) mt-0.5 hidden sm:block">Server Dashboard · Live Data</p>
         </div>
       </div>
