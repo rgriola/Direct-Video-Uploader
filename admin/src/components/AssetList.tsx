@@ -1,5 +1,7 @@
 import { useState } from "react";
 import type { Asset } from "@/lib/types";
+import { panelHeader } from "@/lib/types";
+import { subTextPanelHeader } from "@/lib/types";
 
 const statusIcons: Record<string, string> = {
   READY: "✅",
@@ -32,10 +34,10 @@ export function AssetList({ assets, isLoading }: AssetListProps) {
 
   return (
     <div className="bg-(--card) border border-(--border-subtle) rounded-(--radius) overflow-hidden">
-      <div className="flex items-center justify-between px-6 py-4 border-b border-(--border-subtle)">
+      <div className={panelHeader}>
         <h2 className="text-lg font-semibold flex items-center gap-2">
           📦 Assets{" "}
-          <span className="text-[11px] bg-(--secondary) text-(--muted-foreground) px-2 py-0.5 rounded-[10px] font-semibold">
+          <span className={subTextPanelHeader}>
             {assets?.length ?? 0}
           </span>
         </h2>

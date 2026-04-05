@@ -1,4 +1,6 @@
 import type { LogEntry } from "@/lib/types";
+import { panelHeader } from "@/lib/types";
+import { subTextPanelHeader } from "@/lib/types";
 
 interface QuickActionsProps {
   onAction: (action: string) => void;
@@ -15,9 +17,11 @@ const buttons = [
 export function QuickActions({ onAction }: QuickActionsProps) {
   return (
     <div className="bg-(--card) border border-(--border-subtle) rounded-(--radius) overflow-hidden mb-8">
-      <div className="flex items-center justify-between px-6 py-4 border-b border-(--border-subtle)">
+
+      <div className={panelHeader}>
+
         <h2 className="text-lg font-semibold flex items-center gap-2">⚡ Quick Actions</h2>
-        <span className="text-[11px] bg-(--secondary) text-(--muted-foreground) px-2 py-0.5 rounded-[10px] font-semibold">
+        <span className={subTextPanelHeader}>
           Test the API
         </span>
       </div>
@@ -27,7 +31,7 @@ export function QuickActions({ onAction }: QuickActionsProps) {
           <button
             key={btn.key}
             onClick={() => onAction(btn.key)}
-            className="flex flex-col items-center gap-1 px-4 py-4 rounded-lg text-sm font-medium bg-(--secondary) border border-(--border) text-(--foreground) hover:bg-(--card-hover) hover:border-(--accent-blue) hover:-translate-y-px transition-all cursor-pointer"
+            className="flex flex-col items-center gap-1 px-4 py-4 rounded-lg text-sm font-medium bg-(--secondary) border border-(--border) text-(--secondary-foreground) hover:bg-(--secondary-dark-shade) hover:border-(--accent-blue) hover:-translate-y-px transition-all cursor-pointer"
           >
             <span className="text-xl">{btn.icon}</span>
             {btn.label}

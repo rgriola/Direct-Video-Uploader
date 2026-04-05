@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { fetchMessages } from "@/lib/api";
+import { panelHeader } from "@/lib/types";
+import { subTextPanelHeader } from "@/lib/types";
 
 interface Message {
   id: string;
@@ -68,10 +70,10 @@ export function ChatHistory({ onClose }: ChatHistoryProps) {
 
   return (
     <div className="bg-(--card) border border-(--border-subtle) rounded-(--radius) overflow-hidden mb-8">
-      <div className="flex items-center justify-between px-6 py-4 border-b border-(--border-subtle)">
+      <div className={panelHeader}>
         <h2 className="text-lg font-semibold flex items-center gap-2">
           💬 Chat History
-          <span className="text-[11px] bg-(--secondary) text-(--muted-foreground) px-2 py-0.5 rounded-[10px] font-semibold">
+          <span className={subTextPanelHeader}>
             {messages.length} messages
           </span>
         </h2>

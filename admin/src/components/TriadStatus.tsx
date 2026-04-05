@@ -1,5 +1,7 @@
 import { cn } from "@/lib/utils";
 import type { TriadStatus as TriadStatusType } from "@/lib/types";
+import { panelHeader } from "@/lib/types";
+import { subTextPanelHeader } from "@/lib/types";
 
 interface TriadStatusProps {
   triad?: TriadStatusType;
@@ -57,15 +59,15 @@ function statusTextColor(status: string) {
 export function TriadStatusPanel({ triad, isLoading, wsConnected = false, iosClients = 0 }: TriadStatusProps) {
   return (
     <div className="bg-(--card) border border-(--border-subtle) rounded-(--radius) overflow-hidden mb-8">
-      <div className="flex items-center justify-between px-6 py-4 border-b border-(--border-subtle)">
+      <div className={panelHeader}>
         <h2 className="text-lg font-semibold flex items-center gap-2">
           🔺 Triad Status
         </h2>
         <div className="flex items-center gap-3">
           {/* iOS client indicator */}
-          <div className="flex items-center gap-1 text-xs text-(--muted-foreground)">
+          <div className="flex items-center gap-1 text-xs text-(--secondary-foreground)">
             <span>📱</span>
-            <span>{iosClients > 0 ? `${iosClients} iOS` : "No iOS"}</span>
+            <span>{iosClients > 0 ? `${iosClients} iOS User` : "No iOS User"}</span>
           </div>
 
           {/* WebSocket status badge */}
@@ -107,6 +109,7 @@ export function TriadStatusPanel({ triad, isLoading, wsConnected = false, iosCli
                     className={`w-2 h-2 rounded-full shrink-0 ${isLoading ? "bg-(--muted-foreground)" : statusDot(status)}`}
                   />
                   <span className="text-sm font-semibold">{svc.label}</span>
+                  
                   <span
                     className={`text-[11px] font-semibold ${isLoading ? "text-(--muted-foreground)" : statusTextColor(status)}`}
                   >

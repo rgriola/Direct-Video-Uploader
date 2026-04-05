@@ -1,4 +1,5 @@
 import type { LogEntry } from "@/lib/types";
+import {panelHeader} from "@/lib/types";
 
 const typeClasses: Record<string, string> = {
   ws: "bg-(--accent-purple-glow) text-(--accent-purple)",
@@ -16,7 +17,9 @@ interface ActivityLogProps {
 export function ActivityLog({ logs, onClear }: ActivityLogProps) {
   return (
     <div className="bg-(--card) border border-(--border-subtle) rounded-(--radius) overflow-hidden">
-      <div className="flex items-center justify-between px-6 py-4 border-b border-(--border-subtle)">
+
+      <div className={panelHeader}>
+
         <h2 className="text-lg font-semibold flex items-center gap-2">📡 Activity Log</h2>
         <button
           onClick={onClear}

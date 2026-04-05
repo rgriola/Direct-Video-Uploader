@@ -1,15 +1,18 @@
 import { useState } from "react";
 import { toast } from "sonner";
 import { nuclearReset, createUser } from "@/lib/api";
+import { panelHeader } from "@/lib/types";
 
 export function AdminTools({ onReset }: { onReset: () => void }) {
   return (
     <div className="bg-(--card) border border-(--border-subtle) rounded-(--radius) overflow-hidden mb-8">
-      <div className="flex items-center justify-between px-6 py-4 border-b border-(--border-subtle)">
+
+        <div className={panelHeader}>
+
         <h2 className="text-lg font-semibold flex items-center gap-2">
           🔧 Admin Tools
         </h2>
-        <span className="text-[11px] bg-(--secondary) text-(--muted-foreground) px-2 py-0.5 rounded-[10px] font-semibold">
+        <span className="text-[11px] bg-(--secondary-dark-shade) text-(--secondary-foreground) px-2 py-2 rounded-[10px] font-semibold">
           Demo Management
         </span>
       </div>
@@ -71,7 +74,7 @@ function NuclearReset({ onReset }: { onReset: () => void }) {
           className={`px-4 py-2 rounded-lg text-sm font-semibold border transition-all cursor-pointer ${
             confirming
               ? "bg-(--accent-red) border-(--accent-red) text-white hover:opacity-90"
-              : "bg-(--secondary) border-(--border) text-(--foreground) hover:bg-(--accent-red-glow) hover:border-(--accent-red)/50 hover:text-(--accent-red)"
+              : "bg-(--secondary) border-(--border-subtle) text-(--secondary-foreground) hover:bg-(--accent-red-glow) hover:border-(--accent-red)/50 hover:text-(--accent-red)"
           } disabled:opacity-50 disabled:cursor-not-allowed`}
         >
           {running ? "Resetting..." : confirming ? "Confirm Reset" : "Reset Everything"}
@@ -79,7 +82,7 @@ function NuclearReset({ onReset }: { onReset: () => void }) {
         {confirming && !running && (
           <button
             onClick={() => setConfirming(false)}
-            className="px-4 py-2 rounded-lg text-sm font-medium bg-(--secondary) border border-(--border) text-(--muted-foreground) hover:text-(--foreground) transition-all cursor-pointer"
+            className="px-4 py-2 rounded-lg text-sm font-medium bg-(--secondary) border border-(--border-subtle) text-(--muted-foreground) hover:text-(--foreground) transition-all cursor-pointer"
           >
             Cancel
           </button>
@@ -125,7 +128,7 @@ function CreateUser() {
   }
 
   const inputClass =
-    "w-full px-3 py-1.5 rounded-lg text-sm bg-(--secondary) border border-(--border) text-(--foreground) placeholder:text-(--muted-foreground) focus:outline-none focus:border-(--accent-blue) transition-colors";
+    "w-full px-3 py-1.5 rounded-lg text-sm bg-(--secondary) border border-(--border) text-(--secondary-foreground) placeholder:text-(--secondary-foreground) focus:outline-none focus:border-(--accent-blue) transition-colors";
 
   return (
     <div className="flex flex-col gap-3">
@@ -169,7 +172,7 @@ function CreateUser() {
         <button
           type="submit"
           disabled={creating}
-          className="self-start px-4 py-2 rounded-lg text-sm font-semibold bg-(--accent-blue) text-white border border-(--accent-blue) hover:brightness-110 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+          className="self-start px-4 py-2 rounded-lg text-sm font-semibold bg-(--accent-green) text-(--foreground-secondary) border border-(--accent-blue) hover:brightness-90 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {creating ? "Creating..." : "Create User"}
         </button>

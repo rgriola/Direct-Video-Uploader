@@ -4,54 +4,96 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
+  --base: #7565D4;
+
   --font-sans: "Outfit", sans-serif;
   --font-mono: "JetBrains Mono", monospace;
 
   /* Base colors — dark mode always */
-  --background: oklch(70.499% 0.11489 254.082);
-  --foreground: oklch(93.014% 0.00759 260.883);
+  /*--background: #6ca3e6;*/
+  --background: #E0E0E0;
+  /* --foreground: #f5f5f5;*/
+  --foreground: #111111;
+  /* foreground handles font color for h1 */
+  
+/* Color Theme Swatches in Hex */
+.ICON-Colors-3-hex { color: #8576EE; } /* BASE Purple*/
+.ICON-Colors-1-hex { color: #6FEFCE; }
+.ICON-Colors-2-hex { color: #F4D247; }
+.ICON-Colors-4-hex { color: #EA3343; }
+.ICON-Colors-5-hex { color: #66124A; }
+.ICON-Colors-6-hex { color: #223B7E; }
 
-  --card: oklch(46.562% 0.09735 268.744);
-  --card-foreground: oklch(0.93 0.01 270);
-  --card-hover: oklch(44.844% 0.04091 263.273);
+/* Base Purple Shades in Hex */
+.SHADES-3-hex { color: #8677ED; }
+.SHADES-1-hex { color: #8272E5; }
+.SHADES-2-hex { color: #6E61C3; }
+.SHADES-4-hex { color: #5B50A1; }
+.SHADES-5-hex { color: #483F7F; }
+.SHADES-6-hex { color: #352E5D; }
 
-  --popover: oklch(45.475% 0.03397 269.908);
-  --popover-foreground: oklch(0.93 0.01 270);
+--border-blue: #4a9eff;
+--border-green: #34d399; 
+--border-purple: #a78bfa;
+--border-amber: #fbbf24;
 
-  --primary: oklch(0.65 0.17 250);
-  --primary-foreground: oklch(1 0 0);
 
-  --secondary: oklch(0.16 0.01 270);
-  --secondary-foreground: oklch(0.93 0.01 270);
 
-  --muted: oklch(44.662% 0.08966 266.232);
-  --muted-foreground: oklch(91.646% 0.01404 272.677);
+  /*--card: #8677ED;*/
+  --card: #FCFCFC;
+  --card-foreground: #111111;
+  --card-hover: #EBEBEB;
 
-  --accent: oklch(0.16 0.01 270);
-  --accent-foreground: oklch(0.93 0.01 270);
+  /* does not seem to be used. */
+  --popover: #4f566a;
+  --popover-foreground: #f5f5f5;
 
-  --destructive: oklch(0.65 0.2 25);
-  --destructive-foreground: oklch(1 0 0);
+    /* does not seem to be used. */
+  --primary: #2393f1;
+  --primary-foreground: #f5f5f5;
 
-  --border: oklch(0.22 0.02 270);
-  --border-subtle: oklch(0.17 0.01 270);
-  --input: oklch(0.22 0.02 270);
-  --ring: oklch(0.65 0.17 250);
+  /* status panels */
+  --secondary: #8677ED;
+  --secondary-dark-shade: #6E61C3;
+  --secondary-foreground: #f5f5f5;
+
+  --muted: #6b7280;
+  --muted-foreground: #111111;  /* status panels hover */
+
+  --accent: #111111;
+  --accent-foreground: #f5f5f5;
+
+  --destructive: #e53e3e;
+  --destructive-foreground: #111111;
+
+  --border: #8677ED;
+  --border-subtle: #483F7F;
+  --input: #111111;
+  --ring: #4a9eff;
 
   --radius: 0.875rem;
 
   /* Semantic accent palette */
-  --accent-blue: #4a9eff;
+ /* --accent-blue: #4a9eff;
   --accent-green: #34d399;
   --accent-amber: #fbbf24;
   --accent-red: #f87171;
   --accent-purple: #a78bfa;
+  */
 
-  --accent-blue-glow: rgba(74, 158, 255, 0.15);
-  --accent-green-glow: rgba(52, 211, 153, 0.15);
-  --accent-amber-glow: rgba(251, 191, 36, 0.15);
-  --accent-red-glow: rgba(248, 113, 113, 0.15);
-  --accent-purple-glow: rgba(167, 139, 250, 0.15);
+  /* These apply to the asset list,activity, errorlog, userlist tsx  */
+.ICON-Colors-3-hex { color: #8576EE; } /* BASE Purple*/
+  --accent-blue: #4a9eff;
+  --accent-green: #47c6a7;
+  --accent-amber: #F4D247;
+  --accent-red: #EA3343;
+  --accent-purple: #223B7E;
+
+  --accent-blue-glow: #4a9eff26;
+  --accent-green-glow: #6FEFCE26;
+  --accent-amber-glow: #F4D24726;
+  --accent-red-glow: #EA334326;
+  --accent-purple-glow: #223B7E26;
 }
 
 body {

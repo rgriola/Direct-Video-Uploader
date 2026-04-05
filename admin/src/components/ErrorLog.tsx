@@ -1,5 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { fetchErrors } from "@/lib/api";
+import { panelHeader } from "@/lib/types";
+import { subTextPanelHeader } from "@/lib/types";
 
 interface ErrorEntry {
     id: string;
@@ -36,10 +38,12 @@ export function ErrorLog() {
 
     return (
         <div className="bg-(--card) border border-(--border-subtle) rounded-(--radius) overflow-hidden">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-(--border-subtle)">
+
+            <div className={panelHeader}>
+
                 <h2 className="text-lg font-semibold flex items-center gap-2">
                     ⚠️ Error Log{" "}
-                    <span className="text-[11px] bg-(--secondary) text-(--muted-foreground) px-2 py-0.5 rounded-[10px] font-semibold">
+                    <span className={subTextPanelHeader}>
                         {errors.length}
                     </span>
                 </h2>

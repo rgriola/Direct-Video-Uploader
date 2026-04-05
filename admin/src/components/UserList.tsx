@@ -1,17 +1,22 @@
 import { useState } from "react";
 import { ChevronDown } from "lucide-react";
 import type { User } from "@/lib/types";
+import { panelHeader } from "@/lib/types";
+import { subTextPanelHeader } from "@/lib/types";
 
 const avatarColors = ["blue", "green", "purple"] as const;
 
+const isOnlineCell = "shrink-0 inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold" as const;
+
 function avatarStyle(color: string) {
   const map: Record<string, { bg: string; text: string; border: string }> = {
-    blue: { bg: "var(--accent-blue-glow)", text: "var(--accent-blue)", border: "rgba(74,158,255,0.2)" },
-    green: { bg: "var(--accent-green-glow)", text: "var(--accent-green)", border: "rgba(52,211,153,0.2)" },
-    purple: { bg: "var(--accent-purple-glow)", text: "var(--accent-purple)", border: "rgba(167,139,250,0.2)" },
+    blue: { bg: "var(--accent-blue-glow)", text: "var(--accent-blue)", border: "var(--border-blue)" },
+    green: { bg: "var(--accent-green-glow)", text: "var(--accent-green)", border: "var(--border-green)" },
+    purple: { bg: "var(--accent-purple-glow)", text: "var(--accent-purple)", border: "var(--border-purple)" },
   };
   return map[color] ?? map.blue!;
 }
+
 
 function formatLoginAge(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime();
@@ -49,10 +54,10 @@ export function UserList({ users, isLoading }: UserListProps) {
 
   return (
     <div className="bg-(--card) border border-(--border-subtle) rounded-(--radius) overflow-hidden">
-      <div className="flex items-center justify-between px-6 py-4 border-b border-(--border-subtle)">
+      <div className={panelHeader}>
         <h2 className="text-lg font-semibold flex items-center gap-2">
           👥 Users{" "}
-          <span className="text-[11px] bg-(--secondary) text-(--muted-foreground) px-2 py-0.5 rounded-[10px] font-semibold">
+          <span className={subTextPanelHeader}>
             {users?.length ?? 0}
           </span>
         </h2>
@@ -96,22 +101,22 @@ export function UserList({ users, isLoading }: UserListProps) {
                   </span>
 
                   {/* Team pill */}
-                  <span className="hidden sm:inline-flex shrink-0 items-center px-2 py-0.5 rounded-md text-[11px] font-semibold bg-(--secondary) text-(--muted-foreground)">
+                  <span className={`${isOnlineCell} bg-(--base) text-(--secondary-foreground) border border(--border-subtle)`}>
                     {user.team ?? "—"}
                   </span>
 
                   {/* Status pill */}
+
                   {user.isOnline ? (
-                    <span className="shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-(--accent-green-glow) text-(--accent-green)">
-                      <span className="w-1.5 h-1.5 rounded-full bg-(--accent-green) animate-pulse-dot" />
+                    <span className={`${isOnlineCell} bg-(--accent-green-glow) text-(--accent-green) border border-(--border-green)`}>
                       ONLINE
                     </span>
                   ) : user.lastLoginAt ? (
-                    <span className="shrink-0 inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold bg-(--secondary) text-(--muted-foreground)">
+                    <span className={`${isOnlineCell} bg-(--accent-amber) text-(--accent) border border-(--accent)`}>
                       OFFLINE
                     </span>
                   ) : (
-                    <span className="shrink-0 inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold bg-(--secondary) text-(--muted-foreground) opacity-50">
+                    <span className={`${isOnlineCell} bg-(--accent) text-(--accent-foreground)`}>
                       NEVER SEEN
                     </span>
                   )}

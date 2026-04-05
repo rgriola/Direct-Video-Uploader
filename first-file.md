@@ -784,3 +784,13 @@ Lets get this aligned then we will do some more work on the dashboard.
 - Review the Dashboard displays to remove duplications
 - Do not code anything.
 - for example there is a panel display for iOS Clients, then in the header iOS status.
+
+...
+**_ Task _**
+
+- ms-fixer.com is the main domain now. I need to switch out the rodgriola.com url. I also noticed rodgriola.com is hardcoded acrosse several files rather than centralized.
+  **_ Instructions _**
+- switch main production url to ms-fixer.com from rodgriola.com
+- centralize the production url on the web and iOS.
+- if centralizing the iOS url is difficult change the url to ms-fixer.com
+- Review this and show me a plan to make the change. Do not code until approved.
