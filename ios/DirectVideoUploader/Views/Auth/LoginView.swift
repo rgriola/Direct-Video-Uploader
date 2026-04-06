@@ -64,7 +64,7 @@ struct LoginView: View {
                                 .font(Theme.loginFieldFont)
                                 .onChange(of: phoneNumber) { _, new in
                                     let digits = new.filter { $0.isNumber }
-                                    if digits != new || new.count > 15 { phoneNumber = String(digits.prefix(15)) }
+                                    if digits != new || new.count > 10 { phoneNumber = String(digits.prefix(10)) }
                                 }
                         }
                         .padding(.horizontal, 16)

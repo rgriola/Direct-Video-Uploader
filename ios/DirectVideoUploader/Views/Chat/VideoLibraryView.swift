@@ -39,7 +39,7 @@ struct VideoLibraryView: View {
                 // Footer bar — video count + location status + confirm button
                 footerBar
             }
-            .background(Color.black)
+            .background(Theme.black)
             .navigationTitle("Library")
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(.visible, for: .navigationBar)
@@ -116,24 +116,24 @@ struct VideoLibraryView: View {
                             .foregroundStyle(.gray)
                     } else if let meta = loadedMetadata {
                         Label(
-                            "\(selectedItems.count) video selected",
+                            "\(selectedItems.count) video queued",
                             systemImage: "video.fill"
                         )
                         .font(.system(size: 14, weight: .medium))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(Theme.white)
 
                         if meta.gpsLat != nil {
-                            Label("Location", systemImage: "location.fill")
+                            Label("GPS", systemImage: "location.fill")
                                 .font(.system(size: 13))
                                 .foregroundStyle(Theme.green)
                         }
                     } else {
                         Label(
-                            "\(selectedItems.count) video selected",
+                            "\(selectedItems.count) video queued",
                             systemImage: "video.fill"
                         )
                         .font(.system(size: 14, weight: .medium))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(Theme.white)
                     }
 
                     Spacer()
@@ -148,18 +148,15 @@ struct VideoLibraryView: View {
                                 .scaleEffect(0.8)
                                 .frame(width: 80, height: 36)
                         } else {
-                            Label("Trim & Send", systemImage: "scissors")
-                                .font(.system(size: 15, weight: .semibold))
-                                .foregroundStyle(.white)
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 8)
+                            Image(systemName: "checkmark.circle.fill")
+                                .font(Theme.emptyEmojiFont)
+                                .symbolRenderingMode(.palette)
+                                .foregroundStyle(
+                                    Theme.white,
+                                    (loadedVideoURL != nil && loadedMetadata != nil) ? Theme.purple : Theme.purple.opacity(0.4)
+                                )
                         }
                     }
-                    .background(
-                        (loadedVideoURL != nil && loadedMetadata != nil)
-                            ? Theme.blue : Theme.blue.opacity(0.4)
-                    )
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
                     .disabled(isLoadingMetadata && !pendingConfirm)
                 }
                 .padding(.horizontal, 16)

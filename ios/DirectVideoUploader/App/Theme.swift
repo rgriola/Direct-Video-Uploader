@@ -2,59 +2,59 @@ import SwiftUI
 
 // MARK: - Color Theme
 
-/// Centralized color palette. Use `Theme.blue` instead of `Color(hex: "007AFF")` everywhere.
+/// Centralized color palette. 
 enum Theme {
     // Primary actions
   
-    static let black       = Color(hex: "111111")
-    static let white       = Color(hex: "F5F5F5")
-    static let purple      = Color(hex: "8576EE")
+    static let black       = Color(hex: "#111111")
+    static let white       = Color(hex: "#F5F5F5")
+    static let purple      = Color(hex: "#8576EE")
 
-    static let blue        = Color(hex: "007AFF")
-    static let green       = Color(hex: "30D158")
-    static let red         = Color(hex: "FF453A")
-    static let yellow      = Color(hex: "FFD60A")
-    static let tint        = Color(hex: "0A84FF") // blue 
-    static let viewGreen   = Color(hex: "34C759") 
+    static let blue        = Color(hex: "#007AFF")
+    static let green       = Color(hex: "#30D158")
+    static let red         = Color(hex: "#FF453A")
+    static let yellow      = Color(hex: "#FFD60A")
+    static let tint        = Color(hex: "#0A84FF") // blue 
+    static let viewGreen   = Color(hex: "#34C759") 
 
     // Backgrounds
-    static let darkBg      = Color(hex: "111111")
-    static let cardBg      = Color(hex: "2C2C2E")
-    static let deepBg      = Color(hex: "0A0E1A")
-    static let formBg      = Color(hex: "1A2544")
-    static let separator   = Color(hex: "38383A")
-    static let chatScreen  = Color(hex: "F3F2F2")
+    static let darkBg      = Color(hex: "#111111")
+    static let cardBg      = Color(hex: "#2C2C2E")
+    static let deepBg      = Color(hex: "#0A0E1A")
+    static let formBg      = Color(hex: "#1A2544")
+    static let separator   = Color(hex: "#38383A")
+    static let chatScreen  = Color(hex: "#F3F2F2")
 
     // Grays
-    static let whiteBk      = Color(hex: "F5F5F5")
-    static let lightGrayBk  = Color(hex: "ECECEC")
-    static let darkGrayBk   = Color(hex: "CACACA")
+    static let whiteBk      = Color(hex: "#F5F5F5")
+    static let lightGrayBk  = Color(hex: "#ECECEC")
+    static let darkGrayBk   = Color(hex: "#CACACA")
 
     // Incoming bubble
-    static let incomingBubble = Color(hex: "DBDBDB")
-    static let incomingText   = Color(hex: "111111")
+    static let incomingBubble = Color(hex: "#DBDBDB")
+    static let incomingText   = Color(hex: "#111111")
 
     // Outgoing bubble  
-    static let outgoingBubble = Color(hex: "8576EE")
-    static let outgoingText   = Color(hex: "F5F5F5")
+    static let outgoingBubble = Color(hex: "#8576EE")
+    static let outgoingText   = Color(hex: "#F5F5F5")
 
     // Gradients
-    static let bubbleBlueHi  = Color(hex: "007AFF")
-    static let bubbleBlueLo  = Color(hex: "0063D1")
-    static let videoBubbleHi = Color(hex: "1C3A5F")
-    static let videoBubbleLo = Color(hex: "0A1E3D")
+    static let bubbleBlueHi  = Color(hex: "#007AFF")
+    static let bubbleBlueLo  = Color(hex: "#0063D1")
+    static let videoBubbleHi = Color(hex: "#1C3A5F")
+    static let videoBubbleLo = Color(hex: "#0A1E3D")
 
     // Text
-    static let primaryText   = Color(hex: "F5F5F5")
-    static let secondaryText = Color(hex: "98989D")
-    static let tertiaryText  = Color(hex: "636366")
-    static let lightText     = Color(hex: "E5E5EA")
-    static let metaText      = Color(hex: "EBEBF5")
+    static let primaryText   = Color(hex: "#F5F5F5")
+    static let secondaryText = Color(hex: "#98989D")
+    static let tertiaryText  = Color(hex: "#636366")
+    static let lightText     = Color(hex: "#E5E5EA")
+    static let metaText      = Color(hex: "#EBEBF5")
 
     // InputBar
-    static let inputBarBg    = Color(hex: "ADADAD")
-    static let inputFieldBg  = Color(hex: "CCCCCC")
-    static let actionBlue    = Color(hex: "8576EE")
+    static let inputBarBg    = Color(hex: "#ADADAD")
+    static let inputFieldBg  = Color(hex: "#CCCCCC")
+    static let actionBlue    = Color(hex: "#8576EE")
 
     // MARK: - Typography
 

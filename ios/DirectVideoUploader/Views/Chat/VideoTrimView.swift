@@ -21,8 +21,8 @@ struct VideoTrimView: View {
 
     var body: some View {
         ZStack {
-            Color.black.ignoresSafeArea()
-
+            Theme.black.ignoresSafeArea()
+            
             VStack(spacing: 0) {
                 // Toolbar
                 trimToolbar
@@ -85,17 +85,17 @@ struct VideoTrimView: View {
                 vm.pause()
                 onCancel()
             }
-            .foregroundStyle(.white)
+            .foregroundStyle(Theme.white)
 
             Spacer()
 
             Text("Trim Video")
                 .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(.white)
+                .foregroundStyle(Theme.white)
 
             Spacer()
 
-            Button("Choose") {
+            Button("Send") {
                 handleExport()
             }
             .foregroundStyle(Theme.yellow)
@@ -104,7 +104,7 @@ struct VideoTrimView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
-        .background(Theme.darkBg)
+        .background(Theme.black)
     }
 
     // MARK: - Time labels
