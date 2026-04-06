@@ -33,14 +33,14 @@ struct SentUploadBubble: View {
                             // Filename
                             Text(fileName)
                                 .font(Theme.monoSmallFont)
-                                .foregroundStyle(.white)
+                                .foregroundStyle(Theme.white)
                                 .lineLimit(1)
                             
                             // Created date
                             if let date = createdDate {
                                 Text(date)
                                     .font(Theme.timestampFont)
-                                    .foregroundStyle(.white.opacity(0.6))
+                                    .foregroundStyle(Theme.white)
                             }
                             
                             // Location badge
@@ -48,7 +48,7 @@ struct SentUploadBubble: View {
                                 HStack(spacing: 4) {
                                     Image(systemName: "location.fill")
                                         .font(Theme.locationIconFont)
-                                    Text("Location included")
+                                    Text("GPS")
                                         .font(Theme.locationFont)
                                 }
                                 .foregroundStyle(Theme.green)
@@ -60,7 +60,7 @@ struct SentUploadBubble: View {
                         if isUploading {
                             // Spinning indicator during upload
                             ProgressView()
-                                .tint(.white)
+                                .tint(Theme.white)
                         } else {
                             // Green checkmark — sent
                             Image(systemName: "checkmark.circle.fill")
@@ -75,28 +75,22 @@ struct SentUploadBubble: View {
                     if isUploading {
                         VStack(spacing: 4) {
                             ProgressView(value: uploadProgress)
-                                .tint(.blue)
+                                .tint(Theme.blue)
                             HStack {
                                 Text("Uploading video…")
                                     .font(Theme.timestampFont)
-                                    .foregroundStyle(.white.opacity(0.7))
+                                    .foregroundStyle(Theme.white)
                                 Spacer()
                                 Text("\(Int(uploadProgress * 100))%")
                                     .font(Theme.timestampFont.monospacedDigit())
-                                    .foregroundStyle(.white.opacity(0.7))
+                                    .foregroundStyle(Theme.white)
                             }
                         }
                         .padding(.horizontal, 12)
                         .padding(.bottom, 10)
                     }
                 }
-                .background(
-                    LinearGradient(
-                        colors: [Theme.videoBubbleHi, Theme.videoBubbleLo],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
+                .background(Theme.videoBubbleGradient)// bg for preview bubble
                 .clipShape(RoundedRectangle(cornerRadius: 18))
                 .overlay(
                     RoundedRectangle(cornerRadius: 18)
@@ -106,7 +100,7 @@ struct SentUploadBubble: View {
                 // Label
                 Text(isUploading ? "Uploading…" : "Sent")
                     .font(Theme.timestampFont)
-                    .foregroundStyle(.white.opacity(0.3))
+                    .foregroundStyle(Theme.white)
                     .padding(.horizontal, 4)
             }
         }

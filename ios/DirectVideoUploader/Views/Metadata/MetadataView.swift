@@ -19,8 +19,8 @@ struct MetadataView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                Theme.deepBg.ignoresSafeArea()
-                
+                Theme.black.ignoresSafeArea()
+    
                 ScrollView {
                     VStack(spacing: 0) {
                         // Hero — file identity

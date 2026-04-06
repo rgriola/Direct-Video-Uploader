@@ -4,7 +4,6 @@ import SwiftUI
 struct ChatHeaderView: View {
     let userName: String
     let connectionState: WebSocketService.ConnectionState
-    var onLogout: (() -> Void)?
     
     private var statusColor: Color {
         switch connectionState {
@@ -16,10 +15,10 @@ struct ChatHeaderView: View {
     
     private var statusText: String {
         switch connectionState {
-        case .connected:    return "Ready"
-        case .connecting:   return "Working..."
-        case .disconnected: return "Trying to connect..."
-        }
+            case .connected:    return "GO"
+            case .connecting:   return "Connecting..."
+            case .disconnected: return "Getting a new token..."
+            }
     }
     
     var body: some View {
@@ -27,26 +26,19 @@ struct ChatHeaderView: View {
             HStack(spacing: 12) {
                 // Avatar
                 ZStack {
-                    Circle()
-                        .fill(
-                            LinearGradient(
-                                colors: [Theme.blue, Theme.purple],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
+                    Image("FixerClean")
+                        .resizable()
+                        .scaledToFill()
                         .frame(width: 40, height: 40)
-                    
-                    Text("MF")
-                        .font(Theme.headerAvatarFont)
-                        .foregroundStyle(.white)
-                }
+                        .clipShape(Circle())
+                        .background(Circle().fill(Theme.purple))
+                    }
                 
                 // Name + status
                 VStack(alignment: .leading, spacing: 2) {
                     Text(userName)
                         .font(Theme.headerNameFont)
-                        .foregroundStyle(.white)
+                        .foregroundStyle(Theme.white)
                     
                     HStack(spacing: 4) {
                         Circle()
@@ -60,15 +52,6 @@ struct ChatHeaderView: View {
                 }
                 
                 Spacer()
-                
-                // Logout button
-                Button {
-                    onLogout?()
-                } label: {
-                    Image(systemName: "rectangle.portrait.and.arrow.right")
-                        .font(Theme.iconHeaderFont)
-                        .foregroundStyle(.white.opacity(0.5))
-                }
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)

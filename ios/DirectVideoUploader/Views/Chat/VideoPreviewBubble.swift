@@ -52,7 +52,7 @@ struct VideoPreviewBubble: View {
                     // File info + send button
                     HStack(spacing: 10) {
                         VStack(alignment: .leading, spacing: 3) {
-                            // Filename
+                            // Filename 
                             Text(stagedVideo.fileName)
                                 .font(Theme.monoSmallFont)
                                 .foregroundStyle(.white)
@@ -62,17 +62,17 @@ struct VideoPreviewBubble: View {
                             if let date = stagedVideo.createdDate {
                                 Text(date)
                                     .font(Theme.timestampFont)
-                                    .foregroundStyle(.white.opacity(0.6))
-                            }
+                                    .foregroundStyle(Theme.white)
+                                }
 
                             // Location badge
                             if stagedVideo.metadata.gpsLat != nil {
                                 HStack(spacing: 4) {
                                     Image(systemName: "location.fill")
                                         .font(Theme.locationIconFont)
-                                    Text("Location included")
+                                    Text("GPS")
                                         .font(Theme.locationFont)
-                                }
+                                    }
                                 .foregroundStyle(Theme.green)
                             }
                         }
@@ -103,19 +103,13 @@ struct VideoPreviewBubble: View {
                         } label: {
                             Image(systemName: "arrow.up.circle.fill")
                                 .font(Theme.iconLargeFont)
-                                .foregroundStyle(Theme.blue)
+                                .foregroundStyle(Theme.white)
                         }
                     }
                     .padding(.horizontal, 12)
                     .padding(.vertical, 10)
                 }
-                .background( /// background for videopreview bubble.
-                    LinearGradient(
-                        colors: [Theme.videoBubbleHi, Theme.videoBubbleLo],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
+                .background(Theme.videoBubbleGradient)// bg for preview bubble
                 .clipShape(RoundedRectangle(cornerRadius: 18))
                 .overlay(
                     RoundedRectangle(cornerRadius: 18)
@@ -142,7 +136,7 @@ extension StagedVideo {
         let generator = AVAssetImageGenerator(asset: asset)
         generator.appliesPreferredTrackTransform = true
         generator.maximumSize = CGSize(width: 600, height: 600)
-
+    
         do {
             let (cgImage, _) = try await generator.image(at: .zero)
             return UIImage(cgImage: cgImage)

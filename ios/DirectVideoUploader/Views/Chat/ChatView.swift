@@ -16,8 +16,7 @@ struct ChatView: View {
                 // Header
                 ChatHeaderView(
                     userName: "Fixer",
-                    connectionState: ws.state,
-                    onLogout: { auth.logout(); ws.disconnect() }
+                    connectionState: ws.state
                 )
                 
                 // Messages

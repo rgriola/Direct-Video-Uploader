@@ -198,7 +198,7 @@ final class ChatViewModel {
                 direction: .incoming,
                 messageType: .muxReady,
                 content: MessageContent(
-                    text: "✅ Video confirmed on Mediasource",
+                    text: "Mediasource Confirmed ✅",
                     mediasourceId: mediasourceId,
                     originalFileName: originalFileName,
                     duration: duration,

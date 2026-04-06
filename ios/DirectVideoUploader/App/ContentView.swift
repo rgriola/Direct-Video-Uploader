@@ -22,8 +22,14 @@ struct ContentView: View {
                             Image(systemName: "archivebox.fill")
                             Text("Archive")
                         }
+                    
+                    ProfileView()
+                        .tabItem {
+                            Image(systemName: "person.fill")
+                            Text("Profile")
+                        }
                 }
-                .tint(Theme.tint)
+                .tint(Theme.purple)
             } else {
                 LoginView()
             }

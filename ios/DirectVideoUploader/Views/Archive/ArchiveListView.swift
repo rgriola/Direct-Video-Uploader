@@ -37,7 +37,8 @@ struct ArchiveListView: View {
     
     var body: some View {
         ZStack {
-            Color.black.ignoresSafeArea()
+            // view background
+            Theme.screenGradient.ignoresSafeArea()
             
             VStack(spacing: 0) {
                 // Header

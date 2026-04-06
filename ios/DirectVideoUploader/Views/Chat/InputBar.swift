@@ -12,7 +12,7 @@ struct InputBar: View {
         VStack(spacing: 0) {
             // Top border
             Rectangle()
-                .fill(Color.gray)
+                .fill(Theme.black)
                 .frame(height: 2)
             
             HStack(spacing: 10) {
@@ -22,52 +22,48 @@ struct InputBar: View {
                 } label: {
                     Image(systemName: "plus.circle.fill")
                         .font(Theme.attachButtonFont)
-                        .foregroundStyle(Theme.actionBlue)
-                }
+                        .symbolRenderingMode(.palette)
+                        .foregroundStyle(Theme.white, Theme.actionBlue)
+                    }
                 
                 // Text field
                 HStack {
+                   
                     TextField("Message", text: $text)
                         .font(Theme.bodyFont)
-                        .foregroundStyle(.black)
+                        .foregroundStyle(Theme.black)
+                        .padding(.horizontal, 12)
                         .focused($isFocused)
                         .onSubmit {
                             sendMessage()
                         }
-                    
-                    // Camera shortcut
-                    Button {
-                        onAttach()
-                    } label: {
-                        Image(systemName: "video.fill")
-                            .font(Theme.iconFont)
-                            .foregroundStyle(.black)
-                    }
-                }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 10)
-                .background(Theme.inputFieldBg)
-                .clipShape(Capsule())
+
+
+                        // Send button
+                        Button {
+                            sendMessage()
+                            } label: {
+                            Image(systemName: "arrow.up.circle.fill")
+                                .font(Theme.sendButtonFont)
+                                .symbolRenderingMode(.palette)
+                                .foregroundStyle(
+                                        text.isEmpty ? Theme.actionBlue : Theme.white,
+                                        text.isEmpty ? Theme.white : Theme.actionBlue
+                                    )
+                                }
+                                .disabled(text.isEmpty)
+                        }
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 2)
+                        .background(Theme.lightGrayBk)
+                        .clipShape(Capsule())
                 
-                // Send button
-                Button {
-                    sendMessage()
-                } label: {
-                    Image(systemName: "arrow.up.circle.fill")
-                        .font(Theme.sendButtonFont)
-                        .foregroundStyle(
-                            text.isEmpty
-                            ? Color.white.opacity(0.7)
-                            : Theme.actionBlue
-                        )
-                }
-                .disabled(text.isEmpty)
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
-            .background(Theme.inputBarBg)
-           // 
+            .background(Theme.black) // Footer background
         }
+        .background(Theme.black)
     }
     
     private func sendMessage() {

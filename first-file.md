@@ -794,3 +794,20 @@ Lets get this aligned then we will do some more work on the dashboard.
 - centralize the production url on the web and iOS.
 - if centralizing the iOS url is difficult change the url to ms-fixer.com
 - Review this and show me a plan to make the change. Do not code until approved.
+
+... Apr 5 2026
+**_ Task _**
+
+- on iOS app change the Logout button to a iOS ellipsis icon, add the logout as dropdown inside the ellipsis as a dropdown choice with just a text button "logout"
+
+  **_ Context _**
+
+- user feedback showed they were confused by the logout in that position, the ellipsis shows the user there is an option there.
+
+**_ Instructions _**
+
+- review how the logout button is implimented on the iOS app and show me a plan to make this change.
+- Do not code without approval.
+
+...
+**_ Task _**

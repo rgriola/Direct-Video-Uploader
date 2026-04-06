@@ -35,7 +35,7 @@ export function QuickActions({ onAction }: QuickActionsProps) {
           >
             <span className="text-xl">{btn.icon}</span>
             {btn.label}
-            <span className="text-[11px] text-(--muted-foreground)">{btn.sub}</span>
+            <span className="text-[11px] text-(--secondary-foreground)">{btn.sub}</span>
           </button>
         ))}
       </div>

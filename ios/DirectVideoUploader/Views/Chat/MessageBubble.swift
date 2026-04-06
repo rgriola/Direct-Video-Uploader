@@ -10,7 +10,9 @@ struct MessageBubble: View {
     private var isOutgoing: Bool { message.isOutgoing }
     
     var body: some View {
+
         HStack {
+
             if isOutgoing { Spacer(minLength: 60) }
             
             VStack(alignment: isOutgoing ? .trailing : .leading, spacing: 4) {
@@ -20,12 +22,12 @@ struct MessageBubble: View {
                     .padding(.vertical, 10)
                     .background(bubbleBackground)
                     .clipShape(ChatBubbleShape(isOutgoing: isOutgoing))
-                
+
                 // Timestamp
                 if let time = formattedTime {
                     Text(time)
                         .font(Theme.timestampFont)
-                        .foregroundStyle(Color.black.opacity(0.7))
+                        .foregroundStyle(Theme.black)
                         .padding(.horizontal, 4)
                 }
             }
@@ -36,22 +38,21 @@ struct MessageBubble: View {
     }
     
     // MARK: - Bubble Content
-    
     @ViewBuilder
     private var bubbleContent: some View {
-        switch message.messageType {
-        case .video:
-            videoContent
-        case .confirmation:
-            confirmationContent
-        case .formRequest:
-            formRequestContent
-        case .slackPost:
-            slackContent
-        default:
-            textContent
-        }
-    }
+                switch message.messageType {
+                    case .video:
+                        videoContent
+                    case .confirmation:
+                        confirmationContent
+                    case .formRequest:
+                        formRequestContent
+                    case .slackPost:
+                        slackContent
+                    default:
+                        textContent
+                        }
+                }
     
     private var textContent: some View {
         Text(message.content.displayText)
@@ -260,7 +261,7 @@ struct MessageBubble: View {
         }
     }
     
-    // MARK: - Bubble Background
+    // MARK: - Bubble Background for text messages. 
     
     private var bubbleBackground: some View {
         Group {

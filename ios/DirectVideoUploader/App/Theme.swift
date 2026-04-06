@@ -5,30 +5,39 @@ import SwiftUI
 /// Centralized color palette. Use `Theme.blue` instead of `Color(hex: "007AFF")` everywhere.
 enum Theme {
     // Primary actions
-    static let black       = Color(hex: "000000")
-    static let white       = Color(hex: "FFFFFF")
+  
+    static let black       = Color(hex: "111111")
+    static let white       = Color(hex: "F5F5F5")
+    static let purple      = Color(hex: "8576EE")
+
     static let blue        = Color(hex: "007AFF")
     static let green       = Color(hex: "30D158")
     static let red         = Color(hex: "FF453A")
     static let yellow      = Color(hex: "FFD60A")
-    static let purple      = Color(hex: "5856D6")
-    static let tint        = Color(hex: "0A84FF")
-    static let viewGreen   = Color(hex: "34C759")
+    static let tint        = Color(hex: "0A84FF") // blue 
+    static let viewGreen   = Color(hex: "34C759") 
 
     // Backgrounds
-    static let darkBg      = Color(hex: "1C1C1E")
+    static let darkBg      = Color(hex: "111111")
     static let cardBg      = Color(hex: "2C2C2E")
     static let deepBg      = Color(hex: "0A0E1A")
     static let formBg      = Color(hex: "1A2544")
     static let separator   = Color(hex: "38383A")
     static let chatScreen  = Color(hex: "F3F2F2")
 
+    // Grays
+    static let whiteBk      = Color(hex: "F5F5F5")
+    static let lightGrayBk  = Color(hex: "ECECEC")
+    static let darkGrayBk   = Color(hex: "CACACA")
+
     // Incoming bubble
     static let incomingBubble = Color(hex: "DBDBDB")
-    static let incomingText   = Color(hex: "2F2D2D")
+    static let incomingText   = Color(hex: "111111")
 
-    static let outgoingBubble = Color(hex: "1C3A5F")
-    static let outgoingText   = Color.white
+    // Outgoing bubble  
+    static let outgoingBubble = Color(hex: "8576EE")
+    static let outgoingText   = Color(hex: "F5F5F5")
+
     // Gradients
     static let bubbleBlueHi  = Color(hex: "007AFF")
     static let bubbleBlueLo  = Color(hex: "0063D1")
@@ -36,7 +45,7 @@ enum Theme {
     static let videoBubbleLo = Color(hex: "0A1E3D")
 
     // Text
-    static let primaryText   = Color.white
+    static let primaryText   = Color(hex: "F5F5F5")
     static let secondaryText = Color(hex: "98989D")
     static let tertiaryText  = Color(hex: "636366")
     static let lightText     = Color(hex: "E5E5EA")
@@ -44,8 +53,8 @@ enum Theme {
 
     // InputBar
     static let inputBarBg    = Color(hex: "ADADAD")
-    static let inputFieldBg  = Color(hex: "D4D4D4")
-    static let actionBlue    = Color(hex: "1C3A5F")
+    static let inputFieldBg  = Color(hex: "CCCCCC")
+    static let actionBlue    = Color(hex: "8576EE")
 
     // MARK: - Typography
 
@@ -126,10 +135,10 @@ enum Theme {
     static let metaLabelFont     = Font.system(size: 14)
     static let metaValueFont     = Font.system(size: 14, weight: .medium)
     static let metaIdFont        = Font.system(size: 15, weight: .bold, design: .monospaced)
-    static let metaFileFont      = Font.system(size: 14, weight: .medium, design: .monospaced)
-    static let metaEmptyEmojiFont = Font.system(size: 44)
-    static let metaEmptyTitleFont = Font.system(size: 18, weight: .semibold)
-    static let metaLinkFont      = Font.system(size: 15, weight: .medium)
+    static let metaFileFont         = Font.system(size: 14, weight: .medium, design: .monospaced)
+    static let metaEmptyEmojiFont   = Font.system(size: 44)
+    static let metaEmptyTitleFont   = Font.system(size: 18, weight: .semibold)
+    static let metaLinkFont         = Font.system(size: 15, weight: .medium)
 
     // Misc
     static let statusDotSize: CGFloat   = 7
@@ -141,7 +150,7 @@ enum Theme {
     static let emptyEmojiFont    = Font.system(size: 40)
 
     // Attachment buttons
-    static let attachButtonFont  = Font.system(size: 30)
+    static let attachButtonFont  = Font.system(size: 32)
     static let sendButtonFont    = Font.system(size: 32)
 
     // MARK: - Button Layout
@@ -152,6 +161,20 @@ enum Theme {
     static let badgePaddingH: CGFloat     = 12
     static let badgePaddingV: CGFloat     = 6
     static let badgeCornerRadius: CGFloat = 6
+
+    // Screen gradients
+    static let screenGradient = LinearGradient(
+            colors: [Theme.black, Theme.purple],
+            startPoint: .top,
+            endPoint: .bottom
+            )
+
+    static let videoBubbleGradient = LinearGradient(
+                        colors: [Theme.purple, Theme.black],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+
 }
 
 // MARK: - Color Extension

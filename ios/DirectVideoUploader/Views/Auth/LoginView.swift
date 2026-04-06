@@ -16,7 +16,7 @@ struct LoginView: View {
         ZStack {
             // Background gradient
             LinearGradient(
-                colors: [Color.black, Theme.deepBg],
+                colors: [Theme.purple, Theme.black],
                 startPoint: .top,
                 endPoint: .bottom
             )
@@ -27,17 +27,14 @@ struct LoginView: View {
                 
                 // Logo & branding
                 VStack(spacing: 12) {
-                    Text("🎬")
-                        .font(Theme.loginEmojiFont)
-                    
-                    Text("Fixer")
-                        .font(Theme.loginTitleFont)
-                        .foregroundStyle(.white)
-                    
+                    Image("FixerLogo")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 200, height: 200)
+                
                     Text("Send. Confirm. Done.")
                         .font(Theme.loginTaglineFont)
-                        .foregroundStyle(.white.opacity(0.4))
-                        .padding(.top, 4)
+                        .foregroundStyle(.white.opacity(0.8))
                 }
                 .padding(.bottom, 24)
                 
