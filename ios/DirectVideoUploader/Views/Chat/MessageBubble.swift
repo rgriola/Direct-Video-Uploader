@@ -172,6 +172,11 @@ struct MessageBubble: View {
             if isOutgoing {
                 // Outgoing — simple sending indicator
                 VStack(alignment: .leading, spacing: 6) {
+                    
+                    Text(message.content.text ?? "")
+                        .font(Theme.bodyFont)
+                        .foregroundStyle(.white)
+
                     HStack(spacing: 6) {
                         Image(systemName: "paperplane.fill")
                             .font(Theme.iconMediumFont)
@@ -180,9 +185,7 @@ struct MessageBubble: View {
                             .font(Theme.captionBoldFont)
                             .foregroundStyle(.white.opacity(0.7))
                     }
-                    Text(message.content.text ?? "")
-                        .font(Theme.bodyFont)
-                        .foregroundStyle(.white)
+                    
                 }
             } else {
                 // Incoming — structured Slack card
@@ -193,71 +196,69 @@ struct MessageBubble: View {
 
     /// Structured Slack confirmation card — thumbnail left, details right.
     private var slackCardContent: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .top, spacing: 10) {
-                // Thumbnail — downloaded UIImage or placeholder
-                if let thumb = thumbnail {
-                    Image(uiImage: thumb)
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
-                        .frame(width: 64, height: 64)
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                } else {
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(Color.black.opacity(0.15))
-                        .frame(width: 64, height: 64)
-                        .overlay(
-                            ProgressView()
-                        )
+        HStack(alignment: .top, spacing: 10) {
+            // Thumbnail — downloaded UIImage or placeholder
+            if let thumb = thumbnail {
+                Image(uiImage: thumb)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+                    .frame(width: 72, height: 72)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+            } else {
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color.black.opacity(0.15))
+                    .frame(width: 72, height: 72)
+                    .overlay(
+                        ProgressView()
+                    )
+            }
+
+            // All details stacked to the right of thumbnail
+            VStack(alignment: .leading, spacing: 4) {
+                if let owner = message.content.userName {
+                    Text(owner)
+                        .font(Theme.bodyFont)
+                        .foregroundStyle(Theme.incomingText)
                 }
 
-                // Details
-                VStack(alignment: .leading, spacing: 4) {
-                    if let owner = message.content.userName {
-                        Text(owner)
-                            .font(Theme.bodyFont)
-                            .foregroundStyle(Theme.incomingText)
-                    }
+                if let msId = message.content.mediasourceId {
+                    Text("MS# \(msId)")
+                        .font(Theme.bodyFont)
+                        .foregroundStyle(Theme.incomingText)
+                }
 
-                    if let msId = message.content.mediasourceId {
-                        Text("MS# \(msId)")
-                            .font(Theme.bodyFont)
-                            .foregroundStyle(Theme.incomingText)
+                // Captured date
+                if let capturedAt = message.content.capturedAt {
+                    Text(DVUDateFormatting.longDate(capturedAt))
+                        .font(.system(size: 12))
+                        .foregroundStyle(Theme.incomingText.opacity(0.7))
+                }
+
+                // Channel / mention
+                if message.content.channel != nil || message.content.mention != nil {
+                    HStack(spacing: 6) {
+                        if let channel = message.content.channel {
+                            Text("#\(channel)")
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundStyle(Theme.purple)
+                        }
+                        if let mention = message.content.mention {
+                            Text("@\(mention)")
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundStyle(Theme.purple)
+                        }
                     }
                 }
-            }
 
-            // Captured date
-            if let capturedAt = message.content.capturedAt {
-                Text(DVUDateFormatting.longDate(capturedAt))
-                    .font(Theme.bodyFont)
-                    .foregroundStyle(Theme.incomingText)
-            }
-
-            // Channel / mention
-            if message.content.channel != nil || message.content.mention != nil {
-                HStack(spacing: 12) {
-                    if let channel = message.content.channel {
-                        Text("#\(channel)")
-                            .font(Theme.bodyFont)
-                            .foregroundStyle(Theme.incomingText)
-                    }
-                    if let mention = message.content.mention {
-                        Text("@\(mention)")
-                            .font(Theme.bodyFont)
-                            .foregroundStyle(Theme.incomingText)
-                    }
+                // Posted to Slack footer
+                HStack(spacing: 4) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(Theme.green)
+                    Text("Posted to Slack")
+                        .foregroundStyle(Theme.incomingText)
                 }
+                .font(.system(size: 12, weight: .medium))
             }
-
-            // Posted to Slack footer
-            HStack(spacing: 4) {
-                Image(systemName: "checkmark.circle.fill")
-                    .foregroundStyle(Theme.green)
-                Text("Posted to Slack")
-                    .foregroundStyle(Theme.incomingText)
-            }
-            .font(Theme.bodyFont)
         }
     }
     

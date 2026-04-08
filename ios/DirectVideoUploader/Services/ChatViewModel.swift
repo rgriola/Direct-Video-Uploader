@@ -30,7 +30,6 @@ final class ChatViewModel {
     var archivedAssetId: String?
     var archivedMediasourceId: String?
     var archivedOriginalFileName: String?
-    var archivedThumbnailUrl: String?
     var archivedFormType: String?
     var archivedFormDescription: String?
     var archivedFormPriority: String?
@@ -168,7 +167,6 @@ final class ChatViewModel {
             let assetId = data["assetId"] as? String
             let mediasourceId = data["mediasourceId"] as? String
             let originalFileName = data["originalFileName"] as? String
-            let thumbnailUrl = data["thumbnailUrl"] as? String
             let formType = data["formType"] as? String
             let formDescription = data["formDescription"] as? String
             let formPriority = data["formPriority"] as? String
@@ -182,7 +180,6 @@ final class ChatViewModel {
             self.archivedAssetId = assetId
             self.archivedMediasourceId = mediasourceId
             self.archivedOriginalFileName = originalFileName
-            self.archivedThumbnailUrl = thumbnailUrl
             self.archivedFormType = formType
             self.archivedFormDescription = formDescription
             self.archivedFormPriority = formPriority
@@ -436,7 +433,7 @@ final class ChatViewModel {
                 
                 currentAssetId = asset.id
             
-                // Add outgoing video message locally — also cache thumbnail for SentUploadBubble
+                // Add outgoing video message locally — also cache thumbnail for VideoBubble
                 let msgId = UUID().uuidString
                 let videoMessage = ChatMessage(
                     id: msgId,
@@ -449,7 +446,7 @@ final class ChatViewModel {
                 )
                 messages.append(videoMessage)
                 
-                // Cache thumbnail + metadata so SentUploadBubble can render the card
+                // Cache thumbnail + metadata so VideoBubble can render the card
                 if let thumb = formThumbnail {
                     sentUploadThumbnails[msgId] = thumb
                 }
@@ -693,7 +690,7 @@ final class ChatViewModel {
         formThumbnail = staged.thumbnail
         lastStagedCreatedDate = staged.createdDate
         lastStagedHasLocation = metadata.gpsLat != nil
-        stagedVideo = nil  // Clear immediately — SentUploadBubble takes over
+        stagedVideo = nil  // Clear immediately — VideoBubble (.uploading) takes over
         
         // Create asset on server
         if let asset = await createAsset(fileName: fileName, fileURL: fileURL) {
@@ -845,7 +842,6 @@ final class ChatViewModel {
         archivedAssetId = nil
         archivedMediasourceId = nil
         archivedOriginalFileName = nil
-        archivedThumbnailUrl = nil
         archivedFormType = nil
         archivedFormDescription = nil
         archivedFormPriority = nil

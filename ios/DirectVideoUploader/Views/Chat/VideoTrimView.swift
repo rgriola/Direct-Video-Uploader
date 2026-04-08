@@ -95,7 +95,7 @@ struct VideoTrimView: View {
 
             Spacer()
 
-            Button("Send") {
+            Button("Next >>") {
                 handleExport()
             }
             .foregroundStyle(Theme.yellow)

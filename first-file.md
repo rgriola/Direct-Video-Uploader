@@ -810,4 +810,32 @@ Lets get this aligned then we will do some more work on the dashboard.
 - Do not code without approval.
 
 ...
-**_ Task _**
+
+
+*** Task ***
+- Review both VideoPreviewBubble.swift & SentUploadBubble.swift to find a way to change the state of the bubble rather than having two bubbles. 
+
+*** Context ***
+VideoPreviewBubble is the initial state SentUploadBubble is the final state. 
+Preview Bubble appears when the video upload begins and the Context form is initialized. Then Sent Upload Takes Over replaces it. 
+
+*** Instructions ***
+- Evaluate how we can simplify the two states so the user has one view. 
+- Do not code anything. 
+
+*** Issue ***
+- Two videos being uploaded at the same time causes the return message to go to the wrong phone, account - user. 
+*** Context ***
+- This is in dev mode on the local server
+- Used two tethered iPhones to test this 
+- both uploaded longer clips so I could test simultaneous uploads. 
+- Even if this is my server issue it looks like and iOS issue. 
+  - How this should perform :  Messages for uploads ie; metadata and clip viewer urls should to the specific account - iOS app - user that uploaded the video. 
+  - In the dashboard all videos are available to all users. 
+  - Both videos used were uploaded to the correct accounts, I verified this. 
+*** Instructions ***
+- Look at the photos included to understand the issue.
+- the Terminal also shows the error, terminal is included up to the error. 
+- Review the code and determine the cause of the issue and provide a fix.
+
+

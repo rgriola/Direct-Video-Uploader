@@ -28,12 +28,12 @@ struct ChatView: View {
                                     // Outgoing video → show sent upload card with thumbnail
                                     if message.messageType == .video && message.isOutgoing,
                                        vm.sentUploadThumbnails[message.id] != nil || vm.sentUploadFileNames[message.id] != nil {
-                                        SentUploadBubble(
+                                        VideoBubble(
+                                            phase: vm.isUploading ? .uploading : .sent,
                                             thumbnail: vm.sentUploadThumbnails[message.id],
                                             fileName: vm.sentUploadFileNames[message.id] ?? message.content.fileName ?? "Video",
                                             createdDate: vm.sentUploadDates[message.id],
                                             hasLocation: vm.sentUploadHasLocation[message.id] ?? false,
-                                            isUploading: vm.isUploading,
                                             uploadProgress: vm.uploadProgress
                                         )
                                         .id(message.id)
@@ -41,15 +41,12 @@ struct ChatView: View {
                                         // Archive summary card
                                         ConversationSummaryBubble(
                                             mediasourceId: vm.archivedMediasourceId,
-                                            originalFileName: vm.archivedOriginalFileName,
                                             formType: vm.archivedFormType,
                                             formDescription: vm.archivedFormDescription,
                                             formPriority: vm.archivedFormPriority,
                                             duration: vm.archivedDuration,
                                             resolution: vm.archivedResolution,
-                                            fileSize: vm.archivedFileSize,
-                                            thumbnailUrl: vm.archivedThumbnailUrl,
-                                            onView: nil
+                                            fileSize: vm.archivedFileSize
                                         )
                                         .id(message.id)
                                     } else {
@@ -65,8 +62,12 @@ struct ChatView: View {
                                 
                                 // Staged video preview — user must confirm before upload
                                 if let staged = vm.stagedVideo {
-                                    VideoPreviewBubble(
-                                        stagedVideo: staged,
+                                    VideoBubble(
+                                        phase: .staged,
+                                        thumbnail: staged.thumbnail,
+                                        fileName: staged.fileName,
+                                        createdDate: staged.createdDate,
+                                        hasLocation: staged.metadata.gpsLat != nil,
                                         onSend: { transcribe in
                                             vm.transcribeOnUpload = transcribe
                                             Task { await vm.confirmStagedUpload() }

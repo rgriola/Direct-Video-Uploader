@@ -123,6 +123,7 @@ async function handleSlackCommand(socket, userId, assetId, channels, mentions, o
         slug: asset?.formResponse?.slug,
         capturedAt: asset?.clips?.[0]?.capturedAt,
     });
+    console.log(`📣 Slack post for #${mediasourceId}: slug="${asset?.formResponse?.slug || '(none)'}"`);
 
     const results = [];
 

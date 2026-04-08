@@ -1,6 +1,8 @@
 import SwiftUI
 import PhotosUI
 import Photos
+import AVFoundation
+import CoreMedia
 import UIKit
 
 /// Custom video library sheet with inline PhotosPicker — iOS 26.3 style.
@@ -114,34 +116,22 @@ struct VideoLibraryView: View {
                         Text("Loading video...")
                             .font(.system(size: 14, weight: .medium))
                             .foregroundStyle(.gray)
-                    } else if let meta = loadedMetadata {
-                        Label(
-                            "\(selectedItems.count) video queued",
-                            systemImage: "video.fill"
-                        )
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundStyle(Theme.white)
+                    } else {
+                        Label("video queued", systemImage: "video.fill")
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundStyle(Theme.white)
 
-                        if meta.gpsLat != nil {
+                        if loadedMetadata?.gpsLat != nil {
                             Label("GPS", systemImage: "location.fill")
                                 .font(.system(size: 13))
                                 .foregroundStyle(Theme.green)
                         }
-                    } else {
-                        Label(
-                            "\(selectedItems.count) video queued",
-                            systemImage: "video.fill"
-                        )
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundStyle(Theme.white)
                     }
 
                     Spacer()
 
                     // Confirm button — outside PhotosPicker touch zone
-                    Button {
-                        handleConfirm()
-                    } label: {
+                    Button(action: handleConfirm) {
                         if pendingConfirm {
                             ProgressView()
                                 .tint(.white)
@@ -153,7 +143,7 @@ struct VideoLibraryView: View {
                                 .symbolRenderingMode(.palette)
                                 .foregroundStyle(
                                     Theme.white,
-                                    (loadedVideoURL != nil && loadedMetadata != nil) ? Theme.purple : Theme.purple.opacity(0.4)
+                                    isVideoReady ? Theme.purple : Theme.purple.opacity(0.4)
                                 )
                         }
                     }
@@ -166,12 +156,18 @@ struct VideoLibraryView: View {
         }
     }
 
+    // MARK: - Computed Properties
+
+    private var isVideoReady: Bool {
+        loadedVideoURL != nil && loadedMetadata != nil
+    }
+
     // MARK: - Actions
 
     private func handleConfirm() {
         if selectedItems.isEmpty {
             onDismiss()
-        } else if loadedVideoURL != nil, loadedMetadata != nil {
+        } else if isVideoReady {
             showTrimSheet = true
         } else if isLoadingMetadata || loadedVideoURL == nil {
             pendingConfirm = true
@@ -204,14 +200,32 @@ struct VideoLibraryView: View {
 
         isLoadingMetadata = true
         Task {
+            defer {
+                isLoadingMetadata = false
+                if pendingConfirm {
+                    pendingConfirm = false
+                    handleConfirm()
+                }
+            }
+
             // Resolve real camera filename (e.g. IMG_1245.MOV) from PHAsset
             let cameraFilename = resolveOriginalFilename(item: item)
-            
+
+            // Fast path: get a direct URL from PHAsset without copying the file.
+            // This is how native iOS Photos loads videos instantly.
+            if let identifier = item.itemIdentifier,
+               let videoURL = await resolveVideoURL(identifier: identifier) {
+                loadedVideoURL = videoURL
+                loadedFileName = cameraFilename ?? videoURL.lastPathComponent
+                // Pull metadata from PHAsset properties (no file I/O)
+                loadedMetadata = await extractMetadataFromPHAsset(item: item, videoURL: videoURL)
+                return
+            }
+
+            // Slow fallback: full file copy via Transferable (only if PHAsset path fails)
             do {
                 guard let movie = try await item.loadTransferable(type: VideoTransferable.self) else {
                     loadError = "Could not load video from library"
-                    isLoadingMetadata = false
-                    if pendingConfirm { pendingConfirm = false }
                     return
                 }
                 loadedVideoURL = movie.url
@@ -222,19 +236,17 @@ struct VideoLibraryView: View {
                 print("❌ [Library] Failed to load video: \(error)")
                 loadError = "Failed to load video: \(error.localizedDescription)"
             }
-            isLoadingMetadata = false
-            
-            // Auto-confirm if user already tapped ✓ while loading
-            if pendingConfirm {
-                pendingConfirm = false
-                handleConfirm()
-            }
         }
     }
 
     private func cleanUpLoadedVideo() {
         if let url = loadedVideoURL {
-            try? FileManager.default.removeItem(at: url)
+            // Only delete temp copies we made (Transferable fallback path).
+            // Don't delete Photos library references (fast path).
+            let tempDir = FileManager.default.temporaryDirectory.path
+            if url.path.hasPrefix(tempDir) {
+                try? FileManager.default.removeItem(at: url)
+            }
         }
         loadedVideoURL = nil
         loadedFileName = nil
@@ -250,6 +262,101 @@ struct VideoLibraryView: View {
         let resources = PHAssetResource.assetResources(for: asset)
         // Prefer the primary video resource's original filename
         return resources.first?.originalFilename
+    }
+
+    /// Resolve a direct file URL from a PHAsset without copying the video.
+    /// Uses PHImageManager.requestAVAsset which returns an AVURLAsset referencing
+    /// the file in-place — no copy, same speed as native iOS Photos.
+    private func resolveVideoURL(identifier: String) async -> URL? {
+        let results = PHAsset.fetchAssets(withLocalIdentifiers: [identifier], options: nil)
+        guard let phAsset = results.firstObject else { return nil }
+
+        return await withCheckedContinuation { continuation in
+            let options = PHVideoRequestOptions()
+            options.isNetworkAccessAllowed = false  // local only — skip iCloud
+            options.version = .current
+            options.deliveryMode = .fastFormat
+            PHImageManager.default().requestAVAsset(forVideo: phAsset, options: options) { avAsset, _, _ in
+                let url = (avAsset as? AVURLAsset)?.url
+                continuation.resume(returning: url)
+            }
+        }
+    }
+
+    /// Extract metadata directly from PHAsset properties — no file I/O needed.
+    /// Falls back to file-based extraction only for codec info.
+    private func extractMetadataFromPHAsset(item: PhotosPickerItem, videoURL: URL) async -> VideoMetadata {
+        // Try to get PHAsset for fast metadata
+        if let identifier = item.itemIdentifier {
+            let results = PHAsset.fetchAssets(withLocalIdentifiers: [identifier], options: nil)
+            if let phAsset = results.firstObject {
+                let duration = Int(phAsset.duration)
+                let width = phAsset.pixelWidth
+                let height = phAsset.pixelHeight
+                let resolution = "\(max(width, height))×\(min(width, height))"
+                let orientation = width >= height ? "landscape" : "portrait"
+
+                // Creation date
+                let capturedAt = phAsset.creationDate.map {
+                    ISO8601DateFormatter().string(from: $0)
+                }
+
+                // GPS from PHAsset location
+                let gpsLat = phAsset.location?.coordinate.latitude
+                let gpsLon = phAsset.location?.coordinate.longitude
+                let gpsAltitude = phAsset.location?.altitude
+
+                // Codec — quick AVAsset header read (doesn't load full file)
+                let asset = AVURLAsset(url: videoURL)
+                var codec = "Unknown"
+                if let tracks = try? await asset.loadTracks(withMediaType: .video),
+                   let track = tracks.first,
+                   let descriptions = try? await track.load(.formatDescriptions),
+                   let desc = descriptions.first {
+                    let subType = CMFormatDescriptionGetMediaSubType(desc)
+                    codec = codecName(from: subType)
+                }
+
+                let deviceModel = await UIDevice.current.model
+                let osVersion = await "iOS \(UIDevice.current.systemVersion)"
+
+                return VideoMetadata(
+                    duration: duration,
+                    resolution: resolution,
+                    codec: codec,
+                    orientation: orientation,
+                    deviceModel: deviceModel,
+                    osVersion: osVersion,
+                    capturedAt: capturedAt,
+                    gpsLat: gpsLat,
+                    gpsLon: gpsLon,
+                    gpsAltitude: gpsAltitude
+                )
+            }
+        }
+
+        // Fallback: full file-based extraction
+        return await VideoMetadataExtractor.extract(from: videoURL)
+    }
+
+    /// Map FourCC codec codes to human-readable names.
+    private func codecName(from subType: FourCharCode) -> String {
+        switch subType {
+        case kCMVideoCodecType_HEVC, kCMVideoCodecType_HEVCWithAlpha:
+            return "HEVC / H.265"
+        case kCMVideoCodecType_H264:
+            return "AVC / H.264"
+        case kCMVideoCodecType_AV1:
+            return "AV1"
+        default:
+            let chars = [
+                Character(UnicodeScalar((subType >> 24) & 0xFF)!),
+                Character(UnicodeScalar((subType >> 16) & 0xFF)!),
+                Character(UnicodeScalar((subType >> 8) & 0xFF)!),
+                Character(UnicodeScalar(subType & 0xFF)!),
+            ]
+            return String(chars)
+        }
     }
 }
 

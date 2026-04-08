@@ -45,7 +45,7 @@ struct MetadataView: View {
                             if let name = clip.originalFileName ?? asset?.originalFileName {
                                 Text(name)
                                     .font(Theme.metaFileFont)
-                                    .foregroundStyle(.white.opacity(0.6))
+                                    .foregroundStyle(Theme.white.opacity(0.6))
                             }
                             
                             if let id = asset?.mediasourceId {

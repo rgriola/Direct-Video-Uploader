@@ -206,7 +206,7 @@ const start = async () => {
     `);
 
         // Start background jobs
-        startMuxSync(io);
+        startMuxSync(fastify);
         startUploadCleanup();
     } catch (err) {
         fastify.log.error(err);

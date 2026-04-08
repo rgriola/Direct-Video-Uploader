@@ -2,6 +2,13 @@ import SwiftUI
 
 /// Context form sheet — simplified "Add Details" form.
 /// Layout: Header (thumbnail + filename + date) → Slug → Type → Description → Priority → Send
+
+/// Identifies focusable fields for keyboard management.
+private enum FormFocus: Hashable {
+    case slug
+    case description
+}
+
 struct ContextFormView: View {
     let fields: [FormField]
     let originalFileName: String?
@@ -18,6 +25,7 @@ struct ContextFormView: View {
     @State private var selectedPriority: String = "Low"
     @State private var hasAttemptedSubmit = false
     @State private var showCancelConfirm = false
+    @FocusState private var focusedField: FormFocus?
     
     /// Only letters, numbers, dashes, and periods allowed
     private static let allowedCharacters = CharacterSet.alphanumerics
@@ -131,6 +139,7 @@ struct ContextFormView: View {
                                             lineWidth: 1.5
                                         )
                                 )
+                                .focused($focusedField, equals: .slug)
                             }
                             
                             // Type
@@ -293,6 +302,11 @@ struct ContextFormView: View {
             if formValues["type"] == nil { formValues["type"] = "Raw" }
             // Default priority to Low
             if formValues["priority"] == nil { formValues["priority"] = "Low" }
+            
+            // Auto-focus slug after sheet presentation animation settles
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                focusedField = .slug
+            }
         }
     }
     

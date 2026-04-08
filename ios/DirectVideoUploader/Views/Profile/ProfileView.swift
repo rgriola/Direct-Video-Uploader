@@ -15,10 +15,10 @@ struct ProfileView: View {
                 // Header
                 Text("Profile")
                     .font(Theme.headerNameFont)
-                    .foregroundStyle(.white)
+                    .foregroundStyle(Theme.white)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 16)
-                    .background(Theme.darkBg.opacity(0.94))
+                    .background(Theme.black.opacity(0.94))
 
                 Spacer()
 

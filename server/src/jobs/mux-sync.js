@@ -20,8 +20,10 @@ let intervalId = null;
 /**
  * Check all PROCESSING clips and sync status from Mux.
  */
-async function syncProcessingClips(io) {
+async function syncProcessingClips(fastify) {
     if (!isMuxEnabled) return;
+    const io = fastify.io;
+    const userSockets = fastify.userSockets;
 
     try {
         const stuckClips = await prisma.clip.findMany({
@@ -75,15 +77,32 @@ async function syncProcessingClips(io) {
 
                         console.log(`🔄 Mux sync: clip ${clip.id} (#${clip.asset.mediasourceId}) → READY (was stuck ${ageMin}min)`);
 
-                        // Notify connected clients
-                        io?.emit('mux:ready', {
-                            assetId: clip.asset.id,
-                            clipId: clip.id,
-                            mediasourceId: clip.asset.mediasourceId,
-                            muxPlaybackId: playbackId,
-                            streamUrl,
-                            thumbnailUrl,
-                        });
+                        // Notify only the asset owner (not all clients)
+                        const ownerSockets = userSockets?.get(clip.asset.userId);
+                        if (ownerSockets) {
+                            // Fetch form response for the payload
+                            const fullAsset = await prisma.asset.findUnique({
+                                where: { id: clip.asset.id },
+                                include: { formResponse: true },
+                            });
+                            for (const sid of ownerSockets) {
+                                io.to(sid).emit('mux:ready', {
+                                    assetId: clip.asset.id,
+                                    clipId: clip.id,
+                                    mediasourceId: clip.asset.mediasourceId,
+                                    originalFileName: fullAsset?.originalFileName || null,
+                                    muxPlaybackId: playbackId,
+                                    streamUrl,
+                                    thumbnailUrl,
+                                    formType: fullAsset?.formResponse?.type || null,
+                                    formDescription: fullAsset?.formResponse?.description || null,
+                                    formPriority: fullAsset?.formResponse?.priority || null,
+                                    duration: clip.duration,
+                                    resolution: clip.resolution,
+                                    fileSize: clip.fileSize?.toString() || null,
+                                });
+                            }
+                        }
                     }
                 } else if (muxAsset?.status === 'errored') {
                     await dbRetry(() => prisma.clip.update({
@@ -186,20 +205,20 @@ async function backfillMissingPlaybackIds() {
  * Start the background sync loop.
  * @param {import('socket.io').Server} io — Socket.IO server for push notifications
  */
-export function startMuxSync(io) {
+export function startMuxSync(fastify) {
     if (!isMuxEnabled) {
         console.log('⏭️  Mux sync skipped — Mux not configured');
         return;
     }
 
     // Run once immediately (catches anything stuck from before a deploy)
-    setTimeout(() => syncProcessingClips(io), 10_000);
+    setTimeout(() => syncProcessingClips(fastify), 10_000);
 
     // Backfill READY clips missing playback data (one-time on boot)
     setTimeout(() => backfillMissingPlaybackIds(), 15_000);
 
     // Then run on interval
-    intervalId = setInterval(() => syncProcessingClips(io), SYNC_INTERVAL_MS);
+    intervalId = setInterval(() => syncProcessingClips(fastify), SYNC_INTERVAL_MS);
     console.log(`[Background Worker] Working for the man... 🔄 checking PROCESSING clips every ${SYNC_INTERVAL_MS / 1000}s`);
 }
 

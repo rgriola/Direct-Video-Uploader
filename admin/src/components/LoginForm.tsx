@@ -11,13 +11,34 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
+  /** Strip non-digits and cap at 10 characters */
+  const handlePhoneChange = (value: string) => {
+    setPhoneNumber(value.replace(/\D/g, "").slice(0, 10));
+  };
+
+  /** Strip non-digits and cap at 8 characters */
+  const handlePinChange = (value: string) => {
+    setPin(value.replace(/\D/g, "").slice(0, 8));
+  };
+
+  const isPhoneValid = phoneNumber.length === 10;
+  const isPinValid = pin.length > 0;
+
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
+    if (!isPhoneValid) {
+      setError("Phone number must be exactly 10 digits");
+      return;
+    }
+    if (!isPinValid) {
+      setError("PIN is required");
+      return;
+    }
     setError(null);
     setLoading(true);
 
     try {
-      const res = await login(phoneNumber.trim(), pin.trim());
+      const res = await login(phoneNumber, pin);
       setToken(res.token);
       onSuccess(res.user.name, res.user.role, res.user.phoneNumber);
     } catch (err) {
@@ -56,11 +77,13 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
             <input
               id="phone"
               type="tel"
+              inputMode="numeric"
               autoComplete="username"
               required
               value={phoneNumber}
-              onChange={(e) => setPhoneNumber(e.target.value)}
+              onChange={(e) => handlePhoneChange(e.target.value)}
               placeholder="e.g. 8001234567"
+              maxLength={10}
               className="w-full px-4 py-2 rounded-lg bg-(--secondary) border border-(--border) text-(--foreground) text-sm placeholder:text-(--muted-foreground) focus:outline-none focus:ring-2 focus:ring-(--accent-blue) focus:border-transparent transition-all"
             />
           </div>
@@ -75,12 +98,13 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
             <input
               id="pin"
               type="password"
+              inputMode="numeric"
               autoComplete="current-password"
               required
               value={pin}
-              onChange={(e) => setPin(e.target.value)}
+              onChange={(e) => handlePinChange(e.target.value)}
               placeholder="••••"
-              maxLength={10}
+              maxLength={8}
               className="w-full px-4 py-2 rounded-lg bg-(--secondary) border border-(--border) text-(--foreground) text-sm placeholder:text-(--muted-foreground) focus:outline-none focus:ring-2 focus:ring-(--accent-blue) focus:border-transparent transition-all"
             />
           </div>
