@@ -243,10 +243,11 @@ export default async function assetRoutes(fastify) {
             body: {
                 type: 'object',
                 properties: {
-                    slug: { type: 'string' },
-                    type: { type: 'string', default: 'Raw' },
-                    description: { type: 'string' },
-                    priority: { type: 'string', default: 'Low', enum: ['Low', 'Medium', 'High', 'Critical', 'low', 'medium', 'high', 'critical', 'LOW', 'MEDIUM', 'HIGH', 'CRITICAL'] },
+                    // maxLength enforced here rejects oversized payloads before the handler runs
+                    slug:        { type: 'string', maxLength: 50 },
+                    type:        { type: 'string', default: 'Raw' },
+                    description: { type: 'string', maxLength: 500 },
+                    priority:    { type: 'string', default: 'Low', enum: ['Low', 'Medium', 'High', 'Critical', 'low', 'medium', 'high', 'critical', 'LOW', 'MEDIUM', 'HIGH', 'CRITICAL'] },
                 },
             },
         },
@@ -263,7 +264,30 @@ export default async function assetRoutes(fastify) {
             return reply.status(404).send({ error: 'Asset not found' });
         }
 
-        // Fallback: if slug or description are missing (app crash, battery death, etc.)
+        // ── Server-side sanitization ─────────────────────────────────────────────
+        //
+        // These run independent of any client-side filtering so that direct API
+        // calls (bypassing the iOS app) are also covered.
+        //
+        // Slug: allow letters, numbers, dashes, periods, spaces — strip everything else.
+        // Mirrors the iOS allowedCharacters set in ContextFormView.swift.
+        if (slug) {
+            slug = slug
+                .replace(/[^a-zA-Z0-9\-. ]/g, '')  // strip disallowed characters
+                .trim()
+                .slice(0, 50);                       // hard cap (belt-and-suspenders after schema)
+        }
+
+        // Description: strip null bytes and non-printable control characters.
+        // Preserves printable Unicode, punctuation, newlines, tabs.
+        if (description) {
+            description = description
+                .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '')  // strip control chars (keep \t \n \r)
+                .trim()
+                .slice(0, 500);                      // hard cap
+        }
+
+        // Fallback: if slug or description are still missing (app crash, battery death, etc.)
         // use the authenticated user's name so the record isn't left blank.
         if (!slug?.trim() || !description?.trim()) {
             const user = await prisma.user.findUnique({ where: { id: request.user.id } });
