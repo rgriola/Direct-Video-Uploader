@@ -18,7 +18,7 @@ The piece I am missing is the Mediasource API endpoint—specifically, the proto
 The Fixer dev setup utilizes a Mediasource stand-in via Mux, a process server on Render/Postgres(managing Mux events and the database), and a connection between the Fixer Dashboard and the iOS app. My current stack and workflow represent an educated guess as to how the production backend works with Mediasource.
 
     •    Repo: github.com/rgriola/Direct-Video-Uploader.git
-    •    Live Dashboard: rodgriola.com
+    •    Live Dashboard: ms-fixer.com
     •    iOS: Available on TestFlight
 
 Known Issues:

@@ -1,8 +1,8 @@
 # Direct Video Uploader — Project Status
 
-> **Last Updated:** March 25, 2026 · MST
-> **Current Phase:** Phase 3 (Render + Cloud + Mux) — Mux pipeline fully operational + Stability Phases A–C complete + Upload simplified + Re-upload + Archive polish + Admin tools + Transcription
-> **Overall Progress:** ████████████████████ 100% (Phase 2) · Phase 3 ~97%
+> **Last Updated:** April 9, 2026 · EST
+> **Current Phase:** Phase 3 (Render + Cloud + Mux) — Mux pipeline fully operational + Stability Phases A–C complete + Upload simplified + Re-upload + Archive polish + Admin tools + Transcription + UX/Performance polish
+> **Overall Progress:** ████████████████████ 100% (Phase 2) · Phase 3 ~98%
 
 ---
 
@@ -10,7 +10,7 @@
 
 The **Direct Video Uploader** is a mobile-first video upload platform disguised as a text conversation. Field crew members "text" videos to the **Mediasource Fixer** server, which processes them the way a news assignment desk operates — fast, structured, and integrated with Slack.
 
-We've completed the **interactive chat demo** (HTML prototype), **project specification** (v4), the **Phase 1 server foundation** (Node.js API, WebSocket, PostgreSQL, auth, admin dashboard), the **Phase 2 — iOS Demo App** core flow (login → chat → video upload → form → confirmation → archive), and the **Web Clip Viewer** (server-rendered at `/clips/:slug`). Latest session (Mar 25): **Admin panel + Apple Speech transcription + production fixes**. Admin panel: Rod Griola admin user, nuclear reset (wipes all data + Mux assets, preserves users, resets mediasource ID sequence), create user. Apple Speech: opt-in on-device transcription with dual-attempt strategy (server-based first, on-device fallback), `addsPunctuation` for proper sentence formatting, `contextualStrings` for newsroom vocabulary, `PATCH /api/assets/:id/transcript` endpoint. Fixed: Render `buildCommand` missing `prisma db push` (P2022 column error in production), greeting not showing when admin dashboard open (socketCount included admin sockets), mediasource ID counter resetting to 1. Dashboard: logout button, nuclear reset 400 fix (Content-Type on empty body).
+We've completed the **interactive chat demo** (HTML prototype), **project specification** (v4), the **Phase 1 server foundation** (Node.js API, WebSocket, PostgreSQL, auth, admin dashboard), the **Phase 2 — iOS Demo App** core flow (login → chat → video upload → form → confirmation → archive), and the **Web Clip Viewer** (server-rendered at `/clips/:slug`). Latest session (Apr 8): **UX + Performance polish**. Merged `VideoPreviewBubble` + `SentUploadBubble` into unified `VideoBubble` (3-phase enum: staged/uploading/sent). Video library loading optimized from minutes → instant via PHAsset zero-copy URL resolution + PHAsset-based metadata extraction. Fixed critical WebSocket bug: `mux:ready` events now scoped to the uploading user's sockets (was broadcasting to all connected clients). Dashboard login input sanitized (phone: 10 digits, PIN: 8 digits). Launch screen fixed (image name mismatch, storyboard conflict removed). Slack confirmation card redesigned (thumbnail left, details right). ContextFormView auto-focuses slug field to eliminate input delay.
 
 ---
 
@@ -186,6 +186,19 @@ cd ios && xcodegen generate && xcodebuild -project DirectVideoUploader.xcodeproj
 | Xcode automatic code signing       | ✅ Done            | Team `LW5P4PVL96`, auto signing in project.yml         |
 | Centralized Theme + Formatting     | ✅ Done            | Theme.swift, DVUDateFormatting.swift, UserDefaultsKeys |
 | Video trim (pre-upload)            | ✅ Done            | UIVideoEditorController via modal host VC, .typeHigh   |
+
+**Features Added (Apr 8 — Session):**
+
+- **VideoBubble merge** — Consolidated `VideoPreviewBubble.swift` and `SentUploadBubble.swift` into a single `VideoBubble.swift` with a `VideoBubblePhase` enum (`.staged`, `.uploading`, `.sent`). Staged phase shows "Tap to Upload" with send/cancel buttons. Uploading phase shows progress bar. Sent phase shows "Upload ▸" badge. Reduces code duplication and simplifies ChatView message rendering.
+- **Video library load optimization (PHAsset fast path)** — Replaced `PhotosPickerItem.loadTransferable(type:)` (copies entire file to temp directory — minutes for large videos) with `PHImageManager.requestAVAsset(forVideo:)` which returns a direct `AVURLAsset` referencing the file in-place. Zero copy, instant playback readiness. Metadata now extracted from `PHAsset` properties (duration, pixelWidth, pixelHeight, location, creationDate) instead of re-reading the video file via AVAsset. Only codec requires a lightweight file header read. Cleanup logic updated to only delete temp copies (Transferable fallback), not Photos library references.
+- **iPhone format conversion tip** — Discovered that iOS Settings → Privacy & Security → Photos → [App] → Options → Format set to "Most Compatible" triggers HEVC → H.264 transcoding on every video share, adding minutes of delay. Setting to "Current" eliminates this. Documented in knowledge base for user onboarding.
+- **WebSocket routing fix (mux:ready cross-talk)** — Critical bug: simultaneous uploads by different users caused `mux:ready` events to broadcast to all connected clients via `io.emit()`. User A would receive "Video Confirmed" for User B's video. Fixed in `mux-sync.js`: now accepts the `fastify` instance, looks up the asset owner's sockets via `fastify.userSockets.get(asset.userId)`, and emits only to those sockets. Payload enriched with duration, resolution, and form details to match webhook handler output.
+- **ContextFormView auto-focus** — Added `@FocusState` for the slug field with a 0.5s `DispatchQueue.main.asyncAfter` delay in `.onAppear` to auto-focus only after sheet animation settles. Eliminates the perceived "typing delay" when the form appears.
+- **Dashboard login sanitization** — `LoginForm.tsx` now strips non-digit characters, caps phone at 10 characters and PIN at 8 characters. Added `inputMode="numeric"` to trigger mobile numeric keypad. Submit button disabled until phone is exactly 10 digits.
+- **Launch screen fix** — `UILaunchScreen_ImageName` was `Image` (nonexistent) instead of `launchscreen` (the actual imageset). `UILaunchStoryboardName` pointed to a nonexistent storyboard, conflicting with the auto-generated approach. Removed storyboard ref, corrected image name. Updated `LaunchBg` color to match the purple in the splash image.
+- **Slack confirmation card redesign** — `MessageBubble.swift` Slack confirmation bubble restructured: thumbnail (72×72) anchored left, all details (owner, MS#, date, channel/mention, posted status) stacked in a VStack to the right. Channel/mention styled in `Theme.purple`. Secondary text at 12pt for visual hierarchy. Outgoing Slack message text moved above the "Sending to Slack" indicator.
+- **ConversationSummaryBubble cleanup** — Removed unused properties (`originalFileName`, `thumbnailUrl`). Standardized bubble width using `HStack { ...; Spacer(minLength: 60) }` pattern.
+- **Slug debug logging** — Added `console.log` in `handler.js` Slack post flow to trace slug value from `formResponse` through to `buildAssetMessage`.
 
 **Features Added (Mar 25 — Session):**
 
@@ -367,17 +380,17 @@ Render is the preview environment (stand-in for eventual company production syst
 | Deliverable              | Status           | Notes                                                                                                                                       |
 | ------------------------ | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
 | Render deployment prep   | ✅ Done          | `render.yaml`, `render-build.sh`, SSL-aware pg pool, `trustProxy`, conditional pino-pretty, `NODE_ENV` detection                            |
-| Deploy server to Render  | ✅ Live          | Auto-deploys from `main`. Custom domain `rodgriola.com`. Managed PostgreSQL.                                                                |
+| Deploy server to Render  | ✅ Live          | Auto-deploys from `main`. Custom domain `ms-fixer.com`. Managed PostgreSQL.                                                                |
 | Mux SDK + service        | ✅ Done          | `@mux/mux-node`, `server/src/lib/mux.js` — createDirectUpload, ingestVideo, status helpers                                                  |
 | Mux direct upload (iOS)  | ✅ Done          | iOS uploads directly to Mux CDN (bypasses server). `uploadViaMux()` in `VideoUploadService`, fallback to multipart                          |
 | Mux webhooks             | ✅ Done          | `server/src/routes/mux-webhooks.js` — handles upload.asset_created, asset.ready, asset.errored. v12 instance method signature verification. |
 | Mux Player (clip viewer) | ✅ Done          | `<mux-player>` web component in clip viewer. CSP configured for jsdelivr + stream.mux.com. Dead `<video>` fallback removed.                 |
 | Mux background sync      | ✅ Done          | `server/src/jobs/mux-sync.js` — polls every 2min for stuck PROCESSING clips, auto-heals, Slack alerts                                       |
 | Slack integration (real) | ✅ Done          | `server/src/lib/slack.js` — bot "fixer-video", `postToChannel()`, `postDM()`. iOS chat triggers real Slack posts.                           |
-| Render paid tier         | ✅ Done          | No cold starts. Custom domain `rodgriola.com`. Auto-deploy from `main`.                                                                     |
+| Render paid tier         | ✅ Done          | No cold starts. Custom domain `ms-fixer.com`. Auto-deploy from `main`.                                                                     |
 | Cloud storage (R2 or B2) | 🔲 Not started   | Replace local `uploads/` with Cloudflare R2 or Backblaze B2. Presigned URLs for upload + playback.                                          |
 | Slack webhook (real)     | ✅ Done          | Real Slack bot integration via `server/src/lib/slack.js`. Bot "fixer-video" in Sea Lion Media workspace.                                    |
-| TestFlight build         | ⚠️ Needs rebuild | Production URL changed to `rodgriola.com`. New archive + upload to App Store Connect needed.                                                |
+| TestFlight build         | ⚠️ Needs rebuild | Production URL changed to `ms-fixer.com`. New archive + upload to App Store Connect needed.                                                |
 | Admin UI (expanded)      | ⚠️ Partial       | React dashboard running; needs asset detail, log persistence                                                                                |
 | Stability (Phases A–C)   | ✅ Done          | WS reliability, upload resilience, security hardening. See `STABILITY_PLAN.md`.                                                             |
 | WS auth logging          | ✅ Done          | Server logs auth rejections + Engine.IO connection errors. Commit `6e92dc2`.                                                                |
@@ -388,9 +401,14 @@ Render is the preview environment (stand-in for eventual company production syst
 | Archive status dots      | ✅ Done          | Green Ready, amber Needs Details, red Upload Failed, spinner Processing                                                                     |
 | Archive thumbnails       | ✅ Done          | Mux thumbnails via AsyncImage in archive rows                                                                                               |
 | Bubble tail removal      | ✅ Done          | Clean rounded rectangles, no tail triangles                                                                                                 |
-| Launch screen            | ✅ Done          | LaunchBg color + Image asset via project.yml info section                                                                                   |
+| Launch screen            | ✅ Done          | LaunchBg color + Image asset via project.yml info section. Fixed Apr 8: image name mismatch + storyboard conflict.                          |
 | ATS / Info.plist fix     | ✅ Done          | Proper NSAppTransportSecurity dict in Info.plist via xcodegen                                                                               |
 | Form state persistence   | ✅ Done          | `PendingForm` persisted to disk; restored on relaunch if form not yet submitted.                                                            |
+| VideoBubble merge        | ✅ Done          | Consolidated VideoPreviewBubble + SentUploadBubble into single phase-driven VideoBubble component.                                          |
+| Video load optimization  | ✅ Done          | PHAsset zero-copy URL + PHAsset metadata. Minutes → instant for large videos.                                                               |
+| WS mux:ready scoping    | ✅ Done          | Events scoped to asset owner's sockets only (was broadcasting to all clients).                                                              |
+| Login input sanitization | ✅ Done          | Phone (10 digits) and PIN (8 digits) validation + numeric keypad.                                                                           |
+| Form auto-focus          | ✅ Done          | @FocusState on slug field with 0.5s delay after sheet animation.                                                                            |
 | Admin tools (nuclear)    | ✅ Done          | Nuclear reset wipes all data + Mux assets, preserves users, resets mediasource sequence. Admin create user.                                 |
 | Transcription (Speech)   | ✅ Done          | On-device Apple Speech transcription. Opt-in toggle, dual-attempt (server + on-device), punctuation, domain vocabulary.                     |
 | Render schema sync       | ✅ Done          | `render.yaml` buildCommand now includes `prisma db push --accept-data-loss` + `seed.js`. Previously only ran `prisma generate`.             |
@@ -463,7 +481,7 @@ A profile screen accessible from the chat header. Houses personal info, credenti
 | **Web Viewer**       | Server-rendered HTML at `/clips/:slug`       | ✅ Working       |
 | **Video Service**    | Mux (direct upload + HLS playback)           | ✅ Integrated    |
 | **Storage**          | Cloudflare R2 or Backblaze B2 (planned)      | 🔲 Not started   |
-| **Hosting (Server)** | Render (rodgriola.com)                       | ✅ Live          |
+| **Hosting (Server)** | Render (ms-fixer.com)                       | ✅ Live          |
 | **Hosting (Web)**    | Vercel (planned)                             | 🔲 Not started   |
 | **Slack**            | Bot API (`fixer-video` in Sea Lion Media)    | ✅ Integrated    |
 | **Stability**        | STABILITY_PLAN.md Phases A–C                 | ✅ Complete      |
@@ -611,6 +629,12 @@ Direct-Video-Uploader/
 | Mar 10 | COEP disabled, CORP cross-origin     | Clip viewer loads cross-origin media/scripts from Mux CDN + jsdelivr. Helmet defaults (`same-origin`) block those fetches.                                                  |
 | Mar 10 | WS `connect()` guard fix             | `isReconnecting` flag blocked fresh token from `connect(token:)`. Fix: `disconnect()` cancels `connectTask`, resets `isReconnecting`, then connects.                        |
 | Mar 10 | Server WS auth logging               | Auth middleware had zero logging — auth failures invisible in Render logs. Added `console.warn` on rejection + Engine.IO `connection_error` handler.                        |
+| Apr 8  | PHAsset zero-copy video loading      | `loadTransferable` copies entire video file (minutes for 1GB+). `PHImageManager.requestAVAsset` returns direct AVURLAsset reference — instant, same as native iOS Photos. |
+| Apr 8  | PHAsset metadata over file I/O       | Duration, resolution, GPS, creation date read from PHAsset cached properties instead of AVAsset file reads. Only codec needs lightweight header read.                       |
+| Apr 8  | iPhone format conversion setting     | iOS "Most Compatible" setting transcodes HEVC → H.264 on every share. "Current" skips transcoding. Must be communicated to end users.                                    |
+| Apr 8  | User-scoped WebSocket events         | `mux-sync.js` now accepts `fastify` instance and emits `mux:ready` only to the asset owner's sockets, not all connected clients.                                          |
+| Apr 8  | VideoBubble phase enum               | Single component with `.staged`/`.uploading`/`.sent` phases replaces two separate bubble views. Reduces code duplication.                                                  |
+| Apr 8  | Launch screen config cleanup         | `UILaunchStoryboardName` + `UILaunchScreen_*` keys conflict — removed storyboard ref, corrected image name to match asset catalog.                                        |
 
 ---
 

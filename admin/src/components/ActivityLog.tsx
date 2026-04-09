@@ -1,5 +1,5 @@
 import type { LogEntry } from "@/lib/types";
-import {panelHeader} from "@/lib/types";
+import { panelHeader } from "@/lib/types";
 
 const typeClasses: Record<string, string> = {
   ws: "bg-(--accent-purple-glow) text-(--accent-purple)",

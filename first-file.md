@@ -823,6 +823,8 @@ Preview Bubble appears when the video upload begins and the Context form is init
 - Evaluate how we can simplify the two states so the user has one view. 
 - Do not code anything. 
 
+...
+
 *** Issue ***
 - Two videos being uploaded at the same time causes the return message to go to the wrong phone, account - user. 
 *** Context ***
@@ -839,3 +841,7 @@ Preview Bubble appears when the video upload begins and the Context form is init
 - Review the code and determine the cause of the issue and provide a fix.
 
 
+... 
+
+*** Task ***
+Reduce the number of parameters for Colors, Fonts, Spacing 

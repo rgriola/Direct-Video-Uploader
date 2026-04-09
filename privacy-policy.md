@@ -1,6 +1,6 @@
 Privacy Policy for Fixer App: Effective Date: March 23, 2026
 
-Sea Lion Media LLC operates the Fixer website, aka rodgriola.com and the Fixer-G application (hereinafter referred to as the "Service").
+Sea Lion Media LLC operates the Fixer website, aka ms-fixer.com and the Fixer-G application (hereinafter referred to as the "Service").
 
 This policy intends to inform any user of the Service regarding the collection, use, and disclosure of personal data when you use our Service and the choices you have associated with this data.
 

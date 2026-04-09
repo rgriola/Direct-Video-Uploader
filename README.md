@@ -1,145 +1,219 @@
-# Direct Video Uploader (DVU)
+# Direct Video Uploader (DVU) — Mediasource Fixer
 
-**Direct Video Uploader** is a demo-first system for sending full‑resolution videos from an iOS app to a backend **as if you were texting a contact**.
+**Direct Video Uploader** is a mobile-first video upload platform disguised as a text conversation. Field crew members "text" full-resolution videos to the **Mediasource Fixer** server, which processes them the way a news assignment desk operates — fast, structured, and integrated with Slack.
 
-The UX is intentionally modeled after Apple Messages: the user opens a conversation with the server contact **“Mediasource Fixer”** (`800-123-4567`), selects a video, taps send, and the server replies back in the same thread with metadata, next steps, and confirmation. Under the hood, the upload is handled via a persistent **WebSocket** connection with a Node.js backend.
+The UX is intentionally modeled after Apple Messages: the user opens a conversation with **"Fixer"**, selects a video, taps send, fills out a slug form, and the server replies back with metadata, a clip viewer link, and a one-tap Slack post. Under the hood, videos upload directly to **Mux** via tus protocol, bypassing the server entirely.
 
-## What’s in this repo
+> **Status:** Phase 3 (~98%) — Mux pipeline operational, Slack integration live, Apple Speech transcription, admin tools, archive, video trim, stability hardening complete. See `PROJECT_STATUS.md` for full details.
 
-This repository is a monorepo with:
+---
 
-- **`server/`** — Node.js backend (Fastify + Socket.IO + Prisma)
-- **`admin/`** — Admin UI (Vite + React + Tailwind)
-- **`ios/`** — iOS client (Swift / SwiftUI)
-- **`scripts/`** — local/dev + deploy helper scripts
-- **`render.yaml`** — Render deployment configuration
-- Project docs/specs:
-  - `PROJECT_SPEC.md`
-  - `PROJECT_STATUS.md`
-  - `TESTING_PLAN.md`
-  - `STABILITY_PLAN.md`
-  - `STYLE_CENTRALIZATION_PLAN.md`
-  - `TODO.md`
+## Architecture
 
-## High-level architecture
+```
+┌──────────────┐      WebSocket (Socket.IO)      ┌──────────────────┐
+│   iOS App    │◄──────────────────────────────►│  Node.js Server  │
+│  (SwiftUI)   │      JWT auth + real-time       │  (Fastify)       │
+└──────┬───────┘                                  └───────┬──────────┘
+       │                                                   │
+       │  Video upload (tus)                              │  PostgreSQL (Prisma 7)
+       ▼                                                   │  Slack Bot API
+┌──────────────┐                                  ┌───────▼──────────┐
+│   Mux CDN    │──── HLS streaming ────────────►│  Clip Viewer     │
+│  (direct)    │                                  │  /clips/:slug    │
+└──────────────┘                                  └──────────────────┘
+```
 
-1. iOS app opens a chat-style conversation with the server contact (**Mediasource Fixer**).
-2. App authenticates and connects to the backend over WebSockets.
-3. User sends a video; the app uploads at full resolution.
-4. Server stores the video, extracts metadata, and responds in-chat (and can optionally post to Slack).
-5. Admin UI is intended for Phase 2 (managing users/devices, backend operations, etc).
+1. **iOS app** authenticates via phone# + PIN → JWT, connects WebSocket.
+2. User picks a video → app uploads directly to **Mux CDN** (zero server bottleneck).
+3. Server creates asset record, pushes form request to iOS via WebSocket.
+4. User fills slug/description form → server stores metadata, sends confirmation.
+5. Mux processes video → webhook/sync marks clip READY → server notifies user.
+6. User types `#channel` or `@name` → server posts to **Slack** with thumbnail + clip link.
+7. **Clip viewer** at `/clips/:slug` is a public, server-rendered page with Mux player.
 
-## Prerequisites
+---
 
-- Node.js (modern version recommended)
-- npm
-- (For backend) a Postgres database (Prisma is used)
-- (Optional) Render account for deployment
-- (Optional) Accounts/keys depending on integrations:
-  - Mux (video pipeline/storage)
-  - Slack (posting messages)
+## What's in This Repo
 
-## Getting started (local dev)
+```
+Direct-Video-Uploader/
+├── ios/                    # iOS app (SwiftUI, iOS 17+)
+│   ├── project.yml         # XcodeGen project definition
+│   └── DirectVideoUploader/
+│       ├── App/            # Entry point, Theme.swift, DVUDateFormatting.swift
+│       ├── Models/         # User, Asset, ChatMessage, ServerConfig
+│       ├── Services/       # Auth, ChatViewModel, WebSocket, VideoUpload, Transcription
+│       └── Views/          # Auth, Chat, Form, Metadata, Archive, Profile
+├── server/                 # Node.js backend (Fastify + Socket.IO + Prisma)
+│   ├── prisma/schema.prisma
+│   └── src/
+│       ├── routes/         # auth, assets, admin, clips, errors
+│       ├── ws/handler.js   # WebSocket event handling
+│       ├── lib/            # prisma, mux, slack, config, utils
+│       └── jobs/           # mux-sync (background), upload-cleanup
+├── admin/                  # React dashboard (Vite + TypeScript + Tailwind v4)
+│   └── src/
+│       ├── components/     # LoginForm, StatsGrid, AssetList, UserList, AdminTools
+│       └── hooks/          # TanStack Query, Socket.IO real-time
+├── scripts/dev.js          # Triad launcher (DB + Server + Admin)
+├── render.yaml             # Render deployment blueprint
+├── PROJECT_SPEC.md         # Full product specification (v4)
+├── PROJECT_STATUS.md       # Detailed progress log with every session
+├── STABILITY_PLAN.md       # Security + reliability hardening (Phases A–C)
+├── TESTING_PLAN.md         # Testing approach
+└── TODO.md                 # Backlog tracker
+```
 
-### 1) Install dependencies
+---
 
-From the repo root:
+## Quick Start (Local Dev)
+
+### Prerequisites
+
+- **Node.js** 20+ and **npm**
+- **PostgreSQL** (Prisma manages schema)
+- **Xcode 16+** with iOS 17 SDK (for the iOS app)
+- Optional: Mux account, Slack bot token
+
+### 1. Setup
 
 ```bash
 npm run setup
 ```
 
-This runs installs in `server/` and `admin/`.
+Installs dependencies for `server/` and `admin/`, pushes Prisma schema, generates client, seeds demo users.
 
-### 2) Start the backend
-
-```bash
-npm run dev:server
-```
-
-> The server dev script uses Prisma and runs the API with `nodemon`.
-
-### 3) Start the admin UI
-
-In a second terminal:
-
-```bash
-npm run dev:admin
-```
-
-### 4) (Optional) Start everything via root dev script
+### 2. Run Everything
 
 ```bash
 npm run dev
 ```
 
-> `npm run dev` runs `node scripts/dev.js` (see `scripts/` for what it orchestrates).
+This single command launches the **Triad** — database, API server (`:3000`), and admin dashboard (`:5173`) with smart log filtering and status display.
 
-## Build
+```
+╔══════════════════════════════════════════════════╗
+║              T R I A D   S T A T U S             ║
+╠══════════════════════════════════════════════════╣
+║  🟢 Database     Running   PostgreSQL             ║
+║  🟢 Server       Running   http://localhost:3000   ║
+║  🟢 Dashboard    Running   http://localhost:5173   ║
+║  ⚪ iOS App      Waiting   No client connected     ║
+╚══════════════════════════════════════════════════╝
+```
 
-### Build the admin UI
+### 3. Build iOS App
 
 ```bash
-npm run build:admin
+cd ios && xcodegen generate
+# Open DirectVideoUploader.xcodeproj in Xcode, build to device
 ```
+
+> **Tip:** For tethered device testing, update `ServerConfig.swift` with your Mac's LAN IP.
+
+---
+
+## Scripts
+
+| Command               | What it does                                                           |
+| --------------------- | ---------------------------------------------------------------------- |
+| `npm run dev`         | **Triad launcher** — DB + Server `:3000` + Admin `:5173` (recommended) |
+| `npm run dev:admin`   | Starts Vite dev server only on `:5173`                                 |
+| `npm run build:admin` | Production build of React admin → `server/public/`                     |
+| `npm run server`      | Starts Fastify server only                                             |
+| `npm run setup`       | Fresh setup: install deps, push schema, generate client, seed          |
+
+---
+
+## Tech Stack
+
+| Layer            | Technology                                    |
+| ---------------- | --------------------------------------------- |
+| **iOS App**      | SwiftUI + `URLSessionWebSocketTask`           |
+| **Server**       | Node.js + Fastify + Socket.IO                 |
+| **Database**     | PostgreSQL + Prisma 7 (pg adapter)            |
+| **Auth**         | Phone# + PIN → JWT (`@fastify/jwt`)           |
+| **Video**        | Mux (direct upload via tus + HLS playback)    |
+| **Dashboard**    | React 19 + Vite 6 + TypeScript + Tailwind v4  |
+| **Clip Viewer**  | Server-rendered HTML at `/clips/:slug`        |
+| **Slack**        | Bot API (`fixer-video` bot)                   |
+| **Transcription**| Apple Speech (on-device, opt-in)              |
+| **Hosting**      | Render (server + DB) · `ms-fixer.com`        |
+
+---
+
+## Key Features
+
+- **Chat-based UX** — Upload flow feels like texting, not a file manager
+- **Mux direct upload** — iOS uploads to Mux CDN via tus protocol (no server bottleneck)
+- **Real-time WebSocket** — Greeting, upload progress, form requests, Mux ready notifications, Slack confirmations
+- **Context form** — Slug, type, description, priority with auto-focus and swipe-dismiss prevention
+- **Video trim** — Pre-upload trimming via native `UIVideoEditorController`
+- **PHAsset fast path** — Zero-copy video loading from Photos library (instant, no file copy)
+- **Slack integration** — Post to `#channels` or DM `@users` with thumbnail, clip link, and metadata
+- **Clip viewer** — Public shareable page with Mux player, metadata, transcript
+- **Apple Speech** — On-device transcription with newsroom vocabulary, per-word timestamps
+- **Archive** — 7-day history with status dots, thumbnails, re-upload, form submission
+- **Admin dashboard** — Stats, user management, asset list, nuclear reset, error logs
+
+---
+
+## Demo Credentials
+
+| User          | Phone        | PIN    | Role  |
+| ------------- | ------------ | ------ | ----- |
+| Rod Griola    | `9176717330` | `3218` | ADMIN |
+| David Burgess | `5055034455` | `1234` | USER  |
+| Carrie Smith  | `5055551234` | `1234` | USER  |
+
+---
+
+## Environment Variables
+
+The server expects these in `server/.env` (see `.env.example`):
+
+| Variable           | Required | Description                          |
+| ------------------ | -------- | ------------------------------------ |
+| `DATABASE_URL`     | Yes      | PostgreSQL connection string         |
+| `JWT_SECRET`       | Yes*     | JWT signing secret (*auto-generates) |
+| `MUX_TOKEN_ID`     | Yes      | Mux API token ID                     |
+| `MUX_TOKEN_SECRET` | Yes      | Mux API token secret                 |
+| `MUX_WEBHOOK_SECRET`| Yes     | Mux webhook signing secret           |
+| `SLACK_BOT_TOKEN`  | No       | Slack bot OAuth token (`xoxb-...`)   |
+| `PUBLIC_URL`       | No       | Public URL for clip links            |
+| `NODE_ENV`         | No       | `production` enables SSL, trust proxy|
+
+---
 
 ## Deployment (Render)
 
-This repo includes `render.yaml` and a root build hook:
+The repo includes `render.yaml` for Render Blueprint deploys:
 
 ```bash
-npm run render:build
+# Render auto-deploys from main branch
+# Build: npm ci → build admin → prisma generate → prisma db push → seed
+# Start: cd server && node src/index.js
 ```
 
-Render should ultimately run the root `start` script:
+Custom domain: `ms-fixer.com` · Managed PostgreSQL · No cold starts (paid tier).
 
-```bash
-npm start
-```
-
-Which starts the backend via:
-
-```bash
-cd server && node src/index.js
-```
-
-## Configuration
-
-The server uses `dotenv` and expects environment variables for things like:
-
-- Database connection (Postgres)
-- Auth/token settings
-- Mux credentials (if enabled)
-- Slack credentials (if enabled)
-
-Check the `server/` code and any example env files (if present) to see the full list of required variables.
-
-## Scripts (root)
-
-Common root scripts (from `package.json`):
-
-- `npm run setup` — install deps for `server/` and `admin/`
-- `npm run dev:server` — run backend dev server
-- `npm run dev:admin` — run admin dev server
-- `npm run build:admin` — build the admin UI
-- `npm run start` — start backend (production-style)
-- `npm run render:build` — Render build hook
+---
 
 ## Documentation
 
-Start here:
+| File                          | Contents                                           |
+| ----------------------------- | -------------------------------------------------- |
+| `PROJECT_SPEC.md`            | Full product specification (v4)                    |
+| `PROJECT_STATUS.md`          | Detailed progress log — every session documented   |
+| `STABILITY_PLAN.md`          | Security + reliability hardening (Phases A–C)      |
+| `STYLE_CENTRALIZATION_PLAN.md`| iOS Theme.swift centralization guide               |
+| `TESTING_PLAN.md`            | Testing approach + 1000-user target                |
+| `TODO.md`                    | 25-issue security/perf audit tracker               |
+| `SERVER_URL_PATTERN.md`      | iOS ServerConfig URL construction patterns         |
 
-- `PROJECT_SPEC.md` — the “why” and the end-to-end product/architecture plan
-- `PROJECT_STATUS.md` — progress notes / current state
-- `TESTING_PLAN.md` — testing approach
-- `TODO.md` — backlog
-
-## Roadmap (very high level)
-
-- Phase 1: demo iOS app + WebSocket upload + server replies
-- Phase 2: admin UI for user/device management and backend operations
-- Integrations: Slack posting, external video/storage pipeline (e.g. Mux)
+---
 
 ## License
 
-No license file is included yet. If you want this to be open source, add a `LICENSE` file (MIT/Apache-2.0/etc). If this is internal-only, keep it private and document intended usage here.
+Private — internal use only. No open-source license. Contact the author for usage terms.

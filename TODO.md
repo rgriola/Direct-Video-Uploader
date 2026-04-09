@@ -66,7 +66,7 @@
 | **21** | pool.on error silently swallows errors                                   | DONE   |
 | **22** | No rate limiting on login — Added @fastify/rate-limit (5/min)            | DONE   |
 | **23** | GET /api/assets/:id no auth                                              | DONE   |
-| **24** | CORS origin: true in production — Locked to rodgriola.com (HTTP + WS)    | DONE   |
+| **24** | CORS origin: true in production — Locked to ms-fixer.com (HTTP + WS)    | DONE   |
 | **25** | Admin ChatHistory shows only own messages — Added /api/admin/messages    | DONE   |
 
 ## USER TODO do not modify below this line >>>>>>>>>>>>>>>>>>>>>>>>>

@@ -15,27 +15,62 @@
   /* --foreground: #f5f5f5;*/
   --foreground: #111111;
   /* foreground handles font color for h1 */
-  
-/* Color Theme Swatches in Hex */
-.ICON-Colors-3-hex { color: #8576EE; } /* BASE Purple*/
-.ICON-Colors-1-hex { color: #6FEFCE; }
-.ICON-Colors-2-hex { color: #F4D247; }
-.ICON-Colors-4-hex { color: #EA3343; }
-.ICON-Colors-5-hex { color: #66124A; }
-.ICON-Colors-6-hex { color: #223B7E; }
 
-/* Base Purple Shades in Hex */
-.SHADES-3-hex { color: #8576EE; }
-.SHADES-1-hex { color: #8272E5; }
-.SHADES-2-hex { color: #6E61C3; }
-.SHADES-4-hex { color: #5B50A1; }
-.SHADES-5-hex { color: #483F7F; }
-.SHADES-6-hex { color: #352E5D; }
+  /* Color Theme Swatches in Hex */
+  .ICON-Colors-3-hex {
+    color: #8576EE;
+  }
 
---border-blue: #4a9eff;
---border-green: #34d399; 
---border-purple: #a78bfa;
---border-amber: #fbbf24;
+  /* BASE Purple*/
+  .ICON-Colors-1-hex {
+    color: #6FEFCE;
+  }
+
+  .ICON-Colors-2-hex {
+    color: #F4D247;
+  }
+
+  .ICON-Colors-4-hex {
+    color: #EA3343;
+  }
+
+  .ICON-Colors-5-hex {
+    color: #66124A;
+  }
+
+  .ICON-Colors-6-hex {
+    color: #223B7E;
+  }
+
+  /* Base Purple Shades in Hex */
+  .SHADES-3-hex {
+    color: #8576EE;
+  }
+
+  .SHADES-1-hex {
+    color: #8272E5;
+  }
+
+  .SHADES-2-hex {
+    color: #6E61C3;
+  }
+
+  .SHADES-4-hex {
+    color: #5B50A1;
+  }
+
+  .SHADES-5-hex {
+    color: #483F7F;
+  }
+
+  .SHADES-6-hex {
+    color: #352E5D;
+  }
+
+  --border-blue: #4a9eff;
+  --border-green: #34d399;
+  --border-purple: #a78bfa;
+  --border-amber: #fbbf24;
 
 
 
@@ -48,17 +83,19 @@
   --popover: #4f566a;
   --popover-foreground: #f5f5f5;
 
-    /* does not seem to be used. */
+  /* does not seem to be used. */
   --primary: #2393f1;
   --primary-foreground: #f5f5f5;
 
   /* status panels */
-  --secondary: #8677ED;
+  /*--secondary: #8677ED; */
+  --secondary: #483F7F;
   --secondary-dark-shade: #6E61C3;
   --secondary-foreground: #f5f5f5;
 
   --muted: #6b7280;
-  --muted-foreground: #111111;  /* status panels hover */
+  --muted-foreground: #111111;
+  /* status panels hover */
 
   --accent: #111111;
   --accent-foreground: #f5f5f5;
@@ -74,7 +111,7 @@
   --radius: 0.875rem;
 
   /* Semantic accent palette */
- /* --accent-blue: #4a9eff;
+  /* --accent-blue: #4a9eff;
   --accent-green: #34d399;
   --accent-amber: #fbbf24;
   --accent-red: #f87171;
@@ -82,7 +119,11 @@
   */
 
   /* These apply to the asset list,activity, errorlog, userlist tsx  */
-.ICON-Colors-3-hex { color: #8576EE; } /* BASE Purple*/
+  .ICON-Colors-3-hex {
+    color: #8576EE;
+  }
+
+  /* BASE Purple*/
   --accent-blue: #4a9eff;
   --accent-green: #47c6a7;
   --accent-amber: #F4D247;
@@ -106,9 +147,11 @@ body {
 ::-webkit-scrollbar {
   width: 6px;
 }
+
 ::-webkit-scrollbar-track {
   background: transparent;
 }
+
 ::-webkit-scrollbar-thumb {
   background: var(--border);
   border-radius: 3px;
@@ -119,23 +162,40 @@ body {
   -ms-overflow-style: none;
   scrollbar-width: none;
 }
+
 .scrollbar-hide::-webkit-scrollbar {
   display: none;
 }
 
 /* ─── Animations ─── */
 @keyframes fade-in {
-  from { opacity: 0; transform: translateY(-4px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 @keyframes pulse-dot {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
+
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.4;
+  }
 }
 
 @keyframes spin-once {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .animate-fade-in {

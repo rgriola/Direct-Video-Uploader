@@ -1,0 +1,105 @@
+@import "tailwindcss";
+
+/* ═══════════════════════════════════════════════════════════
+   THEME A — "Clean Editorial"
+   Warm off-white background, purple header accent, clean lines.
+   Inspired by: Notion, Linear, Pitch
+   ═══════════════════════════════════════════════════════════ */
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  --base: #7565D4;
+
+  --font-sans: "Outfit", sans-serif;
+  --font-mono: "JetBrains Mono", monospace;
+
+  /* ─── Page ─── */
+  --background: #F8F7F4;
+  --foreground: #1a1a2e;
+
+  /* ─── Cards ─── */
+  --card: #FFFFFF;
+  --card-foreground: #1a1a2e;
+  --card-hover: #F3F1ED;
+
+  /* ─── Popover ─── */
+  --popover: #FFFFFF;
+  --popover-foreground: #1a1a2e;
+
+  /* ─── Primary (buttons, links) ─── */
+  --primary: #483F7F;
+  --primary-foreground: #FFFFFF;
+
+  /* ─── Secondary (status panels, section headers) ─── */
+  --secondary: #483F7F;
+  --secondary-dark-shade: #352E5D;
+  --secondary-foreground: #FFFFFF;
+
+  /* ─── Muted ─── */
+  --muted: #9CA3AF;
+  --muted-foreground: #4B5563;
+
+  /* ─── Accent ─── */
+  --accent: #8576EE;
+  --accent-foreground: #FFFFFF;
+
+  /* ─── Destructive ─── */
+  --destructive: #EA3343;
+  --destructive-foreground: #FFFFFF;
+
+  /* ─── Borders & Input ─── */
+  --border: #D4D0E8;
+  --border-subtle: #E8E5F0;
+  --input: #E8E5F0;
+  --ring: #8576EE;
+
+  --border-blue: #4a9eff;
+  --border-green: #47c6a7;
+  --border-purple: #8576EE;
+  --border-amber: #F4D247;
+
+  --radius: 0.75rem;
+
+  /* ─── Semantic Accent Palette ─── */
+  --accent-blue: #4a9eff;
+  --accent-green: #47c6a7;
+  --accent-amber: #F4D247;
+  --accent-red: #EA3343;
+  --accent-purple: #8576EE;
+
+  --accent-blue-glow: #4a9eff18;
+  --accent-green-glow: #47c6a718;
+  --accent-amber-glow: #F4D24718;
+  --accent-red-glow: #EA334318;
+  --accent-purple-glow: #8576EE18;
+}
+
+body {
+  font-family: var(--font-sans);
+  background: var(--background);
+  color: var(--foreground);
+}
+
+/* ─── Scrollbar ─── */
+::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+.scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+.scrollbar-hide::-webkit-scrollbar { display: none; }
+
+/* ─── Animations ─── */
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+@keyframes spin-once {
+  to { transform: rotate(360deg); }
+}
+.animate-fade-in { animation: fade-in 0.3s ease; }
+.animate-pulse-dot { animation: pulse-dot 2s infinite; }
+.animate-spin-once { animation: spin-once 0.6s linear; }
