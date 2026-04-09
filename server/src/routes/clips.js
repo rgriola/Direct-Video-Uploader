@@ -18,6 +18,34 @@ function escapeHtml(str) {
 
 export default async function clipRoutes(fastify) {
     /**
+     * GET /clips/:mediasourceId/status
+     * Lightweight JSON endpoint — polled by the clip viewer JS when the video
+     * is not yet ready. Returns { ready: bool, muxPlaybackId: string|null }.
+     * Public (no auth required) — only returns play-readiness, no private data.
+     */
+    fastify.get('/clips/:mediasourceId/status', async (request, reply) => {
+        const { mediasourceId } = request.params;
+        if (!mediasourceId || mediasourceId === 'undefined') {
+            return reply.status(404).send({ error: 'Not found' });
+        }
+        const asset = await prisma.asset.findFirst({ where: { mediasourceId } });
+        if (!asset) return reply.status(404).send({ error: 'Not found' });
+
+        const clip = await prisma.clip.findFirst({
+            where: { assetId: asset.id },
+            orderBy: { createdAt: 'desc' },
+            select: { muxPlaybackId: true, status: true },
+        });
+
+        const ready = !!(clip?.muxPlaybackId);
+        return reply.send({
+            ready,
+            muxPlaybackId: ready ? clip.muxPlaybackId : null,
+            status: asset.status,
+        });
+    });
+
+    /**
      * GET /clips/:mediasourceId
      * Render a public clip viewer page (dark theme, video player + metadata).
      */
@@ -316,6 +344,51 @@ export default async function clipRoutes(fastify) {
             --media-object-fit: contain;
             --media-object-position: center;
         }
+        /* Placeholder shown while Mux is processing — same 16:9 frame */
+        .video-placeholder {
+            width: 100%;
+            aspect-ratio: 16/9;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 16px;
+            background: var(--secondary);
+            color: var(--muted-foreground);
+            position: relative;
+            overflow: hidden;
+        }
+        /* Subtle animated shimmer across the placeholder */
+        .video-placeholder::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(105deg, transparent 40%, rgba(255,255,255,0.04) 50%, transparent 60%);
+            animation: shimmer 2.4s ease-in-out infinite;
+            background-size: 200% 100%;
+        }
+        @keyframes shimmer {
+            0%   { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
+        }
+        .placeholder-icon {
+            font-size: 40px;
+            opacity: 0.4;
+            animation: pulse-icon 2s ease-in-out infinite;
+        }
+        @keyframes pulse-icon {
+            0%, 100% { opacity: 0.4; transform: scale(1); }
+            50%       { opacity: 0.65; transform: scale(1.08); }
+        }
+        .placeholder-label {
+            font-size: 14px;
+            font-weight: 500;
+            letter-spacing: 0.02em;
+        }
+        .placeholder-sub {
+            font-size: 12px;
+            opacity: 0.6;
+        }
         .no-video {
             padding: 60px 20px;
             text-align: center;
@@ -498,9 +571,10 @@ export default async function clipRoutes(fastify) {
             <a href="/" class="dashboard-link">← Dashboard</a>
         </div>
 
-        <div class="card">
+        <div class="card" id="video-card">
             ${hasMuxPlayback
                 ? `<mux-player
+                    id="mux-player-el"
                     stream-type="on-demand"
                     playback-id="${escapeHtml(muxPlaybackId)}"
                     ${MUX_ENV_KEY ? `env-key="${escapeHtml(MUX_ENV_KEY)}"` : ''}
@@ -508,10 +582,14 @@ export default async function clipRoutes(fastify) {
                     accent-color="#4a9eff"
                     preload="auto"
                   ></mux-player>`
-                : `<div class="no-video">🎬 Video not yet available</div>`
+                : `<div class="video-placeholder" id="video-placeholder">
+                    <div class="placeholder-icon">🎬</div>
+                    <div class="placeholder-label">Video Processing</div>
+                    <div class="placeholder-sub" id="placeholder-status">${escapeHtml(asset.status)} &mdash; checking every 5s&hellip;</div>
+                   </div>`
             }
             <div class="video-bar">
-                <span class="status status-${escapeHtml(asset.status)}">${escapeHtml(asset.status)}</span>
+                <span class="status status-${escapeHtml(asset.status)}" id="status-pill">${escapeHtml(asset.status)}</span>
                 <button class="copy-link" onclick="copyLink(this)">📋 Copy Link</button>
             </div>
         </div>
@@ -585,7 +663,86 @@ export default async function clipRoutes(fastify) {
             }, 2000);
         });
     }
+
+    // ── Video readiness polling ───────────────────────────────────────
+    // Only runs when the placeholder is visible (video not yet ready).
+    // Polls /clips/:mediasourceId/status every 5 seconds.
+    // When Mux signals ready, loads the SDK and swaps in the real player.
+    (function initVideoPoller() {
+        const placeholder = document.getElementById('video-placeholder');
+        if (!placeholder) return; // Already showing the player — nothing to do
+
+        const mediasourceId = '${escapeHtml(asset.mediasourceId || '')}';
+        const envKey        = '${escapeHtml(MUX_ENV_KEY || '')}';
+        const videoTitle    = '${escapeHtml(displayTitle)}';
+        const statusSub     = document.getElementById('placeholder-status');
+        const statusPill    = document.getElementById('status-pill');
+
+        let attempts = 0;
+        const MAX_ATTEMPTS = 72; // 72 × 5s = 6 minutes before giving up
+
+        async function checkStatus() {
+            try {
+                const res  = await fetch('/clips/' + mediasourceId + '/status');
+                const data = await res.json();
+
+                // Update the status text while waiting
+                if (statusSub) {
+                    statusSub.textContent = (data.status || 'PROCESSING') + ' — checking every 5s\u2026';
+                }
+                if (statusPill) {
+                    statusPill.textContent  = data.status || 'PROCESSING';
+                    statusPill.className    = 'status status-' + (data.status || 'PROCESSING');
+                }
+
+                if (data.ready && data.muxPlaybackId) {
+                    // ── Video is ready — load SDK and swap in the player ──
+                    clearInterval(poller);
+
+                    // Dynamically load the Mux Player SDK
+                    const script = document.createElement('script');
+                    script.src = 'https://cdn.jsdelivr.net/npm/@mux/mux-player@latest';
+                    script.onload = () => {
+                        // Create the mux-player element
+                        const player = document.createElement('mux-player');
+                        player.setAttribute('stream-type', 'on-demand');
+                        player.setAttribute('playback-id', data.muxPlaybackId);
+                        if (envKey) player.setAttribute('env-key', envKey);
+                        player.setAttribute('metadata-video-title', videoTitle);
+                        player.setAttribute('accent-color', '#4a9eff');
+                        player.setAttribute('preload', 'auto');
+                        player.style.width = '100%';
+                        player.style.display = 'block';
+                        player.style.aspectRatio = '16/9';
+
+                        // Swap placeholder → player
+                        placeholder.replaceWith(player);
+
+                        // Update status pill to READY
+                        if (statusPill) {
+                            statusPill.textContent = 'READY';
+                            statusPill.className   = 'status status-READY';
+                        }
+                    };
+                    document.head.appendChild(script);
+                    return;
+                }
+            } catch (e) {
+                // Network error — silently retry
+            }
+
+            attempts++;
+            if (attempts >= MAX_ATTEMPTS) {
+                clearInterval(poller);
+                if (statusSub) statusSub.textContent = 'Processing is taking longer than expected — try refreshing.';
+            }
+        }
+
+        const poller = setInterval(checkStatus, 5000);
+        checkStatus(); // Run immediately on load too
+    })();
     </script>
+
 </body>
 </html>`;
 
