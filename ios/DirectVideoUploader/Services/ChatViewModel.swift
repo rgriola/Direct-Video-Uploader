@@ -2,6 +2,37 @@ import Foundation
 import UIKit
 import Observation
 
+/// Metadata for a sent-upload card, cached by message ID.
+struct SentUploadInfo {
+    let thumbnail: UIImage?
+    let fileName: String
+    let createdDate: String
+    let hasLocation: Bool
+}
+
+/// Metadata cached after mux:ready for Slack sharing and summary bubble.
+struct ArchiveState {
+    var assetId: String?
+    var mediasourceId: String?
+    var originalFileName: String?
+    var formType: String?
+    var formDescription: String?
+    var formPriority: String?
+    var duration: Int?
+    var resolution: String?
+    var fileSize: String?
+}
+
+/// Context passed to ContextFormView header.
+struct FormContext {
+    var originalFileName: String?
+    var capturedAt: String?
+    var clipCount: Int?
+    var duration: Int?
+    var thumbnail: UIImage?
+    var submitError: String?
+}
+
 /// Central chat view model — manages messages, assets, and coordinates services.
 @MainActor
 @Observable
@@ -9,7 +40,6 @@ final class ChatViewModel {
     // MARK: - State
     
     var messages: [ChatMessage] = []
-    var isLoadingHistory = false
     var currentAssetId: String?
     var showFormSheet = false
     var showMetadataSheet = false
@@ -27,29 +57,13 @@ final class ChatViewModel {
     // Archive state — conversation closed after mux:ready or new upload
     var isArchived = false
     var showSlackShareSheet = false
-    var archivedAssetId: String?
-    var archivedMediasourceId: String?
-    var archivedOriginalFileName: String?
-    var archivedFormType: String?
-    var archivedFormDescription: String?
-    var archivedFormPriority: String?
-    var archivedDuration: Int?
-    var archivedResolution: String?
-    var archivedFileSize: String?
+    var archive = ArchiveState()
     
     // Form context (passed to ContextFormView header)
-    var formOriginalFileName: String?
-    var formCapturedAt: String?
-    var formClipCount: Int?
-    var formDuration: Int?
-    var formThumbnail: UIImage?
-    var formSubmitError: String?
+    var form = FormContext()
     
-    /// Thumbnails + metadata for sent-upload cards keyed by message ID
-    var sentUploadThumbnails: [String: UIImage] = [:]
-    var sentUploadFileNames: [String: String] = [:]
-    var sentUploadDates: [String: String] = [:]
-    var sentUploadHasLocation: [String: Bool] = [:]
+    /// Metadata for sent-upload cards, keyed by message ID
+    var sentUploads: [String: SentUploadInfo] = [:]
 
     /// Cached thumbnails for Slack confirmation bubbles, keyed by message ID
     var slackThumbnails: [String: UIImage] = [:]
@@ -58,6 +72,7 @@ final class ChatViewModel {
     private var lastStagedCreatedDate: String?
     private var lastStagedHasLocation: Bool = false
     private var pendingPHAssetIdentifier: String?
+    private var uploadTask: Task<Void, Never>?
     
     // MARK: - Dependencies
     
@@ -105,11 +120,11 @@ final class ChatViewModel {
             self.currentAssetId = assetId
             
             // Store form context for ContextFormView header
-            self.formOriginalFileName = data["originalFileName"] as? String
-            self.formClipCount = data["clipCount"] as? Int
-            self.formDuration = data["duration"] as? Int
+            self.form.originalFileName = data["originalFileName"] as? String
+            self.form.clipCount = data["clipCount"] as? Int
+            self.form.duration = data["duration"] as? Int
             if let dateVal = data["capturedAt"] as? String {
-                self.formCapturedAt = dateVal
+                self.form.capturedAt = dateVal
             }
             
             self.formFields = self.buildFormFields()
@@ -119,11 +134,11 @@ final class ChatViewModel {
             if let assetId {
                 PendingForm.save(PendingForm(
                     assetId: assetId,
-                    originalFileName: self.formOriginalFileName,
-                    capturedAt: self.formCapturedAt,
-                    clipCount: self.formClipCount,
-                    duration: self.formDuration,
-                    thumbnailJPEG: self.formThumbnail?.jpegData(compressionQuality: 0.5),
+                    originalFileName: self.form.originalFileName,
+                    capturedAt: self.form.capturedAt,
+                    clipCount: self.form.clipCount,
+                    duration: self.form.duration,
+                    thumbnailJPEG: self.form.thumbnail?.jpegData(compressionQuality: 0.5),
                     savedAt: Date()
                 ))
             }
@@ -177,15 +192,15 @@ final class ChatViewModel {
             print("✅ [Mux Ready] Asset \(assetId ?? "?") confirmed on Mediasource")
             
             // Store archive metadata
-            self.archivedAssetId = assetId
-            self.archivedMediasourceId = mediasourceId
-            self.archivedOriginalFileName = originalFileName
-            self.archivedFormType = formType
-            self.archivedFormDescription = formDescription
-            self.archivedFormPriority = formPriority
-            self.archivedDuration = duration
-            self.archivedResolution = resolution
-            self.archivedFileSize = fileSize
+            self.archive.assetId = assetId
+            self.archive.mediasourceId = mediasourceId
+            self.archive.originalFileName = originalFileName
+            self.archive.formType = formType
+            self.archive.formDescription = formDescription
+            self.archive.formPriority = formPriority
+            self.archive.duration = duration
+            self.archive.resolution = resolution
+            self.archive.fileSize = fileSize
             
             // Append the summary bubble as a chat message
             let summaryMessage = ChatMessage(
@@ -311,24 +326,6 @@ final class ChatViewModel {
         _ = try? await URLSession.shared.data(for: request)
     }
     
-    // MARK: - Load History
-    
-    func loadMessageHistory() async {
-        guard auth.isAuthenticated else { return }
-        isLoadingHistory = true
-        defer { isLoadingHistory = false }
-        
-        let request = auth.authenticatedRequest(for: ServerConfig.messagesURL)
-        
-        do {
-            let (data, _) = try await URLSession.shared.data(for: request)
-            let response = try JSONDecoder().decode(MessagesResponse.self, from: data)
-            messages = response.messages
-        } catch {
-            print("❌ Failed to load messages:", error)
-            appendErrorBubble("⚠️ Could not load message history.")
-        }
-    }
     
     // MARK: - Send Text Message
     
@@ -397,97 +394,70 @@ final class ChatViewModel {
             return attrs?[.size] as? Int64 ?? 0
         }()
         
-        // Retry up to 2 times on transient network/decode failures
-        var lastError: Error?
-        for attempt in 1...3 {
-            do {
+        do {
+            let asset = try await withRetry(attempts: 3) { attempt in
                 let (data, httpResponse) = try await URLSession.shared.data(for: request)
                 let statusCode = (httpResponse as? HTTPURLResponse)?.statusCode ?? 0
                 
                 guard statusCode >= 200, statusCode < 300 else {
                     let body = String(data: data, encoding: .utf8) ?? "(empty)"
                     print("❌ createAsset HTTP \(statusCode): \(body)")
-                    lastError = NSError(domain: "createAsset", code: statusCode,
-                                        userInfo: [NSLocalizedDescriptionKey: "Server returned \(statusCode)"])
-                    if statusCode >= 500 {
-                        try? await Task.sleep(for: .seconds(Double(attempt)))
-                        continue
-                    }
-                    break
+                    throw NSError(domain: "createAsset", code: statusCode,
+                                  userInfo: [NSLocalizedDescriptionKey: "Server returned \(statusCode)"])
                 }
                 
-                let asset: Asset
-                do {
-                    let response = try JSONDecoder().decode(CreateAssetResponse.self, from: data)
-                    asset = response.asset
-                } catch {
-                    let raw = String(data: data, encoding: .utf8) ?? "(non-utf8, \(data.count) bytes)"
-                    print("❌ createAsset decode failed (attempt \(attempt)): \(error)\nRaw: \(raw)")
-                    lastError = error
-                    if attempt < 3 {
-                        try? await Task.sleep(for: .seconds(Double(attempt)))
-                        continue
-                    }
-                    break
-                }
-                
-                currentAssetId = asset.id
+                let response = try JSONDecoder().decode(CreateAssetResponse.self, from: data)
+                return response.asset
+            }
             
-                // Add outgoing video message locally — also cache thumbnail for VideoBubble
-                let msgId = UUID().uuidString
-                let videoMessage = ChatMessage(
-                    id: msgId,
-                    userId: auth.currentUser?.id,
-                    assetId: asset.id,
-                    direction: .outgoing,
-                    messageType: .video,
-                    content: MessageContent(text: "📹 \(fileName)", fileName: fileName),
-                    createdAt: ISO8601DateFormatter().string(from: Date())
-                )
-                messages.append(videoMessage)
-                
-                // Cache thumbnail + metadata so VideoBubble can render the card
-                if let thumb = formThumbnail {
-                    sentUploadThumbnails[msgId] = thumb
-                }
-                sentUploadFileNames[msgId] = fileName
-                sentUploadDates[msgId] = lastStagedCreatedDate ?? {
+            currentAssetId = asset.id
+        
+            // Add outgoing video message locally — also cache thumbnail for VideoBubble
+            let msgId = UUID().uuidString
+            let videoMessage = ChatMessage(
+                id: msgId,
+                userId: auth.currentUser?.id,
+                assetId: asset.id,
+                direction: .outgoing,
+                messageType: .video,
+                content: MessageContent(text: "📹 \(fileName)", fileName: fileName),
+                createdAt: ISO8601DateFormatter().string(from: Date())
+            )
+            messages.append(videoMessage)
+            
+            // Cache metadata so VideoBubble can render the card
+            sentUploads[msgId] = SentUploadInfo(
+                thumbnail: form.thumbnail,
+                fileName: fileName,
+                createdDate: lastStagedCreatedDate ?? {
                     let formatter = DateFormatter()
                     formatter.dateFormat = "MMM d, yyyy h:mm a"
                     return formatter.string(from: Date())
-                }()
-                sentUploadHasLocation[msgId] = lastStagedHasLocation
-                
-                // Notify WebSocket with real file size
-                ws.sendVideoUpload(
-                    assetId: asset.id,
-                    fileName: fileName,
-                    fileSize: fileSize
-                )
-                
-                return asset
-            } catch {
-                print("❌ createAsset attempt \(attempt) network error:", error)
-                lastError = error
-                if attempt < 3 {
-                    try? await Task.sleep(for: .seconds(Double(attempt)))
-                    continue
-                }
-            }
-        }
-        
-        // All attempts exhausted
-        let errorDesc = lastError?.localizedDescription ?? "Unknown error"
-        appendErrorBubble("⚠️ Could not start upload. Please try again.")
-        Task {
-            await reportError(
-                category: "upload",
-                message: "Asset creation failed after 3 attempts: \(errorDesc)",
-                severity: "ERROR",
-                details: ["fileName": fileName]
+                }(),
+                hasLocation: lastStagedHasLocation
             )
+            
+            // Notify WebSocket with real file size
+            ws.sendVideoUpload(
+                assetId: asset.id,
+                fileName: fileName,
+                fileSize: fileSize
+            )
+            
+            return asset
+        } catch {
+            let errorDesc = error.localizedDescription
+            appendErrorBubble("⚠️ Could not start upload. Please try again.")
+            Task {
+                await reportError(
+                    category: "upload",
+                    message: "Asset creation failed after 3 attempts: \(errorDesc)",
+                    severity: "ERROR",
+                    details: ["fileName": fileName]
+                )
+            }
+            return nil
         }
-        return nil
     }
     
     // MARK: - Upload Video
@@ -570,7 +540,7 @@ final class ChatViewModel {
             userId: nil,
             assetId: currentAssetId,
             direction: .incoming,
-            messageType: .greeting,
+            messageType: .systemNote,
             content: MessageContent(text: "No worries — your video is still uploading. You can add details from your Archive anytime."),
             createdAt: ISO8601DateFormatter().string(from: Date())
         )
@@ -598,7 +568,7 @@ final class ChatViewModel {
         } catch {
             print("❌ Failed to submit form:", error)
             // Keep form open so user can retry — show error in chat too
-            formSubmitError = "Failed to send form. Please try again."
+            form.submitError = "Failed to send form. Please try again."
             appendErrorBubble("⚠️ Form submission failed. The form is still open — please retry.", assetId: assetId)
             Task {
                 await reportError(
@@ -683,82 +653,105 @@ final class ChatViewModel {
     func confirmStagedUpload() async {
         guard let staged = stagedVideo else { return }
         
-        // Save thumbnail + metadata for form & sent card
         let fileURL = staged.tempFileURL
         let fileName = staged.fileName
         let metadata = staged.metadata
-        formThumbnail = staged.thumbnail
-        lastStagedCreatedDate = staged.createdDate
-        lastStagedHasLocation = metadata.gpsLat != nil
-        stagedVideo = nil  // Clear immediately — VideoBubble (.uploading) takes over
         
-        // Create asset on server
-        if let asset = await createAsset(fileName: fileName, fileURL: fileURL) {
+        prepareStagedContext(staged)
+        
+        uploadTask = Task {
+            guard let asset = await createAsset(fileName: fileName, fileURL: fileURL) else { return }
             print("✅ Asset created: \(asset.mediasourceId ?? asset.id)")
-            // Save PHAsset identifier so re-upload can find the original video
-            if let phId = pendingPHAssetIdentifier {
-                PHAssetIdentifierStore.save(assetId: asset.id, phAssetIdentifier: phId)
-            }
-            pendingPHAssetIdentifier = nil
+            
+            savePHAssetIdentifier(for: asset.id)
             await uploadVideo(assetId: asset.id, fileURL: fileURL, metadata: metadata)
             
-            // Transcribe audio if user opted in via the toggle
+            guard !Task.isCancelled else { return }
+            
             if transcribeOnUpload {
-                // Show user that transcription is starting
-                let transcribingMsg = ChatMessage(
-                    id: UUID().uuidString,
-                    userId: nil,
-                    assetId: asset.id,
-                    direction: .incoming,
-                    messageType: .text,
-                    content: MessageContent(text: "🎙️ Transcribing audio..."),
-                    createdAt: ISO8601DateFormatter().string(from: Date())
-                )
-                messages.append(transcribingMsg)
-                
-                if let result = await transcriber.transcribe(videoURL: fileURL) {
-                    await sendTranscript(assetId: asset.id, result: result)
-                    // Update the transcribing message to show success
-                    if let idx = messages.firstIndex(where: { $0.id == transcribingMsg.id }) {
-                        messages[idx] = ChatMessage(
-                            id: transcribingMsg.id,
-                            userId: nil,
-                            assetId: asset.id,
-                            direction: .incoming,
-                            messageType: .text,
-                            content: MessageContent(text: "✅ Transcript saved (\(result.segments.count) words)"),
-                            createdAt: transcribingMsg.createdAt
-                        )
-                    }
-                } else {
-                    // Update message with the reason
-                    let statusText: String
-                    switch transcriber.state {
-                    case .noSpeech:
-                        statusText = "🎙️ No speech detected in video"
-                    case .failed(let reason):
-                        statusText = "⚠️ Transcription failed: \(reason)"
-                    default:
-                        statusText = "⚠️ Transcription did not produce results"
-                    }
-                    if let idx = messages.firstIndex(where: { $0.id == transcribingMsg.id }) {
-                        messages[idx] = ChatMessage(
-                            id: transcribingMsg.id,
-                            userId: nil,
-                            assetId: asset.id,
-                            direction: .incoming,
-                            messageType: .text,
-                            content: MessageContent(text: statusText),
-                            createdAt: transcribingMsg.createdAt
-                        )
-                    }
-                }
-                transcribeOnUpload = false  // Reset for next upload
+                await transcribeAndReport(assetId: asset.id, fileURL: fileURL)
+                transcribeOnUpload = false
             }
             
-            // Clean up temp video file after upload + transcription (#18)
-            try? FileManager.default.removeItem(at: fileURL)
+            cleanupTempFile(fileURL)
         }
+        await uploadTask?.value
+        uploadTask = nil
+    }
+    
+    /// Cancel an in-progress upload.
+    func cancelUpload() {
+        uploadTask?.cancel()
+        uploadTask = nil
+        isUploading = false
+        uploadProgress = 0
+        appendErrorBubble("Upload cancelled.")
+    }
+    
+    /// Save thumbnail + metadata from staged video, clear the preview.
+    private func prepareStagedContext(_ staged: StagedVideo) {
+        form.thumbnail = staged.thumbnail
+        lastStagedCreatedDate = staged.createdDate
+        lastStagedHasLocation = staged.metadata.gpsLat != nil
+        stagedVideo = nil  // Clear immediately — VideoBubble (.uploading) takes over
+    }
+    
+    /// Persist PHAsset identifier so re-upload can find the original video.
+    private func savePHAssetIdentifier(for assetId: String) {
+        if let phId = pendingPHAssetIdentifier {
+            PHAssetIdentifierStore.save(assetId: assetId, phAssetIdentifier: phId)
+        }
+        pendingPHAssetIdentifier = nil
+    }
+    
+    /// Transcribe audio and update the status bubble in-place.
+    private func transcribeAndReport(assetId: String, fileURL: URL) async {
+        let transcribingMsg = ChatMessage(
+            id: UUID().uuidString,
+            userId: nil,
+            assetId: assetId,
+            direction: .incoming,
+            messageType: .text,
+            content: MessageContent(text: "🎙️ Transcribing audio..."),
+            createdAt: ISO8601DateFormatter().string(from: Date())
+        )
+        messages.append(transcribingMsg)
+        
+        if let result = await transcriber.transcribe(videoURL: fileURL) {
+            await sendTranscript(assetId: assetId, result: result)
+            updateTranscriptionBubble(id: transcribingMsg.id, assetId: assetId,
+                                       text: "✅ Transcript saved (\(result.segments.count) words)",
+                                       createdAt: transcribingMsg.createdAt)
+        } else {
+            let statusText: String
+            switch transcriber.state {
+            case .noSpeech:
+                statusText = "🎙️ No speech detected in video"
+            case .failed(let reason):
+                statusText = "⚠️ Transcription failed: \(reason)"
+            default:
+                statusText = "⚠️ Transcription did not produce results"
+            }
+            updateTranscriptionBubble(id: transcribingMsg.id, assetId: assetId,
+                                       text: statusText, createdAt: transcribingMsg.createdAt)
+        }
+    }
+    
+    /// Replace the content of a transcription status bubble.
+    private func updateTranscriptionBubble(id: String, assetId: String, text: String, createdAt: String?) {
+        if let idx = messages.firstIndex(where: { $0.id == id }) {
+            messages[idx] = ChatMessage(
+                id: id, userId: nil, assetId: assetId,
+                direction: .incoming, messageType: .text,
+                content: MessageContent(text: text),
+                createdAt: createdAt
+            )
+        }
+    }
+    
+    /// Clean up the temporary video file after upload + transcription.
+    private func cleanupTempFile(_ url: URL) {
+        try? FileManager.default.removeItem(at: url)
     }
     
     /// User cancelled staged video — discard and clean up.
@@ -806,12 +799,12 @@ final class ChatViewModel {
     /// Restore form UI from persisted PendingForm state.
     private func restoreFormFromPending(_ pendingForm: PendingForm) {
         currentAssetId = pendingForm.assetId
-        formOriginalFileName = pendingForm.originalFileName
-        formCapturedAt = pendingForm.capturedAt
-        formClipCount = pendingForm.clipCount
-        formDuration = pendingForm.duration
+        form.originalFileName = pendingForm.originalFileName
+        form.capturedAt = pendingForm.capturedAt
+        form.clipCount = pendingForm.clipCount
+        form.duration = pendingForm.duration
         if let jpegData = pendingForm.thumbnailJPEG {
-            formThumbnail = UIImage(data: jpegData)
+            form.thumbnail = UIImage(data: jpegData)
         }
         formFields = buildFormFields()
         showFormSheet = true
@@ -839,21 +832,8 @@ final class ChatViewModel {
         messages.removeAll()
         currentAssetId = nil
         isArchived = false
-        archivedAssetId = nil
-        archivedMediasourceId = nil
-        archivedOriginalFileName = nil
-        archivedFormType = nil
-        archivedFormDescription = nil
-        archivedFormPriority = nil
-        archivedDuration = nil
-        archivedResolution = nil
-        archivedFileSize = nil
-        formThumbnail = nil
-        formOriginalFileName = nil
-        formCapturedAt = nil
-        formClipCount = nil
-        formDuration = nil
-        formSubmitError = nil
+        archive = ArchiveState()
+        form = FormContext()
         lastAsset = nil
         lastClip = nil
         stagedVideo = nil
@@ -862,10 +842,7 @@ final class ChatViewModel {
         showFormSheet = false
         showMetadataSheet = false
         showSlackShareSheet = false
-        sentUploadThumbnails.removeAll()
-        sentUploadFileNames.removeAll()
-        sentUploadDates.removeAll()
-        sentUploadHasLocation.removeAll()
+        sentUploads.removeAll()
         lastStagedCreatedDate = nil
         lastStagedHasLocation = false
         
@@ -891,7 +868,7 @@ final class ChatViewModel {
         let localMessage = ChatMessage(
             id: UUID().uuidString,
             userId: auth.currentUser?.id,
-            assetId: archivedAssetId,
+            assetId: archive.assetId,
             direction: .outgoing,
             messageType: .slackPost,
             content: MessageContent(text: text),
@@ -901,7 +878,7 @@ final class ChatViewModel {
         showSlackShareSheet = false
         
         // Send via WebSocket — server detects #channel/@mention pattern
-        ws.sendMessage(text: text, assetId: archivedAssetId)
+        ws.sendMessage(text: text, assetId: archive.assetId)
     }
 
     /// Download a thumbnail image and cache it for the Slack bubble.

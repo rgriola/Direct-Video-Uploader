@@ -865,18 +865,102 @@ NO >> Add a "Transcribe by default" user preference toggle (separate from the OS
 ... 
 
 *** Task ***
-- Add instructions button to the iOS app top right corner of the Chat screen.
-- This should be a scrollable list of options
-- This is a little used area and it will not be in the way of the user. 
-- also users need guidence on how to use any app.
-- Should have "What Can I do in Fixer"
-- "The Work Flow" - goes through A,B,C steps of what is going on. 
-- "I have an issue" - Human to contact - [EMAIL_ADDRESS]
+- Add instructions button to the iOS app top right corner of the Chat screen. 
+- use this SF Icon : service.dog with .symbolEffect(.bounce.up.wholeSymbol, options: .nonRepeating) in purple color.
+- Review the below user instructions and recommendations and show me a plan to impliment this. DO not code. 
+- I think this works best as panels that can be swiped through, not links to the web. 
 
+
+clicking button will show a panel with the below instructions - for now until I get a green light for the entire project.
+
+  First things to know:
+    - Do not close Fixer until the upload is complete. A the progress bar tracks upload.  You will get a confirmation message when this is done. 
+    - As soon as the first Metadata chat appears you can slack the people who need this video from Fixers text box. Simply Type: @yourperson or #thischannel and Fixer send the metadata to them.
+    - Once your upload is finished the upload moves to Archive and is held for 7 days.
+    - You can start an additional upload right away.
+    - This app is designed to replicate texting and how you share photos and videos with friends and colleagues. 
+
+    iPhone Media Management:
+
+    - iPhone Optimization: Apple lets you send videos to iCloud to save space and this an automatic process. This can lead to significant upload delays if the video is moved to iCloud, it needs to be downloaded then uploaded. The videos are also compressed with optimization.  
+
+    - iPhone settings allow you to turn this feature off - but it will affect where ALL your media lives. Only do this if your device is for work use and you can prioritize the phone for video/photo purposes.
+
+    - Recommended for speed and quality: 
+        Turn off iPhone Optimization
+        Photo in Cloud to OFF
+        Privacy & Security > Fixer > Current > ON: This setting perserves the orginal video without compression and significantly reduces upload times   
+
+
+  How to use Fixer:
+  - Use the + button, bottom left, to open your photo library. Fixer already filters out photos.
+  - Select your video and click the purple check mark. 
+  - The next window opens the Trim Clip option. This works just like iMovie, iOS clip editing. This is optional.
+  - Choose "Next >>" to Queue the video for upload in the chat.
+  - 
+  - Back in chat you can choose to transcribe (images) your audio. This is optional. 
+  - Click the up arrow to start send the video to the catch server.
+  - You will see a progress bar in your video chat, your video is uploading.
+  - Automatically the slug form panel will pop up, your video is still uploading.
+  - Required: Slug and Description must be filled out and sent. Fixer automatically merges the slug form with the video metadata. 
+  - Do NOT CLOSE FIXER - the upload will stop.
+
+  - What is happening:
+    - Fixer reads the metadata off the video then automatically adds it to the slug form. 
+    - GPS Data,File Type, Size, Length, Uploader(You) and Transcription, if selected, are parsed and saved
+    - The server sends you the Metadata plus Mediasource Number and clip link.
+    - The video is viewable when both upload and processing complete.
+    - The server sends a message confirming it has the clip and it is ready.
+
+- Archive - 
+  Your completed and unfinishd uploads are held here for 7 days. 
+  Here you can find the metadata and the link to your video on the web.
+  Share video details directly to slack.
+  If your slug form was not completed you finish it here and Fixer will update the server.
+
+
+
+
+
+- Profile - 
+
+- "I have an issue" - Human to contact - [EMAIL_ADDRESS]
 - Add to Profile page link button to the web url. 
 - "Privacy Policy - Data Policy" - link to privacy policy page
 - "Terms of Use" - link to terms of use page
-- 
+
+... 
+
+*** Task ***. done 
+- Review the Theme.swift app wide including replacement of system apps. 
+- Reduce the number of Font Sizes to 5.
+- We need a better plan since there are so many font sizes and weights. 
+- This will also require replacing all instances of font sizes and weights in the app. 
+- All app colors should be defined in Theme.swift, not use system colors. 
+- names of fonts should include their size and weight ie; Theme.font18Medium rather than being defined by their location ie Body, Caption, etc.
+- Since iOS icons are sized by Font Sizes define them similarly ie; Theme.icon18Medium
+- Do not code anything, just show me a plan.  I may not impliment this. But there are too many styles with the Fonts - Weights. 
+- The color sceme should remain the same, for not do not plan any modifications. 
+- I am also looking for places to simplify the styling using static constants. If there are patterns used over and over plan to change those to static constants ie; 
+
+ // Screen gradients
+    static let screenGradient = LinearGradient(
+            colors: [Theme.black, Theme.purple],
+            startPoint: .top,
+            endPoint: .bottom
+            )
+
+- I am open to suggestions. The overall goal is to simplify the styling and make it more consistent and easy to maintain going forward. 
+
+...
+*** Task ***
+- Review the profile view implimentation. The photo library and speech recogniztion toggles cannot be turned off once on. 
+ 
+
+
+... 
+*** Task ***
+- How can this code be improved? 
 
 
 

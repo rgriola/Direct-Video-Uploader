@@ -31,6 +31,7 @@ enum MessageType: String, Codable {
     case slackPost = "SLACK_POST"
     case text = "TEXT"
     case greeting = "GREETING"
+    case systemNote = "SYSTEM_NOTE"
     case muxReady = "MUX_READY"
 }
 

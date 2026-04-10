@@ -27,7 +27,9 @@
 		8CDB0858FD44667AD9882E4D /* VideoBubble.swift in Sources */ = {isa = PBXBuildFile; fileRef = B136E4B9F4C6D88E9009D569 /* VideoBubble.swift */; };
 		94EB8482D6F7158958A03393 /* InputBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF5B8A623A0F5AA9CA07EA1A /* InputBar.swift */; };
 		958C853DDA42C7E81E258AC7 /* DVUDateFormatting.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4DBB133385999B4E09A826F7 /* DVUDateFormatting.swift */; };
+		9F8F876E364EA40959AE53BD /* InstructionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1D2E1E9A55D56991D3BA689 /* InstructionsView.swift */; };
 		A9F088643DC2986469FFC84B /* ContextFormView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3899E53553FC5E50293A8E8 /* ContextFormView.swift */; };
+		B232F6B18466FB01AFDF1784 /* RetryHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CB447F960F2A8A21F7DA5C5 /* RetryHelper.swift */; };
 		B23CA5DB5C7678A863AC8029 /* VideoMetadataExtractor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E996DE4500DDFF0790F62F0 /* VideoMetadataExtractor.swift */; };
 		B4C8A94E9D6FEE5A35C487AF /* KeychainHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2F7D1991BA8E3668878BC47 /* KeychainHelper.swift */; };
 		BB8D6AF27EE9A0B211E28483 /* ArchiveListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7A81292325663F81C4B8772 /* ArchiveListView.swift */; };
@@ -58,6 +60,7 @@
 		66AE6120B342F8FBF6D9F832 /* ChatViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatViewModel.swift; sourceTree = "<group>"; };
 		6F12FE8A5DFBB6A96349CB07 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		744BF6B02789CE656827F003 /* PermissionManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionManager.swift; sourceTree = "<group>"; };
+		7CB447F960F2A8A21F7DA5C5 /* RetryHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RetryHelper.swift; sourceTree = "<group>"; };
 		86A11FF4693D09E9320E8C07 /* AuthService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthService.swift; sourceTree = "<group>"; };
 		894318625F91A1D2462249FE /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		89F6F2F5DBBEE529E69418D7 /* SlackShareSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SlackShareSheet.swift; sourceTree = "<group>"; };
@@ -67,6 +70,7 @@
 		CC18F5FFC74280EFFEB0BE65 /* ChatMessage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatMessage.swift; sourceTree = "<group>"; };
 		CC7AA7D72D102A4BC8F6B464 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		CE10509FD1B4B7983FB58B3D /* DirectVideoUploaderApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DirectVideoUploaderApp.swift; sourceTree = "<group>"; };
+		D1D2E1E9A55D56991D3BA689 /* InstructionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InstructionsView.swift; sourceTree = "<group>"; };
 		D56F342EB8CB3B26EC77BBF3 /* ServerConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerConfig.swift; sourceTree = "<group>"; };
 		DC2A1D0A89F18984A90B5686 /* ConversationSummaryBubble.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationSummaryBubble.swift; sourceTree = "<group>"; };
 		E0F22B2B9DC29CAFA863CDB2 /* TranscriptionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptionService.swift; sourceTree = "<group>"; };
@@ -77,7 +81,7 @@
 		EA58877C26F0C09FF7DFA4DC /* VideoUploadService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoUploadService.swift; sourceTree = "<group>"; };
 		EF5B8A623A0F5AA9CA07EA1A /* InputBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InputBar.swift; sourceTree = "<group>"; };
 		F1FF094BA3F6CC3D1003E121 /* ChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatView.swift; sourceTree = "<group>"; };
-		FF11D8E240B8AF1F2DFFB68B /* DirectVideoUploader.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = DirectVideoUploader.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		FF11D8E240B8AF1F2DFFB68B /* DirectVideoUploader.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = DirectVideoUploader.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -120,6 +124,7 @@
 				F34A4940F605231E72129F84 /* Auth */,
 				89B922455649C70F78D23028 /* Chat */,
 				36AD0FAEFD3DEAE8F57B1CB7 /* Form */,
+				7869A23886AB259C8BBBFDEA /* Instructions */,
 				4645EEF77AF53324AC731A37 /* Metadata */,
 				FD22C6F0B31FA0D605B0D898 /* Profile */,
 			);
@@ -148,6 +153,22 @@
 				FF11D8E240B8AF1F2DFFB68B /* DirectVideoUploader.app */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		78541B4B4D21D14231E05745 /* Utilities */ = {
+			isa = PBXGroup;
+			children = (
+				7CB447F960F2A8A21F7DA5C5 /* RetryHelper.swift */,
+			);
+			path = Utilities;
+			sourceTree = "<group>";
+		};
+		7869A23886AB259C8BBBFDEA /* Instructions */ = {
+			isa = PBXGroup;
+			children = (
+				D1D2E1E9A55D56991D3BA689 /* InstructionsView.swift */,
+			);
+			path = Instructions;
 			sourceTree = "<group>";
 		};
 		89B922455649C70F78D23028 /* Chat */ = {
@@ -197,6 +218,7 @@
 				B271A0A7D1005CC7E2294E11 /* App */,
 				B9C0D7A8255BA17FD25E5EBF /* Models */,
 				263B14748A595B60BB0C3D18 /* Services */,
+				78541B4B4D21D14231E05745 /* Utilities */,
 				357C9C93C3B9F07720823BE1 /* Views */,
 			);
 			path = DirectVideoUploader;
@@ -304,12 +326,14 @@
 				958C853DDA42C7E81E258AC7 /* DVUDateFormatting.swift in Sources */,
 				8479D08EF2DC76BFF0C2BDCF /* DirectVideoUploaderApp.swift in Sources */,
 				94EB8482D6F7158958A03393 /* InputBar.swift in Sources */,
+				9F8F876E364EA40959AE53BD /* InstructionsView.swift in Sources */,
 				B4C8A94E9D6FEE5A35C487AF /* KeychainHelper.swift in Sources */,
 				2F5EB0FE2B5962DCCF6BCD5B /* LoginView.swift in Sources */,
 				E6DDF3D43DC556C9E5C75AAF /* MessageBubble.swift in Sources */,
 				37912629DFC4719F11FEB3F5 /* MetadataView.swift in Sources */,
 				52DEC1E47DF5649ABBBC6F20 /* PermissionManager.swift in Sources */,
 				C43AFC93CF4984D2A3C2DA9A /* ProfileView.swift in Sources */,
+				B232F6B18466FB01AFDF1784 /* RetryHelper.swift in Sources */,
 				889C07C34F8BFC90EF7CB2CE /* ServerConfig.swift in Sources */,
 				87ACFBE05C9BBA14AF4A07E1 /* SlackShareSheet.swift in Sources */,
 				CC1C0E76EF9FE58674443EC5 /* Theme.swift in Sources */,
@@ -402,7 +426,6 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = DirectVideoUploader/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Fixer;
-				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSCameraUsageDescription = "Record video to upload to the newsroom server.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Attach GPS coordinates to your video upload.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Required by the speech recognition framework for audio processing.";
@@ -411,6 +434,7 @@
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_BackgroundColor = LaunchBg;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UILaunchScreen_ImageName = launchscreen;
 				INFOPLIST_KEY_UILaunchScreen_ImageRespectsSafeAreaInsets = NO;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
@@ -433,7 +457,6 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = DirectVideoUploader/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Fixer;
-				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSCameraUsageDescription = "Record video to upload to the newsroom server.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Attach GPS coordinates to your video upload.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Required by the speech recognition framework for audio processing.";
@@ -442,6 +465,7 @@
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_BackgroundColor = LaunchBg;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UILaunchScreen_ImageName = launchscreen;
 				INFOPLIST_KEY_UILaunchScreen_ImageRespectsSafeAreaInsets = NO;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;

@@ -39,12 +39,9 @@ final class PermissionManager {
             // First time — iOS will show the system dialog
             let newStatus = await PHPhotoLibrary.requestAuthorization(for: .readWrite)
             photoLibraryStatus = newStatus
-        case .denied, .restricted:
-            // Already denied — redirect to Settings
-            openAppSettings()
         default:
-            // Already authorized or limited — just refresh
-            photoLibraryStatus = current
+            // Already granted, denied, or restricted — open Settings to change
+            openAppSettings()
         }
     }
 
@@ -63,10 +60,9 @@ final class PermissionManager {
                 }
             }
             speechStatus = granted
-        case .denied, .restricted:
-            openAppSettings()
         default:
-            speechStatus = current
+            // Already granted, denied, or restricted — open Settings to change
+            openAppSettings()
         }
     }
 

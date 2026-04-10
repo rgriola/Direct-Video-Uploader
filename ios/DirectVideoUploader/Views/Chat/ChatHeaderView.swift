@@ -4,6 +4,7 @@ import SwiftUI
 struct ChatHeaderView: View {
     let userName: String
     let connectionState: WebSocketService.ConnectionState
+    var onTapInstructions: (() -> Void)?
     
     private var statusColor: Color {
         switch connectionState {
@@ -52,6 +53,22 @@ struct ChatHeaderView: View {
                 }
                 
                 Spacer()
+                
+                // Instructions button
+                if let onTap = onTapInstructions {
+                    Button(action: onTap) {
+                        if #available(iOS 18.0, *) {
+                            Image(systemName: "service.dog")
+                                .font(Theme.icon20)
+                                .foregroundStyle(Theme.purple)
+                                .symbolEffect(.bounce.up.wholeSymbol, options: .nonRepeating)
+                        } else {
+                            Image(systemName: "service.dog")
+                                .font(Theme.icon20)
+                                .foregroundStyle(Theme.purple)
+                        }
+                    }
+                }
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)

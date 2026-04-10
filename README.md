@@ -44,7 +44,8 @@ Direct-Video-Uploader/
 │       ├── App/            # Entry point, Theme.swift, DVUDateFormatting.swift
 │       ├── Models/         # User, Asset, ChatMessage, ServerConfig
 │       ├── Services/       # Auth, ChatViewModel, WebSocket, VideoUpload, Transcription, PermissionManager
-│       └── Views/          # Auth, Chat, Form, Metadata, Archive, Profile
+│       ├── Utilities/      # RetryHelper
+│       └── Views/          # Auth, Chat, Form, Metadata, Archive, Profile, Instructions
 ├── server/                 # Node.js backend (Fastify + Socket.IO + Prisma)
 │   ├── prisma/schema.prisma
 │   └── src/
@@ -120,7 +121,7 @@ cd ios && xcodegen generate
 | --------------------- | ---------------------------------------------------------------------- |
 | `npm run dev`         | **Triad launcher** — DB + Server `:3000` + Admin `:5173` (recommended) |
 | `npm run dev:admin`   | Starts Vite dev server only on `:5173`                                 |
-| `npm run build:admin` | Production build of React admin → `server/public/`                     |
+| `npm run build:admin` | Production build of React admin → `server/public/` (Vite only, fast)   |
 | `npm run server`      | Starts Fastify server only                                             |
 | `npm run setup`       | Fresh setup: install deps, push schema, generate client, seed          |
 
@@ -156,6 +157,8 @@ cd ios && xcodegen generate
 - **Apple Speech** — On-device transcription with newsroom vocabulary, per-word timestamps
 - **Archive** — 7-day history with status dots, thumbnails, re-upload, form submission
 - **Profile** — User info, Photo Library + Speech Recognition permission toggles with live status, app info
+- **In-app instructions** — 4-page swipeable guide with first-launch auto-show
+- **Server greetings** — 40+ randomized greeting combos with feature tips, no consecutive repeats
 - **Admin dashboard** — Stats, user management, asset list, nuclear reset, error logs
 
 ---
@@ -209,6 +212,7 @@ Custom domain: `ms-fixer.com` · Managed PostgreSQL · No cold starts (paid tier
 | `PROJECT_STATUS.md`          | Detailed progress log — every session documented   |
 | `STABILITY_PLAN.md`          | Security + reliability hardening (Phases A–C)      |
 | `STYLE_CENTRALIZATION_PLAN.md`| iOS Theme.swift centralization guide               |
+| `ios/STYLING_GUIDE.md`       | Portable iOS styling reference for agents          |
 | `TESTING_PLAN.md`            | Testing approach + 1000-user target                |
 | `TODO.md`                    | 25-issue security/perf audit tracker               |
 | `SERVER_URL_PATTERN.md`      | iOS ServerConfig URL construction patterns         |

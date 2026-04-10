@@ -7,16 +7,69 @@ import prisma from '../lib/prisma.js';
 import * as slack from '../lib/slack.js';
 import { PUBLIC_URL } from '../lib/config.js';
 
+/** Greeting templates — `{time}` is replaced with time-of-day, `{name}` with first name. */
+const GREETINGS = [
+    `🙋‍♂️ {time} {name}! I am ready for your video.`,
+    `📹 {time} {name}! Let's get your footage uploaded.`,
+    `👋 {time} {name}! Drop a video and I'll handle the rest.`,
+    `🎬 {time} {name}! We are up to speed, rack and roll.`,
+    `⚡ {time} {name}! Time to make great TV!`,
+    `🚀 {time} {name}! Upload away, I've got you covered.`,
+    `🎥 {time} {name}! Videos dont'upload themselves.`,
+    `✌️ {time} {name}! Standing by for your next masterpiece.`,
+    `📡 {time} {name}! Signal is 5 x 5 — send it over.`,
+    `🔥 {time} {name}! To grow audience just add content.`,
+];
+
+/** Track last index so we never repeat the same greeting consecutively. */
+let lastGreetingIndex = -1;
+
 /** Return a time-of-day greeting personalised with the user's first name. */
 function getGreeting(name) {
     const hour = new Date().getHours();
-    let timeOfDay;
-    if (hour < 12) timeOfDay = 'Good Morning';
-    else if (hour < 17) timeOfDay = 'Good Afternoon';
-    else timeOfDay = 'Good Evening';
-    return `🙋‍♂️ ${timeOfDay} ${name}! I am ready for your video.`;
+    const timeOptions = [
+        [12, ['Good Morning', 'Rise and shine', 'Top of the morning', 'Morning', 'Suuup.']],
+        [19, ['Good Afternoon', 'Hey there', 'Afternoon', 'What\'s good']],
+        [24, ['Good Evening', 'Evening', 'Hey night owl', 'Burning the midnight oil']],
+    ].find(([h]) => hour < h)[1];
+    const timeOfDay = timeOptions[Math.floor(Math.random() * timeOptions.length)];
+
+    // Pick a random greeting that isn't the same as last time
+    let index;
+    do {
+        index = Math.floor(Math.random() * GREETINGS.length);
+    } while (index === lastGreetingIndex);
+    lastGreetingIndex = index;
+
+    return GREETINGS[index].replace('{time}', timeOfDay).replace('{name}', name);
 }
 
+/** Feature tips — shown as a second bubble after the greeting. */
+const TIPS = [
+    `💡 Tap the ＋ button to choose your video.`,
+    `💡 Once uploaded, type @name or #channel to Slack your video.`,
+    `💡 The 🐕‍🦺 icon on the top right will she you how Fixer works.`,
+    `💡 I will archive your video when its finished.`,
+    `💡 You can start a new upload as soon as the current one finishes.`,
+    `💡 Use the transcribe toggle to create a transcript.`,
+    `💡 Keep Fixer until the progress bar is 100%`,
+    `💡 I'll send your metadata once I read the video file.`,
+    `💡 Don't skip the slug form, Fixer can just fix so much.`,
+    `💡 Permissions are in your profile. So is logout but I don't want you to go.`,
+];
+
+/** Track last tip index so we never repeat consecutively. */
+let lastTipIndex = -1;
+
+/** Return a random feature tip, never the same as last time. */
+function getTip() {
+    let index;
+    do {
+        index = Math.floor(Math.random() * TIPS.length);
+    } while (index === lastTipIndex);
+    lastTipIndex = index;
+    return TIPS[index];
+}
 /**
  * Handle a Slack command — parse #channels and @mentions, post via Slack API,
  * persist to DB, and send confirmation/error bubble back to iOS.
@@ -95,7 +148,7 @@ async function handleSlackCommand(socket, userId, assetId, channels, mentions, o
             assetId: null,
             direction: 'INCOMING',
             messageType: 'TEXT',
-            content: { text: 'Upload a video first and I can grab the metadata so you can Slack it. Previous uploads are in your Archive — you can Slack from there.' },
+            content: { text: 'You can slack your team after your first video of the day. Check the archive for previous uploads.' },
             createdAt: now,
         });
         return;
@@ -262,6 +315,19 @@ export function setupWebSocket(io, fastify) {
                     content: { text: greetingText },
                     createdAt: new Date().toISOString(),
                 });
+
+                // Send a feature tip as a second bubble after a short delay
+                setTimeout(() => {
+                    socket.emit('message:new', {
+                        id: crypto.randomUUID(),
+                        userId: null,
+                        assetId: null,
+                        direction: 'INCOMING',
+                        messageType: 'SYSTEM_NOTE',
+                        content: { text: getTip() },
+                        createdAt: new Date().toISOString(),
+                    });
+                }, 500);
             } else {
                 console.log(`↩️ Reconnect for ${socket.userName} — skipping greeting`);
             }
@@ -356,7 +422,8 @@ export function setupWebSocket(io, fastify) {
                     entry.timer = setTimeout(async () => {
                         pendingReplies.delete(userId);
 
-                        const replyText = `📱 Hey ${socket.userName}, I can't text just yet — send me your videos! Tap the ＋ button to pick a video from your camera roll.`;
+                        const replyText =
+                            `📱 Hey ${socket.userName}, I can't text just yet — send me your videos! Tap the ＋ button to pick a video from your camera roll.`;
                         const now = new Date().toISOString();
 
                         // Auto-reply is ephemeral — not persisted (Option B)

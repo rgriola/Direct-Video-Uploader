@@ -216,8 +216,8 @@ struct ProfileView: View {
                 .padding(.vertical, 5)
                 .background(Theme.white.opacity(0.08), in: Capsule())
 
-                // Chevron — if denied, hint that it opens Settings
-                if isDenied {
+                // Chevron — hint that tapping opens Settings (unless not yet asked)
+                if isGranted || isDenied {
                     Image(systemName: "arrow.up.forward.app")
                         .font(Theme.icon13)
                         .foregroundStyle(Theme.white.opacity(0.3))

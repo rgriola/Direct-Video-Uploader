@@ -3,6 +3,29 @@
 > **App Name:** Fixer — use this name in all user-facing UI (titles, headers, alerts, about screens).
 > Auto-loaded by GitHub Copilot. Keep concise — every line here costs context on every prompt.
 
+- DO NOT CHANGE THE info.plist or project.yml WITHOUT MY APPROVAL. THE BELOW CODE MUST STAY.
+
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsArbitraryLoads</key>
+		<true/>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
+	<key>UILaunchScreen</key>
+	<dict>
+		<key>UIColorName</key>
+		<string>LaunchBg</string>
+		<key>UIImageName</key>
+		<string>launchscreen</string>
+	</dict>
+</dict>
+</plist>
+
 ---
 
 ## Dev Server Startup

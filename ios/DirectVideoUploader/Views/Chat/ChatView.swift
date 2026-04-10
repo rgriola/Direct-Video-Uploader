@@ -7,6 +7,8 @@ struct ChatView: View {
     
     @State private var viewModel: ChatViewModel?
     @State private var showVideoLibrary = false
+    @State private var showInstructions = false
+    @AppStorage("hasSeenInstructions") private var hasSeenInstructions = false
     
     var body: some View {
         ZStack {
@@ -16,7 +18,8 @@ struct ChatView: View {
                 // Header
                 ChatHeaderView(
                     userName: "Fixer",
-                    connectionState: ws.state
+                    connectionState: ws.state,
+                    onTapInstructions: { showInstructions = true }
                 )
                 
                 // Messages
@@ -27,32 +30,32 @@ struct ChatView: View {
                                 ForEach(vm.messages) { message in
                                     // Outgoing video → show sent upload card with thumbnail
                                     if message.messageType == .video && message.isOutgoing,
-                                       vm.sentUploadThumbnails[message.id] != nil || vm.sentUploadFileNames[message.id] != nil {
+                                       let info = vm.sentUploads[message.id] {
                                         VideoBubble(
                                             phase: vm.isUploading ? .uploading : .sent,
-                                            thumbnail: vm.sentUploadThumbnails[message.id],
-                                            fileName: vm.sentUploadFileNames[message.id] ?? message.content.fileName ?? "Video",
-                                            createdDate: vm.sentUploadDates[message.id],
-                                            hasLocation: vm.sentUploadHasLocation[message.id] ?? false,
+                                            thumbnail: info.thumbnail,
+                                            fileName: info.fileName,
+                                            createdDate: info.createdDate,
+                                            hasLocation: info.hasLocation,
                                             uploadProgress: vm.uploadProgress
                                         )
                                         .id(message.id)
                                     } else if message.messageType == .muxReady {
                                         // Archive summary card
                                         ConversationSummaryBubble(
-                                            mediasourceId: vm.archivedMediasourceId,
-                                            formType: vm.archivedFormType,
-                                            formDescription: vm.archivedFormDescription,
-                                            formPriority: vm.archivedFormPriority,
-                                            duration: vm.archivedDuration,
-                                            resolution: vm.archivedResolution,
-                                            fileSize: vm.archivedFileSize
+                                            mediasourceId: vm.archive.mediasourceId,
+                                            formType: vm.archive.formType,
+                                            formDescription: vm.archive.formDescription,
+                                            formPriority: vm.archive.formPriority,
+                                            duration: vm.archive.duration,
+                                            resolution: vm.archive.resolution,
+                                            fileSize: vm.archive.fileSize
                                         )
                                         .id(message.id)
                                     } else {
                                         MessageBubble(
                                             message: message,
-                                            thumbnail: message.messageType == .slackPost ? (vm.slackThumbnails[message.id] ?? vm.formThumbnail) : nil,
+                                            thumbnail: message.messageType == .slackPost ? (vm.slackThumbnails[message.id] ?? vm.form.thumbnail) : nil,
                                             onTapMetadata: (message.messageType == .formRequest || message.messageType == .confirmation) ? { vm.showMetadata() } : nil,
                                             onTapForm: message.messageType == .formRequest ? { vm.showFormSheet = true } : nil
                                         )
@@ -126,14 +129,14 @@ struct ChatView: View {
             if let vm = viewModel, let assetId = vm.currentAssetId {
                 ContextFormView(
                     fields: vm.formFields,
-                    originalFileName: vm.formOriginalFileName,
-                    capturedAt: vm.formCapturedAt,
-                    clipCount: vm.formClipCount,
-                    duration: vm.formDuration,
-                    thumbnail: vm.formThumbnail,
-                    submitError: vm.formSubmitError,
+                    originalFileName: vm.form.originalFileName,
+                    capturedAt: vm.form.capturedAt,
+                    clipCount: vm.form.clipCount,
+                    duration: vm.form.duration,
+                    thumbnail: vm.form.thumbnail,
+                    submitError: vm.form.submitError,
                     onSubmit: { formData in
-                        vm.formSubmitError = nil  // Clear previous error
+                        vm.form.submitError = nil  // Clear previous error
                         Task { await vm.submitForm(assetId: assetId, formData: formData) }
                     },
                     onCancel: {
@@ -147,7 +150,7 @@ struct ChatView: View {
             set: { viewModel?.showMetadataSheet = $0 }
         )) {
             if let vm = viewModel, let clip = vm.lastClip {
-                MetadataView(clip: clip, asset: vm.lastAsset, thumbnail: vm.formThumbnail)
+                MetadataView(clip: clip, asset: vm.lastAsset, thumbnail: vm.form.thumbnail)
             }
         }
         .sheet(isPresented: Binding(
@@ -156,8 +159,8 @@ struct ChatView: View {
         )) {
             if let vm = viewModel {
                 SlackShareSheet(
-                    mediasourceId: vm.archivedMediasourceId,
-                    originalFileName: vm.archivedOriginalFileName,
+                    mediasourceId: vm.archive.mediasourceId,
+                    originalFileName: vm.archive.originalFileName,
                     onSend: { text in vm.shareToSlack(text: text) },
                     onDismiss: { vm.showSlackShareSheet = false }
                 )
@@ -169,6 +172,14 @@ struct ChatView: View {
             let vm = ChatViewModel(auth: auth, ws: ws)
             viewModel = vm
             vm.connectWebSocket()
+            // Show instructions on first launch
+            if !hasSeenInstructions {
+                showInstructions = true
+                hasSeenInstructions = true
+            }
+        }
+        .sheet(isPresented: $showInstructions) {
+            InstructionsView()
         }
     }
     

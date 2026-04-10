@@ -1,7 +1,7 @@
 # Direct Video Uploader — Project Status
 
 > **Last Updated:** April 10, 2026 · EST
-> **Current Phase:** Phase 3 (Render + Cloud + Mux) — Mux pipeline fully operational + Stability A–C + Upload + Re-upload + Archive + Admin tools + Transcription + UX polish + Admin refactor + Security hardening + Clip Viewer + Permissions Profile
+> **Current Phase:** Phase 3 (Render + Cloud + Mux) — Mux pipeline fully operational + Stability A–C + Upload + Re-upload + Archive + Admin tools + Transcription + UX polish + Admin refactor + Security hardening + Clip Viewer + Permissions Profile + ChatViewModel refactor
 > **Overall Progress:** ████████████████████ 100% (Phase 2) · Phase 3 ~99%
 
 ---
@@ -10,7 +10,7 @@
 
 The **Direct Video Uploader** is a mobile-first video upload platform disguised as a text conversation. Field crew members "text" videos to the **Mediasource Fixer** server, which processes them the way a news assignment desk operates — fast, structured, and integrated with Slack.
 
-We've completed the **interactive chat demo** (HTML prototype), **project specification** (v4), the **Phase 1 server foundation** (Node.js API, WebSocket, PostgreSQL, auth, admin dashboard), the **Phase 2 — iOS Demo App** core flow (login → chat → video upload → form → confirmation → archive), and the **Web Clip Viewer** (server-rendered at `/clips/:slug`). Latest session (Apr 10): **iOS Permissions Profile + Info.plist hardening**. `PermissionManager.swift` added as an `@Observable` singleton to manage Photo Library and Speech Recognition permission states. `ProfileView.swift` rebuilt from scratch with user info card, live permission toggles (green/amber/red/gray status dots), app info section, and logout. `Info.plist` hardened with `ITSAppUsesNonExemptEncryption: false` (skips App Store export compliance) and `UILaunchScreen` dict. Agent instructions (`copilot-instructions.md`) reviewed and updated with 6 stale fixes + 4 new rules.
+We've completed the **interactive chat demo** (HTML prototype), **project specification** (v4), the **Phase 1 server foundation** (Node.js API, WebSocket, PostgreSQL, auth, admin dashboard), the **Phase 2 — iOS Demo App** core flow (login → chat → video upload → form → confirmation → archive), and the **Web Clip Viewer** (server-rendered at `/clips/:slug`). Latest session (Apr 10, PM): **ChatViewModel refactor + Greeting system**. Major code quality improvements: state consolidation (30+ loose properties → `ArchiveState`/`FormContext` structs), 4 parallel dictionaries merged into `SentUploadInfo`, `confirmStagedUpload()` monolith broken into 5 focused methods, reusable `RetryHelper.swift` extracted, upload cancellation added, dead code removed. Server greeting revamped with 10 randomized templates × 4 time-of-day variants (40 combos), no consecutive repeats, plus a feature-tip second bubble. Permission toggles fixed to open Settings.app when already granted. Admin build optimized by removing blocking `tsc` from build script.
 
 ---
 
@@ -669,6 +669,13 @@ Direct-Video-Uploader/
 | Apr 10 | ProfileView rebuild                  | Minimal logout-only view replaced with user info + permission toggles + app info. Status dots reflect live OS state; refresh on foreground return catches Settings changes. |
 | Apr 10 | ITSAppUsesNonExemptEncryption        | Must be `false` in both `Info.plist` and `project.yml info.properties`. Skips Apple export compliance questionnaire — app uses no non-exempt encryption.                  |
 | Apr 10 | UIDevice await removal               | `UIDevice.current.model/.systemVersion` no longer require `await` in current Swift 6 SDK. Compiler warnings removed.                                                      |
+| Apr 10 | ChatViewModel state consolidation    | 30+ loose properties → `ArchiveState`, `FormContext` structs. `startNewConversation()` reset reduced from 15 nils to 2 struct resets.                                       |
+| Apr 10 | SentUploadInfo struct                | 4 parallel dictionaries (`sentUploadThumbnails`, `sentUploadFileNames`, etc.) merged into single `[String: SentUploadInfo]`. Impossible to get out of sync.                  |
+| Apr 10 | RetryHelper.swift                    | Generic `withRetry(attempts:delay:)` extracted from inline 77-line retry loop in `createAsset()`. `@MainActor` for Swift 6 Sendable compliance.                              |
+| Apr 10 | .systemNote message type             | New `SYSTEM_NOTE` type for informational bubbles (form-skip, tips). Fixes `.greeting` overload that was used for 3 unrelated purposes.                                       |
+| Apr 10 | Upload cancellation                  | `cancelUpload()` added with `Task` handle + `Task.isCancelled` check between upload and transcription steps.                                                                  |
+| Apr 10 | Server greeting system               | 10 greeting templates × 4 time-of-day variants (40 combos) with no-consecutive-repeat logic. Feature-tip second bubble sent 500ms after greeting.                             |
+| Apr 10 | Admin build optimization             | `npm run build` now runs Vite only (5s). `npm run build:check` does tsc+Vite (95s). `tsc` was bottlenecked by 92% full disk.                                                  |
 
 ---
 
