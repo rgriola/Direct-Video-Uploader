@@ -48,7 +48,7 @@ function getGreeting(name) {
 const TIPS = [
     `💡 Tap the ＋ button to choose your video.`,
     `💡 Once uploaded, type @name or #channel to Slack your video.`,
-    `💡 The 🐕‍🦺 icon on the top right will she you how Fixer works.`,
+    `💡 The 🐕‍🦺 icon on the top right shows how Fixer works.`,
     `💡 I will archive your video when its finished.`,
     `💡 You can start a new upload as soon as the current one finishes.`,
     `💡 Use the transcribe toggle to create a transcript.`,
