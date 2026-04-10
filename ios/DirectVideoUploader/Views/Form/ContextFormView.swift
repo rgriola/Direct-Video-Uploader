@@ -70,15 +70,15 @@ struct ContextFormView: View {
                                     .resizable()
                                     .aspectRatio(contentMode: .fill)
                                     .frame(width: 80, height: 60)
-                                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                                    .clipShape(RoundedRectangle(cornerRadius: Theme.radiusSm))
                             } else {
-                                RoundedRectangle(cornerRadius: 8)
-                                    .fill(Color.white.opacity(0.08))
+                                RoundedRectangle(cornerRadius: Theme.radiusSm)
+                                    .fill(Theme.glassOverlay)
                                     .frame(width: 80, height: 60)
                                     .overlay {
                                         Image(systemName: "video.fill")
-                                            .font(Theme.titleFont)
-                                            .foregroundStyle(.white.opacity(0.3))
+                                            .font(Theme.font20Bold)
+                                            .foregroundStyle(Theme.white.opacity(0.3))
                                     }
                             }
                             
@@ -87,36 +87,36 @@ struct ContextFormView: View {
                                 HStack(spacing: 4) {
                                     let clips = clipCount ?? 1
                                     Text("\(clips) Clip")
-                                        .font(Theme.formClipFont)
-                                        .foregroundStyle(.white)
+                                        .font(Theme.font16Semibold)
+                                        .foregroundStyle(Theme.white)
                                     if let dur = duration, dur > 0 {
                                         Text("· \(DVUDateFormatting.duration(dur))")
-                                            .font(Theme.formClipFont)
-                                            .foregroundStyle(.white)
+                                            .font(Theme.font16Semibold)
+                                            .foregroundStyle(Theme.white)
                                     }
                                 }
                                 
                                 // Original filename
                                 if let name = originalFileName {
                                     Text(name)
-                                        .font(Theme.headerStatusFont)
-                                        .foregroundStyle(.white.opacity(0.5))
+                                        .font(Theme.font11Regular)
+                                        .foregroundStyle(Theme.white.opacity(0.5))
                                         .lineLimit(1)
                                 }
                                 
                                 // Captured date
                                 if let dateStr = capturedAt {
                                     Text("🕐 \(DVUDateFormatting.longDate(dateStr))")
-                                        .font(Theme.headerStatusFont)
-                                        .foregroundStyle(.white.opacity(0.4))
+                                        .font(Theme.font11Regular)
+                                        .foregroundStyle(Theme.white.opacity(0.4))
                                 }
                             }
                             
                             Spacer()
                         }
                         .padding(14)
-                        .background(Color.white.opacity(0.05))
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                        .background(Theme.glassOverlay)
+                        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusMd))
                         
                         // Editable fields
                         VStack(spacing: 16) {
@@ -126,16 +126,16 @@ struct ContextFormView: View {
                                     get: { formValues["slug"] ?? "" },
                                     set: { formValues["slug"] = sanitize($0) }
                                 ))
-                                .font(Theme.formFieldFont)
-                                .foregroundStyle(.white)
-                                .padding(.horizontal, 16)
+                                .font(Theme.font16Regular)
+                                .foregroundStyle(Theme.white)
+                                .padding(.horizontal, Theme.space16)
                                 .padding(.vertical, 14)
-                                .background(Color.white.opacity(0.08))
-                                .clipShape(RoundedRectangle(cornerRadius: 12))
+                                .background(Theme.glassOverlay)
+                                .clipShape(RoundedRectangle(cornerRadius: Theme.radiusMd))
                                 .overlay(
-                                    RoundedRectangle(cornerRadius: 12)
+                                    RoundedRectangle(cornerRadius: Theme.radiusMd)
                                         .strokeBorder(
-                                            hasAttemptedSubmit && !isSlugValid ? Color.red : Color.clear,
+                                            hasAttemptedSubmit && !isSlugValid ? Theme.red : Color.clear,
                                             lineWidth: 1.5
                                         )
                                 )
@@ -150,17 +150,17 @@ struct ContextFormView: View {
                                 } label: {
                                     HStack {
                                         Text(formValues["type"] ?? "Raw")
-                                            .font(Theme.formFieldFont)
-                                            .foregroundStyle(.white)
+                                            .font(Theme.font16Regular)
+                                            .foregroundStyle(Theme.white)
                                         Spacer()
                                         Image(systemName: "chevron.down")
-                                            .font(Theme.iconSmallFont)
-                                            .foregroundStyle(.white.opacity(0.4))
+                                            .font(Theme.icon13)
+                                            .foregroundStyle(Theme.white.opacity(0.4))
                                     }
-                                    .padding(.horizontal, 16)
+                                    .padding(.horizontal, Theme.space16)
                                     .padding(.vertical, 14)
-                                    .background(Color.white.opacity(0.08))
-                                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                                    .background(Theme.glassOverlay)
+                                    .clipShape(RoundedRectangle(cornerRadius: Theme.radiusMd))
                                 }
                             }
                             
@@ -170,17 +170,17 @@ struct ContextFormView: View {
                                     get: { formValues["description"] ?? "" },
                                     set: { formValues["description"] = sanitizeDescription($0) }
                                 ))
-                                .font(Theme.formFieldFont)
-                                .foregroundStyle(.white)
+                                .font(Theme.font16Regular)
+                                .foregroundStyle(Theme.white)
                                 .scrollContentBackground(.hidden)
                                 .frame(minHeight: 80)
-                                .padding(12)
-                                .background(Color.white.opacity(0.08))
-                                .clipShape(RoundedRectangle(cornerRadius: 12))
+                                .padding(Theme.space12)
+                                .background(Theme.glassOverlay)
+                                .clipShape(RoundedRectangle(cornerRadius: Theme.radiusMd))
                                 .overlay(
-                                    RoundedRectangle(cornerRadius: 12)
+                                    RoundedRectangle(cornerRadius: Theme.radiusMd)
                                         .strokeBorder(
-                                            hasAttemptedSubmit && !isDescriptionValid ? Color.red : Color.clear,
+                                            hasAttemptedSubmit && !isDescriptionValid ? Theme.red : Color.clear,
                                             lineWidth: 1.5
                                         )
                                 )
@@ -197,22 +197,22 @@ struct ContextFormView: View {
                                             formValues["priority"] = fullName
                                         } label: {
                                             Text(level)
-                                                .font(Theme.formPriorityFont.weight(isSelected ? .semibold : .regular))
+                                                .font(Theme.font13Regular.weight(isSelected ? .semibold : .regular))
                                                 .frame(maxWidth: .infinity)
                                                 .padding(.vertical, 10)
                                                 .background(
                                                     isSelected
                                                         ? Theme.blue.opacity(0.25)
-                                                        : Color.white.opacity(0.06)
+                                                        : Theme.white.opacity(0.06)
                                                 )
                                                 .foregroundStyle(
                                                     isSelected
                                                         ? Theme.blue
-                                                        : .white.opacity(0.5)
+                                                        : Theme.white.opacity(0.5)
                                                 )
-                                                .clipShape(RoundedRectangle(cornerRadius: 10))
+                                                .clipShape(RoundedRectangle(cornerRadius: Theme.radiusMd))
                                                 .overlay(
-                                                    RoundedRectangle(cornerRadius: 10)
+                                                    RoundedRectangle(cornerRadius: Theme.radiusMd)
                                                         .strokeBorder(
                                                             isSelected ? Theme.blue : Color.clear,
                                                             lineWidth: 1.5
@@ -230,13 +230,13 @@ struct ContextFormView: View {
                                 Image(systemName: "exclamationmark.triangle.fill")
                                     .foregroundStyle(Theme.red)
                                 Text(error)
-                                    .font(Theme.formErrorFont)
-                                    .foregroundStyle(.white)
+                                    .font(Theme.font13Regular)
+                                    .foregroundStyle(Theme.white)
                             }
-                            .padding(12)
+                            .padding(Theme.space12)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .background(Theme.red.opacity(0.15))
-                            .clipShape(RoundedRectangle(cornerRadius: 10))
+                            .clipShape(RoundedRectangle(cornerRadius: Theme.radiusMd))
                         }
                         
                         // Send button — disabled when required fields are empty
@@ -247,15 +247,15 @@ struct ContextFormView: View {
                         } label: {
                             HStack(spacing: 6) {
                                 Text("Send")
-                                    .font(Theme.loginButtonFont)
+                                    .font(Theme.font16Semibold)
                                 Image(systemName: "paperplane.fill")
-                                    .font(Theme.iconFont)
+                                    .font(Theme.icon13)
                             }
                             .frame(maxWidth: .infinity)
-                            .padding(.vertical, 16)
+                            .padding(.vertical, Theme.space16)
                             .background(canSubmit ? Theme.blue : Theme.blue.opacity(0.35))
-                            .foregroundStyle(.white)
-                            .clipShape(RoundedRectangle(cornerRadius: 14))
+                            .foregroundStyle(Theme.white)
+                            .clipShape(RoundedRectangle(cornerRadius: Theme.radiusLg))
                         }
                         .padding(.top, 4)
                     }
@@ -275,7 +275,7 @@ struct ContextFormView: View {
                         }
                     } label: {
                         Image(systemName: "xmark")
-                            .foregroundStyle(.white.opacity(0.6))
+                            .foregroundStyle(Theme.white.opacity(0.6))
                     }
                 }
             }
@@ -317,13 +317,13 @@ struct ContextFormView: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 2) {
                 Text(label)
-                    .font(Theme.labelFont)
-                    .foregroundStyle(.white.opacity(0.3))
+                    .font(Theme.font11Semibold)
+                    .foregroundStyle(Theme.white.opacity(0.3))
                     .tracking(0.8)
                 if required {
                     Text("*")
-                        .font(Theme.captionBoldFont)
-                        .foregroundStyle(.red)
+                        .font(Theme.font13Semibold)
+                        .foregroundStyle(Theme.red)
                 }
             }
             content()

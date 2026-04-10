@@ -11,14 +11,14 @@ struct ChatActionButton: View {
         Button(action: action) {
             HStack(spacing: 4) {
                 Image(systemName: icon)
-                    .font(Theme.iconMediumFont)
+                    .font(Theme.icon13)
                 Text(label)
-                    .font(Theme.captionBoldFont)
+                    .font(Theme.font13Semibold)
             }
             .padding(.horizontal, Theme.buttonPaddingH)
             .padding(.vertical, Theme.buttonPaddingV)
             .background(color)
-            .foregroundStyle(.white)
+            .foregroundStyle(Theme.white)
             .clipShape(RoundedRectangle(cornerRadius: Theme.buttonCornerRadius))
         }
     }
@@ -33,9 +33,9 @@ struct ChatBadge: View {
     var body: some View {
         HStack(spacing: 3) {
             Text(symbol)
-                .font(Theme.badgeSymbolFont)
+                .font(Theme.font16Bold)
             Text(text)
-                .font(Theme.badgeFont)
+                .font(Theme.font16Medium)
         }
         .padding(.horizontal, Theme.badgePaddingH)
         .padding(.vertical, Theme.badgePaddingV)

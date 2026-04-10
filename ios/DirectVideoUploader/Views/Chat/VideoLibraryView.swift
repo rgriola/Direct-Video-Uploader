@@ -45,7 +45,7 @@ struct VideoLibraryView: View {
             .navigationTitle("Library")
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(.visible, for: .navigationBar)
-            .toolbarBackground(Theme.darkBg, for: .navigationBar)
+            .toolbarBackground(Theme.black, for: .navigationBar)
             .toolbarColorScheme(.dark, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
@@ -99,7 +99,7 @@ struct VideoLibraryView: View {
                 // Error banner
                 if let error = loadError {
                     Text(error)
-                        .font(.system(size: 13))
+                        .font(Theme.font13Regular)
                         .foregroundStyle(Theme.red)
                         .padding(.horizontal, 16)
                         .padding(.vertical, 8)
@@ -111,19 +111,19 @@ struct VideoLibraryView: View {
                     // Video info
                     if isLoadingMetadata {
                         ProgressView()
-                            .tint(.gray)
+                            .tint(Theme.secondaryText)
                             .scaleEffect(0.8)
                         Text("Loading video...")
-                            .font(.system(size: 14, weight: .medium))
-                            .foregroundStyle(.gray)
+                            .font(Theme.font13Medium)
+                            .foregroundStyle(Theme.secondaryText)
                     } else {
                         Label("video queued", systemImage: "video.fill")
-                            .font(.system(size: 14, weight: .medium))
+                            .font(Theme.font13Medium)
                             .foregroundStyle(Theme.white)
 
                         if loadedMetadata?.gpsLat != nil {
                             Label("GPS", systemImage: "location.fill")
-                                .font(.system(size: 13))
+                                .font(Theme.font13Regular)
                                 .foregroundStyle(Theme.green)
                         }
                     }
@@ -134,12 +134,12 @@ struct VideoLibraryView: View {
                     Button(action: handleConfirm) {
                         if pendingConfirm {
                             ProgressView()
-                                .tint(.white)
+                                .tint(Theme.white)
                                 .scaleEffect(0.8)
                                 .frame(width: 80, height: 36)
                         } else {
                             Image(systemName: "checkmark.circle.fill")
-                                .font(Theme.emptyEmojiFont)
+                                .font(Theme.display64)
                                 .symbolRenderingMode(.palette)
                                 .foregroundStyle(
                                     Theme.white,
@@ -152,7 +152,7 @@ struct VideoLibraryView: View {
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
             }
-            .background(Theme.darkBg)
+            .background(Theme.black)
         }
     }
 

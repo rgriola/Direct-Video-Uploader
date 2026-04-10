@@ -37,7 +37,7 @@ struct ChatHeaderView: View {
                 // Name + status
                 VStack(alignment: .leading, spacing: 2) {
                     Text(userName)
-                        .font(Theme.headerNameFont)
+                        .font(Theme.font16Semibold)
                         .foregroundStyle(Theme.white)
                     
                     HStack(spacing: 4) {
@@ -46,8 +46,8 @@ struct ChatHeaderView: View {
                             .frame(width: Theme.statusDotSize, height: Theme.statusDotSize)
                         
                         Text(statusText)
-                            .font(Theme.headerStatusFont)
-                            .foregroundStyle(.white.opacity(0.6))
+                            .font(Theme.font11Regular)
+                            .foregroundStyle(Theme.white.opacity(0.6))
                     }
                 }
                 
@@ -56,13 +56,13 @@ struct ChatHeaderView: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
             .background(
-                Theme.darkBg
+                Theme.black
                     .opacity(0.94)
             )
             
             // Separator
             Rectangle()
-                .fill(Color.white.opacity(0.1))
+                .fill(Theme.glassBorder)
                 .frame(height: 0.5)
         }
     }

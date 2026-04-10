@@ -21,16 +21,16 @@ struct InputBar: View {
                     onAttach()
                 } label: {
                     Image(systemName: "plus.circle.fill")
-                        .font(Theme.attachButtonFont)
+                        .font(Theme.display32)
                         .symbolRenderingMode(.palette)
-                        .foregroundStyle(Theme.white, Theme.actionBlue)
+                        .foregroundStyle(Theme.white, Theme.purple)
                     }
                 
                 // Text field
                 HStack {
                    
                     TextField("Message", text: $text)
-                        .font(Theme.bodyFont)
+                        .font(Theme.font16Regular)
                         .foregroundStyle(Theme.black)
                         .padding(.horizontal, 12)
                         .focused($isFocused)
@@ -44,18 +44,18 @@ struct InputBar: View {
                             sendMessage()
                             } label: {
                             Image(systemName: "arrow.up.circle.fill")
-                                .font(Theme.sendButtonFont)
+                                .font(Theme.display32)
                                 .symbolRenderingMode(.palette)
                                 .foregroundStyle(
-                                        text.isEmpty ? Theme.actionBlue : Theme.white,
-                                        text.isEmpty ? Theme.white : Theme.actionBlue
+                                        text.isEmpty ? Theme.purple : Theme.white,
+                                        text.isEmpty ? Theme.white : Theme.purple
                                     )
                                 }
                                 .disabled(text.isEmpty)
                         }
                         .padding(.horizontal, 4)
                         .padding(.vertical, 2)
-                        .background(Theme.lightGrayBk)
+                        .background(Theme.lightGray)
                         .clipShape(Capsule())
                 
             }

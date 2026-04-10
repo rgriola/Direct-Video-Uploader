@@ -65,7 +65,7 @@ struct ArchiveRowView: View {
                                 .aspectRatio(contentMode: .fill)
                         } placeholder: {
                             ZStack {
-                                RoundedRectangle(cornerRadius: 8)
+                                RoundedRectangle(cornerRadius: Theme.radiusSm)
                                     .fill(Theme.cardBg)
                                 Image(systemName: "film")
                                     .foregroundStyle(Theme.tertiaryText)
@@ -75,24 +75,24 @@ struct ArchiveRowView: View {
                         .clipShape(RoundedRectangle(cornerRadius: 8))
                     } else {
                         ZStack {
-                            RoundedRectangle(cornerRadius: 8)
+                            RoundedRectangle(cornerRadius: Theme.radiusSm)
                                 .fill(Theme.cardBg)
                                 .frame(width: 50, height: 50)
                             Text("🎬")
-                                .font(Theme.archiveEmojiFont)
+                                .font(Theme.display32)
                         }
                     }
                     
                     // File info
                     VStack(alignment: .leading, spacing: 3) {
                         Text(asset.originalFileName ?? asset.mediasourceId ?? asset.id)
-                            .font(Theme.archiveTitleFont)
-                            .foregroundStyle(.white)
+                            .font(Theme.font16Medium)
+                            .foregroundStyle(Theme.white)
                             .lineLimit(1)
                         
                         HStack(spacing: 6) {
                             Text(asset.mediasourceId ?? asset.id)
-                                .font(Theme.monoValueFont)
+                                .font(Theme.mono13Medium)
                                 .foregroundStyle(Theme.secondaryText)
                                 .lineLimit(1)
                             
@@ -101,33 +101,33 @@ struct ArchiveRowView: View {
                                     .fill(Theme.yellow)
                                     .frame(width: Theme.statusDotSize, height: Theme.statusDotSize)
                                 Text("Needs Details")
-                                    .font(Theme.archiveStatusFont)
+                                    .font(Theme.font11Semibold)
                                     .foregroundStyle(Theme.yellow)
                             } else if asset.status == .error || isStuckProcessing {
                                 Circle()
                                     .fill(Theme.red)
                                     .frame(width: Theme.statusDotSize, height: Theme.statusDotSize)
                                 Text("Upload Failed")
-                                    .font(Theme.archiveStatusFont)
+                                    .font(Theme.font11Semibold)
                                     .foregroundStyle(Theme.red)
                             } else if isReuploadingVideo {
                                 ProgressView()
                                     .scaleEffect(0.6)
                                 Text("Uploading \(Int(reuploadProgress * 100))%")
-                                    .font(Theme.archiveStatusFont)
-                                    .foregroundStyle(Theme.tint)
+                                    .font(Theme.font11Semibold)
+                                    .foregroundStyle(Theme.blue)
                             } else if asset.status == .processing {
                                 ProgressView()
                                     .scaleEffect(0.6)
                                 Text("Processing")
-                                    .font(Theme.archiveStatusFont)
-                                    .foregroundStyle(Theme.tint)
+                                    .font(Theme.font11Semibold)
+                                    .foregroundStyle(Theme.blue)
                             } else {
                                 Circle()
                                     .fill(Theme.green)
                                     .frame(width: Theme.statusDotSize, height: Theme.statusDotSize)
                                 Text("Ready")
-                                    .font(Theme.archiveStatusFont)
+                                    .font(Theme.font11Semibold)
                                     .foregroundStyle(Theme.green)
                             }
                         }
@@ -138,11 +138,11 @@ struct ArchiveRowView: View {
                     // Date + chevron
                     VStack(alignment: .trailing, spacing: 3) {
                         Text(formatShortDate(asset.createdAt))
-                            .font(Theme.archiveMetaValueFont)
+                            .font(Theme.font11Regular)
                             .foregroundStyle(Theme.secondaryText)
                         
                         Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                            .font(Theme.headerChevronFont)
+                            .font(Theme.icon11)
                             .foregroundStyle(Theme.tertiaryText)
                     }
                 }
@@ -210,11 +210,11 @@ struct ArchiveRowView: View {
                         VStack(alignment: .leading, spacing: 8) {
                             HStack(spacing: 6) {
                                 Image(systemName: "text.quote")
-                                    .font(Theme.iconFont)
-                                    .foregroundStyle(Theme.tint)
+                                    .font(Theme.icon13)
+                                    .foregroundStyle(Theme.blue)
                                 Text("Transcript")
-                                    .font(Theme.captionBoldFont)
-                                    .foregroundStyle(.white)
+                                    .font(Theme.font13Semibold)
+                                    .foregroundStyle(Theme.white)
                                 
                                 Spacer()
                                 
@@ -223,7 +223,7 @@ struct ArchiveRowView: View {
                                     UIPasteboard.general.string = transcript
                                 } label: {
                                     Image(systemName: "doc.on.doc")
-                                        .font(Theme.iconFont)
+                                        .font(Theme.icon13)
                                         .foregroundStyle(Theme.secondaryText)
                                 }
                             }
@@ -231,15 +231,15 @@ struct ArchiveRowView: View {
                             // Scrollable transcript text
                             ScrollView {
                                 Text(transcript)
-                                    .font(Theme.captionFont)
+                                    .font(Theme.font13Regular)
                                     .foregroundStyle(Theme.metaText)
                                     .textSelection(.enabled)
                                     .frame(maxWidth: .infinity, alignment: .leading)
                             }
                             .frame(maxHeight: 200)
                             .padding(10)
-                            .background(Color.black.opacity(0.3))
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                            .background(Theme.black.opacity(0.3))
+                            .clipShape(RoundedRectangle(cornerRadius: Theme.radiusSm))
                         }
                     }
                     
@@ -259,7 +259,7 @@ struct ArchiveRowView: View {
                                     Image(systemName: "arrow.clockwise.circle.fill")
                                     Text("Re-upload (pick video)")
                                 }
-                                .font(Theme.captionBoldFont)
+                                .font(Theme.font13Semibold)
                                 .foregroundStyle(Theme.red)
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, Theme.buttonPaddingV)
@@ -285,15 +285,15 @@ struct ArchiveRowView: View {
                                 RoundedRectangle(cornerRadius: 6)
                                     .fill(Theme.cardBg)
                                     .frame(width: 36, height: 36)
-                                    .overlay(Image(systemName: "film").foregroundStyle(Theme.tertiaryText).font(.system(size: 14)))
+                                    .overlay(Image(systemName: "film").foregroundStyle(Theme.tertiaryText).font(Theme.icon13))
                             }
                             
                             VStack(alignment: .leading, spacing: 4) {
                                 Text("Uploading \\(Int(reuploadProgress * 100))%")
-                                    .font(Theme.captionBoldFont)
-                                    .foregroundStyle(Theme.tint)
+                                    .font(Theme.font13Semibold)
+                                    .foregroundStyle(Theme.blue)
                                 ProgressView(value: reuploadProgress)
-                                    .tint(Theme.tint)
+                                    .tint(Theme.blue)
                             }
                         }
                     } else if asset.status == .processing {
@@ -302,7 +302,7 @@ struct ArchiveRowView: View {
                             ProgressView()
                                 .scaleEffect(0.7)
                             Text("Processing on server\u{2026}")
-                                .font(Theme.captionBoldFont)
+                                .font(Theme.font13Semibold)
                                 .foregroundStyle(Theme.secondaryText)
                         }
                         .frame(maxWidth: .infinity)
@@ -335,7 +335,7 @@ struct ArchiveRowView: View {
                     // Re-upload error
                     if let reuploadError {
                         Text(reuploadError)
-                            .font(Theme.archiveStatusFont)
+                            .font(Theme.font11Semibold)
                             .foregroundStyle(Theme.red)
                     }
                 }
@@ -344,8 +344,8 @@ struct ArchiveRowView: View {
                 .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
-        .background(Theme.darkBg)
-        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .background(Theme.black)
+        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusMd))
         .sheet(isPresented: $showSlackShare) {
             SlackShareSheet(
                 mediasourceId: asset.mediasourceId,
@@ -387,11 +387,11 @@ struct ArchiveRowView: View {
     private func metadataRow(label: String, value: String) -> some View {
         HStack(alignment: .top, spacing: 8) {
             Text(label)
-                .font(Theme.archiveMetaLabelFont)
+                .font(Theme.font11Regular)
                 .foregroundStyle(Theme.tertiaryText)
                 .frame(width: 80, alignment: .trailing)
             Text(value)
-                .font(Theme.archiveMetaValueFont)
+                .font(Theme.font11Regular)
                 .foregroundStyle(Theme.metaText)
                 .lineLimit(3)
         }
@@ -404,7 +404,7 @@ struct ArchiveRowView: View {
                 Image(systemName: icon)
                 Text(label)
             }
-            .font(Theme.captionBoldFont)
+            .font(Theme.font13Semibold)
             .foregroundStyle(color)
             .frame(maxWidth: .infinity)
             .padding(.vertical, Theme.buttonPaddingV)

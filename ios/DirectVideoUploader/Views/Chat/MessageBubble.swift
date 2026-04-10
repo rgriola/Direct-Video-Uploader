@@ -26,7 +26,7 @@ struct MessageBubble: View {
                 // Timestamp
                 if let time = formattedTime {
                     Text(time)
-                        .font(Theme.timestampFont)
+                        .font(Theme.font11Regular)
                         .foregroundStyle(Theme.black)
                         .padding(.horizontal, 4)
                 }
@@ -56,32 +56,32 @@ struct MessageBubble: View {
     
     private var textContent: some View {
         Text(message.content.displayText)
-            .font(Theme.bodyFont)
-            .foregroundStyle(isOutgoing ? .white : Theme.incomingText)
+            .font(Theme.font16Regular)
+            .foregroundStyle(isOutgoing ? Theme.white : Theme.black)
     }
     
     private var videoContent: some View {
         HStack(spacing: 8) {
             Image(systemName: "video.fill")
-                .font(Theme.iconFont)
+                .font(Theme.icon13)
             Text(message.content.displayText)
-                .font(Theme.bodyFont)
+                .font(Theme.font16Regular)
         }
-        .foregroundStyle(isOutgoing ? .white : Theme.incomingText)
+        .foregroundStyle(isOutgoing ? Theme.white : Theme.black)
     }
     
     private var confirmationContent: some View {
         VStack(alignment: .leading, spacing: 8) {
             // Main confirmation text
             Text(message.content.text ?? "Upload confirmed")
-                .font(Theme.bodyFont)
-                .foregroundStyle(Theme.incomingText)
+                .font(Theme.font16Regular)
+                .foregroundStyle(Theme.black)
             
             // Slug
             if let slug = message.content.slug {
                 Text(slug)
-                    .font(Theme.monoSmallFont)
-                    .foregroundStyle(Theme.incomingText)
+                    .font(Theme.mono13Medium)
+                    .foregroundStyle(Theme.black)
                     .lineLimit(1)
             }
             
@@ -89,10 +89,10 @@ struct MessageBubble: View {
             if let msId = message.content.mediasourceId {
                 HStack(spacing: 4) {
                     Text("🔗")
-                        .font(Theme.iconSmallFont)
+                        .font(Theme.icon13)
                     Text(msId)
-                        .font(Theme.monoIdFont)
-                        .foregroundStyle(Theme.incomingText)
+                        .font(Theme.mono16Bold)
+                        .foregroundStyle(Theme.black)
                     
                     Spacer()
                     
@@ -100,7 +100,7 @@ struct MessageBubble: View {
                         ChatActionButton(
                             icon: "info.circle.fill",
                             label: "Metadata",
-                            color: Theme.actionBlue,
+                            color: Theme.purple,
                             action: onTapMetadata
                         )
                     }
@@ -114,8 +114,8 @@ struct MessageBubble: View {
             // Slug name
             if let slug = message.content.slug {
                 Text(slug)
-                    .font(Theme.monoSmallFont)
-                    .foregroundStyle(Theme.incomingText)
+                    .font(Theme.mono13Medium)
+                    .foregroundStyle(Theme.black)
                     .lineLimit(1)
             }
             
@@ -123,15 +123,15 @@ struct MessageBubble: View {
             if let msId = message.content.mediasourceId {
                 HStack(spacing: 4) {
                     Text("🔗")
-                        .font(Theme.iconSmallFont)
+                        .font(Theme.icon13)
                     Text(msId)
-                        .font(Theme.monoIdFont)
-                        .foregroundStyle(Theme.incomingText)
+                        .font(Theme.mono16Bold)
+                        .foregroundStyle(Theme.black)
                     
                     if let clipURL = ServerConfig.clipURL(msId) {
                         Text(clipURL.absoluteString)
-                            .font(Theme.urlFont)
-                            .foregroundStyle(Theme.incomingText)
+                            .font(Theme.font11Regular)
+                            .foregroundStyle(Theme.black)
                             .lineLimit(1)
                             .truncationMode(.middle)
                     }
@@ -142,14 +142,14 @@ struct MessageBubble: View {
                         UIPasteboard.general.string = link
                     } label: {
                         Image(systemName: "doc.on.doc")
-                            .font(Theme.iconSmallFont)
-                            .foregroundStyle(Theme.incomingText.opacity(0.6))
+                            .font(Theme.icon13)
+                            .foregroundStyle(Theme.black.opacity(0.6))
                     }
                 }
             }
             
             Divider()
-                .background(Color.black.opacity(0.1))
+                .background(Theme.black.opacity(0.1))
             
             // Action button — Metadata only
             HStack(spacing: 12) {
@@ -174,16 +174,16 @@ struct MessageBubble: View {
                 VStack(alignment: .leading, spacing: 6) {
                     
                     Text(message.content.text ?? "")
-                        .font(Theme.bodyFont)
-                        .foregroundStyle(.white)
+                        .font(Theme.font16Regular)
+                        .foregroundStyle(Theme.white)
 
                     HStack(spacing: 6) {
                         Image(systemName: "paperplane.fill")
-                            .font(Theme.iconMediumFont)
-                            .foregroundStyle(.white)
+                            .font(Theme.icon13)
+                            .foregroundStyle(Theme.white)
                         Text("Sending to Slack…")
-                            .font(Theme.captionBoldFont)
-                            .foregroundStyle(.white.opacity(0.7))
+                            .font(Theme.font13Semibold)
+                            .foregroundStyle(Theme.white.opacity(0.7))
                     }
                     
                 }
@@ -203,10 +203,10 @@ struct MessageBubble: View {
                     .resizable()
                     .aspectRatio(contentMode: .fill)
                     .frame(width: 72, height: 72)
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.radiusSm))
             } else {
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(Color.black.opacity(0.15))
+                RoundedRectangle(cornerRadius: Theme.radiusSm)
+                    .fill(Theme.black.opacity(0.15))
                     .frame(width: 72, height: 72)
                     .overlay(
                         ProgressView()
@@ -217,21 +217,21 @@ struct MessageBubble: View {
             VStack(alignment: .leading, spacing: 4) {
                 if let owner = message.content.userName {
                     Text(owner)
-                        .font(Theme.bodyFont)
-                        .foregroundStyle(Theme.incomingText)
+                        .font(Theme.font16Regular)
+                        .foregroundStyle(Theme.black)
                 }
 
                 if let msId = message.content.mediasourceId {
                     Text("MS# \(msId)")
-                        .font(Theme.bodyFont)
-                        .foregroundStyle(Theme.incomingText)
+                        .font(Theme.font16Regular)
+                        .foregroundStyle(Theme.black)
                 }
 
                 // Captured date
                 if let capturedAt = message.content.capturedAt {
                     Text(DVUDateFormatting.longDate(capturedAt))
-                        .font(.system(size: 12))
-                        .foregroundStyle(Theme.incomingText.opacity(0.7))
+                        .font(Theme.font11Regular)
+                        .foregroundStyle(Theme.black.opacity(0.7))
                 }
 
                 // Channel / mention
@@ -239,12 +239,12 @@ struct MessageBubble: View {
                     HStack(spacing: 6) {
                         if let channel = message.content.channel {
                             Text("#\(channel)")
-                                .font(.system(size: 12, weight: .medium))
+                                .font(Theme.font13Medium)
                                 .foregroundStyle(Theme.purple)
                         }
                         if let mention = message.content.mention {
                             Text("@\(mention)")
-                                .font(.system(size: 12, weight: .medium))
+                                .font(Theme.font13Medium)
                                 .foregroundStyle(Theme.purple)
                         }
                     }
@@ -255,9 +255,9 @@ struct MessageBubble: View {
                     Image(systemName: "checkmark.circle.fill")
                         .foregroundStyle(Theme.green)
                     Text("Posted to Slack")
-                        .foregroundStyle(Theme.incomingText)
+                        .foregroundStyle(Theme.black)
                 }
-                .font(.system(size: 12, weight: .medium))
+                .font(Theme.font13Medium)
             }
         }
     }
@@ -267,7 +267,7 @@ struct MessageBubble: View {
     private var bubbleBackground: some View {
         Group {
             if isOutgoing {
-                Theme.outgoingBubble
+                Theme.purple
             } else {
                 Theme.incomingBubble
             }
@@ -288,6 +288,6 @@ struct ChatBubbleShape: Shape {
     let isOutgoing: Bool
     
     func path(in rect: CGRect) -> Path {
-        Path(roundedRect: rect, cornerRadius: 18)
+        Path(roundedRect: rect, cornerRadius: Theme.radiusXl)
     }
 }

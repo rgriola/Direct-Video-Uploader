@@ -17,12 +17,12 @@ struct SlackShareSheet: View {
                 VStack(spacing: 4) {
                     if let name = originalFileName {
                         Text(name)
-                            .font(Theme.archiveTitleFont)
-                            .foregroundStyle(.white)
+                            .font(Theme.font16Medium)
+                            .foregroundStyle(Theme.white)
                     }
                     if let msId = mediasourceId {
                         Text(msId)
-                            .font(Theme.monoValueFont)
+                            .font(Theme.mono13Medium)
                             .foregroundStyle(Theme.secondaryText)
                     }
                 }
@@ -31,15 +31,15 @@ struct SlackShareSheet: View {
                 // Input
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Type #channel and/or @person")
-                        .font(Theme.captionFont)
+                        .font(Theme.font13Regular)
                         .foregroundStyle(Theme.secondaryText)
                     
                     TextField("#channel @person", text: $slackText)
-                        .font(Theme.bodyFont)
-                        .padding(12)
+                        .font(Theme.font16Regular)
+                        .padding(Theme.space12)
                         .background(Theme.cardBg)
-                        .clipShape(RoundedRectangle(cornerRadius: 10))
-                        .foregroundStyle(.white)
+                        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusMd))
+                        .foregroundStyle(Theme.white)
                         .focused($isFocused)
                 }
                 
@@ -48,25 +48,25 @@ struct SlackShareSheet: View {
                     onSend(slackText)
                 } label: {
                     Text("Share to Slack")
-                        .font(Theme.loginButtonFont)
-                        .foregroundStyle(.white)
+                        .font(Theme.font16Semibold)
+                        .foregroundStyle(Theme.white)
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
+                        .padding(.vertical, Theme.space12)
                         .background(Theme.purple)
-                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusMd))
                 }
                 .disabled(slackText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 
                 Spacer()
             }
             .padding(.horizontal, 20)
-            .background(Theme.darkBg.ignoresSafeArea())
+            .background(Theme.black.ignoresSafeArea())
             .navigationTitle("Share to Slack")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel", action: onDismiss)
-                        .foregroundStyle(Theme.tint)
+                        .foregroundStyle(Theme.blue)
                 }
             }
         }

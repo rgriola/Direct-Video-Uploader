@@ -33,27 +33,27 @@ struct MetadataView: View {
                                     .frame(height: 120)
                                     .frame(maxWidth: .infinity)
                                     .clipped()
-                                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                                    .clipShape(RoundedRectangle(cornerRadius: Theme.radiusMd))
                                     .padding(.horizontal, 16)
                                     .padding(.bottom, 4)
                             }
                             
                             Text("📄 File Metadata")
-                                .font(Theme.titleFont)
-                                .foregroundStyle(.white)
+                                .font(Theme.font20Bold)
+                                .foregroundStyle(Theme.white)
                             
                             if let name = clip.originalFileName ?? asset?.originalFileName {
                                 Text(name)
-                                    .font(Theme.metaFileFont)
+                                    .font(Theme.mono13Medium)
                                     .foregroundStyle(Theme.white.opacity(0.6))
                             }
                             
                             if let id = asset?.mediasourceId {
                                 HStack(spacing: 4) {
                                     Text("🔗")
-                                        .font(Theme.iconMediumFont)
+                                        .font(Theme.icon13)
                                     Text(id)
-                                        .font(Theme.metaIdFont)
+                                        .font(Theme.mono16Bold)
                                         .foregroundStyle(Theme.blue)
                                 }
                             }
@@ -119,7 +119,7 @@ struct MetadataView: View {
                                     metadataRow(icon: "💾", label: "Storage", value: url)
                                 }
                             }
-                            .clipShape(RoundedRectangle(cornerRadius: 14))
+                            .clipShape(RoundedRectangle(cornerRadius: Theme.radiusLg))
                             .padding(.horizontal, 16)
                             
                             // Transcript section
@@ -127,23 +127,23 @@ struct MetadataView: View {
                                 VStack(alignment: .leading, spacing: 6) {
                                     HStack(spacing: 4) {
                                         Image(systemName: "text.quote")
-                                            .font(Theme.iconMediumFont)
-                                            .foregroundStyle(Theme.tint)
+                                            .font(Theme.icon13)
+                                            .foregroundStyle(Theme.blue)
                                         Text("Transcript")
-                                            .font(Theme.captionBoldFont)
-                                            .foregroundStyle(.white)
+                                            .font(Theme.font13Semibold)
+                                            .foregroundStyle(Theme.white)
                                     }
                                     
                                     Text(transcript)
-                                        .font(Theme.captionFont)
+                                        .font(Theme.font13Regular)
                                         .foregroundStyle(Theme.secondaryText)
                                         .lineLimit(20)
                                         .textSelection(.enabled)
                                 }
                                 .padding(16)
                                 .frame(maxWidth: .infinity, alignment: .leading)
-                                .background(Color.white.opacity(0.05))
-                                .clipShape(RoundedRectangle(cornerRadius: 14))
+                                .background(Theme.glassOverlay)
+                                .clipShape(RoundedRectangle(cornerRadius: Theme.radiusLg))
                                 .padding(.horizontal, 16)
                                 .padding(.top, 12)
                             }
@@ -151,13 +151,13 @@ struct MetadataView: View {
                             // No metadata fallback
                             VStack(spacing: 12) {
                                 Text("🚫")
-                                    .font(Theme.metaEmptyEmojiFont)
+                                    .font(Theme.display44)
                                 Text("No Metadata Found")
-                                    .font(Theme.metaEmptyTitleFont)
-                                    .foregroundStyle(.white)
+                                    .font(Theme.font20Semibold)
+                                    .foregroundStyle(Theme.white)
                                 Text("Add details in Mediasource.")
-                                    .font(Theme.metaLabelFont)
-                                    .foregroundStyle(.white.opacity(0.5))
+                                    .font(Theme.font13Regular)
+                                    .foregroundStyle(Theme.white.opacity(0.5))
                                 
                                 // Still show what we have: file size & timestamps
                                 VStack(spacing: 1) {
@@ -169,7 +169,7 @@ struct MetadataView: View {
                                         metadataRow(icon: "✅", label: "Status", value: status)
                                     }
                                 }
-                                .clipShape(RoundedRectangle(cornerRadius: 14))
+                                .clipShape(RoundedRectangle(cornerRadius: Theme.radiusLg))
                             }
                             .padding(.horizontal, 16)
                             .padding(.vertical, 24)
@@ -182,13 +182,13 @@ struct MetadataView: View {
                                 HStack {
                                     Image(systemName: "play.circle.fill")
                                     Text("View Clip")
-                                        .font(Theme.metaLinkFont)
+                                        .font(Theme.font16Medium)
                                 }
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 14)
                                 .background(Theme.viewGreen.opacity(0.15))
                                 .foregroundStyle(Theme.viewGreen)
-                                .clipShape(RoundedRectangle(cornerRadius: 12))
+                                .clipShape(RoundedRectangle(cornerRadius: Theme.radiusMd))
                             }
                             .padding(.horizontal, 16)
                             .padding(.top, 24)
@@ -211,23 +211,23 @@ struct MetadataView: View {
     private func metadataRow(icon: String, label: String, value: String) -> some View {
         HStack {
             Text(icon)
-                .font(Theme.metaIconFont)
+                .font(Theme.icon16)
                 .frame(width: 28)
             
             Text(label)
-                .font(Theme.metaLabelFont)
-                .foregroundStyle(.white.opacity(0.6))
+                .font(Theme.font13Regular)
+                .foregroundStyle(Theme.white.opacity(0.6))
                 .frame(width: 80, alignment: .leading)
             
             Text(value)
-                .font(Theme.metaValueFont)
-                .foregroundStyle(.white)
+                .font(Theme.font13Medium)
+                .foregroundStyle(Theme.white)
             
             Spacer()
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, Theme.space16)
         .padding(.vertical, 13)
-        .background(Color.white.opacity(0.05))
+        .background(Theme.glassOverlay)
     }
     
     // MARK: - Date Formatting

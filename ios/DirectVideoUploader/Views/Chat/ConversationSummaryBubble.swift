@@ -17,24 +17,24 @@ struct ConversationSummaryBubble: View {
                 // Header
                 HStack(spacing: 8) {
                     Image(systemName: "checkmark.seal.fill")
-                        .font(Theme.iconLargeFont)
+                        .font(Theme.display32)
                         .foregroundStyle(Theme.green)
                     Text("Video Confirmed")
-                        .font(Theme.bodyMediumFont)
-                        .foregroundStyle(Theme.incomingText)
+                        .font(Theme.font16Medium)
+                        .foregroundStyle(Theme.black)
                 }
                 // horizontal line
-                Divider().background(Color.black.opacity(0.1))
+                Divider().background(Theme.black.opacity(0.1))
 
                 // Metadata rows
                 VStack(alignment: .leading, spacing: 5) {
                     if let msId = mediasourceId {
                         HStack {
                             Text("🔗")
-                                .font(Theme.iconSmallFont)
+                                .font(Theme.icon13)
                             Text(msId)
-                                .font(Theme.monoIdFont)
-                                .foregroundStyle(Theme.incomingText)
+                                .font(Theme.mono16Bold)
+                                .foregroundStyle(Theme.black)
 
                             Spacer()
 
@@ -63,7 +63,7 @@ struct ConversationSummaryBubble: View {
             }
             .padding(14)
             .background(Theme.incomingBubble)
-            .clipShape(RoundedRectangle(cornerRadius: 16))
+            .clipShape(RoundedRectangle(cornerRadius: Theme.radiusLg))
 
             Spacer(minLength: 60)
         }
@@ -76,12 +76,12 @@ struct ConversationSummaryBubble: View {
     private func metaRow(icon: String, label: String) -> some View {
         HStack(spacing: 8) {
             Image(systemName: icon)
-                .font(Theme.iconSmallFont)
-                .foregroundStyle(Theme.incomingText.opacity(0.5))
+                .font(Theme.icon13)
+                .foregroundStyle(Theme.black.opacity(0.5))
                 .frame(width: 16)
             Text(label)
-                .font(Theme.archiveMetaValueFont)
-                .foregroundStyle(Theme.incomingText)
+                .font(Theme.font11Regular)
+                .foregroundStyle(Theme.black)
                 .lineLimit(2)
         }
     }

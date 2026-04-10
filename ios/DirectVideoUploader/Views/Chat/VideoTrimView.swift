@@ -38,8 +38,8 @@ struct VideoTrimView: View {
 
                     // Play/pause toggle overlay — visible when paused
                     Image(systemName: vm.isPlaying ? "pause.fill" : "play.fill")
-                        .font(.system(size: 44, weight: .bold))
-                        .foregroundStyle(.white.opacity(vm.isPlaying ? 0 : 0.7))
+                        .font(Theme.display44)
+                        .foregroundStyle(Theme.white.opacity(vm.isPlaying ? 0 : 0.7))
                         .animation(.easeInOut(duration: 0.2), value: vm.isPlaying)
                 }
                 .onTapGesture { vm.togglePlayPause() }
@@ -90,7 +90,7 @@ struct VideoTrimView: View {
             Spacer()
 
             Text("Trim Video")
-                .font(.system(size: 17, weight: .semibold))
+                .font(Theme.font16Semibold)
                 .foregroundStyle(Theme.white)
 
             Spacer()
@@ -112,20 +112,20 @@ struct VideoTrimView: View {
     private var timeLabels: some View {
         HStack {
             Text(formatTime(vm.trimStart))
-                .font(.system(size: 13, weight: .medium, design: .monospaced))
+                .font(Theme.mono13Medium)
                 .foregroundStyle(Theme.yellow)
 
             Spacer()
 
             let trimDuration = vm.trimEnd - vm.trimStart
             Text(formatTime(trimDuration))
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(.white.opacity(0.7))
+                .font(Theme.font13Medium)
+                .foregroundStyle(Theme.white.opacity(0.7))
 
             Spacer()
 
             Text(formatTime(vm.trimEnd))
-                .font(.system(size: 13, weight: .medium, design: .monospaced))
+                .font(Theme.mono13Medium)
                 .foregroundStyle(Theme.yellow)
         }
     }
@@ -141,11 +141,11 @@ struct VideoTrimView: View {
                     .tint(Theme.yellow)
                     .frame(width: 180)
                 Text("Exporting… \(Int(exportProgress * 100))%")
-                    .font(.system(size: 15, weight: .medium))
-                    .foregroundStyle(.white)
+                    .font(Theme.font16Medium)
+                    .foregroundStyle(Theme.white)
             }
-            .padding(32)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
+            .padding(Theme.space32)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: Theme.radiusLg))
         }
     }
 
@@ -456,7 +456,7 @@ private struct TrimScrubberView: View {
                 if vm.duration > 0 {
                     let playX = handleWidth + vm.currentTime * pxPerSec
                     Rectangle()
-                        .fill(.white)
+                        .fill(Theme.white)
                         .frame(width: 14, height: geo.size.height + 8)
                         .contentShape(Rectangle())
                         .position(x: playX, y: geo.size.height / 2)
@@ -476,7 +476,7 @@ private struct TrimScrubberView: View {
                         // Visual: thin white line drawn over the wider hit target
                         .overlay {
                             Rectangle()
-                                .fill(.white)
+                                .fill(Theme.white)
                                 .frame(width: 2, height: geo.size.height + 8)
                                 .position(x: playX, y: geo.size.height / 2)
                                 .allowsHitTesting(false)
@@ -514,7 +514,7 @@ private struct TrimScrubberView: View {
     private func dimRegion(centerX: CGFloat, width: CGFloat, height: CGFloat) -> some View {
         if width > 0 {
             Rectangle()
-                .fill(Color.black.opacity(0.6))
+                .fill(Theme.black.opacity(0.6))
                 .frame(width: width, height: height)
                 .position(x: centerX, y: height / 2)
                 .allowsHitTesting(false)
@@ -544,8 +544,8 @@ private struct TrimScrubberView: View {
             .overlay {
                 // Chevron arrows
                 Image(systemName: edge == .leading ? "chevron.compact.left" : "chevron.compact.right")
-                    .font(.system(size: 16, weight: .bold))
-                    .foregroundStyle(.black)
+                    .font(Theme.font16Bold)
+                    .foregroundStyle(Theme.black)
             }
     }
 

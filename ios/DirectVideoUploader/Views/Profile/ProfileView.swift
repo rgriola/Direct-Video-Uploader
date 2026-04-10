@@ -14,14 +14,14 @@ struct ProfileView: View {
             VStack(spacing: 0) {
                 // Header
                 Text("Profile")
-                    .font(Theme.headerNameFont)
+                    .font(Theme.font16Semibold)
                     .foregroundStyle(Theme.white)
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 16)
+                    .padding(.vertical, Theme.space16)
                     .background(Theme.black.opacity(0.94))
 
                 ScrollView {
-                    VStack(spacing: 20) {
+                    VStack(spacing: Theme.space20) {
                         // User info card
                         userInfoSection
 
@@ -34,8 +34,8 @@ struct ProfileView: View {
                         // Logout
                         logoutSection
                     }
-                    .padding(.horizontal, 20)
-                    .padding(.top, 16)
+                    .padding(.horizontal, Theme.space20)
+                    .padding(.top, Theme.space16)
                     .padding(.bottom, 40)
                 }
             }
@@ -49,7 +49,7 @@ struct ProfileView: View {
     // MARK: - User Info
 
     private var userInfoSection: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: Theme.space12) {
             // Avatar circle with initial
             ZStack {
                 Circle()
@@ -58,24 +58,24 @@ struct ProfileView: View {
                     .overlay(Circle().stroke(Theme.purple.opacity(0.6), lineWidth: 2))
 
                 Text(userInitial)
-                    .font(.system(size: 28, weight: .bold, design: .rounded))
+                    .font(Theme.font28Bold)
                     .foregroundStyle(Theme.white)
             }
 
             // Name
             if let user = auth.currentUser {
                 Text(user.name)
-                    .font(.system(size: 20, weight: .semibold))
+                    .font(Theme.font20Semibold)
                     .foregroundStyle(Theme.white)
 
                 Text(user.phoneNumber)
-                    .font(Theme.monoSmallFont)
+                    .font(Theme.mono13Medium)
                     .foregroundStyle(Theme.white.opacity(0.6))
             }
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 20)
-        .background(Theme.black, in: RoundedRectangle(cornerRadius: 16))
+        .padding(.vertical, Theme.space20)
+        .background(Theme.black, in: RoundedRectangle(cornerRadius: Theme.radiusLg))
     }
 
     // MARK: - Permissions
@@ -99,7 +99,7 @@ struct ProfileView: View {
                 }
 
                 Divider()
-                    .background(Theme.white.opacity(0.1))
+                    .background(Theme.glassBorder)
                     .padding(.leading, 52)
 
                 // Speech Recognition toggle
@@ -115,7 +115,7 @@ struct ProfileView: View {
                     Task { await permissions.requestSpeechRecognition() }
                 }
             }
-            .background(Theme.black, in: RoundedRectangle(cornerRadius: 12))
+            .background(Theme.black, in: RoundedRectangle(cornerRadius: Theme.radiusMd))
         }
     }
 
@@ -129,7 +129,7 @@ struct ProfileView: View {
                 infoRow(icon: "link", label: "Server", value: ServerConfig.currentURLString)
 
                 Divider()
-                    .background(Theme.white.opacity(0.1))
+                    .background(Theme.glassBorder)
                     .padding(.leading, 52)
 
                 infoRow(
@@ -138,7 +138,7 @@ struct ProfileView: View {
                     value: "\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—") (\(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "—"))"
                 )
             }
-            .background(Theme.black, in: RoundedRectangle(cornerRadius: 12))
+            .background(Theme.black, in: RoundedRectangle(cornerRadius: Theme.radiusMd))
         }
     }
 
@@ -149,11 +149,11 @@ struct ProfileView: View {
             showLogoutConfirm = true
         } label: {
             Text("Logout")
-                .font(.body.weight(.semibold))
-                .foregroundStyle(.red)
+                .font(Theme.font16Semibold)
+                .foregroundStyle(Theme.red)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 14)
-                .background(Theme.black, in: RoundedRectangle(cornerRadius: 12))
+                .background(Theme.black, in: RoundedRectangle(cornerRadius: Theme.radiusMd))
         }
         .confirmationDialog("Positive?", isPresented: $showLogoutConfirm, titleVisibility: .visible) {
             Button("Logout", role: .destructive) {
@@ -167,10 +167,10 @@ struct ProfileView: View {
 
     private func sectionHeader(_ title: String) -> some View {
         Text(title.uppercased())
-            .font(.system(size: 13, weight: .semibold))
+            .font(Theme.font13Semibold)
             .foregroundStyle(Theme.white.opacity(0.5))
-            .padding(.horizontal, 4)
-            .padding(.bottom, 8)
+            .padding(.horizontal, Theme.space4)
+            .padding(.bottom, Theme.space8)
     }
 
     private func permissionRow(
@@ -184,20 +184,20 @@ struct ProfileView: View {
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
-            HStack(spacing: 12) {
+            HStack(spacing: Theme.space12) {
                 // Icon
                 Image(systemName: icon)
-                    .font(.system(size: 18))
+                    .font(Theme.icon16)
                     .foregroundStyle(isGranted ? Theme.green : (isDenied ? Theme.red : Theme.white.opacity(0.5)))
                     .frame(width: 32, height: 32)
 
                 // Labels
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
-                        .font(.system(size: 16, weight: .medium))
+                        .font(Theme.font16Medium)
                         .foregroundStyle(Theme.white)
                     Text(subtitle)
-                        .font(.system(size: 13))
+                        .font(Theme.font13Regular)
                         .foregroundStyle(Theme.white.opacity(0.5))
                 }
 
@@ -209,7 +209,7 @@ struct ProfileView: View {
                         .fill(statusDotColor(isGranted: isGranted, isDenied: isDenied, isLimited: isLimited))
                         .frame(width: 8, height: 8)
                     Text(statusLabel)
-                        .font(.system(size: 13, weight: .medium))
+                        .font(Theme.font13Medium)
                         .foregroundStyle(Theme.white.opacity(0.7))
                 }
                 .padding(.horizontal, 10)
@@ -219,11 +219,11 @@ struct ProfileView: View {
                 // Chevron — if denied, hint that it opens Settings
                 if isDenied {
                     Image(systemName: "arrow.up.forward.app")
-                        .font(.system(size: 14))
+                        .font(Theme.icon13)
                         .foregroundStyle(Theme.white.opacity(0.3))
                 }
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, Theme.space16)
             .padding(.vertical, 14)
             .contentShape(Rectangle())
         }
@@ -231,31 +231,31 @@ struct ProfileView: View {
     }
 
     private func infoRow(icon: String, label: String, value: String) -> some View {
-        HStack(spacing: 12) {
+        HStack(spacing: Theme.space12) {
             Image(systemName: icon)
-                .font(.system(size: 16))
+                .font(Theme.icon16)
                 .foregroundStyle(Theme.white.opacity(0.5))
                 .frame(width: 32, height: 32)
 
             Text(label)
-                .font(.system(size: 16, weight: .medium))
+                .font(Theme.font16Medium)
                 .foregroundStyle(Theme.white)
 
             Spacer()
 
             Text(value)
-                .font(Theme.monoSmallFont)
+                .font(Theme.mono13Medium)
                 .foregroundStyle(Theme.white.opacity(0.5))
                 .lineLimit(1)
                 .truncationMode(.middle)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(.horizontal, Theme.space16)
+        .padding(.vertical, Theme.space12)
     }
 
     private func statusDotColor(isGranted: Bool, isDenied: Bool, isLimited: Bool) -> Color {
         if isGranted && !isLimited { return Theme.green }
-        if isLimited { return .orange }
+        if isLimited { return Theme.amber }
         if isDenied { return Theme.red }
         return Theme.white.opacity(0.4)  // not determined
     }

@@ -58,8 +58,8 @@ struct VideoBubble: View {
                                     onCancel?()
                                 } label: {
                                     Image(systemName: "xmark.circle.fill")
-                                        .font(Theme.iconXLFont)
-                                        .foregroundStyle(.white, .black.opacity(0.5))
+                                        .font(Theme.display24)
+                                        .foregroundStyle(Theme.white, Theme.black.opacity(0.5))
                                         .shadow(radius: 3)
                                 }
                                 .padding(8)
@@ -72,14 +72,14 @@ struct VideoBubble: View {
                         VStack(alignment: .leading, spacing: 3) {
                             // Filename
                             Text(fileName)
-                                .font(Theme.monoSmallFont)
-                                .foregroundStyle(.white)
+                                .font(Theme.mono13Medium)
+                                .foregroundStyle(Theme.white)
                                 .lineLimit(1)
 
                             // Created date
                             if let date = createdDate {
                                 Text(date)
-                                    .font(Theme.timestampFont)
+                                    .font(Theme.font11Regular)
                                     .foregroundStyle(Theme.white)
                             }
 
@@ -87,9 +87,9 @@ struct VideoBubble: View {
                             if hasLocation {
                                 HStack(spacing: 4) {
                                     Image(systemName: "location.fill")
-                                        .font(Theme.locationIconFont)
+                                        .font(Theme.icon11)
                                     Text("GPS")
-                                        .font(Theme.locationFont)
+                                        .font(Theme.font11Regular)
                                 }
                                 .foregroundStyle(Theme.green)
                             }
@@ -110,11 +110,11 @@ struct VideoBubble: View {
                                 .tint(Theme.blue)
                             HStack {
                                 Text("Uploading video…")
-                                    .font(Theme.timestampFont)
+                                    .font(Theme.font11Regular)
                                     .foregroundStyle(Theme.white)
                                 Spacer()
                                 Text("\(Int(uploadProgress * 100))%")
-                                    .font(Theme.timestampFont.monospacedDigit())
+                                    .font(Theme.font11Regular.monospacedDigit())
                                     .foregroundStyle(Theme.white)
                             }
                         }
@@ -123,9 +123,9 @@ struct VideoBubble: View {
                     }
                 }
                 .background(Theme.videoBubbleGradient)
-                .clipShape(RoundedRectangle(cornerRadius: 18))
+                .clipShape(RoundedRectangle(cornerRadius: Theme.radiusXl))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 18)
+                    RoundedRectangle(cornerRadius: Theme.radiusXl)
                         .stroke(borderColor.opacity(0.3), lineWidth: 1)
                 )
 
@@ -148,16 +148,16 @@ struct VideoBubble: View {
             } label: {
                 HStack(spacing: 4) {
                     Image(systemName: transcribeEnabled ? "mic.fill" : "mic.slash")
-                        .font(Theme.iconFont)
+                        .font(Theme.icon13)
                     Text("Transcribe")
-                        .font(Theme.captionFont)
+                        .font(Theme.font13Regular)
                 }
-                .foregroundStyle(transcribeEnabled ? Color.black : Color.gray)
+                .foregroundStyle(transcribeEnabled ? Theme.black : Theme.secondaryText)
                 .padding(.horizontal, 11)
                 .padding(.vertical, 6)
-                .background(transcribeEnabled ? Theme.green : Color.white)
+                .background(transcribeEnabled ? Theme.green : Theme.white)
                 .clipShape(Capsule())
-                .overlay(Capsule().stroke(transcribeEnabled ? Theme.green.opacity(0.8) : Color.white.opacity(0.9), lineWidth: 1))
+                .overlay(Capsule().stroke(transcribeEnabled ? Theme.green.opacity(0.8) : Theme.white.opacity(0.9), lineWidth: 1))
 
             }
 
@@ -166,7 +166,7 @@ struct VideoBubble: View {
                 onSend?(transcribeEnabled)
             } label: {
                 Image(systemName: "arrow.up.circle.fill")
-                    .font(Theme.iconLargeFont)
+                    .font(Theme.display32)
                     .foregroundStyle(Theme.white)
             }
 
@@ -176,7 +176,7 @@ struct VideoBubble: View {
 
         case .sent:
             Image(systemName: "checkmark.circle.fill")
-                .font(Theme.iconLargeFont)
+                .font(Theme.display32)
                 .foregroundStyle(Theme.green)
         }
     }
@@ -191,22 +191,22 @@ struct VideoBubble: View {
         case .staged:
             HStack(spacing: 4) {
                 Image(systemName: "arrow.up")
-                    .font(Theme.timestampFont)
+                    .font(Theme.font11Regular)
                 Text("Upload")
-                    .font(Theme.timestampFont)
+                    .font(Theme.font11Regular)
             }
-            .foregroundStyle(.white.opacity(0.3))
+            .foregroundStyle(Theme.white.opacity(0.3))
             .padding(.horizontal, 4)
 
         case .uploading:
             Text("Uploading…")
-                .font(Theme.timestampFont)
+                .font(Theme.font11Regular)
                 .foregroundStyle(Theme.white)
                 .padding(.horizontal, 4)
 
         case .sent:
             Text("Sent")
-                .font(Theme.timestampFont)
+                .font(Theme.font11Regular)
                 .foregroundStyle(Theme.white)
                 .padding(.horizontal, 4)
         }

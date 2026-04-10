@@ -861,3 +861,23 @@ Leave it out >> Show Camera as "Coming Soon" or leave it out?
 
 NO >> Add a "Transcribe by default" user preference toggle (separate from the OS permission)? 
 
+
+... 
+
+*** Task ***
+- Add instructions button to the iOS app top right corner of the Chat screen.
+- This should be a scrollable list of options
+- This is a little used area and it will not be in the way of the user. 
+- also users need guidence on how to use any app.
+- Should have "What Can I do in Fixer"
+- "The Work Flow" - goes through A,B,C steps of what is going on. 
+- "I have an issue" - Human to contact - [EMAIL_ADDRESS]
+
+- Add to Profile page link button to the web url. 
+- "Privacy Policy - Data Policy" - link to privacy policy page
+- "Terms of Use" - link to terms of use page
+- 
+
+
+
+

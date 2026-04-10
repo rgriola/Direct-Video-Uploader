@@ -45,10 +45,10 @@ struct ArchiveListView: View {
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Archive")
-                            .font(Theme.titleFont)
-                            .foregroundStyle(.white)
+                            .font(Theme.font20Bold)
+                            .foregroundStyle(Theme.white)
                         Text("\(recentAssets.count) upload\(recentAssets.count == 1 ? "" : "s") (7 days)")
-                            .font(Theme.captionFont)
+                            .font(Theme.font13Regular)
                             .foregroundStyle(Theme.secondaryText)
                     }
                     Spacer()
@@ -57,13 +57,13 @@ struct ArchiveListView: View {
                         Task { await fetchAssets() }
                     } label: {
                         Image(systemName: "arrow.clockwise")
-                            .font(Theme.iconHeaderFont)
-                            .foregroundStyle(Theme.tint)
+                            .font(Theme.icon20)
+                            .foregroundStyle(Theme.blue)
                     }
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
-                .background(Theme.darkBg)
+                .background(Theme.black)
                 
                 Divider().background(Theme.separator)
                 
@@ -73,8 +73,8 @@ struct ArchiveListView: View {
                         Image(systemName: "exclamationmark.triangle.fill")
                             .foregroundStyle(Theme.red)
                         Text("\(stuckCount) upload\(stuckCount == 1 ? "" : "s") failed — tap to expand and re-upload")
-                            .font(Theme.captionFont)
-                            .foregroundStyle(.white)
+                            .font(Theme.font13Regular)
+                            .foregroundStyle(Theme.white)
                         Spacer()
                     }
                     .padding(.horizontal, 16)
@@ -86,22 +86,22 @@ struct ArchiveListView: View {
                 if isLoading && assets.isEmpty {
                     Spacer()
                     ProgressView()
-                        .tint(.white)
+                        .tint(Theme.white)
                     Spacer()
                 } else if let error = errorMessage, assets.isEmpty {
                     Spacer()
                     VStack(spacing: 8) {
                         Text("⚠️")
-                            .font(Theme.emojiLargeFont)
+                            .font(Theme.display44)
                         Text(error)
-                            .font(Theme.formErrorFont)
+                            .font(Theme.font13Regular)
                             .foregroundStyle(Theme.secondaryText)
                             .multilineTextAlignment(.center)
                         Button("Retry") {
                             Task { await fetchAssets() }
                         }
-                        .font(Theme.formErrorFont)
-                        .foregroundStyle(Theme.tint)
+                        .font(Theme.font13Regular)
+                        .foregroundStyle(Theme.blue)
                     }
                     .padding()
                     Spacer()
@@ -109,12 +109,12 @@ struct ArchiveListView: View {
                     Spacer()
                     VStack(spacing: 8) {
                         Text("📦")
-                            .font(Theme.emptyEmojiFont)
+                            .font(Theme.display64)
                         Text("No recent uploads")
-                            .font(Theme.emptyStateFont)
-                            .foregroundStyle(.white)
+                            .font(Theme.font16Medium)
+                            .foregroundStyle(Theme.white)
                         Text("No uploads in the last 7 days.")
-                            .font(Theme.captionFont)
+                            .font(Theme.font13Regular)
                             .foregroundStyle(Theme.secondaryText)
                     }
                     Spacer()
