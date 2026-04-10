@@ -1,7 +1,7 @@
 # Direct Video Uploader — Project Status
 
-> **Last Updated:** April 9, 2026 (evening) · EST
-> **Current Phase:** Phase 3 (Render + Cloud + Mux) — Mux pipeline fully operational + Stability Phases A–C complete + Upload simplified + Re-upload + Archive polish + Admin tools + Transcription + UX/Performance polish + Admin refactor + Security hardening + Clip Viewer UX
+> **Last Updated:** April 10, 2026 · EST
+> **Current Phase:** Phase 3 (Render + Cloud + Mux) — Mux pipeline fully operational + Stability A–C + Upload + Re-upload + Archive + Admin tools + Transcription + UX polish + Admin refactor + Security hardening + Clip Viewer + Permissions Profile
 > **Overall Progress:** ████████████████████ 100% (Phase 2) · Phase 3 ~99%
 
 ---
@@ -10,7 +10,7 @@
 
 The **Direct Video Uploader** is a mobile-first video upload platform disguised as a text conversation. Field crew members "text" videos to the **Mediasource Fixer** server, which processes them the way a news assignment desk operates — fast, structured, and integrated with Slack.
 
-We've completed the **interactive chat demo** (HTML prototype), **project specification** (v4), the **Phase 1 server foundation** (Node.js API, WebSocket, PostgreSQL, auth, admin dashboard), the **Phase 2 — iOS Demo App** core flow (login → chat → video upload → form → confirmation → archive), and the **Web Clip Viewer** (server-rendered at `/clips/:slug`). Latest session (Apr 9): **Admin refactoring, security hardening, and Clip Viewer UX**. Refactored `AssetList.tsx` and `UserList.tsx` into modular sub-components (`AssetRow`, `UserRow`, `StatusPill`, `UserDetails`). Added server-side input sanitization: slug maxLength 50 (strips non-alphanumeric/dash/period chars), description maxLength 500 (strips control characters), HTML escaping confirmed across all user-rendered metadata. Clip Viewer enhanced with 16:9 video placeholder (shimmer animation) and auto-polling `/clips/:mediasourceId/status` endpoint that swaps to live Mux player when ready — no page refresh needed. Transcribe toggle restyled (white bg + gray text off, green bg + black text on). Domain migration completed: all references updated from `rodgriola.com` to `ms-fixer.com`. Three semantic CSS themes created for admin dashboard (`Clean Editorial`, `Lavender Mist`, `Warm Newsroom`).
+We've completed the **interactive chat demo** (HTML prototype), **project specification** (v4), the **Phase 1 server foundation** (Node.js API, WebSocket, PostgreSQL, auth, admin dashboard), the **Phase 2 — iOS Demo App** core flow (login → chat → video upload → form → confirmation → archive), and the **Web Clip Viewer** (server-rendered at `/clips/:slug`). Latest session (Apr 10): **iOS Permissions Profile + Info.plist hardening**. `PermissionManager.swift` added as an `@Observable` singleton to manage Photo Library and Speech Recognition permission states. `ProfileView.swift` rebuilt from scratch with user info card, live permission toggles (green/amber/red/gray status dots), app info section, and logout. `Info.plist` hardened with `ITSAppUsesNonExemptEncryption: false` (skips App Store export compliance) and `UILaunchScreen` dict. Agent instructions (`copilot-instructions.md`) reviewed and updated with 6 stale fixes + 4 new rules.
 
 ---
 
@@ -198,6 +198,14 @@ cd ios && xcodegen generate && xcodebuild -project DirectVideoUploader.xcodeproj
 - **Admin dashboard themes** — Created three semantic CSS theme files: `theme-a-editorial.css` (Clean Editorial — neutral tones), `theme-b-lavender.css` (Lavender Mist — purple gradient, currently active), `theme-c-newsroom.css` (Warm Newsroom — amber/sunset tones). Base `index.css` expanded with CSS custom properties for all design tokens.
 - **README rewrite** — Full rewrite of `README.md` reflecting current architecture, Mux integration, admin dashboard, and deployment setup.
 - **ServerConfig tethering IP** — Updated physical device debug fallback from `192.168.0.100` to `172.20.10.2` (USB tethering interface).
+
+**Features Added (Apr 10 — Session):**
+
+- **iOS Permissions Profile** — `PermissionManager.swift` added as an `@MainActor @Observable` singleton (injected via `.environment()` in `DirectVideoUploaderApp`). Reads `PHPhotoLibrary.authorizationStatus(for: .readWrite)` and `SFSpeechRecognizer.authorizationStatus()`. Provides `requestPhotoLibrary()` / `requestSpeechRecognition()` async methods that trigger the one-time iOS system dialog or redirect to `Settings.app` if already denied. Refreshes on foreground return via `UIApplication.willEnterForegroundNotification`.
+- **ProfileView rebuild** — Replaced minimal logout-only screen with full profile UI. User info card (avatar initial, name, phone). Permissions section: two tappable rows, each with icon, title, description, color-coded status dot (🟢 authorized, 🟡 limited, 🔴 denied, ⚪ not determined), and Settings redirect arrow when denied. App info section (server URL, version). Logout button with "Positive?" confirmation.
+- **Info.plist hardening** — Added `ITSAppUsesNonExemptEncryption: false` to both `Info.plist` and `project.yml` (`info: properties:`). Skips Apple's export compliance questionnaire on all future builds/submissions. Added `UILaunchScreen` dict directly in plist as canonical source alongside build settings.
+- **VideoLibraryView await fix** — Removed unnecessary `await` from `UIDevice.current.model` and `UIDevice.current.systemVersion` (Swift compiler warning: "No async operations occur within await expression").
+- **Agent instructions updated** — `copilot-instructions.md` reviewed and updated: fixed stale `VideoPreviewBubble` and `selectedPhotoItem` references, updated Info.plist/launch screen rules, added rules 23–26 covering `VideoBubble` phases, PHAsset fast-path, `PermissionManager`, and server-side sanitization. Updated Key References section.
 
 **Features Added (Apr 8 — Session):**
 
@@ -462,7 +470,7 @@ First-launch experience for new field crew members. The app should guide the use
 | ----------------------------------- | -------------- | --------------------------------------------------------------------- |
 | Welcome / splash screens            | 🔲 Not started | Brand intro, value prop ("Get your video to the newsroom in seconds") |
 | Phone + PIN registration            | 🔲 Not started | Self-serve or admin-provisioned credentials                           |
-| Permission grants (camera, photos)  | 🔲 Not started | iOS permission prompts with context ("we need this to send video")    |
+| Permission grants (Photo Library, Speech) | ✅ Done       | `PermissionManager.swift` + ProfileView permission toggles with status dots and Settings redirect |
 | Quick tutorial / first upload guide | 🔲 Not started | 3-4 swipeable cards showing the chat-based upload flow                |
 | Server handshake verification       | 🔲 Not started | Confirm device can reach server, show green/red status                |
 | Slack workspace connect prompt      | 🔲 Not started | Optional: "Connect Slack now?" during onboarding (skip for later)     |
@@ -473,7 +481,7 @@ A profile screen accessible from the chat header. Houses personal info, credenti
 
 | Deliverable                       | Status         | Notes                                                               |
 | --------------------------------- | -------------- | ------------------------------------------------------------------- |
-| Profile screen (view/edit)        | 🔲 Not started | Name, phone, email, team, avatar                                    |
+| Profile screen (view/edit)        | ✅ Done        | User info card, permission toggles, app info, logout (ProfileView.swift) |
 | Change PIN                        | 🔲 Not started | Requires current PIN to change                                      |
 | Slack OAuth integration           | 🔲 Not started | "Connect Slack" button → OAuth flow → store workspace + user tokens |
 | Slack connection status indicator | 🔲 Not started | Green/red dot on profile and chat header (is Slack connected?)      |
@@ -657,6 +665,10 @@ Direct-Video-Uploader/
 | Apr 9  | Admin modular architecture           | Monolithic list components (350+ lines each) extracted into focused sub-components. Data-driven rendering with shared utility functions.                                   |
 | Apr 9  | CSS design token themes              | Dashboard styling moved from hardcoded values to CSS custom properties. Three theme files enable visual switching without code changes.                                    |
 | Apr 9  | Transcribe toggle solid backgrounds  | Semi-transparent pill backgrounds (opacity 0.15) replaced with solid white/green for clearer on/off distinction against dark video bubble gradient.                        |
+| Apr 10 | iOS PermissionManager                | Pre-authorizing Photo Library + Speech Recognition in Profile tab eliminates mid-upload permission dialogs. iOS only prompts once — users set it and forget it.            |
+| Apr 10 | ProfileView rebuild                  | Minimal logout-only view replaced with user info + permission toggles + app info. Status dots reflect live OS state; refresh on foreground return catches Settings changes. |
+| Apr 10 | ITSAppUsesNonExemptEncryption        | Must be `false` in both `Info.plist` and `project.yml info.properties`. Skips Apple export compliance questionnaire — app uses no non-exempt encryption.                  |
+| Apr 10 | UIDevice await removal               | `UIDevice.current.model/.systemVersion` no longer require `await` in current Swift 6 SDK. Compiler warnings removed.                                                      |
 
 ---
 

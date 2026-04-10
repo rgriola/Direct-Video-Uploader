@@ -43,7 +43,7 @@ Direct-Video-Uploader/
 │   └── DirectVideoUploader/
 │       ├── App/            # Entry point, Theme.swift, DVUDateFormatting.swift
 │       ├── Models/         # User, Asset, ChatMessage, ServerConfig
-│       ├── Services/       # Auth, ChatViewModel, WebSocket, VideoUpload, Transcription
+│       ├── Services/       # Auth, ChatViewModel, WebSocket, VideoUpload, Transcription, PermissionManager
 │       └── Views/          # Auth, Chat, Form, Metadata, Archive, Profile
 ├── server/                 # Node.js backend (Fastify + Socket.IO + Prisma)
 │   ├── prisma/schema.prisma
@@ -155,6 +155,7 @@ cd ios && xcodegen generate
 - **Clip viewer** — Public shareable page with Mux player, metadata, transcript
 - **Apple Speech** — On-device transcription with newsroom vocabulary, per-word timestamps
 - **Archive** — 7-day history with status dots, thumbnails, re-upload, form submission
+- **Profile** — User info, Photo Library + Speech Recognition permission toggles with live status, app info
 - **Admin dashboard** — Stats, user management, asset list, nuclear reset, error logs
 
 ---
