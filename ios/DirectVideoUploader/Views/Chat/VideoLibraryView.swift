@@ -317,8 +317,8 @@ struct VideoLibraryView: View {
                     codec = codecName(from: subType)
                 }
 
-                let deviceModel = await UIDevice.current.model
-                let osVersion = await "iOS \(UIDevice.current.systemVersion)"
+                let deviceModel = UIDevice.current.model
+                let osVersion = "iOS \(UIDevice.current.systemVersion)"
 
                 return VideoMetadata(
                     duration: duration,

@@ -26,7 +26,7 @@
 
 ## Prisma 7 — Key Gotchas
 
-1. **Database URL** must be in `prisma.config.ts`, NOT in the `schema.prisma` datasource block.
+1. **Database URL** must be in `prisma.config.js`, NOT in the `schema.prisma` datasource block.
 2. **Driver adapter** is required — we use `@prisma/adapter-pg` with the `pg` library.
 3. **Constructor** uses `new PrismaClient({ adapter })` — no `datasourceUrl` in constructor.
 4. **Local dev database**: Homebrew PostgreSQL (`postgresql://rodczaro@localhost:5432/directvideo`). Do NOT use PGlite (`npx prisma dev`) — it breaks Prisma Studio introspection.
@@ -71,14 +71,14 @@ const result = await prisma.$queryRawUnsafe(
 
 ## iOS App — Key Gotchas
 
-1. **Simulator networking** — use `127.0.0.1`, NOT `localhost`. Simulator resolves `localhost` to IPv6 `::1`, but Node server binds IPv4 only.
+1. **Simulator networking** — use `127.0.0.1`, NOT `localhost`. Simulator resolves `localhost` to IPv6 `::1`, but Node server on `0.0.0.0` may not respond on `::1`.
 2. **Physical device** — uses Mac's LAN IP. `ServerConfig.swift` uses `#if targetEnvironment(simulator)` to auto-switch.
 3. **WebSocket** — native `URLSessionWebSocketTask` with manual Socket.IO protocol framing (no third-party library).
 4. **`@Observable` macro** — class must be `@MainActor @Observable final class`. Don't use `nonisolated(unsafe)` on stored properties — the macro conflicts with it.
 5. **Codable models** — server may return fewer fields than the model defines. Use optionals (`String?`, `Int?`) for fields that aren't always present (e.g., `User.status`, `Asset.clipCount`). Non-optional fields cause silent `JSONDecoder` failures.
 6. **XcodeGen** — run `xcodegen generate` after adding new `.swift` files. The `project.yml` sources the entire `DirectVideoUploader/` directory.
 7. **Build with Xcode CLI** — `xcodebuild -project DirectVideoUploader.xcodeproj -scheme DirectVideoUploader -destination 'platform=iOS Simulator,name=iPhone 17 Pro' build`
-8. **PhotosPicker** — SwiftUI-native `PhotosPicker` with `.videos` filter and `Transferable` protocol. Reset `selectedPhotoItem` to `nil` after processing.
+8. **PhotosPicker** — `VideoLibraryView.swift` wraps SwiftUI-native `PhotosPicker` with `.videos` filter in an inline sheet. Uses `selectedItems: [PhotosPickerItem]` (max 1). Video trim flow via `VideoTrimView` before confirming. No manual reset needed — `cleanUpLoadedVideo()` handles cleanup on re-selection.
 9. **Video uploads (simplified Mar 9)** — Single upload path: iOS → `POST /api/assets/:id/mux-upload` for URL → PATCH bytes directly to Mux CDN via tus protocol. Uses `URLSessionConfiguration.background` with `sessionSendsLaunchEvents = true` and `waitsForConnectivity = true`. iOS handles network interruptions natively — no custom resume/offset logic needed.
 10. **PendingForm** — Codable struct saved to `Documents/pending-form.json`. Stores `assetId`, `originalFileName`, `capturedAt`, `clipCount`, `duration`, `thumbnailJPEG`, `savedAt`. Saved on `form:request`, cleared on submit. Restored on relaunch if form not yet submitted.
 11. **No PendingUpload** — Removed Mar 9. Upload recovery via tus resume was over-engineered for demo phase. If upload is interrupted, user simply re-uploads. Background URLSession + `waitsForConnectivity` handles 95% of real-world interruptions automatically.
@@ -89,9 +89,19 @@ const result = await prisma.$queryRawUnsafe(
 16. **Re-upload (PHAsset auto-connect)** — `PHAssetIdentifierStore` in `VideoUploadService.swift` persists `[assetId: phAssetIdentifier]` to `Documents/phasset-identifiers.json`. `ArchiveRowView.handleAutoReupload()` uses 3-tier lookup: stored PHAsset ID → auto-discovery by `capturedAt` ±2s → PhotosPicker fallback.
 17. **Swift 6 + PHImageManager** — `PHImageManager.requestAVAsset` callback runs on a background queue. Never call it from inside a `@MainActor` View struct's method — move export logic to a standalone file-scope `async` function to avoid actor isolation conflicts.
 18. **Info.plist / ATS** — `INFOPLIST_KEY_NSAppTransportSecurity_AllowsArbitraryLoads` build setting does NOT work for nested plist dictionaries. Use `info:` section in `project.yml` with `NSAppTransportSecurity: { NSAllowsArbitraryLoads: true, NSAllowsLocalNetworking: true }` instead.
-19. **Archive status cascade** — ArchiveRowView status dot/button logic follows strict if/else order: needsDetails → amber | error/stuckProcessing → red | isReuploading → spinner | processing → spinner | else → green Ready. Always check `.error` status explicitly — it won't match `.processing`.
-20. **Transcription** — `TranscriptionService.swift` uses `SFSpeechRecognizer` with dual-attempt strategy: server-based first, on-device fallback. `addsPunctuation = true` for sentence formatting. `contextualStrings` for newsroom terms. Opt-in via Transcribe toggle on `VideoPreviewBubble`. Saves via `PATCH /api/assets/:id/transcript` to `clips.transcript` + `clips.transcript_segments`.
-21. **WS greeting** — Server greeting uses `iosSockets` count per user (not total `userSockets`) to decide if it's a fresh connection. Admin dashboard sockets must not block the iOS greeting.
+19. **Info.plist & project.yml — ASK BEFORE MODIFYING** — These files contain critical settings that break the app if overwritten. **Always ask the user before editing either file.** Preserve these entries exactly as-is:
+    - `UILaunchScreen` dict in `DirectVideoUploader/Info.plist`: `UIColorName: LaunchBg`, `UIImageName: launchscreen`. Also defined as `INFOPLIST_KEY_UILaunchScreen_*` build settings in `project.yml` (both must exist — removing either causes letterboxing or missing launch image).
+    - `project.yml` build settings: `INFOPLIST_KEY_UILaunchScreen_Generation: YES`, `INFOPLIST_KEY_UILaunchScreen_BackgroundColor: LaunchBg`, `INFOPLIST_KEY_UILaunchScreen_ImageName: launchscreen`, `INFOPLIST_KEY_UILaunchScreen_ImageRespectsSafeAreaInsets: NO`.
+    - Asset catalogs: `LaunchBg.colorset` and `launchscreen.imageset` in `Assets.xcassets`.
+    - `ITSAppUsesNonExemptEncryption: false` in both `Info.plist` and `project.yml` (`info: properties:`). Skips Apple's export compliance questionnaire.
+    - iOS aggressively caches launch screens — after any launch screen change: Clean Build Folder (⇧⌘K) + delete app from device/simulator + rebuild.
+20. **Archive status cascade** — ArchiveRowView status dot/button logic follows strict if/else order: needsDetails → amber | error/stuckProcessing → red | isReuploading → spinner | processing → spinner | else → green Ready. Always check `.error` status explicitly — it won't match `.processing`.
+21. **Transcription** — `TranscriptionService.swift` uses `SFSpeechRecognizer` with dual-attempt strategy: server-based first, on-device fallback. `addsPunctuation = true` for sentence formatting. `contextualStrings` for newsroom terms. Opt-in via Transcribe toggle on `VideoBubble` (per-upload, defaults to off). Saves via `PATCH /api/assets/:id/transcript` to `clips.transcript` + `clips.transcript_segments`.
+22. **WS greeting** — Server greeting uses `iosSockets` count per user (not total `userSockets`) to decide if it's a fresh connection. Admin dashboard sockets must not block the iOS greeting.
+23. **VideoBubble phases** — `VideoBubble.swift` uses `VideoBubblePhase` enum: `.staged` (shows "Tap to Upload" + send/cancel), `.uploading` (progress bar), `.sent` ("Upload ▸" badge). Replaced the old `VideoPreviewBubble` + `SentUploadBubble` split. Do NOT recreate separate bubble views.
+24. **PHAsset fast-path** — `VideoLibraryView.resolveVideoURL()` uses `PHImageManager.requestAVAsset(forVideo:)` for zero-copy video URL resolution. `extractMetadataFromPHAsset()` reads duration/resolution/GPS from `PHAsset` properties (no file I/O). Only codec needs a lightweight `AVURLAsset` header read. Do NOT reintroduce `loadTransferable` as the primary path — it copies the entire video file (minutes for large files).
+25. **PermissionManager** — `PermissionManager.swift` is an `@Observable` service injected in `DirectVideoUploaderApp.swift`. Reads Photo Library (`PHPhotoLibrary.authorizationStatus`) and Speech Recognition (`SFSpeechRecognizer.authorizationStatus`) states. `ProfileView.swift` shows permission toggles. Refreshes on foreground return to catch Settings.app changes. GPS comes from PHAsset metadata — no Location permission needed.
+26. **Server-side input sanitization** — `POST /api/assets/:id/form` enforces: slug maxLength 50 + strips non-alphanumeric/dash/period chars; description maxLength 500 + strips control characters. `escapeHtml()` in `clips.js` for XSS prevention on all user-rendered metadata.
 
 ---
 
@@ -153,6 +163,10 @@ const result = await prisma.$queryRawUnsafe(
 - `server/src/lib/slack.js` — Slack bot integration (channel posts, DMs, alerts)
 - `server/src/jobs/mux-sync.js` — Background worker for stuck PROCESSING clips
 - `server/src/routes/mux-webhooks.js` — Mux webhook handler + polling fallback
+- `server/src/routes/clips.js` — Clip viewer (SSR) + `/clips/:mediasourceId/status` auto-poll endpoint
 - `server/src/routes/admin.js` — Admin endpoints: stats, users, assets, nuclear reset, create user
+- `admin/src/theme-b-lavender.css` — Active admin dashboard theme (CSS custom properties)
 - `ios/DirectVideoUploader/Services/TranscriptionService.swift` — Apple Speech transcription (dual-attempt, punctuation, domain vocabulary)
+- `ios/DirectVideoUploader/Services/PermissionManager.swift` — iOS permission state management (Photo Library + Speech Recognition)
+- `ios/DirectVideoUploader/Views/Chat/VideoBubble.swift` — Unified video bubble with phase enum
 - `docs/APPLE_SPEECH_IMPLEMENTATION.md` — Transcription implementation plan + agent prompts

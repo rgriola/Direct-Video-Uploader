@@ -3,7 +3,7 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 63;
+	objectVersion = 77;
 	objects = {
 
 /* Begin PBXBuildFile section */
@@ -14,6 +14,7 @@
 		3397724BA17E25882518C0BD /* ConversationSummaryBubble.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC2A1D0A89F18984A90B5686 /* ConversationSummaryBubble.swift */; };
 		37912629DFC4719F11FEB3F5 /* MetadataView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2796AFC62F34F3182D7CCE1C /* MetadataView.swift */; };
 		4B254383C12F662D1C19C869 /* ChatButtonStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = E40A97DC8EDA46629FA1ACA5 /* ChatButtonStyle.swift */; };
+		52DEC1E47DF5649ABBBC6F20 /* PermissionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 744BF6B02789CE656827F003 /* PermissionManager.swift */; };
 		610ABA84479B55060D56C3FD /* TranscriptionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = E0F22B2B9DC29CAFA863CDB2 /* TranscriptionService.swift */; };
 		6D33A3123AE13D1CADF387DC /* ChatViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66AE6120B342F8FBF6D9F832 /* ChatViewModel.swift */; };
 		6E552E05D744677CF4C5DA6A /* ChatMessage.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC18F5FFC74280EFFEB0BE65 /* ChatMessage.swift */; };
@@ -23,7 +24,7 @@
 		889C07C34F8BFC90EF7CB2CE /* ServerConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = D56F342EB8CB3B26EC77BBF3 /* ServerConfig.swift */; };
 		8942F3630BCFD538BAE544E5 /* Asset.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F9DE735EEFFFCC798CA054C /* Asset.swift */; };
 		8CC14DFD30C33058BF4FA39B /* VideoTrimView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51E2EB93368D36F22B8AC2A4 /* VideoTrimView.swift */; };
-		90441C6428F48C99FEC945E7 /* VideoBubble.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8F7A0FE6F16D77BFEF57574 /* VideoBubble.swift */; };
+		8CDB0858FD44667AD9882E4D /* VideoBubble.swift in Sources */ = {isa = PBXBuildFile; fileRef = B136E4B9F4C6D88E9009D569 /* VideoBubble.swift */; };
 		94EB8482D6F7158958A03393 /* InputBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF5B8A623A0F5AA9CA07EA1A /* InputBar.swift */; };
 		958C853DDA42C7E81E258AC7 /* DVUDateFormatting.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4DBB133385999B4E09A826F7 /* DVUDateFormatting.swift */; };
 		A9F088643DC2986469FFC84B /* ContextFormView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3899E53553FC5E50293A8E8 /* ContextFormView.swift */; };
@@ -34,7 +35,6 @@
 		CC1C0E76EF9FE58674443EC5 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A7F3BED43E9CB3FFE330020 /* Theme.swift */; };
 		CE6C303AB52C17CF99EFD315 /* User.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A0611DEBA9BE67788466164 /* User.swift */; };
 		D683D53CD3990DC7DE74FBC0 /* AuthService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86A11FF4693D09E9320E8C07 /* AuthService.swift */; };
-
 		E2AB9C60B42CFBE53F549879 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = CC7AA7D72D102A4BC8F6B464 /* Assets.xcassets */; };
 		E2AE05593A1911192268E5FB /* ChatHeaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49E974DDC963928102FA291B /* ChatHeaderView.swift */; };
 		E6DDF3D43DC556C9E5C75AAF /* MessageBubble.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B7EEEC345EAFF2EE3EFD9CA /* MessageBubble.swift */; };
@@ -56,13 +56,14 @@
 		571C0C62391282912FB69E9F /* ProfileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileView.swift; sourceTree = "<group>"; };
 		5BE16E72579F144A61F60847 /* ArchiveRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArchiveRowView.swift; sourceTree = "<group>"; };
 		66AE6120B342F8FBF6D9F832 /* ChatViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatViewModel.swift; sourceTree = "<group>"; };
-
 		6F12FE8A5DFBB6A96349CB07 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		744BF6B02789CE656827F003 /* PermissionManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionManager.swift; sourceTree = "<group>"; };
 		86A11FF4693D09E9320E8C07 /* AuthService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthService.swift; sourceTree = "<group>"; };
 		894318625F91A1D2462249FE /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		89F6F2F5DBBEE529E69418D7 /* SlackShareSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SlackShareSheet.swift; sourceTree = "<group>"; };
 		AAA58A3F30BFA24CE268AD67 /* LoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginView.swift; sourceTree = "<group>"; };
 		AC53E361C83E04580CF05221 /* VideoLibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoLibraryView.swift; sourceTree = "<group>"; };
+		B136E4B9F4C6D88E9009D569 /* VideoBubble.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoBubble.swift; sourceTree = "<group>"; };
 		CC18F5FFC74280EFFEB0BE65 /* ChatMessage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatMessage.swift; sourceTree = "<group>"; };
 		CC7AA7D72D102A4BC8F6B464 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		CE10509FD1B4B7983FB58B3D /* DirectVideoUploaderApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DirectVideoUploaderApp.swift; sourceTree = "<group>"; };
@@ -73,7 +74,6 @@
 		E3899E53553FC5E50293A8E8 /* ContextFormView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContextFormView.swift; sourceTree = "<group>"; };
 		E40A97DC8EDA46629FA1ACA5 /* ChatButtonStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatButtonStyle.swift; sourceTree = "<group>"; };
 		E7A81292325663F81C4B8772 /* ArchiveListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArchiveListView.swift; sourceTree = "<group>"; };
-		E8F7A0FE6F16D77BFEF57574 /* VideoBubble.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoBubble.swift; sourceTree = "<group>"; };
 		EA58877C26F0C09FF7DFA4DC /* VideoUploadService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoUploadService.swift; sourceTree = "<group>"; };
 		EF5B8A623A0F5AA9CA07EA1A /* InputBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InputBar.swift; sourceTree = "<group>"; };
 		F1FF094BA3F6CC3D1003E121 /* ChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatView.swift; sourceTree = "<group>"; };
@@ -96,6 +96,7 @@
 				86A11FF4693D09E9320E8C07 /* AuthService.swift */,
 				66AE6120B342F8FBF6D9F832 /* ChatViewModel.swift */,
 				E2F7D1991BA8E3668878BC47 /* KeychainHelper.swift */,
+				744BF6B02789CE656827F003 /* PermissionManager.swift */,
 				E0F22B2B9DC29CAFA863CDB2 /* TranscriptionService.swift */,
 				0E996DE4500DDFF0790F62F0 /* VideoMetadataExtractor.swift */,
 				EA58877C26F0C09FF7DFA4DC /* VideoUploadService.swift */,
@@ -159,7 +160,7 @@
 				EF5B8A623A0F5AA9CA07EA1A /* InputBar.swift */,
 				2B7EEEC345EAFF2EE3EFD9CA /* MessageBubble.swift */,
 				89F6F2F5DBBEE529E69418D7 /* SlackShareSheet.swift */,
-				E8F7A0FE6F16D77BFEF57574 /* VideoBubble.swift */,
+				B136E4B9F4C6D88E9009D569 /* VideoBubble.swift */,
 				AC53E361C83E04580CF05221 /* VideoLibraryView.swift */,
 				51E2EB93368D36F22B8AC2A4 /* VideoTrimView.swift */,
 			);
@@ -254,7 +255,6 @@
 				};
 			};
 			buildConfigurationList = 8E8628C98F1888075F9AD2C7 /* Build configuration list for PBXProject "DirectVideoUploader" */;
-			compatibilityVersion = "Xcode 14.0";
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
@@ -263,6 +263,8 @@
 			);
 			mainGroup = 3366E68B20E69DE20BB15FCB;
 			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 5743955FF4CE584D1C05A446 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
@@ -306,16 +308,16 @@
 				2F5EB0FE2B5962DCCF6BCD5B /* LoginView.swift in Sources */,
 				E6DDF3D43DC556C9E5C75AAF /* MessageBubble.swift in Sources */,
 				37912629DFC4719F11FEB3F5 /* MetadataView.swift in Sources */,
+				52DEC1E47DF5649ABBBC6F20 /* PermissionManager.swift in Sources */,
 				C43AFC93CF4984D2A3C2DA9A /* ProfileView.swift in Sources */,
-				90441C6428F48C99FEC945E7 /* VideoBubble.swift in Sources */,
 				889C07C34F8BFC90EF7CB2CE /* ServerConfig.swift in Sources */,
 				87ACFBE05C9BBA14AF4A07E1 /* SlackShareSheet.swift in Sources */,
 				CC1C0E76EF9FE58674443EC5 /* Theme.swift in Sources */,
 				610ABA84479B55060D56C3FD /* TranscriptionService.swift in Sources */,
 				CE6C303AB52C17CF99EFD315 /* User.swift in Sources */,
+				8CDB0858FD44667AD9882E4D /* VideoBubble.swift in Sources */,
 				257DDBB48613A0897D5754F0 /* VideoLibraryView.swift in Sources */,
 				B23CA5DB5C7678A863AC8029 /* VideoMetadataExtractor.swift in Sources */,
-
 				8CC14DFD30C33058BF4FA39B /* VideoTrimView.swift in Sources */,
 				25F4475ABDC354FFB218DC4B /* VideoUploadService.swift in Sources */,
 				3326B73E86C395A539C4B69E /* WebSocketService.swift in Sources */,
@@ -396,7 +398,6 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = DirectVideoUploader/Info.plist;
@@ -409,7 +410,6 @@
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_BackgroundColor = LaunchBg;
-				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UILaunchScreen_ImageName = launchscreen;
 				INFOPLIST_KEY_UILaunchScreen_ImageRespectsSafeAreaInsets = NO;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
@@ -428,7 +428,6 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = DirectVideoUploader/Info.plist;
@@ -441,7 +440,6 @@
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_BackgroundColor = LaunchBg;
-				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UILaunchScreen_ImageName = launchscreen;
 				INFOPLIST_KEY_UILaunchScreen_ImageRespectsSafeAreaInsets = NO;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;

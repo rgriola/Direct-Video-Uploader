@@ -844,4 +844,20 @@ Preview Bubble appears when the video upload begins and the Context form is init
 ... 
 
 *** Task ***
-Reduce the number of parameters for Colors, Fonts, Spacing 
+- Adding permissions to iOS app so the user can authorize it once and done. 
+- Photo Library permissions (videos)
+- Transcription permissions 
+
+*** Instructions ***
+- Add these permissions to the profile as toggles
+- Review and show me a plan how this implimentation would work, do not code. 
+*** Outcome ***
+- Allow user to address/save the permission one time and save the preferences.
+- Evaluate if this requires database/table updates. 
+
+Explain >> One of the core features is reading the location data from the video file. >> Include Location as a read-only indicator or a full toggle? 
+
+Leave it out >> Show Camera as "Coming Soon" or leave it out?
+
+NO >> Add a "Transcribe by default" user preference toggle (separate from the OS permission)? 
+

@@ -6,12 +6,14 @@ struct DirectVideoUploaderApp: App {
     
     @State private var auth = AuthService()
     @State private var ws = WebSocketService()
+    @State private var permissions = PermissionManager()
     
     var body: some Scene {
         WindowGroup {
             ContentView()
                 .environment(auth)
                 .environment(ws)
+                .environment(permissions)
         }
     }
 }

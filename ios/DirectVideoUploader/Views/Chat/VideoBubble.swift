@@ -152,12 +152,13 @@ struct VideoBubble: View {
                     Text("Transcribe")
                         .font(Theme.captionFont)
                 }
-                .foregroundStyle(transcribeEnabled ? Theme.blue : Theme.white)
-                .padding(.horizontal, 10)
+                .foregroundStyle(transcribeEnabled ? Color.black : Color.gray)
+                .padding(.horizontal, 11)
                 .padding(.vertical, 6)
-                .background(transcribeEnabled ? Theme.blue.opacity(0.15) : Color.clear)
+                .background(transcribeEnabled ? Theme.green : Color.white)
                 .clipShape(Capsule())
-                .overlay(Capsule().stroke(transcribeEnabled ? Theme.blue.opacity(0.4) : Theme.white.opacity(0.5), lineWidth: 1))
+                .overlay(Capsule().stroke(transcribeEnabled ? Theme.green.opacity(0.8) : Color.white.opacity(0.9), lineWidth: 1))
+
             }
 
             // Send button

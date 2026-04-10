@@ -42,6 +42,7 @@ targets:
     info:
       path: DirectVideoUploader/Info.plist
       properties:
+        ITSAppUsesNonExemptEncryption: false
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: true
           NSAllowsLocalNetworking: true

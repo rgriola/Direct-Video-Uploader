@@ -44,8 +44,9 @@ enum ServerConfig {
         #if targetEnvironment(simulator)
         return URL(string: "http://127.0.0.1:3000")!
         #else
-        // 4. Physical device in Debug → Mac's LAN IP
-        return URL(string: "http://192.168.0.100:3000")!
+        // 4. Physical device in Debug → Mac's current tethering/LAN IP
+        //    Update this if your IP changes (check `npm run dev` output under "iOS (LAN)")
+        return URL(string: "http://172.20.10.2:3000")!
         #endif
         
         #else

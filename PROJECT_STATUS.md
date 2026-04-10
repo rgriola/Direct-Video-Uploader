@@ -1,8 +1,8 @@
 # Direct Video Uploader — Project Status
 
-> **Last Updated:** April 9, 2026 · EST
-> **Current Phase:** Phase 3 (Render + Cloud + Mux) — Mux pipeline fully operational + Stability Phases A–C complete + Upload simplified + Re-upload + Archive polish + Admin tools + Transcription + UX/Performance polish
-> **Overall Progress:** ████████████████████ 100% (Phase 2) · Phase 3 ~98%
+> **Last Updated:** April 9, 2026 (evening) · EST
+> **Current Phase:** Phase 3 (Render + Cloud + Mux) — Mux pipeline fully operational + Stability Phases A–C complete + Upload simplified + Re-upload + Archive polish + Admin tools + Transcription + UX/Performance polish + Admin refactor + Security hardening + Clip Viewer UX
+> **Overall Progress:** ████████████████████ 100% (Phase 2) · Phase 3 ~99%
 
 ---
 
@@ -10,7 +10,7 @@
 
 The **Direct Video Uploader** is a mobile-first video upload platform disguised as a text conversation. Field crew members "text" videos to the **Mediasource Fixer** server, which processes them the way a news assignment desk operates — fast, structured, and integrated with Slack.
 
-We've completed the **interactive chat demo** (HTML prototype), **project specification** (v4), the **Phase 1 server foundation** (Node.js API, WebSocket, PostgreSQL, auth, admin dashboard), the **Phase 2 — iOS Demo App** core flow (login → chat → video upload → form → confirmation → archive), and the **Web Clip Viewer** (server-rendered at `/clips/:slug`). Latest session (Apr 8): **UX + Performance polish**. Merged `VideoPreviewBubble` + `SentUploadBubble` into unified `VideoBubble` (3-phase enum: staged/uploading/sent). Video library loading optimized from minutes → instant via PHAsset zero-copy URL resolution + PHAsset-based metadata extraction. Fixed critical WebSocket bug: `mux:ready` events now scoped to the uploading user's sockets (was broadcasting to all connected clients). Dashboard login input sanitized (phone: 10 digits, PIN: 8 digits). Launch screen fixed (image name mismatch, storyboard conflict removed). Slack confirmation card redesigned (thumbnail left, details right). ContextFormView auto-focuses slug field to eliminate input delay.
+We've completed the **interactive chat demo** (HTML prototype), **project specification** (v4), the **Phase 1 server foundation** (Node.js API, WebSocket, PostgreSQL, auth, admin dashboard), the **Phase 2 — iOS Demo App** core flow (login → chat → video upload → form → confirmation → archive), and the **Web Clip Viewer** (server-rendered at `/clips/:slug`). Latest session (Apr 9): **Admin refactoring, security hardening, and Clip Viewer UX**. Refactored `AssetList.tsx` and `UserList.tsx` into modular sub-components (`AssetRow`, `UserRow`, `StatusPill`, `UserDetails`). Added server-side input sanitization: slug maxLength 50 (strips non-alphanumeric/dash/period chars), description maxLength 500 (strips control characters), HTML escaping confirmed across all user-rendered metadata. Clip Viewer enhanced with 16:9 video placeholder (shimmer animation) and auto-polling `/clips/:mediasourceId/status` endpoint that swaps to live Mux player when ready — no page refresh needed. Transcribe toggle restyled (white bg + gray text off, green bg + black text on). Domain migration completed: all references updated from `rodgriola.com` to `ms-fixer.com`. Three semantic CSS themes created for admin dashboard (`Clean Editorial`, `Lavender Mist`, `Warm Newsroom`).
 
 ---
 
@@ -161,6 +161,7 @@ cd ios && xcodegen generate && xcodebuild -project DirectVideoUploader.xcodeproj
 | `POST`  | `/api/admin/sync-mux-status` | ✅ Force-sync stuck assets |
 | `GET`   | `/`                          | ✅ Dashboard               |
 | `GET`   | `/clips/:slug`               | ✅ Web clip viewer         |
+| `GET`   | `/clips/:mediasourceId/status` | ✅ Clip readiness (JSON) |
 
 ---
 
@@ -186,6 +187,17 @@ cd ios && xcodegen generate && xcodebuild -project DirectVideoUploader.xcodeproj
 | Xcode automatic code signing       | ✅ Done            | Team `LW5P4PVL96`, auto signing in project.yml         |
 | Centralized Theme + Formatting     | ✅ Done            | Theme.swift, DVUDateFormatting.swift, UserDefaultsKeys |
 | Video trim (pre-upload)            | ✅ Done            | UIVideoEditorController via modal host VC, .typeHigh   |
+
+**Features Added (Apr 9 — Session):**
+
+- **Admin component refactoring** — `AssetList.tsx` refactored from monolithic 350-line component into modular sub-components: `AssetRow` (individual row rendering), `FormSection` (form response display), `ClipSection` (clip details). `UserList.tsx` similarly refactored into `UserRow`, `StatusPill`, `UserDetails` with data-driven detail rendering. `formatDuration()` and `formatLoginAge()` extracted as shared utility functions. Comprehensive JSDoc documentation added.
+- **Server-side input sanitization** — `POST /api/assets/:id/form` hardened: `slug` limited to 50 characters, stripped of non-alphanumeric/dash/period characters via regex; `description` limited to 500 characters, stripped of non-printable control characters (`[\x00-\x1F\x7F]`). Protects against malicious API calls bypassing the iOS client. Confirmed consistent `escapeHtml()` usage in `clips.js` for XSS prevention.
+- **Clip Viewer video placeholder + auto-polling** — Replaced static "Video not yet available" text with a styled 16:9 placeholder matching Mux player dimensions, featuring a shimmer CSS animation and pulsing film icon. Added `GET /clips/:mediasourceId/status` lightweight JSON endpoint (public, no auth). Client-side JavaScript polls every 5s (max 72 attempts = 6 min). When Mux signals ready, dynamically loads the Mux Player SDK, creates a `<mux-player>` element, and swaps it in-place — zero page reload. Status pill updates live during processing.
+- **Transcribe toggle UX** — Updated `VideoBubble.swift` transcribe button styling: off state = solid white background + gray text + `mic.slash` icon; on state = solid green background + black text + `mic.fill` icon. Clear visual distinction against the dark video bubble gradient.
+- **Domain migration** — All project references updated from `rodgriola.com` to `ms-fixer.com` (README, first-file.md, privacy-policy.md, TODO.md).
+- **Admin dashboard themes** — Created three semantic CSS theme files: `theme-a-editorial.css` (Clean Editorial — neutral tones), `theme-b-lavender.css` (Lavender Mist — purple gradient, currently active), `theme-c-newsroom.css` (Warm Newsroom — amber/sunset tones). Base `index.css` expanded with CSS custom properties for all design tokens.
+- **README rewrite** — Full rewrite of `README.md` reflecting current architecture, Mux integration, admin dashboard, and deployment setup.
+- **ServerConfig tethering IP** — Updated physical device debug fallback from `192.168.0.100` to `172.20.10.2` (USB tethering interface).
 
 **Features Added (Apr 8 — Session):**
 
@@ -415,6 +427,11 @@ Render is the preview environment (stand-in for eventual company production syst
 | Real metadata extraction | ✅ Done          | iOS AVAsset extracts real metadata (not ffprobe — native iOS)                                                                               |
 | Parallel form + upload   | 🔲 Not started   | Show form at upload start (not after); wait for both to finalize asset. Needed when real transcoding adds latency.                          |
 | Ephemeral chat cleanup   | ✅ Done          | Option B: greeting, auto-reply, form-request, confirmation no longer persisted to DB — sent via WS only.                                    |
+| Admin component refactor | ✅ Done          | AssetList + UserList extracted into modular sub-components (AssetRow, UserRow, StatusPill, UserDetails).                                     |
+| Server input sanitization| ✅ Done          | Slug maxLength 50 + char strip; description maxLength 500 + control char strip. Server-side defense against bypassed client validation.      |
+| Clip Viewer placeholder  | ✅ Done          | 16:9 shimmer placeholder + auto-polling status endpoint. Dynamically swaps to Mux player when ready — no reload.                            |
+| Admin dashboard themes   | ✅ Done          | Three semantic CSS themes (Editorial, Lavender, Newsroom) with CSS custom property design tokens.                                           |
+| Domain migration         | ✅ Done          | All references updated from rodgriola.com to ms-fixer.com across docs and server config.                                                    |
 
 ---
 
@@ -635,6 +652,11 @@ Direct-Video-Uploader/
 | Apr 8  | User-scoped WebSocket events         | `mux-sync.js` now accepts `fastify` instance and emits `mux:ready` only to the asset owner's sockets, not all connected clients.                                          |
 | Apr 8  | VideoBubble phase enum               | Single component with `.staged`/`.uploading`/`.sent` phases replaces two separate bubble views. Reduces code duplication.                                                  |
 | Apr 8  | Launch screen config cleanup         | `UILaunchStoryboardName` + `UILaunchScreen_*` keys conflict — removed storyboard ref, corrected image name to match asset catalog.                                        |
+| Apr 9  | Server-side slug sanitization        | Client-side validation insufficient — API calls can bypass iOS app entirely. Server now enforces maxLength + character whitelist on slug and description.                   |
+| Apr 9  | Clip viewer auto-polling             | Static "not yet available" text replaced with 16:9 placeholder + `/status` JSON endpoint. Client polls every 5s, dynamically loads Mux SDK and swaps player in-place.     |
+| Apr 9  | Admin modular architecture           | Monolithic list components (350+ lines each) extracted into focused sub-components. Data-driven rendering with shared utility functions.                                   |
+| Apr 9  | CSS design token themes              | Dashboard styling moved from hardcoded values to CSS custom properties. Three theme files enable visual switching without code changes.                                    |
+| Apr 9  | Transcribe toggle solid backgrounds  | Semi-transparent pill backgrounds (opacity 0.15) replaced with solid white/green for clearer on/off distinction against dark video bubble gradient.                        |
 
 ---
 
