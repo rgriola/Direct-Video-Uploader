@@ -955,12 +955,10 @@ clicking button will show a panel with the below instructions - for now until I 
 ...
 *** Task ***
 - Review the profile view implimentation. The photo library and speech recogniztion toggles cannot be turned off once on. 
- 
-
 
 ... 
-*** Task ***
-- How can this code be improved? 
+*** Issue ***
+-- The app crashed when a user set speech recogniztion to "dont allow" , this the initial Apple Permission panel. The setting did take effect but the app crashed. 
 
 
 

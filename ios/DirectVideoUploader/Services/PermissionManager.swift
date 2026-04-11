@@ -53,15 +53,26 @@ final class PermissionManager {
 
         switch current {
         case .notDetermined:
-            // First time — iOS will show the system dialog
-            let granted = await withCheckedContinuation { continuation in
+            // First time — iOS will show the system dialog.
+            //
+            // IMPORTANT: SFSpeechRecognizer.requestAuthorization delivers its
+            // callback on an arbitrary background thread — NOT the main thread.
+            // Capturing only the raw status value (an enum, fully Sendable)
+            // inside the continuation is safe.  We then assign it back here on
+            // the MainActor after the continuation resumes, avoiding the
+            // thread-safety violation that caused the crash when the user tapped
+            // "Don't Allow" on the system permission dialog.
+            let newStatus: SFSpeechRecognizerAuthorizationStatus = await withCheckedContinuation { continuation in
                 SFSpeechRecognizer.requestAuthorization { status in
+                    // status is a plain enum value — safe to capture & resume from
+                    // any thread.
                     continuation.resume(returning: status)
                 }
             }
-            speechStatus = granted
+            // Back on @MainActor — safe to write @Observable state.
+            speechStatus = newStatus
         default:
-            // Already granted, denied, or restricted — open Settings to change
+            // Already granted, denied, or restricted — open Settings to change.
             openAppSettings()
         }
     }
