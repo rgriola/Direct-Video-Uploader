@@ -7,6 +7,8 @@ struct ChatView: View {
     
     @State private var viewModel: ChatViewModel?
     @State private var showVideoLibrary = false
+    @State private var showPhotoLibrary = false
+    @State private var showMediaPicker = false
     @State private var showInstructions = false
     @AppStorage("hasSeenInstructions") private var hasSeenInstructions = false
     
@@ -81,6 +83,25 @@ struct ChatView: View {
                                     )
                                     .id("staged-video-preview")
                                 }
+                                
+                                // Staged photo batch preview — user must confirm before upload
+                                if let batch = vm.stagedPhotoBatch {
+                                    PhotoBatchBubble(
+                                        phase: .staged,
+                                        thumbnails: batch.items.prefix(4).map(\.thumbnail),
+                                        photoCount: batch.count,
+                                        summary: batch.summary,
+                                        formatSummary: batch.formatSummary,
+                                        hasLocation: batch.hasLocation,
+                                        onSend: {
+                                            Task { await vm.confirmPhotoUpload() }
+                                        },
+                                        onCancel: {
+                                            vm.cancelStagedPhotos()
+                                        }
+                                    )
+                                    .id("staged-photo-preview")
+                                }
                             }
                         }
                         .padding(.horizontal, 12)
@@ -90,6 +111,9 @@ struct ChatView: View {
                         scrollToBottom(proxy: proxy)
                     }
                     .onChange(of: viewModel?.stagedVideo != nil) { _, _ in
+                        scrollToBottom(proxy: proxy)
+                    }
+                    .onChange(of: viewModel?.stagedPhotoBatch != nil) { _, _ in
                         scrollToBottom(proxy: proxy)
                     }
                     .onChange(of: viewModel?.isUploading) { _, _ in
@@ -104,7 +128,7 @@ struct ChatView: View {
                         viewModel?.sendTextMessage(text)
                     },
                     onAttach: {
-                        showVideoLibrary = true
+                        showMediaPicker = true
                     }
                 )
             }
@@ -121,6 +145,26 @@ struct ChatView: View {
                     showVideoLibrary = false
                 }
             )
+        }
+        .sheet(isPresented: $showPhotoLibrary) {
+            PhotoLibraryView(
+                onConfirm: { items in
+                    showPhotoLibrary = false
+                    viewModel?.stagePhotos(items: items)
+                },
+                onDismiss: {
+                    showPhotoLibrary = false
+                }
+            )
+        }
+        .confirmationDialog("Select Media", isPresented: $showMediaPicker) {
+            Button("\u{1F4F9} Video") {
+                showVideoLibrary = true
+            }
+            Button("\u{1F4F8} Photos") {
+                showPhotoLibrary = true
+            }
+            Button("Cancel", role: .cancel) { }
         }
         .sheet(isPresented: Binding(
             get: { viewModel?.showFormSheet ?? false },
@@ -184,7 +228,9 @@ struct ChatView: View {
     }
     
     private func scrollToBottom(proxy: ScrollViewProxy) {
-        let targetId: String? = if viewModel?.stagedVideo != nil {
+        let targetId: String? = if viewModel?.stagedPhotoBatch != nil {
+            "staged-photo-preview"
+        } else if viewModel?.stagedVideo != nil {
             "staged-video-preview"
         } else {
             viewModel?.messages.last?.id

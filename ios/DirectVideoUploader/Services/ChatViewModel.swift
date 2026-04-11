@@ -54,6 +54,10 @@ final class ChatViewModel {
     var isProcessingVideo = false
     var transcribeOnUpload = false
     
+    // Staged photos — batch preview before upload
+    var stagedPhotoBatch: StagedPhotoBatch?
+    var isProcessingPhotos = false
+    
     // Archive state — conversation closed after mux:ready or new upload
     var isArchived = false
     var showSlackShareSheet = false
@@ -79,6 +83,7 @@ final class ChatViewModel {
     let auth: AuthService
     let ws: WebSocketService
     let uploader = VideoUploadService()
+    let photoUploader = PhotoUploadService()
     let transcriber = TranscriptionService()
     
     init(auth: AuthService, ws: WebSocketService) {
@@ -383,9 +388,9 @@ final class ChatViewModel {
     
     // MARK: - Create Asset (Video Upload Flow)
     
-    func createAsset(fileName: String, fileURL: URL) async -> Asset? {
+    func createAsset(fileName: String, fileURL: URL, type: String = "VIDEO") async -> Asset? {
         var request = auth.authenticatedRequest(for: ServerConfig.assetsURL, method: "POST")
-        let body = CreateAssetRequest(fileName: fileName)
+        let body = CreateAssetRequest(fileName: fileName, type: type)
         request.httpBody = try? JSONEncoder().encode(body)
         
         // Get actual file size before notifying server
@@ -762,6 +767,120 @@ final class ChatViewModel {
         stagedVideo = nil
     }
     
+    // MARK: - Photo Staging (Batch Flow)
+    
+    /// Stage a batch of photos for preview in chat.
+    func stagePhotos(items: [PhotoItem]) {
+        if isArchived {
+            startNewConversation()
+        }
+        stagedPhotoBatch = StagedPhotoBatch(items: items)
+    }
+    
+    /// User confirmed photo upload — create asset + upload batch to ImageKit.
+    func confirmPhotoUpload() async {
+        guard let batch = stagedPhotoBatch, let token = auth.token else { return }
+        
+        let items = batch.items
+        let summary = batch.summary
+        let thumbnails = Array(items.prefix(4).map(\.thumbnail))
+        
+        // Add outgoing photo message to chat
+        let msgId = UUID().uuidString
+        let photoMessage = ChatMessage(
+            id: msgId,
+            userId: auth.currentUser?.id,
+            assetId: nil,
+            direction: .outgoing,
+            messageType: .video, // Reuse video type for now (photo type can be added later)
+            content: MessageContent(text: "📸 \(summary)"),
+            createdAt: ISO8601DateFormatter().string(from: Date())
+        )
+        messages.append(photoMessage)
+        
+        // Cache batch info for the bubble
+        sentUploads[msgId] = SentUploadInfo(
+            thumbnail: batch.gridThumbnail,
+            fileName: summary,
+            createdDate: {
+                let formatter = DateFormatter()
+                formatter.dateFormat = "MMM d, yyyy h:mm a"
+                return formatter.string(from: Date())
+            }(),
+            hasLocation: batch.hasLocation
+        )
+        
+        // Clear staged batch — PhotoBatchBubble takes over
+        stagedPhotoBatch = nil
+        isUploading = true
+        uploadProgress = 0
+        
+        // Create server asset with type PHOTO
+        let firstName = items.first?.fileName ?? "photos"
+        var request = auth.authenticatedRequest(for: ServerConfig.assetsURL, method: "POST")
+        let createBody = CreateAssetRequest(fileName: firstName, type: "PHOTO")
+        request.httpBody = try? JSONEncoder().encode(createBody)
+        
+        do {
+            let asset = try await withRetry(attempts: 3) { attempt in
+                let (data, httpResponse) = try await URLSession.shared.data(for: request)
+                let statusCode = (httpResponse as? HTTPURLResponse)?.statusCode ?? 0
+                guard statusCode >= 200, statusCode < 300 else {
+                    throw NSError(domain: "createAsset", code: statusCode)
+                }
+                let response = try JSONDecoder().decode(CreateAssetResponse.self, from: data)
+                return response.asset
+            }
+            
+            currentAssetId = asset.id
+            print("📸 Photo asset created: \(asset.mediasourceId ?? asset.id)")
+            
+            // Upload batch via PhotoUploadService
+            let progressTask = Task { @MainActor in
+                while self.photoUploader.isUploading {
+                    self.uploadProgress = self.photoUploader.batchProgress
+                    try? await Task.sleep(for: .milliseconds(100))
+                }
+                self.uploadProgress = self.photoUploader.batchProgress
+            }
+            
+            let results = await photoUploader.uploadBatch(
+                assetId: asset.id,
+                items: items,
+                token: token
+            )
+            
+            progressTask.cancel()
+            isUploading = false
+            uploadProgress = 1.0
+            
+            let failedCount = results.filter {
+                if case .failed = $0.uploadState { return true }
+                return false
+            }.count
+            
+            if failedCount > 0 {
+                appendErrorBubble("⚠️ \(failedCount) of \(items.count) photos failed to upload.", assetId: asset.id)
+            }
+            
+        } catch {
+            isUploading = false
+            appendErrorBubble("⚠️ Could not start photo upload. Please try again.")
+            Task {
+                await reportError(
+                    category: "photo-upload",
+                    message: "Photo asset creation failed: \(error.localizedDescription)",
+                    severity: "ERROR"
+                )
+            }
+        }
+    }
+    
+    /// User cancelled staged photos — discard.
+    func cancelStagedPhotos() {
+        stagedPhotoBatch = nil
+    }
+    
     // MARK: - Pending Form Recovery
     
     /// Check for a form that was pending when app was killed.
@@ -837,6 +956,7 @@ final class ChatViewModel {
         lastAsset = nil
         lastClip = nil
         stagedVideo = nil
+        stagedPhotoBatch = nil
         isUploading = false
         uploadProgress = 0
         showFormSheet = false
