@@ -8,6 +8,7 @@ struct Asset: Codable, Identifiable {
     let mediasourceUrl: String?
     let originalFileName: String?
     let status: AssetStatus
+    let assetType: AssetType?
     let clipCount: Int?
     let totalDuration: Int?
     let createdAt: String?
@@ -47,6 +48,13 @@ enum AssetStatus: String, Codable {
     }
 }
 
+// MARK: - Asset Type
+
+enum AssetType: String, Codable {
+    case video = "VIDEO"
+    case photo = "PHOTO"
+}
+
 // MARK: - Clip
 
 struct Clip: Codable, Identifiable {
@@ -76,6 +84,7 @@ struct Clip: Codable, Identifiable {
 
 struct CreateAssetRequest: Codable {
     let fileName: String
+    let type: String?
 }
 
 struct CreateAssetResponse: Codable {

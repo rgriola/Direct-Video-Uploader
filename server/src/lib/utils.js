@@ -113,11 +113,12 @@ export function serializeClip(clip) {
  * @param {object} payload.metadata - Parsed metadata from parseClientMetadata()
  * @param {object} payload.clip - { id, storageUrl?, fileSize, originalFileName }
  * @param {string} payload.messageText - Text for the FORM_REQUEST message
+ * @param {string} [payload.mediaType='video'] - 'video' or 'photo'
  */
 export function notifyUserSockets(io, socketIds, payload) {
     if (!socketIds) return;
 
-    const { assetId, asset, userName, metadata, clip, messageText } = payload;
+    const { assetId, asset, userName, metadata, clip, messageText, mediaType = 'video' } = payload;
     const hasRichMeta = metadata.gpsLat
         || metadata.codec !== 'Unknown'
         || metadata.deviceModel !== 'Unknown Device';
@@ -126,6 +127,7 @@ export function notifyUserSockets(io, socketIds, payload) {
         // 1. Upload complete with full metadata
         io.to(socketId).emit('upload:complete', {
             assetId,
+            mediaType,
             mediasourceId: asset.mediasourceId,
             mediasourceUrl: asset.mediasourceUrl,
             originalFileName: asset.originalFileName,
@@ -149,6 +151,7 @@ export function notifyUserSockets(io, socketIds, payload) {
             messageType: 'FORM_REQUEST',
             content: {
                 text: messageText,
+                mediaType,
                 mediasourceId: asset.mediasourceId,
                 mediasourceUrl: asset.mediasourceUrl,
                 originalFileName: asset.originalFileName,
@@ -168,6 +171,7 @@ export function notifyUserSockets(io, socketIds, payload) {
         // 3. Form request event — opens the form sheet on iOS
         io.to(socketId).emit('form:request', {
             assetId,
+            mediaType,
             originalFileName: asset.originalFileName,
             capturedAt: metadata.capturedAt,
             clipCount: 1,

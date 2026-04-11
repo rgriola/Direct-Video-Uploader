@@ -5,6 +5,7 @@ import { randomUUID } from 'crypto';
 import prisma from '../lib/prisma.js';
 import { generateMediasourceId, dbRetry, parseClientMetadata, serializeClip, notifyUserSockets } from '../lib/utils.js';
 import { isMuxEnabled, createDirectUpload } from '../lib/mux.js';
+import { isImageKitEnabled, getUploadAuthParams, getUrlEndpoint } from '../lib/imagekit.js';
 
 // Allowed video MIME types — kept for reference if local upload is re-enabled
 const ALLOWED_VIDEO_MIMES = new Set([
@@ -29,7 +30,8 @@ export default async function assetRoutes(fastify) {
             rateLimit: { max: 10, timeWindow: '1 minute' },
         },
     }, async (request) => {
-        const { fileName } = request.body || {};
+        const { fileName, type } = request.body || {};
+        const assetType = type === 'PHOTO' ? 'PHOTO' : 'VIDEO';
         const mediasourceId = await generateMediasourceId(prisma);
 
         const asset = await dbRetry(() => prisma.asset.create({
@@ -39,6 +41,7 @@ export default async function assetRoutes(fastify) {
                 mediasourceUrl: `/clips/${mediasourceId}`,
                 originalFileName: fileName || null,
                 status: 'UPLOADING',
+                assetType,
             },
         }));
 
@@ -49,6 +52,7 @@ export default async function assetRoutes(fastify) {
                 mediasourceUrl: asset.mediasourceUrl,
                 originalFileName: asset.originalFileName,
                 status: asset.status,
+                assetType: asset.assetType,
                 clipCount: asset.clipCount,
                 totalDuration: asset.totalDuration,
             },
@@ -167,6 +171,147 @@ export default async function assetRoutes(fastify) {
             clipId,
             muxUploadId: muxResult.muxUploadId,
         };
+    });
+
+    /**
+     * POST /api/assets/:id/photo-upload
+     * Generate ImageKit authentication params for a client-side photo upload.
+     * iOS uploads directly to ImageKit's CDN (same pattern as Mux direct upload).
+     *
+     * Body: { index?: number, metadata?: { fileName, capturedAt, gpsLat, gpsLon, ... } }
+     * Returns: { token, expire, signature, uploadUrl, clipId, urlEndpoint }
+     */
+    fastify.post('/api/assets/:id/photo-upload', {
+        preHandler: [fastify.authenticate],
+    }, async (request, reply) => {
+        const { id } = request.params;
+
+        if (!isImageKitEnabled) {
+            return reply.status(503).send({ error: 'ImageKit not configured' });
+        }
+
+        const asset = await dbRetry(() => prisma.asset.findUnique({ where: { id } }));
+        if (!asset || asset.userId !== request.user.id) {
+            return reply.status(404).send({ error: 'Asset not found' });
+        }
+        if (asset.assetType !== 'PHOTO') {
+            return reply.status(400).send({ error: 'Asset is not a photo type' });
+        }
+
+        const clientMeta = request.body?.metadata || {};
+        const clipIndex = request.body?.index ?? 0;
+        const clipId = randomUUID();
+
+        // Generate ImageKit auth params (token, expire, signature)
+        const authParams = getUploadAuthParams(1800); // 30 min validity
+        if (!authParams) {
+            return reply.status(500).send({ error: 'Failed to generate ImageKit auth' });
+        }
+
+        // Create clip record in UPLOADING state
+        await dbRetry(() => prisma.clip.create({
+            data: {
+                id: clipId,
+                assetId: id,
+                clipIndex,
+                originalFileName: clientMeta.fileName || null,
+                fileSize: clientMeta.fileSize ? BigInt(clientMeta.fileSize) : null,
+                gpsLat: clientMeta.gpsLat ? parseFloat(clientMeta.gpsLat) : null,
+                gpsLon: clientMeta.gpsLon ? parseFloat(clientMeta.gpsLon) : null,
+                gpsAltitude: clientMeta.gpsAltitude ? parseFloat(clientMeta.gpsAltitude) : null,
+                capturedAt: clientMeta.capturedAt ? new Date(clientMeta.capturedAt) : null,
+                deviceModel: clientMeta.deviceModel || null,
+                osVersion: clientMeta.osVersion || null,
+                resolution: clientMeta.resolution || null,
+                orientation: clientMeta.orientation || null,
+                format: clientMeta.format || null,
+                width: clientMeta.width ? parseInt(clientMeta.width, 10) : null,
+                height: clientMeta.height ? parseInt(clientMeta.height, 10) : null,
+                status: 'UPLOADING',
+            },
+        }));
+
+        // Update asset photo count
+        await dbRetry(() => prisma.asset.update({
+            where: { id },
+            data: {
+                photoCount: { increment: 1 },
+                clipCount: { increment: 1 },
+            },
+        }));
+
+        console.log(`📸 ImageKit upload auth generated for clip ${clipId}, asset #${asset.mediasourceId} (photo ${clipIndex + 1})`);
+
+        return {
+            ...authParams,
+            uploadUrl: 'https://upload.imagekit.io/api/v2/files/upload',
+            clipId,
+            urlEndpoint: getUrlEndpoint(),
+        };
+    });
+
+    /**
+     * POST /api/assets/:id/photo-uploaded
+     * Confirm a single photo has been uploaded to ImageKit.
+     * iOS calls this after a successful PUT to ImageKit's CDN.
+     *
+     * Body: { clipId, imageKitFileId?, imageKitUrl? }
+     */
+    fastify.post('/api/assets/:id/photo-uploaded', {
+        preHandler: [fastify.authenticate],
+    }, async (request, reply) => {
+        const { id } = request.params;
+        const { clipId, imageKitFileId, imageKitUrl } = request.body || {};
+
+        if (!clipId) {
+            return reply.status(400).send({ error: 'clipId is required' });
+        }
+
+        const asset = await dbRetry(() => prisma.asset.findUnique({ where: { id } }));
+        if (!asset || asset.userId !== request.user.id) {
+            return reply.status(404).send({ error: 'Asset not found' });
+        }
+
+        // Update clip with ImageKit URL and mark READY
+        await dbRetry(() => prisma.clip.update({
+            where: { id: clipId },
+            data: {
+                storageUrl: imageKitUrl || null,
+                thumbnailUrl: imageKitUrl || null,
+                status: 'READY',
+            },
+        }));
+
+        // Check if all clips for this asset are READY
+        const totalClips = await prisma.clip.count({ where: { assetId: id } });
+        const readyClips = await prisma.clip.count({ where: { assetId: id, status: 'READY' } });
+        const allDone = readyClips >= totalClips;
+
+        if (allDone) {
+            // Mark asset as PROCESSING (waiting for form) or READY
+            await dbRetry(() => prisma.asset.update({
+                where: { id },
+                data: { status: 'PROCESSING' },
+            }));
+
+            console.log(`📸 All ${totalClips} photos uploaded for asset #${asset.mediasourceId}`);
+
+            // Push form request via WebSocket (same pattern as video)
+            const originalName = asset.originalFileName || asset.mediasourceId;
+            notifyUserSockets(fastify.io, fastify.userSockets?.get(request.user.id), {
+                assetId: id,
+                asset: { mediasourceId: asset.mediasourceId, mediasourceUrl: asset.mediasourceUrl, originalFileName: originalName },
+                userName: request.user.name,
+                metadata: { duration: 0, gpsLat: null, codec: 'N/A', deviceModel: 'Unknown Device', resolution: 'N/A' },
+                clip: { id: clipId, fileSize: '0' },
+                messageText: `📸 #${asset.mediasourceId} — ${totalClips} photo${totalClips > 1 ? 's' : ''} uploaded. Here are the Mediasource details.`,
+                mediaType: 'photo',
+            });
+        }
+
+        console.log(`📸 Photo ${clipId} confirmed (${readyClips}/${totalClips} ready) for asset #${asset.mediasourceId}`);
+
+        return { ok: true, clipId, allDone, readyClips, totalClips };
     });
 
     /**

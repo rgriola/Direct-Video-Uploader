@@ -56,6 +56,8 @@ model Asset {
   clips        Clip[]
   formResponse FormResponse?
   messages     ChatMessage[]
+  assetType    AssetType  @default(VIDEO) @map("asset_type")
+  photoCount   Int        @default(0) @map("photo_count")
 
   @@index([userId])
   @@map("assets")
@@ -66,6 +68,11 @@ enum AssetStatus {
   PROCESSING
   READY
   ERROR
+}
+
+enum AssetType {
+  VIDEO
+  PHOTO
 }
 
 // ─── Clips (individual video files) ──────────────────────
@@ -95,6 +102,12 @@ model Clip {
   transcriptSegments Json?    @map("transcript_segments")
   status           ClipStatus @default(UPLOADING)
   createdAt        DateTime   @default(now()) @map("created_at")
+  // Photo-specific fields (null for videos)
+  format           String?    // "JPEG", "HEIC" — null for videos
+  width            Int?       // pixel width
+  height           Int?       // pixel height
+  caption          String?    // per-photo section caption
+  peopleInImage    Json?      @map("people_in_image")  // ["name1", "name2"]
 
   asset Asset @relation(fields: [assetId], references: [id], onDelete: Cascade)
 

@@ -104,6 +104,8 @@ enum ServerConfig {
     static var myAssetsURL: URL { url(for: "/api/assets/mine") }
     static func assetURL(_ id: String) -> URL { url(for: "/api/assets/\(id)") }
     static func muxUploadURL(_ id: String) -> URL { url(for: "/api/assets/\(id)/mux-upload") }
+    static func photoUploadURL(_ id: String) -> URL { url(for: "/api/assets/\(id)/photo-upload") }
+    static func photoUploadedURL(_ id: String) -> URL { url(for: "/api/assets/\(id)/photo-uploaded") }
     static func formURL(_ id: String) -> URL { url(for: "/api/assets/\(id)/form") }
     static func transcriptURL(_ id: String) -> URL { url(for: "/api/assets/\(id)/transcript") }
     
