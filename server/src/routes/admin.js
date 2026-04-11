@@ -142,6 +142,8 @@ export default async function adminRoutes(fastify) {
         const assets = await prisma.$queryRawUnsafe(`
             SELECT a.id, a.mediasource_id AS "mediasourceId",
                    a.mediasource_url AS "mediasourceUrl", a.status,
+                   a.asset_type AS "assetType",
+                   a.photo_count::int AS "photoCount",
                    a.clip_count::int AS "clipCount", a.total_duration_seconds::int AS "totalDuration",
                    a.created_at AS "createdAt",
                    json_build_object('id', u.id, 'name', u.name, 'phoneNumber', u.phone_number) AS "user",

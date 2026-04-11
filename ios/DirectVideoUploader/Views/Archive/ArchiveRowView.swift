@@ -365,13 +365,14 @@ struct ArchiveRowView: View {
                 clipCount: asset.clipCount,
                 duration: asset.clips?.first?.duration,
                 thumbnail: nil,
-                onSubmit: { formData in
+                onSubmit: { formData, _ in
                     showFormSheet = false
                     Task { await submitFormFromArchive(formData: formData) }
                 },
                 onCancel: {
                     showFormSheet = false
-                }
+                },
+                mediaType: asset.assetType == .photo ? "photo" : "video"
             )
         }
         .onChange(of: selectedVideoItem) { _, newItem in

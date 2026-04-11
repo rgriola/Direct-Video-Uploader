@@ -393,13 +393,25 @@ export default async function assetRoutes(fastify) {
                     type:        { type: 'string', default: 'Raw' },
                     description: { type: 'string', maxLength: 500 },
                     priority:    { type: 'string', default: 'Low', enum: ['Low', 'Medium', 'High', 'Critical', 'low', 'medium', 'high', 'critical', 'LOW', 'MEDIUM', 'HIGH', 'CRITICAL'] },
+                    // Per-photo metadata (optional, only for photo batches)
+                    photos: {
+                        type: 'array',
+                        items: {
+                            type: 'object',
+                            properties: {
+                                clipId:  { type: 'string' },
+                                caption: { type: 'string', maxLength: 200 },
+                                people:  { type: 'string', maxLength: 500 },
+                            },
+                        },
+                    },
                 },
             },
         },
         preHandler: [fastify.authenticate],
     }, async (request, reply) => {
         const { id } = request.params;
-        let { slug, type, description, priority } = request.body || {};
+        let { slug, type, description, priority, photos } = request.body || {};
 
         const asset = await prisma.asset.findUnique({
             where: { id },
@@ -457,6 +469,26 @@ export default async function assetRoutes(fastify) {
                 priority: priority?.toUpperCase() || undefined,
             },
         });
+
+        // Update per-photo metadata if provided (photo batches only)
+        if (Array.isArray(photos) && photos.length > 0) {
+            for (const photo of photos) {
+                if (!photo.clipId) continue;
+                const updateData = {};
+                if (photo.caption) updateData.caption = photo.caption.trim().slice(0, 200);
+                if (photo.people) {
+                    // Parse comma-separated names into JSON array
+                    const names = photo.people.split(',').map(n => n.trim()).filter(Boolean);
+                    updateData.peopleInImage = names;
+                }
+                if (Object.keys(updateData).length > 0) {
+                    await prisma.clip.updateMany({
+                        where: { id: photo.clipId, assetId: id },
+                        data: updateData,
+                    });
+                }
+            }
+        }
 
         // Push confirmation via WebSocket — include metadata for rich confirmation card
         const io = fastify.io;

@@ -123,11 +123,14 @@ function AssetRow({ asset, isExpanded, onToggle }: AssetRowProps) {
   const title = asset.formResponse?.slug || asset.mediasourceId || asset.id;
 
   // One-line summary: "#100000017 · 1 clip · 2:05 · 1920x1080 · by Rod Griola · 📋 Form"
+  const isPhoto = asset.assetType === 'PHOTO';
   const details = [
     asset.mediasourceId ? `#${asset.mediasourceId}` : null,
-    asset.clipCount ? `${asset.clipCount} clip${asset.clipCount !== 1 ? "s" : ""}` : null,
-    formatDuration(asset.totalDuration) || null,
-    clip?.resolution ?? null,
+    isPhoto && asset.photoCount
+      ? `${asset.photoCount} photo${asset.photoCount !== 1 ? 's' : ''}`
+      : asset.clipCount ? `${asset.clipCount} clip${asset.clipCount !== 1 ? 's' : ''}` : null,
+    !isPhoto && formatDuration(asset.totalDuration) || null,
+    !isPhoto && clip?.resolution ? clip.resolution : null,
     `by ${asset.user?.name ?? "Unknown"}`,
     asset.formResponse ? "📋 Form" : null,
   ]
@@ -145,9 +148,9 @@ function AssetRow({ asset, isExpanded, onToggle }: AssetRowProps) {
         onClick={onToggle}
         className="flex items-center w-full px-6 py-4 hover:bg-(--card-hover) transition-colors cursor-pointer text-left bg-transparent border-0 text-inherit font-inherit"
       >
-        {/* Status icon circle */}
+        {/* Status icon circle — use media type icon */}
         <div className="w-10.5 h-10.5 rounded-[10px] bg-(--secondary) flex items-center justify-center text-base mr-3.5 shrink-0">
-          {statusIcons[asset.status] ?? "📦"}
+          {isPhoto ? '📷' : (statusIcons[asset.status] ?? '📦')}
         </div>
 
         {/* Title + detail line */}
@@ -163,6 +166,11 @@ function AssetRow({ asset, isExpanded, onToggle }: AssetRowProps) {
           {missingForm && (
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-(--accent-red-glow) text-(--accent-red)">
               ⚠️ No Form
+            </span>
+          )}
+          {isPhoto && (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-(--accent-blue-glow) text-(--accent-blue)">
+              📷 Photo
             </span>
           )}
           <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold ${statusClasses[asset.status] ?? ""}`}>

@@ -179,13 +179,16 @@ struct ChatView: View {
                     duration: vm.form.duration,
                     thumbnail: vm.form.thumbnail,
                     submitError: vm.form.submitError,
-                    onSubmit: { formData in
+                    onSubmit: { formData, photoMeta in
                         vm.form.submitError = nil  // Clear previous error
-                        Task { await vm.submitForm(assetId: assetId, formData: formData) }
+                        Task { await vm.submitForm(assetId: assetId, formData: formData, photoMetadata: photoMeta) }
                     },
                     onCancel: {
                         vm.cancelForm()
-                    }
+                    },
+                    mediaType: vm.form.mediaType,
+                    photoThumbnails: vm.form.photoThumbnails,
+                    photoClipIds: vm.form.photoClipIds
                 )
             }
         }

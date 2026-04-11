@@ -17,14 +17,21 @@ struct ContextFormView: View {
     let duration: Int?
     let thumbnail: UIImage?
     var submitError: String?
-    var onSubmit: ([String: String]) -> Void
+    var onSubmit: ([String: String], [[String: String]]?) -> Void
     var onCancel: (() -> Void)?
+    
+    // Photo batch support
+    var mediaType: String?              // "video" or "photo"
+    var photoThumbnails: [UIImage] = []
+    var photoClipIds: [String] = []
     
     @Environment(\.dismiss) private var dismiss
     @State private var formValues: [String: String] = [:]
     @State private var selectedPriority: String = "Low"
     @State private var hasAttemptedSubmit = false
     @State private var showCancelConfirm = false
+    @State private var photoCaptions: [String: String] = [:]  // clipId -> caption
+    @State private var photoPeople: [String: String] = [:]    // clipId -> comma-separated names
     @FocusState private var focusedField: FormFocus?
     
     /// Only letters, numbers, dashes, and periods allowed
@@ -65,7 +72,10 @@ struct ContextFormView: View {
                         // Clip header — thumbnail + filename + date
                         HStack(spacing: 14) {
                             // Video thumbnail (real image or placeholder)
-                            if let thumb = thumbnail {
+                            if mediaType == "photo" {
+                                // Photo batch grid
+                                photoGridHeader
+                            } else if let thumb = thumbnail {
                                 Image(uiImage: thumb)
                                     .resizable()
                                     .aspectRatio(contentMode: .fill)
@@ -86,7 +96,8 @@ struct ContextFormView: View {
                                 // Clip count + duration
                                 HStack(spacing: 4) {
                                     let clips = clipCount ?? 1
-                                    Text("\(clips) Clip")
+                                    let isPhoto = mediaType == "photo"
+                                    Text("\(clips) \(isPhoto ? "Photo" : "Clip")\(clips == 1 ? "" : "s")")
                                         .font(Theme.font16Semibold)
                                         .foregroundStyle(Theme.white)
                                     if let dur = duration, dur > 0 {
@@ -224,6 +235,11 @@ struct ContextFormView: View {
                             }
                         }
                         
+                        // Per-photo metadata — caption + people (photo batches only)
+                        if mediaType == "photo" && !photoClipIds.isEmpty {
+                            perPhotoSection
+                        }
+                        
                         // Error banner (shown if form submission failed)
                         if let error = submitError {
                             HStack(spacing: 8) {
@@ -243,7 +259,23 @@ struct ContextFormView: View {
                         Button {
                             hasAttemptedSubmit = true
                             guard canSubmit else { return }
-                            onSubmit(formValues)
+                            
+                            // Build per-photo metadata array
+                            var photoMeta: [[String: String]]?
+                            if mediaType == "photo" && !photoClipIds.isEmpty {
+                                photoMeta = photoClipIds.map { clipId in
+                                    var entry: [String: String] = ["clipId": clipId]
+                                    if let caption = photoCaptions[clipId], !caption.isEmpty {
+                                        entry["caption"] = caption
+                                    }
+                                    if let people = photoPeople[clipId], !people.isEmpty {
+                                        entry["people"] = people
+                                    }
+                                    return entry
+                                }
+                            }
+                            
+                            onSubmit(formValues, photoMeta)
                         } label: {
                             HStack(spacing: 6) {
                                 Text("Send")
@@ -286,7 +318,8 @@ struct ContextFormView: View {
                     dismiss()
                 }
             } message: {
-                Text("Your video is still uploading. You can add details later from your Archive.")
+                let mediaLabel = mediaType == "photo" ? "photos" : "video"
+                Text("Your \(mediaLabel) upload is complete. You can add details later from your Archive.")
             }
         }
         .onAppear {
@@ -328,5 +361,139 @@ struct ContextFormView: View {
             }
             content()
         }
+    }
+    
+    // MARK: - Photo Grid Header
+    
+    @ViewBuilder
+    private var photoGridHeader: some View {
+        let thumbs = Array(photoThumbnails.prefix(4))
+        let count = thumbs.count
+        
+        if count == 0 {
+            RoundedRectangle(cornerRadius: Theme.radiusSm)
+                .fill(Theme.glassOverlay)
+                .frame(width: 80, height: 60)
+                .overlay {
+                    Image(systemName: "photo.on.rectangle.angled")
+                        .font(Theme.font20Bold)
+                        .foregroundStyle(Theme.white.opacity(0.3))
+                }
+        } else if count == 1 {
+            Image(uiImage: thumbs[0])
+                .resizable()
+                .aspectRatio(contentMode: .fill)
+                .frame(width: 80, height: 60)
+                .clipShape(RoundedRectangle(cornerRadius: Theme.radiusSm))
+        } else {
+            // 2x2 grid
+            let gridSize: CGFloat = 80
+            let spacing: CGFloat = 1
+            let cellW = (gridSize - spacing) / 2
+            let cellH: CGFloat = 29
+            
+            VStack(spacing: spacing) {
+                HStack(spacing: spacing) {
+                    ForEach(0..<min(2, count), id: \.self) { i in
+                        Image(uiImage: thumbs[i])
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                            .frame(width: cellW, height: cellH)
+                            .clipped()
+                    }
+                }
+                if count > 2 {
+                    HStack(spacing: spacing) {
+                        ForEach(2..<min(4, count), id: \.self) { i in
+                            Image(uiImage: thumbs[i])
+                                .resizable()
+                                .aspectRatio(contentMode: .fill)
+                                .frame(width: cellW, height: cellH)
+                                .clipped()
+                        }
+                    }
+                }
+            }
+            .frame(width: gridSize)
+            .clipShape(RoundedRectangle(cornerRadius: Theme.radiusSm))
+        }
+    }
+    
+    // MARK: - Per-Photo Section
+    
+    @ViewBuilder
+    private var perPhotoSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 2) {
+                Text("PER-PHOTO DETAILS")
+                    .font(Theme.font11Semibold)
+                    .foregroundStyle(Theme.white.opacity(0.3))
+                    .tracking(0.8)
+                Text("(optional)")
+                    .font(Theme.font11Regular)
+                    .foregroundStyle(Theme.white.opacity(0.2))
+            }
+            
+            ForEach(Array(photoClipIds.enumerated()), id: \.offset) { index, clipId in
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 10) {
+                        // Photo thumbnail
+                        if index < photoThumbnails.count {
+                            Image(uiImage: photoThumbnails[index])
+                                .resizable()
+                                .aspectRatio(contentMode: .fill)
+                                .frame(width: 48, height: 48)
+                                .clipShape(RoundedRectangle(cornerRadius: 6))
+                        } else {
+                            RoundedRectangle(cornerRadius: 6)
+                                .fill(Theme.glassOverlay)
+                                .frame(width: 48, height: 48)
+                                .overlay {
+                                    Text("\(index + 1)")
+                                        .font(Theme.font13Semibold)
+                                        .foregroundStyle(Theme.white.opacity(0.4))
+                                }
+                        }
+                        
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Photo \(index + 1)")
+                                .font(Theme.font13Semibold)
+                                .foregroundStyle(Theme.white)
+                            
+                            // Caption field
+                            TextField("Caption", text: Binding(
+                                get: { photoCaptions[clipId] ?? "" },
+                                set: { photoCaptions[clipId] = $0 }
+                            ))
+                            .font(Theme.font13Regular)
+                            .foregroundStyle(Theme.white)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 8)
+                            .background(Theme.glassOverlay)
+                            .clipShape(RoundedRectangle(cornerRadius: 6))
+                            
+                            // People field
+                            TextField("People (comma-separated)", text: Binding(
+                                get: { photoPeople[clipId] ?? "" },
+                                set: { photoPeople[clipId] = $0 }
+                            ))
+                            .font(Theme.font13Regular)
+                            .foregroundStyle(Theme.white)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 8)
+                            .background(Theme.glassOverlay)
+                            .clipShape(RoundedRectangle(cornerRadius: 6))
+                        }
+                    }
+                    
+                    if index < photoClipIds.count - 1 {
+                        Divider().background(Theme.white.opacity(0.06))
+                    }
+                }
+            }
+        }
+        .padding(14)
+        .background(Theme.glassOverlay)
+        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusMd))
     }
 }

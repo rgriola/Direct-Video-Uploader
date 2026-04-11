@@ -31,6 +31,10 @@ struct FormContext {
     var duration: Int?
     var thumbnail: UIImage?
     var submitError: String?
+    var mediaType: String?        // "video" or "photo"
+    var photoCount: Int?           // Number of photos in batch
+    var photoThumbnails: [UIImage] = []  // Per-photo thumbnails for form
+    var photoClipIds: [String] = []      // Clip IDs for per-photo metadata
 }
 
 /// Central chat view model — manages messages, assets, and coordinates services.
@@ -128,11 +132,13 @@ final class ChatViewModel {
             self.form.originalFileName = data["originalFileName"] as? String
             self.form.clipCount = data["clipCount"] as? Int
             self.form.duration = data["duration"] as? Int
+            self.form.mediaType = data["mediaType"] as? String
+            self.form.photoCount = data["photoCount"] as? Int
             if let dateVal = data["capturedAt"] as? String {
                 self.form.capturedAt = dateVal
             }
             
-            self.formFields = self.buildFormFields()
+            self.formFields = self.buildFormFields(mediaType: self.form.mediaType)
             self.showFormSheet = true
             
             // Persist form state so it survives app kill
@@ -554,9 +560,15 @@ final class ChatViewModel {
     
     // MARK: - Submit Form
     
-    func submitForm(assetId: String, formData: [String: String]) async {
+    func submitForm(assetId: String, formData: [String: String], photoMetadata: [[String: String]]? = nil) async {
         var request = auth.authenticatedRequest(for: ServerConfig.formURL(assetId), method: "POST")
-        request.httpBody = try? JSONSerialization.data(withJSONObject: formData)
+        
+        // Build body — include photos array if present
+        var body: [String: Any] = formData
+        if let photos = photoMetadata, !photos.isEmpty {
+            body["photos"] = photos
+        }
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
         
         do {
             let (_, response) = try await URLSession.shared.data(for: request)
@@ -925,17 +937,23 @@ final class ChatViewModel {
         if let jpegData = pendingForm.thumbnailJPEG {
             form.thumbnail = UIImage(data: jpegData)
         }
-        formFields = buildFormFields()
+        formFields = buildFormFields(mediaType: form.mediaType)
         showFormSheet = true
     }
     
     /// Build the standard form fields (used for both live and recovery).
-    private func buildFormFields() -> [FormField] {
+    /// For photos: skip Type (always Raw) and show simplified fields.
+    private func buildFormFields(mediaType: String? = nil) -> [FormField] {
         var fields: [FormField] = []
         fields.append(FormField(id: "slug", label: "Slug / Title", type: "text", value: nil))
-        fields.append(FormField(
-            id: "type", label: "Content Type", type: "select", options: ["Raw", "Cut"]
-        ))
+        
+        // Type selector — only for videos
+        if mediaType != "photo" {
+            fields.append(FormField(
+                id: "type", label: "Content Type", type: "select", options: ["Raw", "Cut"]
+            ))
+        }
+        
         fields.append(FormField(id: "description", label: "Description / Notes", type: "textarea"))
         fields.append(FormField(
             id: "priority", label: "Priority", type: "select", value: "Low",

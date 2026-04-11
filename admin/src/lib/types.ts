@@ -31,6 +31,8 @@ export interface Asset {
   mediasourceId?: string | null;
   mediasourceUrl?: string | null;
   status: string;
+  assetType?: 'VIDEO' | 'PHOTO';
+  photoCount?: number;
   clipCount?: number;
   totalDuration?: number;
   clips?: Clip[];

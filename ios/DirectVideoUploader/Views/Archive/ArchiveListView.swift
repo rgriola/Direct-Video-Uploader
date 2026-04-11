@@ -7,17 +7,30 @@ struct ArchiveListView: View {
     @State private var assets: [Asset] = []
     @State private var isLoading = false
     @State private var errorMessage: String?
+    @State private var selectedFilter: AssetTypeFilter = .all
+    
+    enum AssetTypeFilter: String, CaseIterable {
+        case all = "All"
+        case videos = "Videos"
+        case photos = "Photos"
+    }
     
     /// Only show uploads from the last 7 days
     private var recentAssets: [Asset] {
         let cutoff = Calendar.current.date(byAdding: .day, value: -7, to: Date()) ?? Date()
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return assets.filter { asset in
+        let dateFiltered = assets.filter { asset in
             guard let dateStr = asset.createdAt,
                   let date = formatter.date(from: dateStr) ?? ISO8601DateFormatter().date(from: dateStr)
             else { return true } // keep if unparseable
             return date >= cutoff
+        }
+        // Apply type filter
+        switch selectedFilter {
+        case .all: return dateFiltered
+        case .videos: return dateFiltered.filter { $0.assetType != .photo }
+        case .photos: return dateFiltered.filter { $0.assetType == .photo }
         }
     }
     
@@ -65,6 +78,17 @@ struct ArchiveListView: View {
                 .padding(.vertical, 12)
                 .background(Theme.black)
                 
+                // Segmented filter
+                Picker("Filter", selection: $selectedFilter) {
+                    ForEach(AssetTypeFilter.allCases, id: \.self) { filter in
+                        Text(filter.rawValue).tag(filter)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .padding(.horizontal, 16)
+                .padding(.bottom, 8)
+                .background(Theme.black)
+                
                 Divider().background(Theme.separator)
                 
                 // Stuck uploads banner
@@ -108,9 +132,9 @@ struct ArchiveListView: View {
                 } else if recentAssets.isEmpty {
                     Spacer()
                     VStack(spacing: 8) {
-                        Text("📦")
+                        Text(selectedFilter == .photos ? "📷" : "📦")
                             .font(Theme.display64)
-                        Text("No recent uploads")
+                        Text(selectedFilter == .all ? "No recent uploads" : "No recent \(selectedFilter.rawValue.lowercased())")
                             .font(Theme.font16Medium)
                             .foregroundStyle(Theme.white)
                         Text("No uploads in the last 7 days.")
