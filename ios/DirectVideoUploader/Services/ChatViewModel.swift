@@ -150,7 +150,9 @@ final class ChatViewModel {
                     clipCount: self.form.clipCount,
                     duration: self.form.duration,
                     thumbnailJPEG: self.form.thumbnail?.jpegData(compressionQuality: 0.5),
-                    savedAt: Date()
+                    savedAt: Date(),
+                    mediaType: self.form.mediaType,
+                    photoCount: self.form.photoCount
                 ))
             }
         }
@@ -866,6 +868,10 @@ final class ChatViewModel {
             isUploading = false
             uploadProgress = 1.0
             
+            // Store clip IDs + thumbnails for form recovery
+            form.photoClipIds = photoUploader.clipIds
+            form.photoThumbnails = thumbnails
+            
             let failedCount = results.filter {
                 if case .failed = $0.uploadState { return true }
                 return false
@@ -886,6 +892,12 @@ final class ChatViewModel {
                 )
             }
         }
+    }
+    
+    /// Cancel an in-progress photo batch upload.
+    func cancelPhotoUpload() {
+        photoUploader.cancelUpload()
+        isUploading = false
     }
     
     /// User cancelled staged photos — discard.
@@ -934,6 +946,8 @@ final class ChatViewModel {
         form.capturedAt = pendingForm.capturedAt
         form.clipCount = pendingForm.clipCount
         form.duration = pendingForm.duration
+        form.mediaType = pendingForm.mediaType
+        form.photoCount = pendingForm.photoCount
         if let jpegData = pendingForm.thumbnailJPEG {
             form.thumbnail = UIImage(data: jpegData)
         }

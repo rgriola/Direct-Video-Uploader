@@ -28,6 +28,7 @@ struct PhotoBatchBubble: View {
     
     // Partial failure info
     var failedCount: Int = 0
+    var onRetryFailed: (() -> Void)?
     
     var body: some View {
         HStack {
@@ -117,6 +118,16 @@ struct PhotoBatchBubble: View {
                                     .font(Theme.font11Regular.monospacedDigit())
                                     .foregroundStyle(Theme.white)
                             }
+                            
+                            // Cancel upload button
+                            Button {
+                                onCancel?()
+                            } label: {
+                                Text("Cancel")
+                                    .font(Theme.font11Semibold)
+                                    .foregroundStyle(Theme.red)
+                                    .padding(.vertical, 4)
+                            }
                         }
                         .padding(.horizontal, 12)
                         .padding(.bottom, 10)
@@ -124,13 +135,35 @@ struct PhotoBatchBubble: View {
                     
                     // Partial failure banner
                     if phase == .partial {
-                        HStack(spacing: 6) {
-                            Image(systemName: "exclamationmark.triangle.fill")
-                                .font(Theme.icon13)
-                            Text("\(failedCount) photo\(failedCount == 1 ? "" : "s") failed to upload")
-                                .font(Theme.font11Regular)
+                        VStack(spacing: 6) {
+                            HStack(spacing: 6) {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .font(Theme.icon13)
+                                Text("\(failedCount) photo\(failedCount == 1 ? "" : "s") failed to upload")
+                                    .font(Theme.font11Regular)
+                                Spacer()
+                            }
+                            .foregroundStyle(.orange)
+                            
+                            if let retryAction = onRetryFailed {
+                                Button {
+                                    retryAction()
+                                } label: {
+                                    HStack(spacing: 4) {
+                                        Image(systemName: "arrow.clockwise")
+                                            .font(Theme.icon11)
+                                        Text("Retry Failed")
+                                            .font(Theme.font11Semibold)
+                                    }
+                                    .foregroundStyle(Theme.blue)
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 6)
+                                    .background(Theme.blue.opacity(0.12))
+                                    .clipShape(RoundedRectangle(cornerRadius: Theme.radiusSm))
+                                }
+                                .buttonStyle(.plain)
+                            }
                         }
-                        .foregroundStyle(.orange)
                         .padding(.horizontal, 12)
                         .padding(.bottom, 10)
                     }

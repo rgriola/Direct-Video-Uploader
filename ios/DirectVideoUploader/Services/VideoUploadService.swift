@@ -50,6 +50,8 @@ struct PendingForm: Codable {
     let duration: Int?
     let thumbnailJPEG: Data?  // JPEG-encoded thumbnail
     let savedAt: Date
+    let mediaType: String?     // "video" or "photo" — nil for legacy forms
+    let photoCount: Int?       // Number of photos in batch
     
     static let storageURL: URL = {
         let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]

@@ -35,7 +35,19 @@ final class PhotoUploadService {
     var currentPhotoIndex: Int = 0
     var totalPhotos: Int = 0
     var isUploading = false
+    var isCancelled = false
     var error: String?
+    
+    /// Clip IDs returned by server auth — used for form recovery
+    private(set) var clipIds: [String] = []
+    
+    /// Active upload task — can be cancelled
+    private var activeTask: URLSessionUploadTask?
+    
+    // MARK: - Retry Configuration
+    
+    private let maxRetries = 3
+    private let baseRetryDelay: TimeInterval = 2.0  // 2s, 4s, 8s exponential backoff
     
     // MARK: - Upload Batch
     
@@ -52,51 +64,83 @@ final class PhotoUploadService {
         token: String
     ) async -> [PhotoItem] {
         isUploading = true
+        isCancelled = false
         batchProgress = 0
         currentPhotoIndex = 0
         totalPhotos = items.count
         error = nil
+        clipIds = []
         defer { isUploading = false }
         
         var updatedItems = items
         
         for (index, item) in items.enumerated() {
+            // Check for cancellation before each photo
+            if isCancelled {
+                for remaining in index..<items.count {
+                    updatedItems[remaining].uploadState = .failed(reason: "Cancelled")
+                }
+                print("📸 ❌ Upload cancelled at photo \(index + 1)/\(items.count)")
+                break
+            }
+            
             currentPhotoIndex = index
             
-            do {
-                // Step 1: Get ImageKit auth params from server
-                let auth = try await requestPhotoUploadAuth(
-                    assetId: assetId,
-                    index: index,
-                    item: item,
-                    token: token
-                )
+            // Retry loop per photo
+            var lastError: Error?
+            var succeeded = false
+            
+            for attempt in 1...maxRetries {
+                if isCancelled { break }
                 
-                updatedItems[index].uploadState = .uploading(progress: 0)
-                
-                // Step 2: Upload to ImageKit
-                let imageKitUrl = try await uploadToImageKit(
-                    item: item,
-                    auth: auth,
-                    batchIndex: index,
-                    batchTotal: items.count
-                )
-                
-                // Step 3: Confirm with server
-                try await confirmPhotoUploaded(
-                    assetId: assetId,
-                    clipId: auth.clipId,
-                    imageKitUrl: imageKitUrl,
-                    token: token
-                )
-                
-                updatedItems[index].uploadState = .uploaded(imageKitUrl: imageKitUrl)
-                print("📸 [\(index + 1)/\(items.count)] Photo uploaded: \(item.fileName)")
-                
-            } catch {
-                let reason = error.localizedDescription
+                do {
+                    // Step 1: Get ImageKit auth params from server
+                    let auth = try await requestPhotoUploadAuth(
+                        assetId: assetId,
+                        index: index,
+                        item: item,
+                        token: token
+                    )
+                    
+                    clipIds.append(auth.clipId)
+                    updatedItems[index].uploadState = .uploading(progress: 0)
+                    
+                    // Step 2: Upload to ImageKit
+                    let imageKitUrl = try await uploadToImageKit(
+                        item: item,
+                        auth: auth,
+                        batchIndex: index,
+                        batchTotal: items.count
+                    )
+                    
+                    // Step 3: Confirm with server
+                    try await confirmPhotoUploaded(
+                        assetId: assetId,
+                        clipId: auth.clipId,
+                        imageKitUrl: imageKitUrl,
+                        token: token
+                    )
+                    
+                    updatedItems[index].uploadState = .uploaded(imageKitUrl: imageKitUrl)
+                    let retryNote = attempt > 1 ? " (attempt \(attempt))" : ""
+                    print("📸 [\(index + 1)/\(items.count)] Photo uploaded: \(item.fileName)\(retryNote)")
+                    succeeded = true
+                    break
+                    
+                } catch {
+                    lastError = error
+                    if attempt < maxRetries && !isCancelled {
+                        let delay = baseRetryDelay * pow(2.0, Double(attempt - 1))
+                        print("📸 ⏳ [\(index + 1)/\(items.count)] Retry \(attempt)/\(maxRetries) in \(Int(delay))s: \(error.localizedDescription)")
+                        try? await Task.sleep(for: .seconds(delay))
+                    }
+                }
+            }
+            
+            if !succeeded && !isCancelled {
+                let reason = lastError?.localizedDescription ?? "Unknown error"
                 updatedItems[index].uploadState = .failed(reason: reason)
-                print("📸 ❌ [\(index + 1)/\(items.count)] Photo failed: \(reason)")
+                print("📸 ❌ [\(index + 1)/\(items.count)] Photo failed after \(maxRetries) attempts: \(reason)")
                 // Continue with remaining photos (don't abort batch)
             }
             
@@ -109,11 +153,24 @@ final class PhotoUploadService {
             return false
         }.count
         
-        if failed > 0 {
+        if isCancelled {
+            self.error = "Upload cancelled"
+        } else if failed > 0 {
             self.error = "\(failed) of \(items.count) photos failed to upload"
         }
         
         return updatedItems
+    }
+    
+    // MARK: - Cancellation
+    
+    /// Cancel the current batch upload. The active photo finishes its current network
+    /// request, then remaining photos are skipped.
+    func cancelUpload() {
+        isCancelled = true
+        activeTask?.cancel()
+        activeTask = nil
+        print("📸 ❌ Cancel requested")
     }
     
     // MARK: - Step 1: Request Auth
@@ -297,10 +354,17 @@ final class PhotoUploadService {
             
             let config = URLSessionConfiguration.default
             config.waitsForConnectivity = true
-            config.timeoutIntervalForResource = 300  // 5 min for large photos
+            config.timeoutIntervalForResource = 600  // 10 min for large/slow uploads
+            config.timeoutIntervalForRequest = 120   // 2 min per request
             
             let session = URLSession(configuration: config, delegate: delegate, delegateQueue: nil)
             let task = session.uploadTask(with: request, from: bodyData)
+            
+            // Store reference for cancellation
+            Task { @MainActor [weak self] in
+                self?.activeTask = task
+            }
+            
             task.resume()
         }
     }
