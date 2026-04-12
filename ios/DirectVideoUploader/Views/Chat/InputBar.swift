@@ -29,7 +29,7 @@ struct InputBar: View {
                 // Text field
                 HStack {
                    
-                    TextField("Message", text: $text)
+                    TextField("", text: $text, prompt: Text("Slack from here # or @").foregroundColor(Theme.secondaryText))
                         .font(Theme.font16Regular)
                         .foregroundStyle(Theme.black)
                         .padding(.horizontal, 12)

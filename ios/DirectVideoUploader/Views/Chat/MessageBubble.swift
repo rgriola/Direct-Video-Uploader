@@ -4,6 +4,7 @@ import SwiftUI
 struct MessageBubble: View {
     let message: ChatMessage
     var thumbnail: UIImage?
+    var slackSent: Bool = false
     var onTapMetadata: (() -> Void)?
     
     private var isOutgoing: Bool { message.isOutgoing }
@@ -116,19 +117,19 @@ struct MessageBubble: View {
     @ViewBuilder
     private var slackContent: some View {
         if isOutgoing {
-            // Outgoing — simple sending indicator
+            // Outgoing — sending/sent indicator
             VStack(alignment: .leading, spacing: 6) {
                 Text(message.content.text ?? "")
                     .font(Theme.font16Regular)
                     .foregroundStyle(Theme.white)
 
                 HStack(spacing: 6) {
-                    Image(systemName: "paperplane.fill")
+                    Image(systemName: slackSent ? "checkmark.circle.fill" : "paperplane.fill")
                         .font(Theme.icon13)
-                        .foregroundStyle(Theme.white)
-                    Text("Sending to Slack…")
+                        .foregroundStyle(slackSent ? Theme.green : Theme.white)
+                    Text(slackSent ? "Sent to Slack" : "Sending to Slack…")
                         .font(Theme.font13Semibold)
-                        .foregroundStyle(Theme.white.opacity(0.7))
+                        .foregroundStyle(slackSent ? Theme.white : Theme.white.opacity(0.7))
                 }
             }
         } else {

@@ -191,6 +191,7 @@ struct ChatView: View {
             MessageBubble(
                 message: message,
                 thumbnail: message.messageType == .slackPost ? (vm.slackThumbnails[message.id] ?? vm.form.thumbnail) : nil,
+                slackSent: message.messageType == .slackPost && message.isOutgoing && vm.slackConfirmedIds.contains(message.id),
                 onTapMetadata: message.messageType == .confirmation ? { vm.showMetadata() } : nil
             )
             .id(message.id)

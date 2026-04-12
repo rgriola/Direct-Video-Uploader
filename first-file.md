@@ -811,177 +811,196 @@ Lets get this aligned then we will do some more work on the dashboard.
 
 ...
 
+**_ Task _**
 
-*** Task ***
-- Review both VideoPreviewBubble.swift & SentUploadBubble.swift to find a way to change the state of the bubble rather than having two bubbles. 
+- Review both VideoPreviewBubble.swift & SentUploadBubble.swift to find a way to change the state of the bubble rather than having two bubbles.
 
-*** Context ***
-VideoPreviewBubble is the initial state SentUploadBubble is the final state. 
-Preview Bubble appears when the video upload begins and the Context form is initialized. Then Sent Upload Takes Over replaces it. 
+**_ Context _**
+VideoPreviewBubble is the initial state SentUploadBubble is the final state.
+Preview Bubble appears when the video upload begins and the Context form is initialized. Then Sent Upload Takes Over replaces it.
 
-*** Instructions ***
-- Evaluate how we can simplify the two states so the user has one view. 
-- Do not code anything. 
+**_ Instructions _**
+
+- Evaluate how we can simplify the two states so the user has one view.
+- Do not code anything.
 
 ...
 
-*** Issue ***
-- Two videos being uploaded at the same time causes the return message to go to the wrong phone, account - user. 
-*** Context ***
+**_ Issue _**
+
+- Two videos being uploaded at the same time causes the return message to go to the wrong phone, account - user.
+  **_ Context _**
 - This is in dev mode on the local server
-- Used two tethered iPhones to test this 
-- both uploaded longer clips so I could test simultaneous uploads. 
-- Even if this is my server issue it looks like and iOS issue. 
-  - How this should perform :  Messages for uploads ie; metadata and clip viewer urls should to the specific account - iOS app - user that uploaded the video. 
-  - In the dashboard all videos are available to all users. 
-  - Both videos used were uploaded to the correct accounts, I verified this. 
-*** Instructions ***
+- Used two tethered iPhones to test this
+- both uploaded longer clips so I could test simultaneous uploads.
+- Even if this is my server issue it looks like and iOS issue.
+  - How this should perform : Messages for uploads ie; metadata and clip viewer urls should to the specific account - iOS app - user that uploaded the video.
+  - In the dashboard all videos are available to all users.
+  - Both videos used were uploaded to the correct accounts, I verified this.
+    **_ Instructions _**
 - Look at the photos included to understand the issue.
-- the Terminal also shows the error, terminal is included up to the error. 
+- the Terminal also shows the error, terminal is included up to the error.
 - Review the code and determine the cause of the issue and provide a fix.
 
+...
 
-... 
+**_ Task _**
 
-*** Task ***
-- Adding permissions to iOS app so the user can authorize it once and done. 
+- Adding permissions to iOS app so the user can authorize it once and done.
 - Photo Library permissions (videos)
-- Transcription permissions 
+- Transcription permissions
 
-*** Instructions ***
+**_ Instructions _**
+
 - Add these permissions to the profile as toggles
-- Review and show me a plan how this implimentation would work, do not code. 
-*** Outcome ***
+- Review and show me a plan how this implimentation would work, do not code.
+  **_ Outcome _**
 - Allow user to address/save the permission one time and save the preferences.
-- Evaluate if this requires database/table updates. 
+- Evaluate if this requires database/table updates.
 
-Explain >> One of the core features is reading the location data from the video file. >> Include Location as a read-only indicator or a full toggle? 
+Explain >> One of the core features is reading the location data from the video file. >> Include Location as a read-only indicator or a full toggle?
 
 Leave it out >> Show Camera as "Coming Soon" or leave it out?
 
-NO >> Add a "Transcribe by default" user preference toggle (separate from the OS permission)? 
+NO >> Add a "Transcribe by default" user preference toggle (separate from the OS permission)?
 
+...
 
-... 
+**_ Task _**
 
-*** Task ***
-- Add instructions button to the iOS app top right corner of the Chat screen. 
+- Add instructions button to the iOS app top right corner of the Chat screen.
 - use this SF Icon : service.dog with .symbolEffect(.bounce.up.wholeSymbol, options: .nonRepeating) in purple color.
-- Review the below user instructions and recommendations and show me a plan to impliment this. DO not code. 
-- I think this works best as panels that can be swiped through, not links to the web. 
-
+- Review the below user instructions and recommendations and show me a plan to impliment this. DO not code.
+- I think this works best as panels that can be swiped through, not links to the web.
 
 clicking button will show a panel with the below instructions - for now until I get a green light for the entire project.
 
-  First things to know:
-    - Do not close Fixer until the upload is complete. A the progress bar tracks upload.  You will get a confirmation message when this is done. 
-    - As soon as the first Metadata chat appears you can slack the people who need this video from Fixers text box. Simply Type: @yourperson or #thischannel and Fixer send the metadata to them.
-    - Once your upload is finished the upload moves to Archive and is held for 7 days.
-    - You can start an additional upload right away.
-    - This app is designed to replicate texting and how you share photos and videos with friends and colleagues. 
+First things to know: - Do not close Fixer until the upload is complete. A the progress bar tracks upload. You will get a confirmation message when this is done. - As soon as the first Metadata chat appears you can slack the people who need this video from Fixers text box. Simply Type: @yourperson or #thischannel and Fixer send the metadata to them. - Once your upload is finished the upload moves to Archive and is held for 7 days. - You can start an additional upload right away. - This app is designed to replicate texting and how you share photos and videos with friends and colleagues.
 
     iPhone Media Management:
 
-    - iPhone Optimization: Apple lets you send videos to iCloud to save space and this an automatic process. This can lead to significant upload delays if the video is moved to iCloud, it needs to be downloaded then uploaded. The videos are also compressed with optimization.  
+    - iPhone Optimization: Apple lets you send videos to iCloud to save space and this an automatic process. This can lead to significant upload delays if the video is moved to iCloud, it needs to be downloaded then uploaded. The videos are also compressed with optimization.
 
     - iPhone settings allow you to turn this feature off - but it will affect where ALL your media lives. Only do this if your device is for work use and you can prioritize the phone for video/photo purposes.
 
-    - Recommended for speed and quality: 
+    - Recommended for speed and quality:
         Turn off iPhone Optimization
         Photo in Cloud to OFF
-        Privacy & Security > Fixer > Current > ON: This setting perserves the orginal video without compression and significantly reduces upload times   
+        Privacy & Security > Fixer > Current > ON: This setting perserves the orginal video without compression and significantly reduces upload times
 
+How to use Fixer:
 
-  How to use Fixer:
-  - Use the + button, bottom left, to open your photo library. Fixer already filters out photos.
-  - Select your video and click the purple check mark. 
-  - The next window opens the Trim Clip option. This works just like iMovie, iOS clip editing. This is optional.
-  - Choose "Next >>" to Queue the video for upload in the chat.
-  - 
-  - Back in chat you can choose to transcribe (images) your audio. This is optional. 
-  - Click the up arrow to start send the video to the catch server.
-  - You will see a progress bar in your video chat, your video is uploading.
-  - Automatically the slug form panel will pop up, your video is still uploading.
-  - Required: Slug and Description must be filled out and sent. Fixer automatically merges the slug form with the video metadata. 
-  - Do NOT CLOSE FIXER - the upload will stop.
+- Use the + button, bottom left, to open your photo library. Fixer already filters out photos.
+- Select your video and click the purple check mark.
+- The next window opens the Trim Clip option. This works just like iMovie, iOS clip editing. This is optional.
+- Choose "Next >>" to Queue the video for upload in the chat.
+-
+- Back in chat you can choose to transcribe (images) your audio. This is optional.
+- Click the up arrow to start send the video to the catch server.
+- You will see a progress bar in your video chat, your video is uploading.
+- Automatically the slug form panel will pop up, your video is still uploading.
+- Required: Slug and Description must be filled out and sent. Fixer automatically merges the slug form with the video metadata.
+- Do NOT CLOSE FIXER - the upload will stop.
 
-  - What is happening:
-    - Fixer reads the metadata off the video then automatically adds it to the slug form. 
-    - GPS Data,File Type, Size, Length, Uploader(You) and Transcription, if selected, are parsed and saved
-    - The server sends you the Metadata plus Mediasource Number and clip link.
-    - The video is viewable when both upload and processing complete.
-    - The server sends a message confirming it has the clip and it is ready.
+- What is happening:
+  - Fixer reads the metadata off the video then automatically adds it to the slug form.
+  - GPS Data,File Type, Size, Length, Uploader(You) and Transcription, if selected, are parsed and saved
+  - The server sends you the Metadata plus Mediasource Number and clip link.
+  - The video is viewable when both upload and processing complete.
+  - The server sends a message confirming it has the clip and it is ready.
 
-- Archive - 
-  Your completed and unfinishd uploads are held here for 7 days. 
+- Archive -
+  Your completed and unfinishd uploads are held here for 7 days.
   Here you can find the metadata and the link to your video on the web.
   Share video details directly to slack.
   If your slug form was not completed you finish it here and Fixer will update the server.
 
-
-
-
-
-- Profile - 
+- Profile -
 
 - "I have an issue" - Human to contact - [EMAIL_ADDRESS]
-- Add to Profile page link button to the web url. 
+- Add to Profile page link button to the web url.
 - "Privacy Policy - Data Policy" - link to privacy policy page
 - "Terms of Use" - link to terms of use page
 
-... 
+...
 
-*** Task ***. done 
-- Review the Theme.swift app wide including replacement of system apps. 
+**_ Task _**. done
+
+- Review the Theme.swift app wide including replacement of system apps.
 - Reduce the number of Font Sizes to 5.
-- We need a better plan since there are so many font sizes and weights. 
-- This will also require replacing all instances of font sizes and weights in the app. 
-- All app colors should be defined in Theme.swift, not use system colors. 
+- We need a better plan since there are so many font sizes and weights.
+- This will also require replacing all instances of font sizes and weights in the app.
+- All app colors should be defined in Theme.swift, not use system colors.
 - names of fonts should include their size and weight ie; Theme.font18Medium rather than being defined by their location ie Body, Caption, etc.
 - Since iOS icons are sized by Font Sizes define them similarly ie; Theme.icon18Medium
-- Do not code anything, just show me a plan.  I may not impliment this. But there are too many styles with the Fonts - Weights. 
-- The color sceme should remain the same, for not do not plan any modifications. 
-- I am also looking for places to simplify the styling using static constants. If there are patterns used over and over plan to change those to static constants ie; 
+- Do not code anything, just show me a plan. I may not impliment this. But there are too many styles with the Fonts - Weights.
+- The color sceme should remain the same, for not do not plan any modifications.
+- I am also looking for places to simplify the styling using static constants. If there are patterns used over and over plan to change those to static constants ie;
 
- // Screen gradients
-    static let screenGradient = LinearGradient(
-            colors: [Theme.black, Theme.purple],
-            startPoint: .top,
-            endPoint: .bottom
-            )
+// Screen gradients
+static let screenGradient = LinearGradient(
+colors: [Theme.black, Theme.purple],
+startPoint: .top,
+endPoint: .bottom
+)
 
-- I am open to suggestions. The overall goal is to simplify the styling and make it more consistent and easy to maintain going forward. 
-
-...
-*** Task ***
-- Review the profile view implimentation. The photo library and speech recogniztion toggles cannot be turned off once on. 
-
-... 
-*** Issue ***
--- The app crashed when a user set speech recogniztion to "dont allow" , this the initial Apple Permission panel. The setting did take effect but the app crashed. 
-
+- I am open to suggestions. The overall goal is to simplify the styling and make it more consistent and easy to maintain going forward.
 
 ...
+**_ Task _**
 
-*** Task ***
-- What would we need to change for Fixer to also accept photos from the library? 
+- Review the profile view implimentation. The photo library and speech recogniztion toggles cannot be turned off once on.
+
+...
+**_ Issue _**
+-- The app crashed when a user set speech recogniztion to "dont allow" , this the initial Apple Permission panel. The setting did take effect but the app crashed.
+
+...
+
+**_ Task _**
+
+- What would we need to change for Fixer to also accept photos from the library?
 - The photos would be routed to a different catch server/ storage, not mux.
 - The jpeg or heic photos must be sent in orginal quality, no compression.
-- Raw files must be compressed first to a jpg. 
+- Raw files must be compressed first to a jpg.
 - no png or tiff files
 - User would need to queue multiple photos and send
-- Similar to the video upload there would need to be an accurate progress bar. 
+- Similar to the video upload there would need to be an accurate progress bar.
 - Do not code, review our current setup and show me options on integrating photos uploads.
 
 add.
-- photo libary should switch between video and photo filtering replacing the video/collection toggle. 
+
+- photo libary should switch between video and photo filtering replacing the video/collection toggle.
 - Photo archieve would be separate from video archive.
-- Initial Context Form should allow Assignment Slug and description. 
-- Each Photo should have a section caption, a people in the image. 
-- Identify people in the image and add them to the metadata. 
-- We can use Image Kit from my other project to handle the image processing and storage. 
+- Initial Context Form should allow Assignment Slug and description.
+- Each Photo should have a section caption, a people in the image.
+- Identify people in the image and add them to the metadata.
+- We can use Image Kit from my other project to handle the image processing and storage.
 
 ...
-*** Issue ***
+**_ Issue _**
 
-- I have two 
+- Order of slack posting
+  **_ Context _**
+- I have inlcuded the Terminal Log for the sending a slack message at the bottom
+- What I see is one upload ms#100000025 returns the metadata and I post it to slack, but the metadata for ms#100000024 is posted instead. This is not a fatal issue, however it means the old metadata is still persisting after ms#100000025 returns new metadata.
+- The other issue is this was a new connection, I uploaded ms#100000024, then switched apps, then came back and uploaded another video ms#100000025.
+- The question is when does a video move to archieve and the chat is clear for a new upload state. If the user stays in the chat I can see where this may happen.
+- Review this process, do not code anything yet just provide a report and options.
+
+...
+**_ Issue _**
+
+- user in iOS Selects "+ video chooser" > Library > Collections > Collection with photos
+- We need a gentle way to prevent the uploader from allowing photos to be selected. Its fine for viewing.
+- The Libary view still trys to upload a photo if selected.
+
+*** Task ***
+
+- Add a Photo View to the app
+- the photo view should contain just the footer nav bar, header, Photo as the Title,the background from Archieve View/Profile views the gradiant,  And a Placeholder text saying "Photo View" in the center.  
+- For the Nav Bar Icon use "photo.on.rectangle.angle"
+- This is a TBD feature I only need a view that I can add a text to to explain the feature. 
+
+
+

@@ -50,23 +50,23 @@ struct InstructionsView: View {
                 VStack(alignment: .leading, spacing: Theme.space16) {
                     instructionRow(
                         emoji: "⚠️",
-                        text: "Do not close Fixer until the upload is complete. The progress bar tracks upload — you'll get a confirmation message when it's done."
+                        text: "Keep Fixer open until the upload is 100% complete. Closing Fixer will stop cancel the upload."
                     )
                     instructionRow(
-                        emoji: "💬",
-                        text: "As soon as the first metadata chat appears, you can Slack people right from the text box. Type @yourperson or #thischannel and Fixer sends the metadata to them."
+                        icon: "paperplane.fill",
+                        text: "When the metadata chat appears, you can Slack your team from the text box. Type @yourperson or #thischannel, Fixer sends the metadata to them."
                     )
                     instructionRow(
-                        emoji: "📦",
-                        text: "Once your upload is finished it moves to Archive and is held for 7 days."
+                        icon: "archivebox.fill",
+                        text: "Uploads move to Archive upon completion & are held for 7 days. The clip metadata, Slack, and web link live here."
                     )
                     instructionRow(
                         icon: "plus.circle.fill",
-                        text: "You can start an additional upload right away."
+                        text: "Use this plus button to start a new upload."
                     )
                     instructionRow(
-                        emoji: "📱",
-                        text: "Fixer is designed to replicate texting — share videos just like you share with friends and colleagues."
+                        icon: "iphone",
+                        text: "Fixer is designed to replicate texting — send videos just as you would with friends and colleagues."
                     )
                 }
                 .padding(.horizontal, Theme.space24)
@@ -81,70 +81,84 @@ struct InstructionsView: View {
 
     private var iphoneMediaPage: some View {
         ScrollView {
+
             VStack(spacing: Theme.space24) {
+
                 Spacer().frame(height: Theme.space32)
 
                 Image(systemName: "iphone")
                     .font(Theme.display44)
-                    .foregroundStyle(Theme.blue)
+                    .foregroundStyle(Theme.purple)
 
-                Text("iPhone Media Management")
+                Text("Recommeded iPhone Settings")
                     .font(Theme.font20Bold)
                     .foregroundStyle(Theme.white)
 
-                VStack(alignment: .leading, spacing: Theme.space16) {
-                    // iCloud warning
-                    VStack(alignment: .leading, spacing: Theme.space8) {
-                        Text("iCloud Optimization")
-                            .font(Theme.font16Semibold)
-                            .foregroundStyle(Theme.amber)
+                    VStack(alignment: .leading, spacing: Theme.space16) {
+                        // Recommended settings box
+                        VStack(alignment: .leading, spacing: Theme.space12) {
 
-                        Text("Apple automatically moves videos to iCloud to save space. This can cause significant upload delays — the video must be downloaded before uploading. Videos are also compressed with optimization.")
-                            .font(Theme.font16Regular)
-                            .foregroundStyle(Theme.white.opacity(0.85))
-                    }
+                            HStack(spacing: Theme.space8) {
+                                Image(systemName: "star.fill")
+                                    .font(Theme.icon13)
+                                    .foregroundStyle(Theme.yellow)
+                                Text("The Goal: Preserve video quality and reduce upload time")
+                                    .font(Theme.font13Semibold)
+                                    .foregroundStyle(Theme.yellow)
+                            }
+    
+                            VStack(alignment: .leading, spacing: Theme.space8) {
+                                settingRow("Photo Sync to iCloud -> OFF")
+                                settingRow("Camera > Record Video > 1080p @ 30fps")
+                                settingRow("Camera > Formats > Most Compatible (h264)")
+                            }
 
-                    // Turn it off note
-                    VStack(alignment: .leading, spacing: Theme.space8) {
-                        Text("Can I Turn It Off?")
-                            .font(Theme.font16Semibold)
-                            .foregroundStyle(Theme.white)
-
-                        Text("Yes — but it affects where ALL your media lives. Only recommended if your device is dedicated to work and you can prioritize it for video/photo purposes.")
-                            .font(Theme.font16Regular)
-                            .foregroundStyle(Theme.white.opacity(0.85))
-                    }
-
-                    // Recommended settings box
-                    VStack(alignment: .leading, spacing: Theme.space12) {
-                        HStack(spacing: Theme.space8) {
-                            Image(systemName: "star.fill")
-                                .font(Theme.icon13)
-                                .foregroundStyle(Theme.yellow)
-                            Text("Recommended for Speed & Quality")
-                                .font(Theme.font13Semibold)
-                                .foregroundStyle(Theme.yellow)
                         }
+                        .padding(Theme.space16)
+                        .background(Theme.glassOverlay)
+                        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusMd))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: Theme.radiusMd)
+                                .strokeBorder(Theme.yellow.opacity(0.3), lineWidth: 1)
+                        )
 
+                        // iCloud warning
                         VStack(alignment: .leading, spacing: Theme.space8) {
-                            settingRow("Turn off iPhone Optimization")
-                            settingRow("Photos in Cloud → OFF")
-                            settingRow("Privacy & Security → Fixer → Current → ON")
+                            Text("How Apple Manages Your Media")
+                                .font(Theme.font16Semibold)
+                                .foregroundStyle(Theme.amber)
+
+                            Text("When your phone is locked media is automatically sent to your iCloud. This allows sharing across your devices and optimizes storage. By default videos are compressed during this process unless you turn off this setting.")
+                                .font(Theme.font16Regular)
+                                .foregroundStyle(Theme.white.opacity(0.85))
+                            
+                            Text("Video already in iCloud significantly delays the upload process: iCloud download > Convert video > Fixer upload > Server encoding.")
+                                .font(Theme.font16Regular)
+                                .foregroundStyle(Theme.white.opacity(0.85))
                         }
 
-                        Text("The Goal is to preserve the original video quality and reduce upload time.")
-                            .font(Theme.font13Regular)
-                            .foregroundStyle(Theme.white)
+                        // Turn it off note
+                        VStack(alignment: .leading, spacing: Theme.space8) {
+                            Text("Setting Suggestion")
+                                .font(Theme.font16Semibold)
+                                .foregroundStyle(Theme.white)
+
+                            Text("- Keep media local on your device.")
+                                .font(Theme.font16Regular)
+                                .foregroundStyle(Theme.white.opacity(0.85))
+                            
+                            Text("- Set video quality to most compatible (h264)")
+                                .font(Theme.font16Regular)
+                                .foregroundStyle(Theme.white.opacity(0.85))
+                            
+                            Text("- Turn on GPS for more complete metadata.")
+                                .font(Theme.font16Regular)
+                                .foregroundStyle(Theme.white.opacity(0.85))
+
+                        }
+
                     }
-                    .padding(Theme.space16)
-                    .background(Theme.glassOverlay)
-                    .clipShape(RoundedRectangle(cornerRadius: Theme.radiusMd))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: Theme.radiusMd)
-                            .strokeBorder(Theme.yellow.opacity(0.3), lineWidth: 1)
-                    )
-                }
-                .padding(.horizontal, Theme.space24)
+                    .padding(.horizontal, Theme.space24)
 
                 Spacer()
             }
@@ -222,7 +236,7 @@ struct InstructionsView: View {
 
                     instructionRow(
                         emoji: "#️⃣",
-                        text: "As soon as the metadata is processed you can slack your team with the info."
+                        text: "As soon as the metadata is processed you can Slack your team with the info."
                     )
                 }
                 .padding(.horizontal, Theme.space24)
