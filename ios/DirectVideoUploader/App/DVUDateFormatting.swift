@@ -37,12 +37,22 @@ enum DVUDateFormatting {
         isoFull.date(from: string) ?? isoBasic.date(from: string)
     }
 
+    /// Format a `Date` as an ISO 8601 string (no fractional seconds).
+    static func isoString(from date: Date) -> String {
+        isoBasic.string(from: date)
+    }
+
     // MARK: - Display Formats
 
-    /// "Mar 5, 2026 3:42 PM"
+    /// "Mar 5, 2026 3:42 PM" — from an ISO 8601 string
     static func longDate(_ isoString: String) -> String {
         guard let date = parseISO(isoString) else { return isoString }
         return longFormatter.string(from: date)
+    }
+
+    /// "Mar 5, 2026 3:42 PM" — from a Date directly
+    static func longDate(from date: Date) -> String {
+        longFormatter.string(from: date)
     }
 
     /// "03/05/26"

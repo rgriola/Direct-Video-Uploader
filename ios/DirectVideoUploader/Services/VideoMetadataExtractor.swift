@@ -60,7 +60,7 @@ enum VideoMetadataExtractor {
         var capturedAt: String?
         if let creationDate = try? await asset.load(.creationDate),
            let dateValue = try? await creationDate.load(.dateValue) {
-            capturedAt = ISO8601DateFormatter().string(from: dateValue)
+            capturedAt = DVUDateFormatting.isoString(from: dateValue)
         }
         
         // GPS from common metadata
@@ -101,7 +101,7 @@ enum VideoMetadataExtractor {
     
     // MARK: - Helpers
     
-    private static func codecName(from subType: FourCharCode) -> String {
+    static func codecName(from subType: FourCharCode) -> String {
         switch subType {
         case kCMVideoCodecType_HEVC, kCMVideoCodecType_HEVCWithAlpha:
             return "HEVC / H.265"

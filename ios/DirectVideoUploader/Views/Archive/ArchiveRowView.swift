@@ -31,9 +31,7 @@ struct ArchiveRowView: View {
     var isStuckProcessing: Bool {
         guard asset.status == .processing, !reuploadComplete else { return false }
         guard let dateStr = asset.createdAt else { return true }
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        guard let created = formatter.date(from: dateStr) ?? ISO8601DateFormatter().date(from: dateStr) else { return true }
+        guard let created = DVUDateFormatting.parseISO(dateStr) else { return true }
         return Date().timeIntervalSince(created) > 300 // 5 minutes
     }
     
@@ -538,9 +536,7 @@ struct ArchiveRowView: View {
     }
     
     private func parseISO8601(_ str: String) -> Date? {
-        let f = ISO8601DateFormatter()
-        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return f.date(from: str) ?? ISO8601DateFormatter().date(from: str)
+        DVUDateFormatting.parseISO(str)
     }
     
     /// Fallback re-upload using PhotosPicker selection

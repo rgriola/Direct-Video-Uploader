@@ -36,7 +36,6 @@ struct FormContext {
 @MainActor
 @Observable
 final class ChatViewModel {
-    private static let isoFormatter = ISO8601DateFormatter()
     // MARK: - State
     
     var messages: [ChatMessage] = []
@@ -67,6 +66,9 @@ final class ChatViewModel {
 
     /// Cached thumbnails for Slack confirmation bubbles, keyed by message ID
     var slackThumbnails: [String: UIImage] = [:]
+
+    /// IDs of outgoing Slack messages that have been confirmed by the server
+    var slackConfirmedIds: Set<String> = []
     
     /// Temp staging data preserved across confirmStagedUpload → createAsset
     private var lastStagedCreatedDate: String?
@@ -94,6 +96,16 @@ final class ChatViewModel {
     private func setupWebSocketHandlers() {
         ws.onMessage = { [weak self] message in
             self?.messages.append(message)
+            // When server confirms a Slack post, mark the last outgoing
+            // .slackPost as confirmed so the bubble switches to "Sent".
+            if message.messageType == .slackPost,
+               message.direction == .incoming {
+                if let outId = self?.messages.last(where: {
+                    $0.messageType == .slackPost && $0.direction == .outgoing && !(self?.slackConfirmedIds.contains($0.id) ?? true)
+                })?.id {
+                    self?.slackConfirmedIds.insert(outId)
+                }
+            }
             // Auto-download thumbnail for Slack confirmation bubbles
             if message.messageType == .slackPost,
                message.direction == .incoming,
@@ -166,7 +178,7 @@ final class ChatViewModel {
                     originalFileName: originalFileName,
                     capturedAt: capturedAt
                 ),
-                createdAt: Self.isoFormatter.string(from: Date())
+                createdAt: DVUDateFormatting.isoString(from: Date())
             )
             self.messages.append(confirmation)
         }
@@ -206,7 +218,7 @@ final class ChatViewModel {
                     duration: duration,
                     resolution: resolution
                 ),
-                createdAt: Self.isoFormatter.string(from: Date())
+                createdAt: DVUDateFormatting.isoString(from: Date())
             )
             self.messages.append(summaryMessage)
             self.isArchived = true
@@ -235,7 +247,7 @@ final class ChatViewModel {
                     direction: .incoming,
                     messageType: .greeting,
                     content: MessageContent(text: message),
-                    createdAt: Self.isoFormatter.string(from: Date())
+                    createdAt: DVUDateFormatting.isoString(from: Date())
                 )
                 self.messages.append(followUp)
             }
@@ -283,7 +295,7 @@ final class ChatViewModel {
             direction: .incoming,
             messageType: .text,
             content: MessageContent(text: text),
-            createdAt: Self.isoFormatter.string(from: Date())
+            createdAt: DVUDateFormatting.isoString(from: Date())
         )
         messages.append(errorMsg)
     }
@@ -336,7 +348,7 @@ final class ChatViewModel {
                 direction: .outgoing,
                 messageType: .slackPost,
                 content: MessageContent(text: text),
-                createdAt: Self.isoFormatter.string(from: Date())
+                createdAt: DVUDateFormatting.isoString(from: Date())
             )
             messages.append(localOut)
             let reply = ChatMessage(
@@ -346,7 +358,7 @@ final class ChatViewModel {
                 direction: .incoming,
                 messageType: .text,
                 content: MessageContent(text: "Upload a video first and I can grab the metadata so you can Slack it. Previous uploads are in your Archive — you can Slack from there."),
-                createdAt: Self.isoFormatter.string(from: Date())
+                createdAt: DVUDateFormatting.isoString(from: Date())
             )
             messages.append(reply)
             return
@@ -360,12 +372,13 @@ final class ChatViewModel {
             direction: .outgoing,
             messageType: isSlackCommand ? .slackPost : .text,
             content: MessageContent(text: text),
-            createdAt: Self.isoFormatter.string(from: Date())
+            createdAt: DVUDateFormatting.isoString(from: Date())
         )
         messages.append(localMessage)
         
-        // Send via WebSocket
-        ws.sendMessage(text: text)
+        // Send via WebSocket — always pass explicit assetId so the server
+        // doesn't fall back to "most recent READY asset" (wrong metadata bug).
+        ws.sendMessage(text: text, assetId: currentAssetId ?? archive.assetId)
     }
     // MARK: - Create Asset (Video Upload Flow)
     
@@ -407,7 +420,7 @@ final class ChatViewModel {
                 direction: .outgoing,
                 messageType: .video,
                 content: MessageContent(text: "📹 \(fileName)", fileName: fileName),
-                createdAt: Self.isoFormatter.string(from: Date())
+                createdAt: DVUDateFormatting.isoString(from: Date())
             )
             messages.append(videoMessage)
             
@@ -415,11 +428,7 @@ final class ChatViewModel {
             sentUploads[msgId] = SentUploadInfo(
                 thumbnail: form.thumbnail,
                 fileName: fileName,
-                createdDate: lastStagedCreatedDate ?? {
-                    let formatter = DateFormatter()
-                    formatter.dateFormat = "MMM d, yyyy h:mm a"
-                    return formatter.string(from: Date())
-                }(),
+                createdDate: lastStagedCreatedDate ?? DVUDateFormatting.longDate(from: Date()),
                 hasLocation: lastStagedHasLocation,
                 transcribeEnabled: transcribeOnUpload
             )
@@ -549,6 +558,11 @@ final class ChatViewModel {
     func confirmStagedUpload() async {
         guard let staged = stagedVideo else { return }
         
+        // Auto-archive previous upload so state doesn't leak between uploads
+        if isArchived || currentAssetId != nil {
+            startNewConversation()
+        }
+        
         let fileURL = staged.tempFileURL
         let fileName = staged.fileName
         let metadata = staged.metadata
@@ -619,7 +633,7 @@ final class ChatViewModel {
             direction: .incoming,
             messageType: .text,
             content: MessageContent(text: "🎙️ Transcribing audio..."),
-            createdAt: Self.isoFormatter.string(from: Date())
+            createdAt: DVUDateFormatting.isoString(from: Date())
         )
         messages.append(transcribingMsg)
         
@@ -677,7 +691,7 @@ final class ChatViewModel {
             direction: .incoming,
             messageType: .systemNote,
             content: MessageContent(text: "No worries — your video is still uploading. You can add details from your Archive anytime."),
-            createdAt: Self.isoFormatter.string(from: Date())
+            createdAt: DVUDateFormatting.isoString(from: Date())
         )
         messages.append(msg)
     }
@@ -834,6 +848,7 @@ final class ChatViewModel {
         showSlackShareSheet = false
         sentUploads.removeAll()
         slackThumbnails.removeAll()
+        slackConfirmedIds.removeAll()
         lastStagedCreatedDate = nil
         lastStagedHasLocation = false
         
@@ -846,7 +861,7 @@ final class ChatViewModel {
             direction: .incoming,
             messageType: .greeting,
             content: MessageContent(text: "Hey \(firstName)! You are busy today. Upload away."),
-            createdAt: Self.isoFormatter.string(from: Date())
+            createdAt: DVUDateFormatting.isoString(from: Date())
         )
         messages.append(greeting)
     }
@@ -863,7 +878,7 @@ final class ChatViewModel {
             direction: .outgoing,
             messageType: .slackPost,
             content: MessageContent(text: text),
-            createdAt: Self.isoFormatter.string(from: Date())
+            createdAt: DVUDateFormatting.isoString(from: Date())
         )
         messages.append(localMessage)
         showSlackShareSheet = false

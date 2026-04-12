@@ -11,25 +11,20 @@ struct ArchiveListView: View {
     /// Only show uploads from the last 7 days
     private var recentAssets: [Asset] {
         let cutoff = Calendar.current.date(byAdding: .day, value: -7, to: Date()) ?? Date()
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return assets.filter { asset in
             guard let dateStr = asset.createdAt,
-                  let date = formatter.date(from: dateStr) ?? ISO8601DateFormatter().date(from: dateStr)
+                  let date = DVUDateFormatting.parseISO(dateStr)
             else { return true } // keep if unparseable
             return date >= cutoff
         }
     }
     
-    /// Assets stuck in PROCESSING for over 5 minutes
     private var stuckCount: Int {
         let cutoff5min = Date().addingTimeInterval(-300)
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return recentAssets.filter { asset in
             guard asset.status == .processing else { return false }
             guard let dateStr = asset.createdAt,
-                  let created = formatter.date(from: dateStr) ?? ISO8601DateFormatter().date(from: dateStr)
+                  let created = DVUDateFormatting.parseISO(dateStr)
             else { return true }
             return created < cutoff5min
         }.count
