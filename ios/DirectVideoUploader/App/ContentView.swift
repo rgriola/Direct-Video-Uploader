@@ -23,6 +23,12 @@ struct ContentView: View {
                             Text("Archive")
                         }
                     
+                    PhotosView()
+                        .tabItem {
+                            Image(systemName: "photo.fill")
+                            Text("Photos")
+                        }
+                    
                     ProfileView()
                         .tabItem {
                             Image(systemName: "person.fill")

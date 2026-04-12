@@ -136,7 +136,7 @@ struct ArchiveListView: View {
     // MARK: - Fetch
     
     private func fetchAssets() async {
-        guard let token = auth.token else {
+        guard auth.isAuthenticated else {
             errorMessage = "Not authenticated"
             return
         }
@@ -145,8 +145,7 @@ struct ArchiveListView: View {
         errorMessage = nil
         defer { isLoading = false }
         
-        var request = URLRequest(url: ServerConfig.myAssetsURL)
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        let request = auth.authenticatedRequest(for: ServerConfig.myAssetsURL)
         
         do {
             let (data, response) = try await URLSession.shared.data(for: request)

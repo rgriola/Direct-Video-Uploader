@@ -816,17 +816,7 @@ final class ChatViewModel {
     
     /// Build the standard form fields (used for both live and recovery).
     private func buildFormFields() -> [FormField] {
-        var fields: [FormField] = []
-        fields.append(FormField(id: "slug", label: "Slug / Title", type: "text", value: nil))
-        fields.append(FormField(
-            id: "type", label: "Content Type", type: "select", options: ["Raw", "Cut"]
-        ))
-        fields.append(FormField(id: "description", label: "Description / Notes", type: "textarea"))
-        fields.append(FormField(
-            id: "priority", label: "Priority", type: "select", value: "Low",
-            options: ["Low", "Medium", "High", "Critical"]
-        ))
-        return fields
+        FormField.defaultVideoFields()
     }
     
     // MARK: - Archive / New Conversation

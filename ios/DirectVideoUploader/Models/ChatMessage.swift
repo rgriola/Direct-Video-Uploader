@@ -133,6 +133,19 @@ struct FormField: Codable, Identifiable {
     }
 }
 
+extension FormField {
+    /// Default form fields for video uploads — shared between ChatViewModel and ArchiveRowView.
+    static func defaultVideoFields() -> [FormField] {
+        [
+            FormField(id: "slug", label: "Slug / Title", type: "text", value: nil),
+            FormField(id: "type", label: "Content Type", type: "select", options: ["Raw", "Cut"]),
+            FormField(id: "description", label: "Description / Notes", type: "textarea"),
+            FormField(id: "priority", label: "Priority", type: "select", value: "Low",
+                      options: ["Low", "Medium", "High", "Critical"]),
+        ]
+    }
+}
+
 // MARK: - Messages Response
 
 struct MessagesResponse: Codable {
