@@ -4,7 +4,7 @@
 
 The UX is intentionally modeled after Apple Messages: the user opens a conversation with **"Fixer"**, selects a video, taps send, fills out a slug form, and the server replies back with metadata, a clip viewer link, and a one-tap Slack post. Under the hood, videos upload directly to **Mux** via tus protocol, bypassing the server entirely.
 
-> **Status:** Phase 3 (~98%) — Mux pipeline operational, Slack integration live, Apple Speech transcription, admin tools, archive, video trim, stability hardening complete. See `PROJECT_STATUS.md` for full details.
+> **Status:** Phase 3 (~99%) — Mux pipeline operational, Slack integration live, Apple Speech transcription, admin tools, archive, video trim, stability hardening complete. See `PROJECT_STATUS.md` for full details.
 
 ---
 
@@ -157,8 +157,9 @@ cd ios && xcodegen generate
 - **Apple Speech** — On-device transcription with newsroom vocabulary, per-word timestamps
 - **Archive** — 7-day history with status dots, thumbnails, re-upload, form submission
 - **Profile** — User info, Photo Library + Speech Recognition permission toggles with live status, app info
-- **In-app instructions** — 4-page swipeable guide with first-launch auto-show
-- **Server greetings** — 40+ randomized greeting combos with feature tips, no consecutive repeats
+- **In-app instructions** — 5-page swipeable guide: First Things, iPhone Media, Steps to Use Fixer, What's Happening Inside Fixer, Archive. SF Symbol icons inline
+- **Server greetings** — 40+ randomized greeting combos using first name only, feature tips, no consecutive repeats. Greets every device independently
+- **Device tracking** — iOS sends `deviceId`, `deviceName`, `deviceModel` in WebSocket handshake auth. Server logs per-device connections
 - **Admin dashboard** — Stats, user management, asset list, nuclear reset, error logs
 
 ---

@@ -93,7 +93,7 @@ export default async function assetRoutes(fastify) {
             } catch (err) {
                 console.warn(`🎬 Could not fetch Mux upload ${existingClip.muxUploadId}: ${err.message}`);
             }
-            
+
             // Only reuse if Mux upload is still in 'waiting' state (accepting bytes)
             if (upload?.url && upload.status === 'waiting') {
                 console.log(`🎬 Reusing existing PROCESSING clip ${existingClip.id} for asset #${asset.mediasourceId}`);
@@ -159,7 +159,7 @@ export default async function assetRoutes(fastify) {
             userName: request.user.name,
             metadata,
             clip: { id: clipId, fileSize: clientMeta.fileSize || '0' },
-            messageText: `🎬 #${asset.mediasourceId} is uploading to Mux, here are the Mediasource details.`,
+            messageText: `🎬 #${asset.mediasourceId} uploading to Mediasoure.`,
         });
 
         return {
@@ -244,10 +244,10 @@ export default async function assetRoutes(fastify) {
                 type: 'object',
                 properties: {
                     // maxLength enforced here rejects oversized payloads before the handler runs
-                    slug:        { type: 'string', maxLength: 50 },
-                    type:        { type: 'string', default: 'Raw' },
+                    slug: { type: 'string', maxLength: 50 },
+                    type: { type: 'string', default: 'Raw' },
                     description: { type: 'string', maxLength: 500 },
-                    priority:    { type: 'string', default: 'Low', enum: ['Low', 'Medium', 'High', 'Critical', 'low', 'medium', 'high', 'critical', 'LOW', 'MEDIUM', 'HIGH', 'CRITICAL'] },
+                    priority: { type: 'string', default: 'Low', enum: ['Low', 'Medium', 'High', 'Critical', 'low', 'medium', 'high', 'critical', 'LOW', 'MEDIUM', 'HIGH', 'CRITICAL'] },
                 },
             },
         },
@@ -288,7 +288,7 @@ export default async function assetRoutes(fastify) {
         }
 
         // Fallback: if slug or description are still missing (app crash, battery death, etc.)
-        // use the authenticated user's name so the record isn't left blank.
+        // use the authenticated user's name so the record isn't left blank. 
         if (!slug?.trim() || !description?.trim()) {
             const user = await prisma.user.findUnique({ where: { id: request.user.id } });
             if (!slug?.trim()) slug = user?.name || 'Untitled';
@@ -328,7 +328,7 @@ export default async function assetRoutes(fastify) {
                     formType: formResponse.type,
                     formDescription: formResponse.description,
                     formPriority: formResponse.priority,
-                    message: `🙌 High Five! I received the slug form. Keep Fixer open to finish the upload. I'll text when the video is ready. Here is your metadata. You can share it to #Slack.`,
+                    message: `🙌 High Five! \nI'll text when the video is done. \nMetadata is ready, you can Slack your team below.`,
                 });
             }
         }

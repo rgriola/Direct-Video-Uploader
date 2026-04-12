@@ -94,6 +94,7 @@ async function syncProcessingClips(fastify) {
                                     muxPlaybackId: playbackId,
                                     streamUrl,
                                     thumbnailUrl,
+                                    formSlug: fullAsset?.formResponse?.slug || null,
                                     formType: fullAsset?.formResponse?.type || null,
                                     formDescription: fullAsset?.formResponse?.description || null,
                                     formPriority: fullAsset?.formResponse?.priority || null,

@@ -49,10 +49,7 @@ struct MessageContent: Codable {
     let mention: String?
     let thumbnailUrl: String?
     
-    // Form response data (populated on confirmation bubbles)
-    let formType: String?
-    let formDescription: String?
-    let formPriority: String?
+
     
     // Metadata summary fields (populated on upload response / form request bubbles)
     let originalFileName: String?
@@ -85,10 +82,7 @@ struct MessageContent: Codable {
         capturedAt: String? = nil,
         codec: String? = nil,
         resolution: String? = nil,
-        hasRichMeta: Bool? = nil,
-        formType: String? = nil,
-        formDescription: String? = nil,
-        formPriority: String? = nil
+        hasRichMeta: Bool? = nil
     ) {
         self.text = text
         self.fileName = fileName
@@ -109,9 +103,6 @@ struct MessageContent: Codable {
         self.codec = codec
         self.resolution = resolution
         self.hasRichMeta = hasRichMeta
-        self.formType = formType
-        self.formDescription = formDescription
-        self.formPriority = formPriority
     }
     
     /// Display text for the chat bubble

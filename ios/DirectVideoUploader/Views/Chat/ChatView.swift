@@ -28,39 +28,7 @@ struct ChatView: View {
                         LazyVStack(spacing: 2) {
                             if let vm = viewModel {
                                 ForEach(vm.messages) { message in
-                                    // Outgoing video → show sent upload card with thumbnail
-                                    if message.messageType == .video && message.isOutgoing,
-                                       let info = vm.sentUploads[message.id] {
-                                        VideoBubble(
-                                            phase: vm.isUploading ? .uploading : .sent,
-                                            thumbnail: info.thumbnail,
-                                            fileName: info.fileName,
-                                            createdDate: info.createdDate,
-                                            hasLocation: info.hasLocation,
-                                            uploadProgress: vm.uploadProgress
-                                        )
-                                        .id(message.id)
-                                    } else if message.messageType == .muxReady {
-                                        // Archive summary card
-                                        ConversationSummaryBubble(
-                                            mediasourceId: vm.archive.mediasourceId,
-                                            formType: vm.archive.formType,
-                                            formDescription: vm.archive.formDescription,
-                                            formPriority: vm.archive.formPriority,
-                                            duration: vm.archive.duration,
-                                            resolution: vm.archive.resolution,
-                                            fileSize: vm.archive.fileSize
-                                        )
-                                        .id(message.id)
-                                    } else {
-                                        MessageBubble(
-                                            message: message,
-                                            thumbnail: message.messageType == .slackPost ? (vm.slackThumbnails[message.id] ?? vm.form.thumbnail) : nil,
-                                            onTapMetadata: (message.messageType == .formRequest || message.messageType == .confirmation) ? { vm.showMetadata() } : nil,
-                                            onTapForm: message.messageType == .formRequest ? { vm.showFormSheet = true } : nil
-                                        )
-                                        .id(message.id)
-                                    }
+                                    messageRow(message: message, vm: vm)
                                 }
                                 
                                 // Staged video preview — user must confirm before upload
@@ -193,6 +161,49 @@ struct ChatView: View {
             withAnimation(.easeOut(duration: 0.3)) {
                 proxy.scrollTo(targetId, anchor: .bottom)
             }
+        }
+    }
+
+    @ViewBuilder
+    private func messageRow(message: ChatMessage, vm: ChatViewModel) -> some View {
+        if message.messageType == .video && message.isOutgoing,
+           let info = vm.sentUploads[message.id] {
+            VideoBubble(
+                phase: videoBubblePhase(for: vm),
+                thumbnail: info.thumbnail,
+                fileName: info.fileName,
+                createdDate: info.createdDate,
+                hasLocation: info.hasLocation,
+                uploadProgress: vm.uploadProgress,
+                didTranscribe: info.transcribeEnabled
+            )
+            .id(message.id)
+        } else if message.messageType == .muxReady {
+            ConversationSummaryBubble(
+                mediasourceId: vm.archive.mediasourceId,
+                formSlug: vm.archive.formSlug,
+                duration: vm.archive.duration,
+                resolution: vm.archive.resolution,
+                fileSize: vm.archive.fileSize
+            )
+            .id(message.id)
+        } else {
+            MessageBubble(
+                message: message,
+                thumbnail: message.messageType == .slackPost ? (vm.slackThumbnails[message.id] ?? vm.form.thumbnail) : nil,
+                onTapMetadata: message.messageType == .confirmation ? { vm.showMetadata() } : nil
+            )
+            .id(message.id)
+        }
+    }
+
+    private func videoBubblePhase(for vm: ChatViewModel) -> VideoBubblePhase {
+        if vm.isUploading {
+            return .uploading
+        } else if vm.archive.assetId != nil {
+            return .sent
+        } else {
+            return .processing
         }
     }
 }

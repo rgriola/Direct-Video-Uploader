@@ -1,7 +1,7 @@
 # Direct Video Uploader — Project Status
 
-> **Last Updated:** April 10, 2026 · EST
-> **Current Phase:** Phase 3 (Render + Cloud + Mux) — Mux pipeline fully operational + Stability A–C + Upload + Re-upload + Archive + Admin tools + Transcription + UX polish + Admin refactor + Security hardening + Clip Viewer + Permissions Profile + ChatViewModel refactor
+> **Last Updated:** April 11, 2026 · EST
+> **Current Phase:** Phase 3 (Render + Cloud + Mux) — Mux pipeline fully operational + Stability A–C + Upload + Re-upload + Archive + Admin tools + Transcription + UX polish + Admin refactor + Security hardening + Clip Viewer + Permissions Profile + ChatViewModel refactor + Device tracking + Instructions overhaul
 > **Overall Progress:** ████████████████████ 100% (Phase 2) · Phase 3 ~99%
 
 ---
@@ -10,7 +10,7 @@
 
 The **Direct Video Uploader** is a mobile-first video upload platform disguised as a text conversation. Field crew members "text" videos to the **Mediasource Fixer** server, which processes them the way a news assignment desk operates — fast, structured, and integrated with Slack.
 
-We've completed the **interactive chat demo** (HTML prototype), **project specification** (v4), the **Phase 1 server foundation** (Node.js API, WebSocket, PostgreSQL, auth, admin dashboard), the **Phase 2 — iOS Demo App** core flow (login → chat → video upload → form → confirmation → archive), and the **Web Clip Viewer** (server-rendered at `/clips/:slug`). Latest session (Apr 10, PM): **ChatViewModel refactor + Greeting system**. Major code quality improvements: state consolidation (30+ loose properties → `ArchiveState`/`FormContext` structs), 4 parallel dictionaries merged into `SentUploadInfo`, `confirmStagedUpload()` monolith broken into 5 focused methods, reusable `RetryHelper.swift` extracted, upload cancellation added, dead code removed. Server greeting revamped with 10 randomized templates × 4 time-of-day variants (40 combos), no consecutive repeats, plus a feature-tip second bubble. Permission toggles fixed to open Settings.app when already granted. Admin build optimized by removing blocking `tsc` from build script.
+We've completed the **interactive chat demo** (HTML prototype), **project specification** (v4), the **Phase 1 server foundation** (Node.js API, WebSocket, PostgreSQL, auth, admin dashboard), the **Phase 2 — iOS Demo App** core flow (login → chat → video upload → form → confirmation → archive), and the **Web Clip Viewer** (server-rendered at `/clips/:slug`). Latest session (Apr 11): **Instructions UI overhaul + Device tracking + Greeting improvements**. In-app instructions expanded from 4 to 5 pages with a new "What's Happening Inside Fixer" page; numbered steps replaced with inline SF Symbol icons matching actual UI elements. Server greeting now parses first name only from full username. Every iOS device connection now receives its own greeting (multi-device support). Device tracking added: iOS sends `deviceId` (identifierForVendor), `deviceName`, and `deviceModel` in the WebSocket handshake auth payload; server logs per-device connections. `ConversationSummaryBubble` cleaned up: unused `formType` property removed, `formDescription` and `formPriority` surfaced in the UI, `buildDetailsString` simplified with `compactMap`, `formSlug` wired end-to-end through server → ArchiveState → bubble.
 
 ---
 
@@ -198,6 +198,24 @@ cd ios && xcodegen generate && xcodebuild -project DirectVideoUploader.xcodeproj
 - **Admin dashboard themes** — Created three semantic CSS theme files: `theme-a-editorial.css` (Clean Editorial — neutral tones), `theme-b-lavender.css` (Lavender Mist — purple gradient, currently active), `theme-c-newsroom.css` (Warm Newsroom — amber/sunset tones). Base `index.css` expanded with CSS custom properties for all design tokens.
 - **README rewrite** — Full rewrite of `README.md` reflecting current architecture, Mux integration, admin dashboard, and deployment setup.
 - **ServerConfig tethering IP** — Updated physical device debug fallback from `192.168.0.100` to `172.20.10.2` (USB tethering interface).
+**Features Added (Apr 11 — Evening Session):**
+
+- **ChatViewModel refactor** — Removed dead `formType`/`formDescription`/`formPriority` fields from `ArchiveState`, `MessageContent`, and 3 WS event handlers (fields were parsed from server but never displayed after ConversationSummaryBubble cleanup). Introduced `private static let isoFormatter = ISO8601DateFormatter()` replacing 12 separate allocations per session. Fixed `slackThumbnails` memory leak: dictionary now cleared in `startNewConversation()`. Removed redundant `await MainActor.run` in `downloadSlackThumbnail` (class is already `@MainActor`). Added `form.submitError = nil` on successful form submission (belt-and-suspenders with ChatView's existing clear-on-open).
+- **VideoTrimView positioning fix** — Standardized all overlay positioning in `TrimScrubberView` to use `.position()` instead of mixing `.position()` and `.offset()`. Dim regions and trim border now use the same coordinate system as handles and playhead. Fixed playhead overlay: thin 2pt white line now rendered inside the hit target's `.overlay` *before* `.position()` is applied, preventing double-offset on certain screen sizes. Hit target widened from 14pt to 24pt (clear fill) for easier thumb targeting.
+- **VideoTrimView @Observable migration** — Migrated `TrimViewModel` from `ObservableObject`/`@Published`/`@StateObject` to `@Observable`/`@State`, matching the rest of the codebase. `TrimScrubberView` changed from `@ObservedObject var vm` to plain `var vm`.
+- **Audio session cleanup** — `TrimViewModel.cleanup()` now deactivates `AVAudioSession` with `.notifyOthersOnDeactivation`, allowing other audio apps (Spotify, podcasts) to resume after leaving the trim screen.
+- **Export progress polling** — Replaced `Timer.scheduledTimer` + `nonisolated(unsafe)` with `Task`-based async polling (100ms interval). Cleaner Swift concurrency pattern, same behavior.
+- **Transcription toggle default** — Changed from `@AppStorage("transcribeEnabled")` (persisted across videos) to `@State` (resets to off per video). Most videos don't require transcription; users opt-in per video with mic tap.
+
+**Features Added (Apr 11 — Session):**
+
+
+- **Instructions UI overhaul** — Expanded from 4 to 5 pages. New page 4 "What's Happening Inside Fixer" broken out from the Steps page, with emoji-led rows (GPS, transcript, metadata, confirmation, Slack). Step indicators on page 3 replaced with inline SF Symbol icons (`plus.circle.fill`, `checkmark.circle.fill`, `scissors`, etc.) matching actual app UI elements. Numbered steps removed. New `stepRow(icon:text:)` and `instructionRow(icon:text:)` overloads render icons in the app's standard purple/white palette.
+- **First-name greeting** — Server now parses `socket.userName` ("Rod Griola") to extract first name only ("Rod") before passing to greeting templates. `split(' ')[0]` with null-safe fallback.
+- **Per-device greeting** — Removed `iosCountForUser <= 1` gate on greeting. Every iOS device connection now receives its own greeting + feature tip, even if the same account is already connected on another device. Multi-phone uploading is a feature.
+- **Device tracking** — iOS `WebSocketService.swift` now sends `deviceId` (UIDevice.identifierForVendor UUID), `deviceName` (e.g. "Rod's iPhone 15 Pro"), and `deviceModel` (e.g. "iPhone") in the Socket.IO CONNECT auth payload via `JSONSerialization`. Server auth middleware reads and stores on the socket object. Connection log now shows device name: `✅ iOS connected: Rod on Rod's iPhone 15 Pro (iPhone)`.
+- **formSlug end-to-end** — Added `formSlug` to the `mux:ready` event payload in both `mux-sync.js` and `mux-webhooks.js`. iOS `ArchiveState` struct extended with `formSlug` field. `ChatViewModel.onMuxReady` parses and stores it. `ChatView` passes it to `ConversationSummaryBubble`. Slug now displays with `tag.fill` icon in the Video Ready summary card.
+- **ConversationSummaryBubble cleanup** — Removed unused `formType` property (was declared but never displayed). Surfaced `formDescription` (with `text.alignleft` icon) and `formPriority` (with `flag.fill` icon) which were previously declared but hidden. Removed unnecessary `@ViewBuilder` from `metaRow`. Simplified `buildDetailsString` from imperative loop to `compactMap` + `joined`. Fixed indentation.
 
 **Features Added (Apr 10 — Session):**
 
@@ -440,6 +458,10 @@ Render is the preview environment (stand-in for eventual company production syst
 | Clip Viewer placeholder  | ✅ Done          | 16:9 shimmer placeholder + auto-polling status endpoint. Dynamically swaps to Mux player when ready — no reload.                            |
 | Admin dashboard themes   | ✅ Done          | Three semantic CSS themes (Editorial, Lavender, Newsroom) with CSS custom property design tokens.                                           |
 | Domain migration         | ✅ Done          | All references updated from rodgriola.com to ms-fixer.com across docs and server config.                                                    |
+| Instructions UI overhaul | ✅ Done          | 5-page swipeable guide with SF Symbol icons, emoji rows, and "What's Happening" page                                                        |
+| Device tracking          | ✅ Done          | iOS sends deviceId/deviceName/deviceModel in WS handshake auth; server logs per-device connections                                            |
+| Per-device greeting      | ✅ Done          | Every iOS device gets its own greeting (multi-phone support)                                                                                   |
+| formSlug in summary      | ✅ Done          | Slug name displayed in ConversationSummaryBubble via mux:ready payload                                                                         |
 
 ---
 
@@ -676,6 +698,18 @@ Direct-Video-Uploader/
 | Apr 10 | Upload cancellation                  | `cancelUpload()` added with `Task` handle + `Task.isCancelled` check between upload and transcription steps.                                                                  |
 | Apr 10 | Server greeting system               | 10 greeting templates × 4 time-of-day variants (40 combos) with no-consecutive-repeat logic. Feature-tip second bubble sent 500ms after greeting.                             |
 | Apr 10 | Admin build optimization             | `npm run build` now runs Vite only (5s). `npm run build:check` does tsc+Vite (95s). `tsc` was bottlenecked by 92% full disk.                                                  |
+| Apr 11 | Instructions 4→5 pages              | "What's Happening Inside Fixer" content moved to its own page. Steps page cleaned to icon-only rows. Better content separation.                                              |
+| Apr 11 | SF Symbol instruction icons          | Replaced numbered steps and emoji placeholders with actual SF Symbol icons matching the app UI (`plus.circle.fill`, `checkmark.circle.fill`, etc.).                           |
+| Apr 11 | First-name only greeting             | `socket.userName.split(' ')[0]` extracts first name. Greetings say "Rod" not "Rod Griola".                                                                                    |
+| Apr 11 | Per-device greeting                  | Removed `iosCountForUser <= 1` gate. Every iOS device gets greeted independently. Multi-phone uploading is a feature, not an edge case.                                      |
+| Apr 11 | Device tracking in WS handshake      | iOS sends `deviceId` (identifierForVendor), `deviceName`, `deviceModel` in Socket.IO auth. Server stores on socket, logs device name on connect. DB persistence deferred.    |
+| Apr 11 | formSlug wired end-to-end            | `mux:ready` payload now includes `formSlug`. Flows through ArchiveState → ChatView → ConversationSummaryBubble with `tag.fill` icon.                                        |
+| Apr 11 | ConversationSummaryBubble cleanup    | Removed dead `formType` prop, surfaced `formDescription`/`formPriority`, simplified `buildDetailsString` with `compactMap`, removed unnecessary `@ViewBuilder`.              |
+| Apr 11 | Shared ISO8601DateFormatter          | 12 separate `ISO8601DateFormatter()` allocations replaced with single `private static let`. Thread-safe, zero runtime cost. Same pattern as `DVUDateFormatting.isoBasic`.     |
+| Apr 11 | Dead field removal (form fields)     | `formType`/`formDescription`/`formPriority` removed from `ArchiveState`, `MessageContent`, and 3 WS handlers. Were parsed but never displayed after summary bubble cleanup. |
+| Apr 11 | @State over @AppStorage for transcribe | `@AppStorage` remembers across videos — wrong UX since most videos don't need transcription. `@State` resets to off per video, user opts in explicitly.                    |
+| Apr 11 | Standardized .position() in TrimView | Mixed `.position()` and `.offset()` in same ZStack caused alignment inconsistencies. All overlays now use `.position(x:y:)` for uniform coordinate system.                  |
+| Apr 11 | AVAudioSession deactivation          | Trim screen activates `.playback` session but never deactivated it. `.notifyOthersOnDeactivation` lets other audio apps resume correctly.                                   |
 
 ---
 

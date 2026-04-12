@@ -9,16 +9,16 @@ import { PUBLIC_URL } from '../lib/config.js';
 
 /** Greeting templates — `{time}` is replaced with time-of-day, `{name}` with first name. */
 const GREETINGS = [
-    `🙋‍♂️ {time} {name}! I am ready for your video.`,
-    `📹 {time} {name}! Let's get your footage uploaded.`,
+    `🙋‍♂️ {time} {name}. I am ready for your video.`,
+    `📹 {time} {name}. Let's get your footage uploaded.`,
     `👋 {time} {name}! Drop a video and I'll handle the rest.`,
-    `🎬 {time} {name}! We are up to speed, rack and roll.`,
-    `⚡ {time} {name}! Time to make great TV!`,
-    `🚀 {time} {name}! Upload away, I've got you covered.`,
-    `🎥 {time} {name}! Videos dont'upload themselves.`,
-    `✌️ {time} {name}! Standing by for your next masterpiece.`,
-    `📡 {time} {name}! Signal is 5 x 5 — send it over.`,
-    `🔥 {time} {name}! To grow audience just add content.`,
+    `🎬 {time} {name}. I am speeding, rack and roll.`,
+    `⚡ {time} {name}, Time to make great TV!`,
+    `🚀 {time} {name}, Upload away, I've got you covered.`,
+    `🎥 {time} {name}. Videos dont'upload themselves.`,
+    `✌️ {time} {name}. Standing by for your next masterpiece.`,
+    `📡 {time} {name}. Signal is 5 x 5 — send it over.`,
+    `🔥 {time} {name}, To grow your audience just add content.`,
 ];
 
 /** Track last index so we never repeat the same greeting consecutively. */
@@ -29,7 +29,7 @@ function getGreeting(name) {
     const hour = new Date().getHours();
     const timeOptions = [
         [12, ['Good Morning', 'Rise and shine', 'Top of the morning', 'Morning', 'Suuup.']],
-        [19, ['Good Afternoon', 'Hey there', 'Afternoon', 'What\'s good']],
+        [19, ['Good Afternoon', 'Hey there', 'Afternoon', 'Hello']],
         [24, ['Good Evening', 'Evening', 'Hey night owl', 'Burning the midnight oil']],
     ].find(([h]) => hour < h)[1];
     const timeOfDay = timeOptions[Math.floor(Math.random() * timeOptions.length)];
@@ -46,17 +46,18 @@ function getGreeting(name) {
 
 /** Feature tips — shown as a second bubble after the greeting. */
 const TIPS = [
-    `💡 Tap the ＋ button to choose your video.`,
-    `💡 Once uploaded, type @name or #channel to Slack your video.`,
-    `💡 The 🐕‍🦺 icon on the top right shows how Fixer works.`,
-    `💡 I will archive your video when its finished.`,
-    `💡 You can start a new upload as soon as the current one finishes.`,
-    `💡 Use the transcribe toggle to create a transcript.`,
-    `💡 Keep Fixer until the progress bar is 100%`,
-    `💡 I'll send your metadata once I read the video file.`,
-    `💡 Don't skip the slug form, Fixer can just fix so much.`,
-    `💡 Permissions are in your profile. So is logout but I don't want you to go.`,
+    `Tap the ＋ button and choose your video.`,
+    `Once uploaded, type @name or #channel to Slack your video.`,
+    `I'll archive your video when its finished.`,
+    `You can start a new upload as soon as the current one finishes.`,
+    `Use the transcribe toggle to create a transcript.`,
+    `Keep Fixer open until the progress bar is 100%`,
+    `I'll send your metadata once I read the video file.`,
+    `Don't skip the slug form, Fixer can fix just so much.`,
+    `Permissions are in your profile. So is logout but I don't want you to go.`,
 ];
+
+const LAST_TIPS = ['The Guide Dog 🐕‍🦺 , top right, leads you to how Fixer works.'];
 
 /** Track last tip index so we never repeat consecutively. */
 let lastTipIndex = -1;
@@ -68,7 +69,8 @@ function getTip() {
         index = Math.floor(Math.random() * TIPS.length);
     } while (index === lastTipIndex);
     lastTipIndex = index;
-    return TIPS[index];
+    // DONT REMOVE THIS comment  return TIPS[index] + LAST_TIPS;
+    return LAST_TIPS[0];
 }
 /**
  * Handle a Slack command — parse #channels and @mentions, post via Slack API,
@@ -269,6 +271,11 @@ export function setupWebSocket(io, fastify) {
             socket.userId = decoded.id;
             socket.userName = decoded.name;
             socket.phoneNumber = decoded.phoneNumber;
+
+            // Device tracking — sent from iOS in the Socket.IO CONNECT auth payload
+            socket.deviceId = socket.handshake.auth?.deviceId || null;
+            socket.deviceName = socket.handshake.auth?.deviceName || null;
+            socket.deviceModel = socket.handshake.auth?.deviceModel || null;
             next();
         } catch (err) {
             console.warn(`🔐 [WS Auth] Token verification failed: ${err.message}`);
@@ -301,36 +308,34 @@ export function setupWebSocket(io, fastify) {
             // Count only iOS sockets for this user (ignore admin dashboard connections)
             const allUserSockets = userSockets.get(userId) ?? new Set();
             const iosCountForUser = [...allUserSockets].filter(id => iosSockets.has(id)).length;
-            console.log(`✅ iOS connected: ${socket.userName} (userId=${userId}) — iOS clients: ${iosSockets.size}, user iOS sockets: ${iosCountForUser}`);
+            const deviceLabel = socket.deviceName ? ` on ${socket.deviceName} (${socket.deviceModel || 'iOS'})` : '';
+            console.log(`✅ iOS connected: ${socket.userName}${deviceLabel} — iOS clients: ${iosSockets.size}, user iOS sockets: ${iosCountForUser}`);
 
-            // Only send greeting on fresh iOS connections (not reconnects from tab switch / background return)
-            if (iosCountForUser <= 1) {
-                const greetingText = getGreeting(socket.userName);
+            // Greet every iOS device — multiple phones uploading is a feature
+            const firstName = (socket.userName || '').split(' ')[0] || socket.userName;
+            const greetingText = getGreeting(firstName);
+            socket.emit('message:new', {
+                id: crypto.randomUUID(),
+                userId: null,
+                assetId: null,
+                direction: 'INCOMING',
+                messageType: 'GREETING',
+                content: { text: greetingText },
+                createdAt: new Date().toISOString(),
+            });
+
+            // Send a feature tip as a second bubble after a short delay
+            setTimeout(() => {
                 socket.emit('message:new', {
                     id: crypto.randomUUID(),
                     userId: null,
                     assetId: null,
                     direction: 'INCOMING',
-                    messageType: 'GREETING',
-                    content: { text: greetingText },
+                    messageType: 'SYSTEM_NOTE',
+                    content: { text: getTip() },
                     createdAt: new Date().toISOString(),
                 });
-
-                // Send a feature tip as a second bubble after a short delay
-                setTimeout(() => {
-                    socket.emit('message:new', {
-                        id: crypto.randomUUID(),
-                        userId: null,
-                        assetId: null,
-                        direction: 'INCOMING',
-                        messageType: 'SYSTEM_NOTE',
-                        content: { text: getTip() },
-                        createdAt: new Date().toISOString(),
-                    });
-                }, 500);
-            } else {
-                console.log(`↩️ Reconnect for ${socket.userName} — skipping greeting`);
-            }
+            }, 500);
 
             // Greeting is ephemeral — not persisted (Option B: only persist meaningful events)
         }
@@ -370,7 +375,7 @@ export function setupWebSocket(io, fastify) {
                 const { text, assetId } = data;
 
                 // C4: Sanitize incoming message — length limit + strip control chars
-                const MAX_MESSAGE_LENGTH = 5000;
+                const MAX_MESSAGE_LENGTH = 500;
                 const sanitized = (text || '')
                     .slice(0, MAX_MESSAGE_LENGTH)
                     .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '') // strip control chars except \n \r \t

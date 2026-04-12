@@ -14,7 +14,7 @@ struct VideoTrimView: View {
     var onTrimmed: (URL) -> Void
     var onCancel: () -> Void
 
-    @StateObject private var vm = TrimViewModel()
+    @State private var vm = TrimViewModel()
     @State private var isExporting = false
     @State private var exportProgress: Double = 0
     @State private var exportError: String?
@@ -196,14 +196,15 @@ struct VideoTrimView: View {
 
 /// Manages player state, thumbnail generation, and trim range.
 @MainActor
-final class TrimViewModel: ObservableObject {
-    @Published var duration: Double = 0
-    @Published var trimStart: Double = 0
-    @Published var trimEnd: Double = 0
-    @Published var currentTime: Double = 0
-    @Published var thumbnails: [UIImage] = []
-    @Published var videoAspect: CGFloat = 16.0 / 9.0
-    @Published var isPlaying: Bool = true
+@Observable
+final class TrimViewModel {
+    var duration: Double = 0
+    var trimStart: Double = 0
+    var trimEnd: Double = 0
+    var currentTime: Double = 0
+    var thumbnails: [UIImage] = []
+    var videoAspect: CGFloat = 16.0 / 9.0
+    var isPlaying: Bool = true
 
     let player = AVPlayer()
     private var asset: AVURLAsset?
@@ -266,6 +267,7 @@ final class TrimViewModel: ObservableObject {
             player.removeTimeObserver(obs)
             timeObserver = nil
         }
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     }
 
     func togglePlayPause() {
@@ -374,7 +376,7 @@ private struct PlayerView: UIViewRepresentable {
 // MARK: - TrimScrubberView (filmstrip + handles)
 
 private struct TrimScrubberView: View {
-    @ObservedObject var vm: TrimViewModel
+    var vm: TrimViewModel
 
     /// Which handle the user is currently dragging (if any).
     @State private var activeDrag: DragHandle?
@@ -455,10 +457,17 @@ private struct TrimScrubberView: View {
                 // Playhead indicator — draggable
                 if vm.duration > 0 {
                     let playX = handleWidth + vm.currentTime * pxPerSec
+                    // Wide invisible hit target
                     Rectangle()
-                        .fill(Theme.white)
-                        .frame(width: 14, height: geo.size.height + 8)
+                        .fill(Color.clear)
+                        .frame(width: 24, height: geo.size.height + 8)
                         .contentShape(Rectangle())
+                        .overlay {
+                            // Thin visible line centered in the hit target
+                            Rectangle()
+                                .fill(Theme.white)
+                                .frame(width: 2, height: geo.size.height + 8)
+                        }
                         .position(x: playX, y: geo.size.height / 2)
                         .gesture(
                             DragGesture(minimumDistance: 0)
@@ -473,14 +482,6 @@ private struct TrimScrubberView: View {
                                     vm.seekTo(newTime)
                                 }
                         )
-                        // Visual: thin white line drawn over the wider hit target
-                        .overlay {
-                            Rectangle()
-                                .fill(Theme.white)
-                                .frame(width: 2, height: geo.size.height + 8)
-                                .position(x: playX, y: geo.size.height / 2)
-                                .allowsHitTesting(false)
-                        }
                 }
             }
         }
@@ -531,7 +532,7 @@ private struct TrimScrubberView: View {
                 Rectangle().fill(Theme.yellow).frame(height: 3)
             }
             .frame(width: w, height: height)
-            .offset(x: leftX)
+            .position(x: leftX + w / 2, y: height / 2)
             .allowsHitTesting(false)
         }
     }
@@ -618,13 +619,16 @@ enum PassthroughExporter {
         let end = CMTime(seconds: endTime, preferredTimescale: 600)
         session.timeRange = CMTimeRange(start: start, end: end)
 
-        // Export with progress polling via Timer on main run loop
-        nonisolated(unsafe) let unsafeSession = session
-        let progressTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { _ in
-            onProgress?(Double(unsafeSession.progress))
+        // Export with progress polling via async Task
+        nonisolated(unsafe) let pollSession = session
+        let progressTask = Task {
+            while !Task.isCancelled {
+                onProgress?(Double(pollSession.progress))
+                try? await Task.sleep(for: .milliseconds(100))
+            }
         }
         await session.export()
-        progressTimer.invalidate()
+        progressTask.cancel()
         onProgress?(1.0)
 
         switch session.status {

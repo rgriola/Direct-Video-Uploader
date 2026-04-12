@@ -100,7 +100,7 @@ export function serializeClip(clip) {
 }
 
 /**
- * Send upload-related WebSocket events (upload:complete, message:new, form:request)
+ * Send upload-related WebSocket events (upload:complete, form:request)
  * to all of a user's connected sockets. Consolidates the ~30 lines of emission
  * logic that was duplicated across upload and mux-upload routes.
  *
@@ -140,32 +140,7 @@ export function notifyUserSockets(io, socketIds, payload) {
             },
         });
 
-        // 2. Form request chat message
-        io.to(socketId).emit('message:new', {
-            id: crypto.randomUUID(),
-            userId: null,
-            assetId,
-            direction: 'INCOMING',
-            messageType: 'FORM_REQUEST',
-            content: {
-                text: messageText,
-                mediasourceId: asset.mediasourceId,
-                mediasourceUrl: asset.mediasourceUrl,
-                originalFileName: asset.originalFileName,
-                userName,
-                clipCount: 1,
-                duration: metadata.duration || 0,
-                gpsLat: metadata.gpsLat,
-                gpsLon: metadata.gpsLon,
-                capturedAt: metadata.capturedAt?.toISOString() || null,
-                codec: metadata.codec !== 'Unknown' ? metadata.codec : null,
-                resolution: metadata.resolution !== 'Unknown' ? metadata.resolution : null,
-                hasRichMeta,
-            },
-            createdAt: new Date().toISOString(),
-        });
-
-        // 3. Form request event — opens the form sheet on iOS
+        // 2. Form request event — opens the form sheet on iOS
         io.to(socketId).emit('form:request', {
             assetId,
             originalFileName: asset.originalFileName,

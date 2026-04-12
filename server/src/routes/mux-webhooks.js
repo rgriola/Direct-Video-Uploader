@@ -171,6 +171,7 @@ export default async function muxWebhookRoutes(fastify) {
                                     muxPlaybackId,
                                     streamUrl,
                                     thumbnailUrl,
+                                    formSlug: asset.formResponse?.slug || null,
                                     formType: asset.formResponse?.type || null,
                                     formDescription: asset.formResponse?.description || null,
                                     formPriority: asset.formResponse?.priority || null,

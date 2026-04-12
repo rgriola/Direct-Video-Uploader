@@ -4,9 +4,7 @@ import SwiftUI
 /// Displays metadata and offers View + Share to Slack actions.
 struct ConversationSummaryBubble: View {
     let mediasourceId: String?
-    let formType: String?
-    let formDescription: String?
-    let formPriority: String?
+    let formSlug: String?
     let duration: Int?
     let resolution: String?
     let fileSize: String?
@@ -17,13 +15,13 @@ struct ConversationSummaryBubble: View {
                 // Header
                 HStack(spacing: 8) {
                     Image(systemName: "checkmark.seal.fill")
-                        .font(Theme.display32)
+                        .font(Theme.display24)
                         .foregroundStyle(Theme.green)
-                    Text("Video Confirmed")
+                    Text("Video Ready")
                         .font(Theme.font16Medium)
                         .foregroundStyle(Theme.black)
                 }
-                // horizontal line
+
                 Divider().background(Theme.black.opacity(0.1))
 
                 // Metadata rows
@@ -48,13 +46,11 @@ struct ConversationSummaryBubble: View {
                             }
                         }
                     }
-                    if let type = formType {
-                        let priority = formPriority ?? ""
-                        let combined = priority.isEmpty ? type : "\(type) · \(priority) Priority"
-                        metaRow(icon: "tag.fill", label: combined)
+
+                    if let slug = formSlug {
+                        metaRow(icon: "tag.fill", label: slug)
                     }
 
-                    // Technical details
                     let details = buildDetailsString()
                     if !details.isEmpty {
                         metaRow(icon: "film", label: details)
@@ -72,7 +68,6 @@ struct ConversationSummaryBubble: View {
     
     // MARK: - Helpers
     
-    @ViewBuilder
     private func metaRow(icon: String, label: String) -> some View {
         HStack(spacing: 8) {
             Image(systemName: icon)
@@ -87,16 +82,12 @@ struct ConversationSummaryBubble: View {
     }
     
     private func buildDetailsString() -> String {
-        var parts: [String] = []
-        if let dur = duration {
-            parts.append(DVUDateFormatting.duration(dur))
-        }
-        if let res = resolution {
-            parts.append(res)
-        }
-        if let size = fileSize {
-            parts.append(DVUDateFormatting.fileSize(size))
-        }
-        return parts.joined(separator: " · ")
+        [
+            duration.map { DVUDateFormatting.duration($0) },
+            resolution,
+            fileSize.map { DVUDateFormatting.fileSize($0) },
+        ]
+        .compactMap { $0 }
+        .joined(separator: " · ")
     }
 }

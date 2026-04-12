@@ -5,7 +5,8 @@ import AVFoundation
 enum VideoBubblePhase {
     case staged      // Preview — show cancel X, transcribe toggle, send button
     case uploading   // Progress bar + spinner
-    case sent        // Green ✓
+    case processing  // Bytes uploaded, Mux is processing — spinner + text
+    case sent        // Green ✓ (mux:ready received)
 }
 
 /// A staged video ready for the user to preview before uploading.
@@ -32,6 +33,9 @@ struct VideoBubble: View {
 
     // Uploading-only
     var uploadProgress: Double = 0
+
+    // Whether transcription was enabled for this upload (non-staged phases)
+    var didTranscribe: Bool = false
 
     @State private var transcribeEnabled = false
 
@@ -97,6 +101,16 @@ struct VideoBubble: View {
 
                         Spacer()
 
+                        // Transcribe indicator for non-staged phases
+                        if phase != .staged && didTranscribe {
+                            Image(systemName: "mic.fill")
+                                .font(Theme.icon13)
+                                .foregroundStyle(Theme.black)
+                                .padding(6)
+                                .background(Theme.green)
+                                .clipShape(Circle())
+                        }
+
                         // Trailing widget — changes per phase
                         trailingWidget
                     }
@@ -117,6 +131,24 @@ struct VideoBubble: View {
                                     .font(Theme.font11Regular.monospacedDigit())
                                     .foregroundStyle(Theme.white)
                             }
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.bottom, 10)
+                    }
+
+                    // Processing indicator — Mux is transcoding
+                    if phase == .processing {
+                        HStack(spacing: 8) {
+                            Image(systemName: "waveform")
+                                .font(Theme.icon13)
+                                .foregroundStyle(Theme.purple)
+                                .phaseAnimator([false, true]) { content, pulse in
+                                    content.opacity(pulse ? 1.0 : 0.4)
+                                } animation: { _ in .easeInOut(duration: 0.8) }
+                            Text("Mediasource processing…")
+                                .font(Theme.font11Regular)
+                                .foregroundStyle(Theme.white.opacity(0.8))
+                            Spacer()
                         }
                         .padding(.horizontal, 12)
                         .padding(.bottom, 10)
@@ -142,23 +174,16 @@ struct VideoBubble: View {
     private var trailingWidget: some View {
         switch phase {
         case .staged:
-            // Transcribe toggle
+            // Transcribe toggle — icon only, persists via @AppStorage
             Button {
                 transcribeEnabled.toggle()
             } label: {
-                HStack(spacing: 4) {
-                    Image(systemName: transcribeEnabled ? "mic.fill" : "mic.slash")
-                        .font(Theme.icon13)
-                    Text("Transcribe")
-                        .font(Theme.font13Regular)
-                }
-                .foregroundStyle(transcribeEnabled ? Theme.black : Theme.secondaryText)
-                .padding(.horizontal, 11)
-                .padding(.vertical, 6)
-                .background(transcribeEnabled ? Theme.green : Theme.white)
-                .clipShape(Capsule())
-                .overlay(Capsule().stroke(transcribeEnabled ? Theme.green.opacity(0.8) : Theme.white.opacity(0.9), lineWidth: 1))
-
+                Image(systemName: transcribeEnabled ? "mic.fill" : "mic.slash")
+                    .font(Theme.icon13)
+                    .foregroundStyle(transcribeEnabled ? Theme.black : Theme.secondaryText)
+                    .padding(8)
+                    .background(transcribeEnabled ? Theme.green : Theme.white)
+                    .clipShape(Circle())
             }
 
             // Send button
@@ -174,6 +199,16 @@ struct VideoBubble: View {
             ProgressView()
                 .tint(Theme.white)
 
+        case .processing:
+            Image(systemName: "waveform")
+                .font(Theme.display24)
+                .foregroundStyle(Theme.purple)
+                .phaseAnimator([false, true]) { content, pulse in
+                    content
+                        .opacity(pulse ? 1.0 : 0.3)
+                        .scaleEffect(pulse ? 1.0 : 0.85)
+                } animation: { _ in .easeInOut(duration: 0.8) }
+
         case .sent:
             Image(systemName: "checkmark.circle.fill")
                 .font(Theme.display32)
@@ -182,7 +217,11 @@ struct VideoBubble: View {
     }
 
     private var borderColor: Color {
-        phase == .sent ? Theme.green : Theme.blue
+        switch phase {
+        case .sent: Theme.green
+        case .processing: Theme.purple
+        default: Theme.blue
+        }
     }
 
     @ViewBuilder
@@ -203,6 +242,16 @@ struct VideoBubble: View {
                 .font(Theme.font11Regular)
                 .foregroundStyle(Theme.white)
                 .padding(.horizontal, 4)
+
+        case .processing:
+            HStack(spacing: 4) {
+                Image(systemName: "clock.arrow.circlepath")
+                    .font(Theme.font11Regular)
+                Text("Processing…")
+                    .font(Theme.font11Regular)
+            }
+            .foregroundStyle(Theme.purple)
+            .padding(.horizontal, 4)
 
         case .sent:
             Text("Sent")

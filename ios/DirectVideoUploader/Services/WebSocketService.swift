@@ -1,6 +1,7 @@
 import Foundation
 import Observation
 import Network
+import UIKit
 
 /// WebSocket service using native URLSessionWebSocketTask.
 /// Communicates with the Socket.IO server using the Socket.IO protocol.
@@ -243,8 +244,22 @@ final class WebSocketService {
                 // Without this packet the server never fires io.on('connection')
                 // and all Socket.IO events (message:send, etc.) are silently dropped.
                 if let token = self.token {
-                    let auth = "{\"token\":\"\(token)\",\"clientType\":\"ios\"}"
-                    sendRaw("40\(auth)")
+                    let deviceId = UIDevice.current.identifierForVendor?.uuidString ?? "unknown"
+                    let deviceName = UIDevice.current.name
+                    let deviceModel = UIDevice.current.model
+                    let auth = [
+                        "token": token,
+                        "clientType": "ios",
+                        "deviceId": deviceId,
+                        "deviceName": deviceName,
+                        "deviceModel": deviceModel,
+                    ]
+                    if let jsonData = try? JSONSerialization.data(withJSONObject: auth),
+                       let jsonString = String(data: jsonData, encoding: .utf8) {
+                        sendRaw("40\(jsonString)")
+                    } else {
+                        sendRaw("40{\"token\":\"\(token)\",\"clientType\":\"ios\"}")
+                    }
                 } else {
                     sendRaw("40")
                 }

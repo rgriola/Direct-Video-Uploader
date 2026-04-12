@@ -5,23 +5,20 @@ struct MessageBubble: View {
     let message: ChatMessage
     var thumbnail: UIImage?
     var onTapMetadata: (() -> Void)?
-    var onTapForm: (() -> Void)?
     
     private var isOutgoing: Bool { message.isOutgoing }
     
     var body: some View {
-
         HStack {
-
             if isOutgoing { Spacer(minLength: 60) }
             
             VStack(alignment: isOutgoing ? .trailing : .leading, spacing: 4) {
-                // Bubble content 
+                // Bubble content
                 bubbleContent
                     .padding(.horizontal, 14)
                     .padding(.vertical, 10)
-                    .background(bubbleBackground)
-                    .clipShape(ChatBubbleShape(isOutgoing: isOutgoing))
+                    .background(isOutgoing ? Theme.purple : Theme.incomingBubble)
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.radiusXl))
 
                 // Timestamp
                 if let time = formattedTime {
@@ -38,27 +35,30 @@ struct MessageBubble: View {
     }
     
     // MARK: - Bubble Content
+    
     @ViewBuilder
     private var bubbleContent: some View {
-                switch message.messageType {
-                    case .video:
-                        videoContent
-                    case .confirmation:
-                        confirmationContent
-                    case .formRequest:
-                        formRequestContent
-                    case .slackPost:
-                        slackContent
-                    default:
-                        textContent
-                        }
-                }
+        switch message.messageType {
+        case .video:
+            videoContent
+        case .confirmation:
+            confirmationContent
+        case .slackPost:
+            slackContent
+        default:
+            textContent
+        }
+    }
+    
+    // MARK: - Text
     
     private var textContent: some View {
         Text(message.content.displayText)
             .font(Theme.font16Regular)
             .foregroundStyle(isOutgoing ? Theme.white : Theme.black)
     }
+    
+    // MARK: - Video
     
     private var videoContent: some View {
         HStack(spacing: 8) {
@@ -69,6 +69,8 @@ struct MessageBubble: View {
         }
         .foregroundStyle(isOutgoing ? Theme.white : Theme.black)
     }
+    
+    // MARK: - Confirmation
     
     private var confirmationContent: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -109,88 +111,29 @@ struct MessageBubble: View {
         }
     }
     
-    private var formRequestContent: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            // Slug name
-            if let slug = message.content.slug {
-                Text(slug)
-                    .font(Theme.mono13Medium)
-                    .foregroundStyle(Theme.black)
-                    .lineLimit(1)
-            }
-            
-            // Mediasource ID + URL link + copy button
-            if let msId = message.content.mediasourceId {
-                HStack(spacing: 4) {
-                    Text("🔗")
-                        .font(Theme.icon13)
-                    Text(msId)
-                        .font(Theme.mono16Bold)
-                        .foregroundStyle(Theme.black)
-                    
-                    if let clipURL = ServerConfig.clipURL(msId) {
-                        Text(clipURL.absoluteString)
-                            .font(Theme.font11Regular)
-                            .foregroundStyle(Theme.black)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                    }
-                    
-                    // Copy button — copies the full clip viewer URL
-                    Button {
-                        let link = ServerConfig.clipURL(msId)?.absoluteString ?? msId
-                        UIPasteboard.general.string = link
-                    } label: {
-                        Image(systemName: "doc.on.doc")
-                            .font(Theme.icon13)
-                            .foregroundStyle(Theme.black.opacity(0.6))
-                    }
-                }
-            }
-            
-            Divider()
-                .background(Theme.black.opacity(0.1))
-            
-            // Action button — Metadata only
-            HStack(spacing: 12) {
-                if let onTapMetadata {
-                    ChatActionButton(
-                        icon: "info.circle.fill",
-                        label: "Metadata",
-                        color: Theme.blue,
-                        action: onTapMetadata
-                    )
-                }
-            }
-        }
-    }
+    // MARK: - Slack
     
-    // MARK: - Helpers
-    
+    @ViewBuilder
     private var slackContent: some View {
-        Group {
-            if isOutgoing {
-                // Outgoing — simple sending indicator
-                VStack(alignment: .leading, spacing: 6) {
-                    
-                    Text(message.content.text ?? "")
-                        .font(Theme.font16Regular)
-                        .foregroundStyle(Theme.white)
+        if isOutgoing {
+            // Outgoing — simple sending indicator
+            VStack(alignment: .leading, spacing: 6) {
+                Text(message.content.text ?? "")
+                    .font(Theme.font16Regular)
+                    .foregroundStyle(Theme.white)
 
-                    HStack(spacing: 6) {
-                        Image(systemName: "paperplane.fill")
-                            .font(Theme.icon13)
-                            .foregroundStyle(Theme.white)
-                        Text("Sending to Slack…")
-                            .font(Theme.font13Semibold)
-                            .foregroundStyle(Theme.white.opacity(0.7))
-                    }
-                    
+                HStack(spacing: 6) {
+                    Image(systemName: "paperplane.fill")
+                        .font(Theme.icon13)
+                        .foregroundStyle(Theme.white)
+                    Text("Sending to Slack…")
+                        .font(Theme.font13Semibold)
+                        .foregroundStyle(Theme.white.opacity(0.7))
                 }
-            } else {
-                // Incoming — structured Slack card
-                slackCardContent
             }
+        } else {
+            // Incoming — structured Slack card
+            slackCardContent
         }
     }
 
@@ -262,32 +205,10 @@ struct MessageBubble: View {
         }
     }
     
-    // MARK: - Bubble Background for text messages. 
-    
-    private var bubbleBackground: some View {
-        Group {
-            if isOutgoing {
-                Theme.purple
-            } else {
-                Theme.incomingBubble
-            }
-        }
-    }
-    
     // MARK: - Timestamp
     
     private var formattedTime: String? {
         guard let dateStr = message.createdAt else { return nil }
         return DVUDateFormatting.timeOnly(dateStr)
-    }
-}
-
-// MARK: - Chat Bubble Shape
-
-struct ChatBubbleShape: Shape {
-    let isOutgoing: Bool
-    
-    func path(in rect: CGRect) -> Path {
-        Path(roundedRect: rect, cornerRadius: Theme.radiusXl)
     }
 }

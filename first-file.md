@@ -961,5 +961,27 @@ clicking button will show a panel with the below instructions - for now until I 
 -- The app crashed when a user set speech recogniztion to "dont allow" , this the initial Apple Permission panel. The setting did take effect but the app crashed. 
 
 
+...
 
+*** Task ***
+- What would we need to change for Fixer to also accept photos from the library? 
+- The photos would be routed to a different catch server/ storage, not mux.
+- The jpeg or heic photos must be sent in orginal quality, no compression.
+- Raw files must be compressed first to a jpg. 
+- no png or tiff files
+- User would need to queue multiple photos and send
+- Similar to the video upload there would need to be an accurate progress bar. 
+- Do not code, review our current setup and show me options on integrating photos uploads.
 
+add.
+- photo libary should switch between video and photo filtering replacing the video/collection toggle. 
+- Photo archieve would be separate from video archive.
+- Initial Context Form should allow Assignment Slug and description. 
+- Each Photo should have a section caption, a people in the image. 
+- Identify people in the image and add them to the metadata. 
+- We can use Image Kit from my other project to handle the image processing and storage. 
+
+...
+*** Issue ***
+
+- I have two 

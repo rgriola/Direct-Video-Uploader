@@ -69,17 +69,17 @@ await fastify.register(cors, {
 await fastify.register(helmet, {
     contentSecurityPolicy: isProduction
         ? {
-              directives: {
-                  defaultSrc: ["'self'"],
-                  scriptSrc: ["'self'", "'unsafe-inline'", 'https://cdn.jsdelivr.net'],
-                  styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
-                  imgSrc: ["'self'", 'data:', 'https://image.mux.com', 'https://*.mux.com'],
-                  mediaSrc: ["'self'", 'https://*.mux.com', 'https://*.edgemv.mux.com', 'blob:'],
-                  connectSrc: ["'self'", 'https://*.mux.com', 'https://*.edgemv.mux.com', 'https://*.litix.io'],
-                  fontSrc: ["'self'", 'https://fonts.gstatic.com'],
-                  frameSrc: ["'none'"],
-              },
-          }
+            directives: {
+                defaultSrc: ["'self'"],
+                scriptSrc: ["'self'", "'unsafe-inline'", 'https://cdn.jsdelivr.net'],
+                styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
+                imgSrc: ["'self'", 'data:', 'https://image.mux.com', 'https://*.mux.com'],
+                mediaSrc: ["'self'", 'https://*.mux.com', 'https://*.edgemv.mux.com', 'blob:'],
+                connectSrc: ["'self'", 'https://*.mux.com', 'https://*.edgemv.mux.com', 'https://*.litix.io'],
+                fontSrc: ["'self'", 'https://fonts.gstatic.com'],
+                frameSrc: ["'none'"],
+            },
+        }
         : false, // Disable CSP in dev (allows inline scripts for dashboard)
     // Clip viewer loads cross-origin media/scripts from Mux CDN + jsdelivr.
     // Helmet defaults (same-origin) block those fetches independently of CSP.
