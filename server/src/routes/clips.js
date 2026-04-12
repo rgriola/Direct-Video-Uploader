@@ -57,7 +57,7 @@ export default async function clipRoutes(fastify) {
             reply.status(404).type('text/html').send(`
                 <!DOCTYPE html>
                 <html><head><title>Not Found</title>
-                <style>body{background:oklch(70.499% 0.11489 254.082);color:oklch(93.014% 0.00759 260.883);font-family:'Outfit',sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}
+                <style>body{background:#0E0F14;color:#E2E4ED;font-family:'Outfit',sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}
                 h1{font-size:1.5rem;opacity:0.7}</style></head>
                 <body><h1>Clip not found</h1></body></html>
             `);
@@ -75,7 +75,7 @@ export default async function clipRoutes(fastify) {
                 reply.status(404).type('text/html').send(`
                     <!DOCTYPE html>
                     <html><head><title>Not Found</title>
-                    <style>body{background:oklch(70.499% 0.11489 254.082);color:oklch(93.014% 0.00759 260.883);font-family:'Outfit',sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}
+                    <style>body{background:#0E0F14;color:#E2E4ED;font-family:'Outfit',sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}
                     h1{font-size:1.5rem;opacity:0.7}</style></head>
                     <body><h1>Clip not found</h1></body></html>
                 `);
@@ -93,7 +93,7 @@ export default async function clipRoutes(fastify) {
             reply.status(500).type('text/html').send(`
                 <!DOCTYPE html>
                 <html><head><title>Error</title>
-                <style>body{background:oklch(70.499% 0.11489 254.082);color:oklch(93.014% 0.00759 260.883);font-family:'Outfit',sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}
+                <style>body{background:#0E0F14;color:#E2E4ED;font-family:'Outfit',sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}
                 pre{font-size:0.9rem;opacity:0.7;max-width:600px;white-space:pre-wrap}</style></head>
                 <body><pre>DB Error: ${escapeHtml(err.message)}</pre></body></html>
             `);
@@ -203,24 +203,28 @@ export default async function clipRoutes(fastify) {
         *, *::before, *::after { box-sizing: border-box; }
         body, h1, h2, h3, p, div, span { margin: 0; padding: 0; }
         :root {
-            --background: oklch(70.499% 0.11489 254.082);
-            --foreground: oklch(93.014% 0.00759 260.883);
-            --card: oklch(46.562% 0.09735 268.744);
-            --card-hover: oklch(44.844% 0.04091 263.273);
-            --border: oklch(0.22 0.02 270);
-            --border-subtle: oklch(0.17 0.01 270);
-            --muted-foreground: oklch(91.646% 0.01404 272.677);
-            --secondary: oklch(0.16 0.01 270);
-            --accent-blue: #4a9eff;
-            --accent-green: #34d399;
-            --accent-amber: #fbbf24;
-            --accent-red: #f87171;
-            --accent-green-glow: rgba(52, 211, 153, 0.15);
-            --accent-red-glow: rgba(248, 113, 113, 0.10);
-            --radius: 0.875rem;
+            /* Midnight Studio — matches theme-d-dark.css */
+            --background:        #0E0F14;
+            --foreground:        #E2E4ED;
+            --card:              #161820;
+            --card-hover:        #1C1F2A;
+            --border:            #2A2D3A;
+            --border-subtle:     #1E2029;
+            --muted-foreground:  #7B7F96;
+            --secondary:         #1C1F2A;
+            --accent-blue:       #4F8ECC;
+            --accent-green:      #3DA882;
+            --accent-amber:      #C8972A;
+            --accent-red:        #E05263;
+            --accent-purple:     #6C63D6;
+            --accent-green-glow: #3DA88214;
+            --accent-red-glow:   #E0526314;
+            --radius: 0.75rem;
         }
         body {
             background: var(--background);
+            background-image: linear-gradient(180deg, #6C63D6 0%, #0E0F14 100%);
+            background-attachment: fixed;
             color: var(--foreground);
             font-family: 'Outfit', sans-serif;
             min-height: 100vh;
@@ -411,10 +415,10 @@ export default async function clipRoutes(fastify) {
             font-weight: 600;
             letter-spacing: 0.05em;
         }
-        .status-READY { background: var(--accent-green-glow); color: var(--accent-green); border: 1px solid rgba(52,211,153,0.2); }
-        .status-PROCESSING { background: rgba(251,191,36,0.12); color: var(--accent-amber); border: 1px solid rgba(251,191,36,0.2); }
-        .status-UPLOADING { background: rgba(74,158,255,0.12); color: var(--accent-blue); border: 1px solid rgba(74,158,255,0.2); }
-        .status-ERROR { background: rgba(248,113,113,0.12); color: var(--accent-red); border: 1px solid rgba(248,113,113,0.2); }
+        .status-READY     { background: var(--accent-green-glow); color: var(--accent-green); border: 1px solid rgba(61,168,130,0.25); }
+        .status-PROCESSING { background: #C8972A14;                color: var(--accent-amber); border: 1px solid rgba(200,151,42,0.25); }
+        .status-UPLOADING  { background: #4F8ECC14;                color: var(--accent-blue);  border: 1px solid rgba(79,142,204,0.25); }
+        .status-ERROR      { background: var(--accent-red-glow);   color: var(--accent-red);   border: 1px solid rgba(224,82,99,0.25); }
         /* Copy link button */
         .copy-link {
             display: inline-flex;
@@ -474,8 +478,8 @@ export default async function clipRoutes(fastify) {
             gap: 10px;
             padding: 14px 20px;
             border-radius: var(--radius);
-            background: rgba(248,113,113,0.08);
-            border: 1px solid rgba(248,113,113,0.25);
+            background: var(--accent-red-glow);
+            border: 1px solid rgba(224,82,99,0.25);
             margin-bottom: 20px;
         }
         .alert-banner .alert-icon { font-size: 20px; flex-shrink: 0; }

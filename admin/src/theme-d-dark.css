@@ -1,0 +1,163 @@
+@import "tailwindcss";
+
+/* ═══════════════════════════════════════════════════════════
+   THEME D — "Midnight Studio"
+   Deep charcoal surfaces, single indigo primary accent.
+   Inspired by: Linear, Vercel Dark, GitHub Dark Dimmed
+   ═══════════════════════════════════════════════════════════ */
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  --base: #6C63D6;
+
+  --font-sans: "Outfit", sans-serif;
+  --font-mono: "JetBrains Mono", monospace;
+
+  /* ─── Page ─── */
+  --background: #0E0F14;
+
+  --foreground: #E2E4ED;
+
+  /* ─── Cards ─── */
+  --card: #161820;
+  --card-foreground: #E2E4ED;
+  --card-hover: #1C1F2A;
+
+  /* ─── Popover ─── */
+  --popover: #1C1F2A;
+  --popover-foreground: #E2E4ED;
+
+  /* ─── Primary (buttons, links, ring) ─── */
+  --primary: #6C63D6;
+  --primary-foreground: #FFFFFF;
+
+  /* ─── Secondary (panel headers, section strips) ─── */
+  --secondary: #1C1F2A;
+  --secondary-dark-shade: #13151D;
+  --secondary-foreground: #C5C8D8;
+
+  /* ─── Muted ─── */
+  --muted: #2A2D3A;
+  --muted-foreground: #7B7F96;
+
+  /* ─── Accent (single hero accent — indigo) ─── */
+  --accent: #6C63D6;
+  --accent-foreground: #FFFFFF;
+
+  /* ─── Destructive ─── */
+  --destructive: #E05263;
+  --destructive-foreground: #FFFFFF;
+
+  /* ─── Borders & Input ─── */
+  --border: #2A2D3A;
+  --border-subtle: #1E2029;
+  --input: #1E2029;
+  --ring: #6C63D6;
+
+  /* ─── Named border accents (used by AssetList, UserList badges) ─── */
+  --border-blue: #4F8ECC;
+  --border-green: #3DA882;
+  --border-purple: #6C63D6;
+  --border-amber: #C8972A;
+
+  --radius: 0.75rem;
+
+  /* ─── Semantic Accent Palette ───────────────────────────────
+     Rule: desaturated enough to read as "data" not "decoration".
+     Each value passes 4.5:1 contrast against --card (#161820).
+     ─────────────────────────────────────────────────────────── */
+  --accent-blue: #4F8ECC;
+  /* cornflower — calm, readable  */
+  --accent-green: #3DA882;
+  /* teal — healthy, confirms     */
+  --accent-amber: #C8972A;
+  /* warm gold — caution          */
+  --accent-red: #E05263;
+  /* rose — error, destructive    */
+  --accent-purple: #6C63D6;
+  /* indigo — primary brand       */
+
+  /* Glow layers — very subtle, dark-mode safe */
+  --accent-blue-glow: #4F8ECC14;
+  --accent-green-glow: #3DA88214;
+  --accent-amber-glow: #C8972A14;
+  --accent-red-glow: #E0526314;
+  --accent-purple-glow: #6C63D614;
+}
+
+body {
+  font-family: var(--font-sans);
+  background: var(--background);
+  color: var(--foreground);
+  min-height: 100vh;
+  /* Extremely subtle depth gradient — not a light-show, just texture */
+  /*background-image: radial-gradient(ellipse 80% 50% at 50% -10%, #1A1830 0%, transparent 70%);*/
+  background-image: linear-gradient(180deg, var(--base) 0%, var(--background) 100%);
+  background-attachment: fixed;
+}
+
+/* ─── Scrollbar ─── */
+::-webkit-scrollbar {
+  width: 5px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+/* ─── Animations ─── */
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes pulse-dot {
+
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.4;
+  }
+}
+
+@keyframes spin-once {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.3s ease;
+}
+
+.animate-pulse-dot {
+  animation: pulse-dot 2s infinite;
+}
+
+.animate-spin-once {
+  animation: spin-once 0.6s linear;
+}
