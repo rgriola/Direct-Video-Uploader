@@ -155,7 +155,8 @@ cd ios && xcodegen generate
 - **Slack integration** — Post to `#channels` or DM `@users` with thumbnail, clip link, and metadata
 - **Clip viewer** — Public shareable page with Mux player, metadata, transcript
 - **Apple Speech** — On-device transcription with newsroom vocabulary, per-word timestamps
-- **Archive** — 7-day history with status dots, thumbnails, re-upload, form submission
+- **Archive** — 7-day history with status dots, thumbnails, re-upload, form submission. Slug shown as primary display name; format row combines resolution + codec
+- **Photos tab** — Placeholder for upcoming photo upload pipeline (TBD feature)
 - **Profile** — User info, Photo Library + Speech Recognition permission toggles with live status, app info
 - **In-app instructions** — 5-page swipeable guide: First Things, iPhone Media, Steps to Use Fixer, What's Happening Inside Fixer, Archive. SF Symbol icons inline
 - **Server greetings** — 40+ randomized greeting combos using first name only, feature tips, no consecutive repeats. Greets every device independently

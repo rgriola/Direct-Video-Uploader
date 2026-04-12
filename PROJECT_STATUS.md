@@ -1,7 +1,7 @@
 # Direct Video Uploader — Project Status
 
-> **Last Updated:** April 11, 2026 · EST
-> **Current Phase:** Phase 3 (Render + Cloud + Mux) — Mux pipeline fully operational + Stability A–C + Upload + Re-upload + Archive + Admin tools + Transcription + UX polish + Admin refactor + Security hardening + Clip Viewer + Permissions Profile + ChatViewModel refactor + Device tracking + Instructions overhaul
+> **Last Updated:** April 12, 2026 · EST
+> **Current Phase:** Phase 3 (Render + Cloud + Mux) — Mux pipeline fully operational + Stability A–C + Upload + Re-upload + Archive + Admin tools + Transcription + UX polish + Admin refactor + Security hardening + Clip Viewer + Permissions Profile + ChatViewModel refactor + Device tracking + Instructions overhaul + iOS architecture cleanup
 > **Overall Progress:** ████████████████████ 100% (Phase 2) · Phase 3 ~99%
 
 ---
@@ -10,7 +10,7 @@
 
 The **Direct Video Uploader** is a mobile-first video upload platform disguised as a text conversation. Field crew members "text" videos to the **Mediasource Fixer** server, which processes them the way a news assignment desk operates — fast, structured, and integrated with Slack.
 
-We've completed the **interactive chat demo** (HTML prototype), **project specification** (v4), the **Phase 1 server foundation** (Node.js API, WebSocket, PostgreSQL, auth, admin dashboard), the **Phase 2 — iOS Demo App** core flow (login → chat → video upload → form → confirmation → archive), and the **Web Clip Viewer** (server-rendered at `/clips/:slug`). Latest session (Apr 11): **Instructions UI overhaul + Device tracking + Greeting improvements**. In-app instructions expanded from 4 to 5 pages with a new "What's Happening Inside Fixer" page; numbered steps replaced with inline SF Symbol icons matching actual UI elements. Server greeting now parses first name only from full username. Every iOS device connection now receives its own greeting (multi-device support). Device tracking added: iOS sends `deviceId` (identifierForVendor), `deviceName`, and `deviceModel` in the WebSocket handshake auth payload; server logs per-device connections. `ConversationSummaryBubble` cleaned up: unused `formType` property removed, `formDescription` and `formPriority` surfaced in the UI, `buildDetailsString` simplified with `compactMap`, `formSlug` wired end-to-end through server → ArchiveState → bubble.
+We've completed the **interactive chat demo** (HTML prototype), **project specification** (v4), the **Phase 1 server foundation** (Node.js API, WebSocket, PostgreSQL, auth, admin dashboard), the **Phase 2 — iOS Demo App** core flow (login → chat → video upload → form → confirmation → archive), and the **Web Clip Viewer** (server-rendered at `/clips/:slug`). Latest session (Apr 12): **iOS architecture cleanup — ArchiveRowView refactor + Photos tab placeholder + shared utilities**. `ArchiveRowView` gains a `RowStatus` enum as a single source of truth for the status badge and action buttons (replaces two parallel if-else chains). `FormField.defaultVideoFields()` static extension eliminates duplicated field lists between `ChatViewModel` and `ArchiveRowView`. Both Archive views now use `auth.authenticatedRequest` instead of raw Bearer headers. Critical crash fixed in `phAssetToTempFile` (double-resume continuation guard, matching the VideoLibraryView fix). `handleReupload` no longer loads full video into RAM via `loadTransferable` — uses the PHAsset fast path already in the file. Slug surfaces as the primary display name in collapsed archive rows. Resolution + codec combined into a single "Format" row. New `PhotosView` placeholder added as the 3rd tab (Chat → Archive → Photos → Profile) with matching gradient background and feature overview rows.
 
 ---
 
@@ -198,6 +198,20 @@ cd ios && xcodegen generate && xcodebuild -project DirectVideoUploader.xcodeproj
 - **Admin dashboard themes** — Created three semantic CSS theme files: `theme-a-editorial.css` (Clean Editorial — neutral tones), `theme-b-lavender.css` (Lavender Mist — purple gradient, currently active), `theme-c-newsroom.css` (Warm Newsroom — amber/sunset tones). Base `index.css` expanded with CSS custom properties for all design tokens.
 - **README rewrite** — Full rewrite of `README.md` reflecting current architecture, Mux integration, admin dashboard, and deployment setup.
 - **ServerConfig tethering IP** — Updated physical device debug fallback from `192.168.0.100` to `172.20.10.2` (USB tethering interface).
+**Features Added (Apr 12 — Session):**
+
+- **ArchiveRowView: `RowStatus` enum** — Added `private enum RowStatus` (needsDetails / failed / reuploading / processing / ready) and `rowStatus` computed property as the single source of truth. Replaced two separate if-else chains (status badge and action buttons section) with `switch rowStatus`. Priority order is centralized and compiler-enforced over exhaustiveness.
+- **`phAssetToTempFile` continuation guard** — Added `var resumed = false` guard to prevent double-resume crash on iCloud assets (same fix applied to `VideoLibraryView` last session). `deliveryMode` already set to `.highQualityFormat`.
+- **`handleReupload` PHAsset fast path** — Replaced `loadTransferable(type: Data.self)` (loads full video into RAM — 1–2 GB for 4K) with `PHAsset.fetchAssets` + `exportVideoToTemp`. Uses the `phAssetToTempFile` function already in the file. PHAsset identifier now saved immediately from the picker item.
+- **UUID subdirectory in `phAssetToTempFile`** — Temp file now written to `temporaryDirectory/UUID/filename` to prevent filename collisions across app launches.
+- **`defer`-based `isReuploadingVideo` reset** — Replaced 5 scattered `isReuploadingVideo = false` resets in error branches with a single `defer { if reuploadError != nil { isReuploadingVideo = false } }` at the top of each calling function. UI can no longer get stuck in uploading state.
+- **Slug as primary display name** — Collapsed archive row now shows `asset.formResponse?.slug` first, falling back to `originalFileName → mediasourceId → id`.
+- **Format row** — Resolution and Codec metadata rows combined into a single "Format" row using `compactMap` join (e.g. `"1920×1080 • HEVC / H.265"`).
+- **`FormField.defaultVideoFields()` extension** — Added static method to `FormField` in `ChatMessage.swift`. Both `ChatViewModel.buildFormFields()` and `ArchiveRowView.buildFormFields()` now delegate to this shared extension — single source of truth for form field definitions.
+- **`auth.authenticatedRequest` in Archive views** — `ArchiveRowView.submitFormFromArchive` and `ArchiveListView.fetchAssets` both replaced raw manual `URLRequest` + `setValue("Bearer \(token)", ...)` with `auth.authenticatedRequest(for:method:)`. Consistent with all `ChatViewModel` network calls.
+- **Dead `parseISO8601` wrapper removed** — `private func parseISO8601` in `ArchiveRowView` was a 1-line passthrough to `DVUDateFormatting.parseISO` with no added value. Deleted; call site updated to call `DVUDateFormatting.parseISO` directly.
+- **Photos tab (placeholder)** — New `PhotosView.swift` added at `Views/Photos/`. Matches `ArchiveListView` and `ProfileView` visual style: `Theme.screenGradient` background, standard black header, feature overview with `instructionRow` helper. Wired into `ContentView` as tab 3 (Chat → Archive → Photos → Profile) with `photo.fill` icon.
+
 **Features Added (Apr 11 — Evening Session):**
 
 - **ChatViewModel refactor** — Removed dead `formType`/`formDescription`/`formPriority` fields from `ArchiveState`, `MessageContent`, and 3 WS event handlers (fields were parsed from server but never displayed after ConversationSummaryBubble cleanup). Introduced `private static let isoFormatter = ISO8601DateFormatter()` replacing 12 separate allocations per session. Fixed `slackThumbnails` memory leak: dictionary now cleared in `startNewConversation()`. Removed redundant `await MainActor.run` in `downloadSlackThumbnail` (class is already `@MainActor`). Added `form.submitError = nil` on successful form submission (belt-and-suspenders with ChatView's existing clear-on-open).
@@ -710,6 +724,12 @@ Direct-Video-Uploader/
 | Apr 11 | @State over @AppStorage for transcribe | `@AppStorage` remembers across videos — wrong UX since most videos don't need transcription. `@State` resets to off per video, user opts in explicitly.                    |
 | Apr 11 | Standardized .position() in TrimView | Mixed `.position()` and `.offset()` in same ZStack caused alignment inconsistencies. All overlays now use `.position(x:y:)` for uniform coordinate system.                  |
 | Apr 11 | AVAudioSession deactivation          | Trim screen activates `.playback` session but never deactivated it. `.notifyOthersOnDeactivation` lets other audio apps resume correctly.                                   |
+| Apr 12 | RowStatus enum in ArchiveRowView     | Replaces two parallel if-else chains (badge + action buttons) that each re-evaluated identical conditions. Enum is exhaustive — compiler forces new states to be handled.    |
+| Apr 12 | Continuation guard in phAssetToTempFile | `PHImageManager.requestAVAsset` can fire callback twice for iCloud assets. Second `continuation.resume()` is a guaranteed crash. `var resumed = false` guard prevents it. |
+| Apr 12 | loadTransferable → PHAsset fast path | `handleReupload` was loading entire video into RAM as `Data`. PHAsset path uses `requestAVAsset` for a direct file reference (zero copy). Same fix applied to `VideoLibraryView` Apr 8. |
+| Apr 12 | FormField.defaultVideoFields()       | Both `ChatViewModel` and `ArchiveRowView` had identical `buildFormFields()` implementations. Static extension on `FormField` is the shared source — adding a field in one place covers both. |
+| Apr 12 | auth.authenticatedRequest everywhere | Raw `URLRequest` + manual Bearer header in `ArchiveRowView` and `ArchiveListView` bypassed the centralized auth helper. If auth scheme changes, these would have been missed. |
+| Apr 12 | Photos tab placeholder               | TBD feature needs a registered tab view before implementation. Placeholder matches visual style of Archive/Profile and documents planned feature rows for team reference.    |
 
 ---
 
