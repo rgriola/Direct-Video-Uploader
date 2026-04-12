@@ -53,27 +53,27 @@ final class PermissionManager {
 
         switch current {
         case .notDetermined:
-            // First time — iOS will show the system dialog.
-            //
-            // IMPORTANT: SFSpeechRecognizer.requestAuthorization delivers its
-            // callback on an arbitrary background thread — NOT the main thread.
-            // Capturing only the raw status value (an enum, fully Sendable)
-            // inside the continuation is safe.  We then assign it back here on
-            // the MainActor after the continuation resumes, avoiding the
-            // thread-safety violation that caused the crash when the user tapped
-            // "Don't Allow" on the system permission dialog.
-            let newStatus: SFSpeechRecognizerAuthorizationStatus = await withCheckedContinuation { continuation in
-                SFSpeechRecognizer.requestAuthorization { status in
-                    // status is a plain enum value — safe to capture & resume from
-                    // any thread.
-                    continuation.resume(returning: status)
-                }
-            }
+            // Delegate to a nonisolated helper so the callback closure does NOT
+            // inherit @MainActor isolation.  SFSpeechRecognizer.requestAuthorization
+            // delivers its callback on an arbitrary background queue — if the
+            // closure is @MainActor-isolated the runtime assertion kills the app.
+            let newStatus = await Self.requestSpeechAuthStatus()
             // Back on @MainActor — safe to write @Observable state.
             speechStatus = newStatus
         default:
             // Already granted, denied, or restricted — open Settings to change.
             openAppSettings()
+        }
+    }
+
+    /// Wraps the callback-based authorization request in an async continuation.
+    /// Must be `nonisolated` so the callback doesn't inherit @MainActor
+    /// isolation — the Speech framework calls it on a background queue.
+    private nonisolated static func requestSpeechAuthStatus() async -> SFSpeechRecognizerAuthorizationStatus {
+        await withCheckedContinuation { continuation in
+            SFSpeechRecognizer.requestAuthorization { status in
+                continuation.resume(returning: status)
+            }
         }
     }
 
