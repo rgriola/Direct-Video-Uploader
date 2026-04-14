@@ -71,6 +71,12 @@ struct ProfileView: View {
                 Text(user.phoneNumber)
                     .font(Theme.mono13Medium)
                     .foregroundStyle(Theme.white.opacity(0.6))
+                
+                if let companyName = user.companyName {
+                    Text(companyName)
+                        .font(Theme.font13Medium)
+                        .foregroundStyle(Theme.purple.opacity(0.8))
+                }
             }
         }
         .frame(maxWidth: .infinity)

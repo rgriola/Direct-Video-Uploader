@@ -1002,5 +1002,33 @@ add.
 - For the Nav Bar Icon use "photo.on.rectangle.angle"
 - This is a TBD feature I only need a view that I can add a text to to explain the feature. 
 
+.... Apr 13 2026
+*** Task ***
+- Add Admin feature to remove a user from the app. 
+- This would be a hard wipe of the user and all their data. 
+- Add the delete Toggle Button at the end of the user row in Users Panel, Add Alert and confirmation prompt.
+- This is an admin feature only. 
+- Review how to impliment this and show me a plan, I will approve then code. 
+
+
+... Apr 14 2026
+*** Task ***
+- Update Dashboard, Database and iOS app to allow for organizational accounts
+- Add create a table column for enterpirse users with the following:
+- Company Name :  (50 Characters Letters only no Numbers or Special Characters), 
+- Company Code : (4 Letter Code A-Z, a-z only) 
+- Date Joined : Timestamp of when company added by admin (use server timestamp)
+
+- Add Admin feature to create and manage organizations UI has : Company Name, Company Code [Add Button], [Delete Button], [Edit Button]. Add/Delete can be a toggle button : Make sure to add a confirmation prompt for delete. Company Table should NOT be added to Nuclear Delete. 
+
+- Add company code to user table and user profile. This can be empty. 
+- Add Admin Feature to Edit User Profile to add a Company Code to a user. 
+
+- iOS app login requires Company Code + Phone Number + PIN. User may be part of one Org, one phone number one org, phone numbers are always unqiue. 
+- dashboard login remains the same, but only shows user company videos. 
+
+- Add User Company to user profile on iOS and Dashboard. 
+- Clips should include company name in metadata list. 
+
 
 

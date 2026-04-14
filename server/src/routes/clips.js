@@ -85,7 +85,10 @@ export default async function clipRoutes(fastify) {
             // Fetch relations separately (Prisma 7 + pg adapter has issues with include in some contexts)
             const clips = await prisma.clip.findMany({ where: { assetId: asset.id }, orderBy: { createdAt: 'desc' } });
             const formResponse = await prisma.formResponse.findFirst({ where: { assetId: asset.id } });
-            const user = await prisma.user.findFirst({ where: { id: asset.userId }, select: { name: true, team: true } });
+            const user = await prisma.user.findFirst({
+                where: { id: asset.userId },
+                select: { name: true, team: true, companyCode: true, organization: { select: { companyName: true } } },
+            });
 
             asset = { ...asset, clips, formResponse, user };
         } catch (err) {
@@ -110,6 +113,7 @@ export default async function clipRoutes(fastify) {
         if (asset.mediasourceUrl) assetRows.push({ icon: '🌐', label: 'Mediasource URL', value: asset.mediasourceUrl });
         if (asset.originalFileName) assetRows.push({ icon: '📄', label: 'Original File', value: asset.originalFileName });
         if (asset.user) assetRows.push({ icon: '👤', label: 'Uploaded By', value: `${asset.user.name}${asset.user.team ? ' · ' + asset.user.team : ''}` });
+        if (asset.user?.organization?.companyName) assetRows.push({ icon: '🏢', label: 'Organization', value: asset.user.organization.companyName });
         assetRows.push({ icon: '📊', label: 'Status', value: asset.status });
         if (asset.clipCount) assetRows.push({ icon: '🎞', label: 'Clip Count', value: String(asset.clipCount) });
         if (asset.totalDuration) {

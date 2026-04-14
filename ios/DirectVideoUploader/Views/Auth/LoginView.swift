@@ -4,13 +4,14 @@ import SwiftUI
 struct LoginView: View {
     @Environment(AuthService.self) private var auth
     
+    @State private var companyCode = ""
     @State private var phoneNumber = ""
     @State private var pin = ""
     @State private var showServerEditor = false
     @State private var serverURLDraft = ""
     @FocusState private var focusedField: Field?
     
-    enum Field { case phone, pin, serverURL }
+    enum Field { case companyCode, phone, pin, serverURL }
     
     var body: some View {
         ZStack {
@@ -40,6 +41,40 @@ struct LoginView: View {
                 
                 // Form
                 VStack(spacing: Theme.space16) {
+                    // Company Code
+                    VStack(alignment: .leading, spacing: Theme.space4) {
+                        Text("COMPANY CODE")
+                            .font(Theme.font11Semibold)
+                            .foregroundStyle(Theme.white.opacity(0.5))
+                            .tracking(0.8)
+                        
+                        HStack {
+                            Image(systemName: "building.2.fill")
+                                .foregroundStyle(Theme.white.opacity(0.4))
+                                .font(Theme.icon13)
+                            
+                            TextField("ABC or ABCD", text: $companyCode)
+                                .textContentType(.organizationName)
+                                .autocorrectionDisabled()
+                                .textInputAutocapitalization(.never)
+                                .focused($focusedField, equals: .companyCode)
+                                .foregroundStyle(Theme.white)
+                                .font(Theme.font16Medium)
+                                .onChange(of: companyCode) { _, new in
+                                    let letters = new.filter { $0.isLetter }
+                                    if letters != new || new.count > 4 { companyCode = String(letters.prefix(4)) }
+                                }
+                        }
+                        .padding(.horizontal, Theme.space16)
+                        .padding(.vertical, 14)
+                        .background(Theme.glassOverlay)
+                        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusMd))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: Theme.radiusMd)
+                                .stroke(focusedField == .companyCode ? Theme.blue : Theme.glassBorder, lineWidth: 1)
+                        )
+                    }
+                    
                     // Phone number
                     VStack(alignment: .leading, spacing: Theme.space4) {
                         Text("PHONE NUMBER")
@@ -135,8 +170,8 @@ struct LoginView: View {
                     .foregroundStyle(Theme.white)
                     .clipShape(RoundedRectangle(cornerRadius: Theme.radiusLg))
                 }
-                .disabled(auth.isLoading || phoneNumber.isEmpty || pin.isEmpty)
-                .opacity(phoneNumber.isEmpty || pin.isEmpty ? 0.5 : 1)
+                .disabled(auth.isLoading || companyCode.isEmpty || phoneNumber.isEmpty || pin.isEmpty)
+                .opacity(companyCode.isEmpty || phoneNumber.isEmpty || pin.isEmpty ? 0.5 : 1)
                 .padding(.horizontal, Theme.space32)
                 .padding(.top, 28)
                 
@@ -154,8 +189,13 @@ struct LoginView: View {
                 .padding(.bottom, Theme.space32)
             }
         }
+        .onTapGesture {
+            focusedField = nil
+        }
         .onSubmit {
-            if focusedField == .phone {
+            if focusedField == .companyCode {
+                focusedField = .phone
+            } else if focusedField == .phone {
                 focusedField = .pin
             } else {
                 Task { await login() }
@@ -256,7 +296,7 @@ struct LoginView: View {
     private func login() async {
         focusedField = nil
         do {
-            try await auth.login(phoneNumber: phoneNumber, pin: pin)
+            try await auth.login(phoneNumber: phoneNumber, pin: pin, companyCode: companyCode)
         } catch {
             auth.errorMessage = error.localizedDescription
         }

@@ -16,7 +16,9 @@ What Fixer needs from the organization to integrate with Mediasource.
 
 ## Video Ingest Protocol
 
-- **How does video physically arrive?** — Presigned S3 URLs? Direct HTTP PUT to a CDN? Chunked upload? This is the most critical unknown — it determines whether the current Mux upload path can be swapped or needs a complete rewrite.
+- **How does video physically arrive?** — Presigned S3 (Amazon) URLs? 
+Direct HTTP PUT to a CDN? 
+Chunked upload? This is the most critical unknown — it determines whether the current Mux upload path can be swapped or needs a complete rewrite.
 - **Size limits & transcoding** — Are there Max file size, accepted codecs/containers, and whether Mediasource transcodes or expects a specific format.
 - **Upload status callbacks** — Webhooks, polling endpoint, or event stream? The current Mux webhook flow needs a Mediasource equivalent.
 

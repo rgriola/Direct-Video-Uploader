@@ -1,7 +1,7 @@
 /* ─── TanStack React Query hooks ─── */
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { fetchStats, fetchUsers, fetchAssets, fetchTriadStatus } from "@/lib/api";
+import { fetchStats, fetchUsers, fetchAssets, fetchTriadStatus, fetchOrganizations } from "@/lib/api";
 
 export function useStats(enabled = true) {
   return useQuery({
@@ -36,6 +36,18 @@ export function useAssets(enabled = true) {
   });
 }
 
+export function useOrganizations(enabled = true) {
+  return useQuery({
+    queryKey: ["organizations"],
+    queryFn: async () => {
+      const data = await fetchOrganizations();
+      return data.organizations;
+    },
+    refetchInterval: 30_000,
+    enabled,
+  });
+}
+
 export function useTriadStatus(enabled = true) {
   return useQuery({
     queryKey: ["triad-status"],
@@ -63,6 +75,7 @@ export function useRefreshDashboard() {
         void qc.invalidateQueries({ queryKey: ["stats"] });
         void qc.invalidateQueries({ queryKey: ["users"] });
         void qc.invalidateQueries({ queryKey: ["assets"] });
+        void qc.invalidateQueries({ queryKey: ["organizations"] });
         void qc.invalidateQueries({ queryKey: ["triad-status"] });
     }
   };

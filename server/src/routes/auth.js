@@ -19,6 +19,7 @@ export default async function authRoutes(fastify) {
                     phoneNumber: { type: 'string' },
                     pin: { type: 'string' },
                     clientType: { type: 'string' },
+                    companyCode: { type: 'string' },
                 },
             },
         },
@@ -30,15 +31,18 @@ export default async function authRoutes(fastify) {
         },
     }, async (request, reply) => {
         const { phoneNumber, pin } = request.body;
+        const clientType = request.body.clientType || 'unknown';
+        const companyCode = request.body.companyCode || null;
 
-        // Look up user by phone number
+        // Look up user by phone number (include organization for company name)
         const user = await dbRetry(() => prisma.user.findUnique({
             where: { phoneNumber },
+            include: { organization: true },
         }));
 
         if (!user) {
             return reply.status(401).send({
-                error: 'Invalid phone number or PIN',
+                error: 'Invalid credentials',
             });
         }
 
@@ -51,8 +55,22 @@ export default async function authRoutes(fastify) {
         // Verify PIN
         if (!(await verifyPin(pin, user.pinHash))) {
             return reply.status(401).send({
-                error: 'Invalid phone number or PIN',
+                error: 'Invalid credentials',
             });
+        }
+
+        // iOS login requires company code
+        if (clientType !== 'admin') {
+            if (!companyCode) {
+                return reply.status(401).send({
+                    error: 'Company code is required',
+                });
+            }
+            if (!user.companyCode || user.companyCode.toLowerCase() !== companyCode.toLowerCase()) {
+                return reply.status(401).send({
+                    error: 'Invalid credentials',
+                });
+            }
         }
 
         // Auto-migrate legacy SHA-256 hash to bcrypt
@@ -65,7 +83,6 @@ export default async function authRoutes(fastify) {
         }
 
         // Track login time (skip for admin dashboard auto-login)
-        const clientType = request.body.clientType || 'unknown';
         if (clientType !== 'admin') {
             await dbRetry(() => prisma.user.update({
                 where: { id: user.id },
@@ -73,13 +90,14 @@ export default async function authRoutes(fastify) {
             }));
         }
 
-        // Generate JWT
+        // Generate JWT (include companyCode for filtering)
         const token = fastify.jwt.sign(
             {
                 id: user.id,
                 phoneNumber: user.phoneNumber,
                 name: user.name,
                 role: user.role || 'USER',
+                companyCode: user.companyCode || null,
             },
             { expiresIn: '7d' }
         );
@@ -92,6 +110,8 @@ export default async function authRoutes(fastify) {
                 phoneNumber: user.phoneNumber,
                 team: user.team,
                 role: user.role,
+                companyCode: user.companyCode || null,
+                companyName: user.organization?.companyName || null,
             },
         };
     });
@@ -114,10 +134,19 @@ export default async function authRoutes(fastify) {
                 team: true,
                 role: true,
                 status: true,
+                companyCode: true,
                 createdAt: true,
+                organization: { select: { companyName: true } },
             },
         });
 
-        return { user };
+        // Flatten the organization join for the response
+        const { organization, ...rest } = user || {};
+        return {
+            user: user ? {
+                ...rest,
+                companyName: organization?.companyName || null,
+            } : null,
+        };
     });
 }

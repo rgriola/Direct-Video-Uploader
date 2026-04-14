@@ -8,6 +8,8 @@ export interface User {
   team?: string | null;
   role?: string;
   status: string;
+  companyCode?: string | null;
+  companyName?: string | null;
   assetCount?: number;
   createdAt?: string;
   lastLoginAt?: string | null;
@@ -83,6 +85,14 @@ export interface LogEntry {
   time: string;
   type: "ws" | "http" | "auth" | "error" | "triad";
   msg: string;
+}
+
+export interface Organization {
+  id: string;
+  companyName: string;
+  companyCode: string;
+  createdAt: string;
+  userCount: number;
 }
 
 export interface Endpoint {

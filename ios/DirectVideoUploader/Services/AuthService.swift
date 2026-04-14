@@ -31,7 +31,7 @@ final class AuthService {
     
     // MARK: - Login
     
-    func login(phoneNumber: String, pin: String) async throws {
+    func login(phoneNumber: String, pin: String, companyCode: String) async throws {
         isLoading = true
         errorMessage = nil
         defer { isLoading = false }
@@ -43,7 +43,7 @@ final class AuthService {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         
-        let body = LoginRequest(phoneNumber: phoneNumber, pin: pin)
+        let body = LoginRequest(phoneNumber: phoneNumber, pin: pin, companyCode: companyCode)
         request.httpBody = try JSONEncoder().encode(body)
         
         let (data, response) = try await URLSession.shared.data(for: request)

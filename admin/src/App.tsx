@@ -3,7 +3,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster, toast } from "sonner";
 
 import { setToken, getToken, fetchHealth, fetchMe, cleanupAssets, deleteUser } from "@/lib/api";
-import { useStats, useUsers, useAssets, useRefreshDashboard, useTriadStatus } from "@/hooks/use-dashboard";
+import { useStats, useUsers, useAssets, useRefreshDashboard, useTriadStatus, useOrganizations } from "@/hooks/use-dashboard";
 import { useSocket } from "@/hooks/use-socket";
 
 import { Header } from "@/components/Header";
@@ -19,6 +19,7 @@ import { EndpointTable } from "@/components/EndpointTable";
 import { ChatHistory } from "@/components/ChatHistory";
 import { ErrorLog } from "@/components/ErrorLog";
 import { AdminTools } from "@/components/AdminTools";
+import { OrgPanel } from "@/components/OrgPanel";
 
 const AUTH_TOKEN_KEY = "fixer_admin_token";
 
@@ -52,12 +53,14 @@ function Dashboard() {
   const [userName, setUserName] = useState<string | null>(null);
   const [userPhone, setUserPhone] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
+  const [userCompany, setUserCompany] = useState<string | null>(null);
   const [showChatHistory, setShowChatHistory] = useState(false);
 
   const { data: stats } = useStats(loggedIn);
   const { data: users, isLoading: usersLoading } = useUsers(loggedIn);
   const { data: assets, isLoading: assetsLoading } = useAssets(loggedIn);
   const { data: triadStatus, isLoading: triadLoading } = useTriadStatus(loggedIn);
+  const { data: organizations, isLoading: orgsLoading } = useOrganizations(loggedIn);
   const refreshDashboard = useRefreshDashboard();
 
   const { connected, socketId, logs, addLog, clearLogs, connect } = useSocket(() => {
@@ -79,6 +82,7 @@ function Dashboard() {
           setUserName(user.name ?? null);
           setUserId(user.id ?? null);
           setUserPhone(user.phoneNumber ?? null);
+          setUserCompany(user.companyName ?? null);
           addLog("auth", `Session restored: ${user.name}`);
           connect();
         }
@@ -105,7 +109,10 @@ function Dashboard() {
     setUserName(userName);
     setUserPhone(phone ?? null);
     // userId is set after fetchMe on session restore; for fresh login, fetch it now
-    fetchMe().then(({ user }) => setUserId(user?.id ?? null)).catch(() => {});
+    fetchMe().then(({ user }) => {
+      setUserId(user?.id ?? null);
+      setUserCompany(user?.companyName ?? null);
+    }).catch(() => {});
     addLog("auth", `Dashboard auth: ${userName}`);
     connect();
   }, [addLog, connect, setLoggedIn]);
@@ -186,9 +193,11 @@ function Dashboard() {
           setLoggedIn(false);
           setUserName(null);
           setUserPhone(null);
+          setUserCompany(null);
         }}
         userName={userName}
         userPhone={userPhone}
+        userCompany={userCompany}
       />
 
       <TriadStatusPanel
@@ -208,9 +217,22 @@ function Dashboard() {
           isLoading={usersLoading}
           onDeleteUser={userRole === "ADMIN" ? handleDeleteUser : undefined}
           currentUserId={userId ?? undefined}
+          organizations={organizations}
+          onRefresh={() => refreshDashboard()}
         />
         <AssetList assets={assets} isLoading={assetsLoading} />
       </div>
+
+      {/* Organizations panel — admin only */}
+      {userRole === "ADMIN" && (
+        <div className="mb-8">
+          <OrgPanel
+            organizations={organizations ?? []}
+            isLoading={orgsLoading}
+            onRefresh={() => refreshDashboard()}
+          />
+        </div>
+      )}
 
       <QuickActions onAction={handleAction} addLog={addLog} />
 

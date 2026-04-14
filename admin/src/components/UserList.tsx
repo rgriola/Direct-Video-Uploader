@@ -17,8 +17,10 @@
  */
 
 import { useState } from "react";
-import { ChevronDown, Trash2 } from "lucide-react";
-import type { User } from "@/lib/types";
+import { ChevronDown, Trash2, Building2 } from "lucide-react";
+import { updateUser } from "@/lib/api";
+import { toast } from "sonner";
+import type { User, Organization } from "@/lib/types";
 import { panelHeader, subTextPanelHeader } from "@/lib/types";
 
 // ─── Avatar Configuration ────────────────────────────────────────────
@@ -62,9 +64,11 @@ interface UserListProps {
   isLoading: boolean;
   onDeleteUser?: (userId: string, userName: string) => Promise<void>;
   currentUserId?: string;
+  organizations?: Organization[];
+  onRefresh?: () => void;
 }
 
-export function UserList({ users, isLoading, onDeleteUser, currentUserId }: UserListProps) {
+export function UserList({ users, isLoading, onDeleteUser, currentUserId, organizations, onRefresh }: UserListProps) {
   /* Multi-expand: multiple users can be open at once (Set of user IDs) */
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
@@ -111,6 +115,8 @@ export function UserList({ users, isLoading, onDeleteUser, currentUserId }: User
               onToggle={() => toggle(user.id)}
               onDeleteUser={onDeleteUser}
               isSelf={user.id === currentUserId}
+              organizations={organizations}
+              onRefresh={onRefresh}
             />
           ))
         )}
@@ -132,9 +138,11 @@ interface UserRowProps {
   onToggle: () => void;
   onDeleteUser?: (userId: string, userName: string) => Promise<void>;
   isSelf: boolean;
+  organizations?: Organization[];
+  onRefresh?: () => void;
 }
 
-function UserRow({ user, color, isOpen, onToggle, onDeleteUser, isSelf }: UserRowProps) {
+function UserRow({ user, color, isOpen, onToggle, onDeleteUser, isSelf, organizations, onRefresh }: UserRowProps) {
   const s = avatarStyle(color);
   const initials = user.name.split(" ").map((w) => w[0]).join("");
 
@@ -168,6 +176,13 @@ function UserRow({ user, color, isOpen, onToggle, onDeleteUser, isSelf }: UserRo
           {user.team ?? "—"}
         </span>
 
+        {/* Company pill — only if user has a company */}
+        {user.companyCode && (
+          <span className={`${pillBase} bg-(--accent-purple)/15 text-(--accent-purple) border border-(--accent-purple)/30 tracking-wider`}>
+            {user.companyCode}
+          </span>
+        )}
+
         {/* Status pill: ONLINE / OFFLINE / NEVER SEEN */}
         <StatusPill user={user} />
 
@@ -178,7 +193,7 @@ function UserRow({ user, color, isOpen, onToggle, onDeleteUser, isSelf }: UserRo
       </button>
 
       {/* ── Expanded detail panel ── */}
-      {isOpen && <UserDetails user={user} onDeleteUser={onDeleteUser} isSelf={isSelf} />}
+      {isOpen && <UserDetails user={user} onDeleteUser={onDeleteUser} isSelf={isSelf} organizations={organizations} onRefresh={onRefresh} />}
     </div>
   );
 }
@@ -214,12 +229,17 @@ interface UserDetailsProps {
   user: User;
   onDeleteUser?: (userId: string, userName: string) => Promise<void>;
   isSelf: boolean;
+  organizations?: Organization[];
+  onRefresh?: () => void;
 }
 
-/** Expanded panel showing phone, asset count, last login, team (mobile), iOS status, delete button */
-function UserDetails({ user, onDeleteUser, isSelf }: UserDetailsProps) {
+/** Expanded panel showing phone, asset count, last login, team (mobile), iOS status, company, delete button */
+function UserDetails({ user, onDeleteUser, isSelf, organizations, onRefresh }: UserDetailsProps) {
   const [confirming, setConfirming] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [editingCompany, setEditingCompany] = useState(false);
+  const [selectedCode, setSelectedCode] = useState(user.companyCode ?? "");
+  const [savingCompany, setSavingCompany] = useState(false);
 
   async function handleDelete() {
     if (!confirming) {
@@ -232,6 +252,20 @@ function UserDetails({ user, onDeleteUser, isSelf }: UserDetailsProps) {
     } finally {
       setDeleting(false);
       setConfirming(false);
+    }
+  }
+
+  async function handleSaveCompany() {
+    setSavingCompany(true);
+    try {
+      const res = await updateUser(user.id, { companyCode: selectedCode || null });
+      toast.success(res.message);
+      setEditingCompany(false);
+      onRefresh?.();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to update company");
+    } finally {
+      setSavingCompany(false);
     }
   }
 
@@ -265,6 +299,54 @@ function UserDetails({ user, onDeleteUser, isSelf }: UserDetailsProps) {
           </span>
         </div>
       )}
+
+      {/* Company — display + admin edit */}
+      <div className="flex items-center gap-2">
+        <span className="w-20 shrink-0 font-medium text-(--foreground)/60 flex items-center gap-1">
+          <Building2 className="w-3 h-3" /> Company
+        </span>
+        {editingCompany ? (
+          <div className="flex items-center gap-1.5">
+            <select
+              value={selectedCode}
+              onChange={(e) => setSelectedCode(e.target.value)}
+              className="px-2 py-1 rounded text-xs bg-(--secondary) border border-(--border) text-(--foreground) focus:outline-none focus:border-(--accent-blue)"
+            >
+              <option value="">None</option>
+              {organizations?.map((org) => (
+                <option key={org.companyCode} value={org.companyCode}>
+                  {org.companyCode} — {org.companyName}
+                </option>
+              ))}
+            </select>
+            <button
+              onClick={handleSaveCompany}
+              disabled={savingCompany}
+              className="px-2 py-1 rounded text-xs font-semibold bg-(--accent-blue) text-white hover:opacity-90 cursor-pointer disabled:opacity-50"
+            >
+              {savingCompany ? "..." : "Save"}
+            </button>
+            <button
+              onClick={() => { setEditingCompany(false); setSelectedCode(user.companyCode ?? ""); }}
+              className="px-2 py-1 rounded text-xs text-(--muted-foreground) hover:text-(--foreground) cursor-pointer"
+            >
+              Cancel
+            </button>
+          </div>
+        ) : (
+          <div className="flex items-center gap-1.5">
+            <span>{user.companyName ? `${user.companyName} (${user.companyCode})` : "—"}</span>
+            {onDeleteUser && (
+              <button
+                onClick={() => setEditingCompany(true)}
+                className="text-[10px] text-(--accent-blue) hover:underline cursor-pointer"
+              >
+                Edit
+              </button>
+            )}
+          </div>
+        )}
+      </div>
 
       {/* Delete user — admin only, hidden for self */}
       {onDeleteUser && !isSelf && (

@@ -110,10 +110,13 @@ export default async function adminRoutes(fastify) {
     }, async () => {
         const users = await prisma.$queryRawUnsafe(`
             SELECT u.id, u.phone_number AS "phoneNumber", u.name, u.email, u.team, u.status,
+                   u.company_code AS "companyCode",
+                   o.company_name AS "companyName",
                    u.created_at AS "createdAt",
                    u.last_login_at AS "lastLoginAt",
                    (SELECT COUNT(*)::int FROM assets a WHERE a.user_id = u.id) AS "assetCount"
             FROM users u
+            LEFT JOIN organizations o ON o.company_code = u.company_code
             ORDER BY u.created_at ASC
         `);
 
@@ -137,8 +140,16 @@ export default async function adminRoutes(fastify) {
      */
     fastify.get('/api/admin/assets', {
         preHandler: [fastify.authenticate],
-    }, async () => {
-        // Single raw SQL query — avoids multiple Prisma ORM roundtrips that exhaust the pool
+    }, async (request) => {
+        // Role-based filtering: admins see all, non-admins see only their org's assets
+        const isAdmin = request.user?.role === 'ADMIN';
+        const userCompanyCode = request.user?.companyCode || null;
+
+        // Build WHERE clause for company filtering
+        const companyFilter = (!isAdmin && userCompanyCode)
+            ? `WHERE u.company_code = '${userCompanyCode.replace(/'/g, "''")}'`
+            : '';
+
         const assets = await prisma.$queryRawUnsafe(`
             SELECT a.id, a.mediasource_id AS "mediasourceId",
                    a.mediasource_url AS "mediasourceUrl", a.status,
@@ -163,6 +174,7 @@ export default async function adminRoutes(fastify) {
             FROM assets a
             JOIN users u ON u.id = a.user_id
             LEFT JOIN form_responses fr ON fr.asset_id = a.id
+            ${companyFilter}
             ORDER BY a.created_at DESC
             LIMIT 50
         `);
@@ -236,10 +248,18 @@ export default async function adminRoutes(fastify) {
     fastify.post('/api/admin/users', {
         preHandler: [fastify.authenticate, fastify.authorizeAdmin],
     }, async (request, reply) => {
-        const { name, phoneNumber, email, team } = request.body || {};
+        const { name, phoneNumber, email, team, companyCode } = request.body || {};
 
         if (!name || !phoneNumber) {
             return reply.status(400).send({ error: 'name and phoneNumber are required' });
+        }
+
+        // Validate company code if provided
+        if (companyCode) {
+            const org = await prisma.organization.findUnique({ where: { companyCode } });
+            if (!org) {
+                return reply.status(400).send({ error: `Organization with code '${companyCode}' not found` });
+            }
         }
 
         // Check phone uniqueness
@@ -256,12 +276,13 @@ export default async function adminRoutes(fastify) {
                 name,
                 email: email || null,
                 team: team || null,
+                companyCode: companyCode || null,
                 pinHash: await hashPin('0000'),
                 role: 'USER',
             },
         });
 
-        console.log(`👤 Admin created user: ${name} (${phoneNumber})`);
+        console.log(`👤 Admin created user: ${name} (${phoneNumber})${companyCode ? ` [${companyCode}]` : ''}`);
 
         return {
             user: {
@@ -271,6 +292,7 @@ export default async function adminRoutes(fastify) {
                 email: user.email,
                 team: user.team,
                 role: user.role,
+                companyCode: user.companyCode,
             },
             message: `Created user ${name} (PIN: 0000)`,
         };
@@ -411,6 +433,256 @@ export default async function adminRoutes(fastify) {
                 muxAssets: counts.muxAssets,
                 localFiles: counts.localFiles,
             },
+        };
+    });
+
+    // ─── Organization CRUD ───────────────────────────────────────
+
+    /** Validation helpers */
+    const COMPANY_NAME_RE = /^[A-Za-z\s]{1,50}$/;
+    const COMPANY_CODE_RE = /^[A-Za-z]{3,4}$/;
+
+    /**
+     * GET /api/admin/organizations
+     * List all organizations.
+     */
+    fastify.get('/api/admin/organizations', {
+        preHandler: [fastify.authenticate],
+    }, async () => {
+        const orgs = await prisma.organization.findMany({
+            orderBy: { createdAt: 'desc' },
+            include: { _count: { select: { users: true } } },
+        });
+
+        return {
+            organizations: orgs.map(o => ({
+                id: o.id,
+                companyName: o.companyName,
+                companyCode: o.companyCode,
+                createdAt: o.createdAt,
+                userCount: o._count.users,
+            })),
+        };
+    });
+
+    /**
+     * POST /api/admin/organizations
+     * Create a new organization.
+     */
+    fastify.post('/api/admin/organizations', {
+        preHandler: [fastify.authenticate, fastify.authorizeAdmin],
+    }, async (request, reply) => {
+        const { companyName, companyCode } = request.body || {};
+
+        if (!companyName || !COMPANY_NAME_RE.test(companyName)) {
+            return reply.status(400).send({ error: 'Company name must be 1–50 characters, letters and spaces only' });
+        }
+        if (!companyCode || !COMPANY_CODE_RE.test(companyCode)) {
+            return reply.status(400).send({ error: 'Company code must be 3–4 letters (A-Z, a-z)' });
+        }
+
+        // Check uniqueness
+        const existing = await prisma.organization.findUnique({ where: { companyCode } });
+        if (existing) {
+            return reply.status(409).send({ error: `Organization code '${companyCode}' already exists` });
+        }
+
+        const org = await prisma.organization.create({
+            data: {
+                companyName: companyName.trim(),
+                companyCode: companyCode.trim(),
+            },
+        });
+
+        console.log(`🏢 Admin created org: ${org.companyName} (${org.companyCode})`);
+
+        return {
+            organization: {
+                id: org.id,
+                companyName: org.companyName,
+                companyCode: org.companyCode,
+                createdAt: org.createdAt,
+                userCount: 0,
+            },
+            message: `Created organization ${org.companyName} (${org.companyCode})`,
+        };
+    });
+
+    /**
+     * PUT /api/admin/organizations/:code
+     * Edit an organization's name and/or code.
+     */
+    fastify.put('/api/admin/organizations/:code', {
+        preHandler: [fastify.authenticate, fastify.authorizeAdmin],
+    }, async (request, reply) => {
+        const { code } = request.params;
+        const { companyName, companyCode: newCode } = request.body || {};
+
+        const org = await prisma.organization.findUnique({ where: { companyCode: code } });
+        if (!org) {
+            return reply.status(404).send({ error: 'Organization not found' });
+        }
+
+        const data = {};
+        if (companyName !== undefined) {
+            if (!COMPANY_NAME_RE.test(companyName)) {
+                return reply.status(400).send({ error: 'Company name must be 1–50 characters, letters and spaces only' });
+            }
+            data.companyName = companyName.trim();
+        }
+        if (newCode !== undefined && newCode.toUpperCase() !== code.toUpperCase()) {
+            if (!COMPANY_CODE_RE.test(newCode)) {
+                return reply.status(400).send({ error: 'Company code must be 3–4 letters (A-Z, a-z)' });
+            }
+            // Check new code isn't taken
+            const conflict = await prisma.organization.findUnique({ where: { companyCode: newCode } });
+            if (conflict) {
+                return reply.status(409).send({ error: `Code '${newCode}' is already in use` });
+            }
+            data.companyCode = newCode.trim();
+        }
+
+        if (Object.keys(data).length === 0) {
+            return reply.status(400).send({ error: 'No changes provided' });
+        }
+
+        // Use a transaction to safely handle FK when changing code:
+        // 1. Null out users' FK → 2. Update org → 3. Re-assign users
+        const isCodeChange = data.companyCode && data.companyCode !== code;
+        const updated = await prisma.$transaction(async (tx) => {
+            let affectedUserIds = [];
+            if (isCodeChange) {
+                // Find which users have the old code before nulling
+                const affected = await tx.user.findMany({
+                    where: { companyCode: code },
+                    select: { id: true },
+                });
+                affectedUserIds = affected.map(u => u.id);
+
+                await tx.user.updateMany({
+                    where: { id: { in: affectedUserIds } },
+                    data: { companyCode: null },
+                });
+            }
+
+            const org = await tx.organization.update({
+                where: { companyCode: code },
+                data,
+            });
+
+            if (isCodeChange && affectedUserIds.length > 0) {
+                await tx.user.updateMany({
+                    where: { id: { in: affectedUserIds } },
+                    data: { companyCode: data.companyCode },
+                });
+            }
+
+            return org;
+        });
+
+        console.log(`🏢 Admin updated org: ${updated.companyName} (${updated.companyCode})`);
+
+        return {
+            organization: {
+                id: updated.id,
+                companyName: updated.companyName,
+                companyCode: updated.companyCode,
+                createdAt: updated.createdAt,
+            },
+            message: `Updated organization ${updated.companyName}`,
+        };
+    });
+
+    /**
+     * DELETE /api/admin/organizations/:code
+     * Delete an organization. Fails if users are still assigned.
+     */
+    fastify.delete('/api/admin/organizations/:code', {
+        preHandler: [fastify.authenticate, fastify.authorizeAdmin],
+    }, async (request, reply) => {
+        const { code } = request.params;
+
+        const org = await prisma.organization.findUnique({
+            where: { companyCode: code },
+            include: { _count: { select: { users: true } } },
+        });
+
+        if (!org) {
+            return reply.status(404).send({ error: 'Organization not found' });
+        }
+
+        if (org._count.users > 0) {
+            return reply.status(409).send({
+                error: `Cannot delete organization ${org.companyCode} — ${org._count.users} user(s) are still assigned. Re-assign them first.`,
+            });
+        }
+
+        await prisma.organization.delete({ where: { companyCode: code } });
+
+        console.log(`🏢 Admin deleted org: ${org.companyName} (${org.companyCode})`);
+
+        return { message: `Deleted organization ${org.companyName} (${org.companyCode})` };
+    });
+
+    // ─── User Profile Edit ───────────────────────────────────────
+
+    /**
+     * PATCH /api/admin/users/:id
+     * Edit user profile fields (companyCode, name, team, email).
+     */
+    fastify.patch('/api/admin/users/:id', {
+        preHandler: [fastify.authenticate, fastify.authorizeAdmin],
+    }, async (request, reply) => {
+        const { id } = request.params;
+        const { companyCode, name, team, email } = request.body || {};
+
+        const user = await prisma.user.findUnique({ where: { id } });
+        if (!user) {
+            return reply.status(404).send({ error: 'User not found' });
+        }
+
+        const data = {};
+
+        // Handle companyCode — null removes assignment
+        if (companyCode !== undefined) {
+            if (companyCode === null || companyCode === '') {
+                data.companyCode = null;
+            } else {
+                const org = await prisma.organization.findUnique({ where: { companyCode } });
+                if (!org) {
+                    return reply.status(400).send({ error: `Organization '${companyCode}' not found` });
+                }
+                data.companyCode = companyCode;
+            }
+        }
+
+        if (name !== undefined) data.name = name;
+        if (team !== undefined) data.team = team || null;
+        if (email !== undefined) data.email = email || null;
+
+        if (Object.keys(data).length === 0) {
+            return reply.status(400).send({ error: 'No changes provided' });
+        }
+
+        const updated = await prisma.user.update({
+            where: { id },
+            data,
+            include: { organization: true },
+        });
+
+        console.log(`✏️ Admin edited user: ${updated.name} (${updated.phoneNumber}) — ${JSON.stringify(data)}`);
+
+        return {
+            user: {
+                id: updated.id,
+                name: updated.name,
+                phoneNumber: updated.phoneNumber,
+                email: updated.email,
+                team: updated.team,
+                companyCode: updated.companyCode,
+                companyName: updated.organization?.companyName || null,
+            },
+            message: `Updated user ${updated.name}`,
         };
     });
 

@@ -9,6 +9,8 @@ struct User: Codable, Identifiable {
     let email: String?
     let team: String?
     let status: String?
+    let companyCode: String?
+    let companyName: String?
 }
 
 // MARK: - Auth
@@ -16,6 +18,7 @@ struct User: Codable, Identifiable {
 struct LoginRequest: Codable {
     let phoneNumber: String
     let pin: String
+    let companyCode: String
 }
 
 struct LoginResponse: Codable {

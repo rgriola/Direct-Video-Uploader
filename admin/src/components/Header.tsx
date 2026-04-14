@@ -4,9 +4,10 @@ interface HeaderProps {
   onLogout: () => void;
   userName?: string | null;
   userPhone?: string | null;
+  userCompany?: string | null;
 }
 
-export function Header({ onLogout, userName, userPhone }: HeaderProps) {
+export function Header({ onLogout, userName, userPhone, userCompany }: HeaderProps) {
   return (
     <header className="flex items-center justify-between gap-2 mb-6 pb-5 border-b border-(--border-subtle) sm:mb-8 sm:pb-6 sm:gap-4">
       <div className="flex items-center gap-2 sm:gap-3 shrink-0">
@@ -25,6 +26,7 @@ export function Header({ onLogout, userName, userPhone }: HeaderProps) {
           <div className="flex flex-col items-end leading-tight">
             <span className="text-sm sm:text-base font-semibold text-(--foreground) whitespace-nowrap">{userName}</span>
             {userPhone && <span className="text-xs text-(--muted-foreground) mt-0.5 hidden sm:block">{userPhone}</span>}
+            {userCompany && <span className="text-[10px] text-(--accent-purple) font-semibold hidden sm:block">{userCompany}</span>}
           </div>
         )}
 

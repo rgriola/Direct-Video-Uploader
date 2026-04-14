@@ -9,6 +9,18 @@ datasource db {
   provider = "postgresql"
 }
 
+// ─── Organizations ───────────────────────────────────────
+model Organization {
+  id          String   @id @default(uuid())
+  companyName String   @map("company_name") @db.VarChar(50)
+  companyCode String   @unique @map("company_code") @db.VarChar(4)
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  users User[]
+
+  @@map("organizations")
+}
+
 // ─── Users ───────────────────────────────────────────────
 model User {
   id          String     @id @default(uuid())
@@ -16,6 +28,7 @@ model User {
   name        String
   email       String?
   team        String?
+  companyCode String?    @map("company_code") @db.VarChar(4)
   pinHash     String     @map("pin_hash")
   role        UserRole   @default(USER) @map("role")
   status      UserStatus @default(ACTIVE)
@@ -23,8 +36,9 @@ model User {
   createdAt   DateTime   @default(now()) @map("created_at")
   updatedAt   DateTime   @updatedAt @map("updated_at")
 
-  assets   Asset[]
-  messages ChatMessage[]
+  organization Organization? @relation(fields: [companyCode], references: [companyCode])
+  assets       Asset[]
+  messages     ChatMessage[]
 
   @@map("users")
 }

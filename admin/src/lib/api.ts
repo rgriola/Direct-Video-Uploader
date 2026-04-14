@@ -38,7 +38,7 @@ async function api<T>(method: string, path: string, body?: unknown): Promise<T> 
 
 /* ─── Typed API calls ─── */
 
-import type { Stats, User, Asset, TriadStatus } from "./types";
+import type { Stats, User, Asset, TriadStatus, Organization } from "./types";
 
 export async function fetchHealth() {
   return api<{ status: string; service: string; version: string }>("GET", "/api/health");
@@ -93,7 +93,7 @@ export async function nuclearReset() {
   }>("POST", "/api/admin/nuclear-reset");
 }
 
-export async function createUser(data: { name: string; phoneNumber: string; email?: string; team?: string }) {
+export async function createUser(data: { name: string; phoneNumber: string; email?: string; team?: string; companyCode?: string }) {
   return api<{ user: { id: string; name: string; phoneNumber: string }; message: string }>("POST", "/api/admin/users", data);
 }
 
@@ -102,4 +102,26 @@ export async function deleteUser(userId: string) {
     message: string;
     deleted: { assets: number; clips: number; chatMessages: number; errorLogs: number; muxAssets: number; localFiles: number };
   }>("DELETE", `/api/admin/users/${userId}`);
+}
+
+export async function updateUser(userId: string, data: { companyCode?: string | null; name?: string; team?: string; email?: string }) {
+  return api<{ user: User; message: string }>("PATCH", `/api/admin/users/${userId}`, data);
+}
+
+/* ─── Organization API ─── */
+
+export async function fetchOrganizations() {
+  return api<{ organizations: Organization[] }>("GET", "/api/admin/organizations");
+}
+
+export async function createOrganization(data: { companyName: string; companyCode: string }) {
+  return api<{ organization: Organization; message: string }>("POST", "/api/admin/organizations", data);
+}
+
+export async function updateOrganization(code: string, data: { companyName?: string; companyCode?: string }) {
+  return api<{ organization: Organization; message: string }>("PUT", `/api/admin/organizations/${code}`, data);
+}
+
+export async function deleteOrganization(code: string) {
+  return api<{ message: string }>("DELETE", `/api/admin/organizations/${code}`);
 }

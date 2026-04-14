@@ -99,6 +99,7 @@ function CreateUser() {
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
   const [team, setTeam] = useState("");
+  const [companyCode, setCompanyCode] = useState("");
   const [creating, setCreating] = useState(false);
 
   async function handleCreate(e: React.FormEvent) {
@@ -114,12 +115,14 @@ function CreateUser() {
         phoneNumber: phone.replace(/\D/g, ""),
         email: email.trim() || undefined,
         team: team.trim() || undefined,
+        companyCode: companyCode.trim() || undefined,
       });
       toast.success(res.message);
       setName("");
       setPhone("");
       setEmail("");
       setTeam("");
+      setCompanyCode("");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to create user");
     } finally {
@@ -167,6 +170,15 @@ function CreateUser() {
             placeholder="Team"
             value={team}
             onChange={(e) => setTeam(e.target.value)}
+          />
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <input
+            className={inputClass}
+            placeholder="Company Code (3-4 letters)"
+            value={companyCode}
+            onChange={(e) => setCompanyCode(e.target.value.replace(/[^A-Za-z]/g, "").slice(0, 4))}
+            maxLength={4}
           />
         </div>
         <button
