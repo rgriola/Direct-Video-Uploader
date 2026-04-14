@@ -10,14 +10,14 @@
  * COMPONENT STRUCTURE:
  *   UserList           — Outer card with header + sorted list
  *     └─ UserRow       — One row per user (collapsed + expanded states)
- *          └─ UserDetails  — Phone, assets, last login, team, iOS connection
+ *          └─ UserDetails  — Phone, assets, last login, team, iOS connection, delete button
  *
  * NOTE: Unlike AssetList (single accordion), UserList allows MULTIPLE rows
  * to be expanded at once. It uses a Set<string> instead of a single ID.
  */
 
 import { useState } from "react";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, Trash2 } from "lucide-react";
 import type { User } from "@/lib/types";
 import { panelHeader, subTextPanelHeader } from "@/lib/types";
 
@@ -60,9 +60,11 @@ const pillBase = "shrink-0 inline-flex items-center px-2 py-0.5 rounded-md text-
 interface UserListProps {
   users?: User[];
   isLoading: boolean;
+  onDeleteUser?: (userId: string, userName: string) => Promise<void>;
+  currentUserId?: string;
 }
 
-export function UserList({ users, isLoading }: UserListProps) {
+export function UserList({ users, isLoading, onDeleteUser, currentUserId }: UserListProps) {
   /* Multi-expand: multiple users can be open at once (Set of user IDs) */
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
@@ -107,6 +109,8 @@ export function UserList({ users, isLoading }: UserListProps) {
               color={avatarColors[i % avatarColors.length]!}
               isOpen={expanded.has(user.id)}
               onToggle={() => toggle(user.id)}
+              onDeleteUser={onDeleteUser}
+              isSelf={user.id === currentUserId}
             />
           ))
         )}
@@ -126,9 +130,11 @@ interface UserRowProps {
   color: string;        // Avatar color key: "blue" | "green" | "purple"
   isOpen: boolean;
   onToggle: () => void;
+  onDeleteUser?: (userId: string, userName: string) => Promise<void>;
+  isSelf: boolean;
 }
 
-function UserRow({ user, color, isOpen, onToggle }: UserRowProps) {
+function UserRow({ user, color, isOpen, onToggle, onDeleteUser, isSelf }: UserRowProps) {
   const s = avatarStyle(color);
   const initials = user.name.split(" ").map((w) => w[0]).join("");
 
@@ -172,7 +178,7 @@ function UserRow({ user, color, isOpen, onToggle }: UserRowProps) {
       </button>
 
       {/* ── Expanded detail panel ── */}
-      {isOpen && <UserDetails user={user} />}
+      {isOpen && <UserDetails user={user} onDeleteUser={onDeleteUser} isSelf={isSelf} />}
     </div>
   );
 }
@@ -204,8 +210,31 @@ function StatusPill({ user }: { user: User }) {
 
 // ─── User Details ────────────────────────────────────────────────────
 
-/** Expanded panel showing phone, asset count, last login, team (mobile), iOS status */
-function UserDetails({ user }: { user: User }) {
+interface UserDetailsProps {
+  user: User;
+  onDeleteUser?: (userId: string, userName: string) => Promise<void>;
+  isSelf: boolean;
+}
+
+/** Expanded panel showing phone, asset count, last login, team (mobile), iOS status, delete button */
+function UserDetails({ user, onDeleteUser, isSelf }: UserDetailsProps) {
+  const [confirming, setConfirming] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  async function handleDelete() {
+    if (!confirming) {
+      setConfirming(true);
+      return;
+    }
+    setDeleting(true);
+    try {
+      await onDeleteUser?.(user.id, user.name);
+    } finally {
+      setDeleting(false);
+      setConfirming(false);
+    }
+  }
+
   const rows = [
     { label: "Phone", value: `📱 ${user.phoneNumber}` },
     { label: "Assets", value: `${user.assetCount ?? 0} asset${user.assetCount !== 1 ? "s" : ""}` },
@@ -234,6 +263,39 @@ function UserDetails({ user }: { user: User }) {
           <span className="text-[11px] bg-(--accent-blue-glow) text-(--accent-blue) px-1.5 py-px rounded font-semibold">
             Connected
           </span>
+        </div>
+      )}
+
+      {/* Delete user — admin only, hidden for self */}
+      {onDeleteUser && !isSelf && (
+        <div className="pt-2 mt-2 border-t border-(--border-subtle)">
+          {confirming && !deleting && (
+            <p className="text-xs text-(--accent-red) font-semibold mb-2">
+              ⚠️ This will permanently delete {user.name} and ALL their data. Click again to confirm.
+            </p>
+          )}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleDelete}
+              disabled={deleting}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
+                confirming
+                  ? "bg-(--accent-red) border-(--accent-red) text-white hover:opacity-90"
+                  : "bg-(--secondary) border-(--border-subtle) text-(--muted-foreground) hover:bg-(--accent-red-glow) hover:border-(--accent-red)/50 hover:text-(--accent-red)"
+              } disabled:opacity-50 disabled:cursor-not-allowed`}
+            >
+              <Trash2 className="w-3 h-3" />
+              {deleting ? "Deleting..." : confirming ? "Confirm Delete" : "Delete User"}
+            </button>
+            {confirming && !deleting && (
+              <button
+                onClick={() => setConfirming(false)}
+                className="px-3 py-1.5 rounded-lg text-xs font-medium bg-(--secondary) border border-(--border-subtle) text-(--muted-foreground) hover:text-(--foreground) transition-all cursor-pointer"
+              >
+                Cancel
+              </button>
+            )}
+          </div>
         </div>
       )}
     </div>

@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster, toast } from "sonner";
 
-import { setToken, getToken, fetchHealth, fetchMe, cleanupAssets } from "@/lib/api";
+import { setToken, getToken, fetchHealth, fetchMe, cleanupAssets, deleteUser } from "@/lib/api";
 import { useStats, useUsers, useAssets, useRefreshDashboard, useTriadStatus } from "@/hooks/use-dashboard";
 import { useSocket } from "@/hooks/use-socket";
 
@@ -51,6 +51,7 @@ function Dashboard() {
   const [userRole, setUserRole] = useState<string | null>(null);
   const [userName, setUserName] = useState<string | null>(null);
   const [userPhone, setUserPhone] = useState<string | null>(null);
+  const [userId, setUserId] = useState<string | null>(null);
   const [showChatHistory, setShowChatHistory] = useState(false);
 
   const { data: stats } = useStats(loggedIn);
@@ -76,6 +77,7 @@ function Dashboard() {
           setLoggedIn(true);
           setUserRole(user.role ?? null);
           setUserName(user.name ?? null);
+          setUserId(user.id ?? null);
           setUserPhone(user.phoneNumber ?? null);
           addLog("auth", `Session restored: ${user.name}`);
           connect();
@@ -102,6 +104,8 @@ function Dashboard() {
     setUserRole(role ?? null);
     setUserName(userName);
     setUserPhone(phone ?? null);
+    // userId is set after fetchMe on session restore; for fresh login, fetch it now
+    fetchMe().then(({ user }) => setUserId(user?.id ?? null)).catch(() => {});
     addLog("auth", `Dashboard auth: ${userName}`);
     connect();
   }, [addLog, connect, setLoggedIn]);
@@ -149,6 +153,26 @@ function Dashboard() {
     [loggedIn, addLog],
   );
 
+  const handleDeleteUser = useCallback(
+    async (targetUserId: string, targetUserName: string) => {
+      try {
+        const res = await deleteUser(targetUserId);
+        const d = res.deleted;
+        toast.success(res.message, {
+          description: `${d.assets} assets, ${d.clips} clips, ${d.chatMessages} messages removed`,
+          duration: 6000,
+        });
+        addLog("http", `Deleted user: ${targetUserName}`);
+        refreshDashboard();
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to delete user");
+        addLog("error", `Delete user failed: ${err instanceof Error ? err.message : "Unknown error"}`);
+        throw err;
+      }
+    },
+    [addLog, refreshDashboard],
+  );
+
   if (!loggedIn) {
     return <LoginForm onSuccess={handleLoginSuccess} />;
   }
@@ -179,7 +203,12 @@ function Dashboard() {
       {showChatHistory && <ChatHistory onClose={() => setShowChatHistory(false)} />}
 
       <div className="grid grid-cols-2 gap-6 mb-8 max-[900px]:grid-cols-1">
-        <UserList users={users} isLoading={usersLoading} />
+        <UserList
+          users={users}
+          isLoading={usersLoading}
+          onDeleteUser={userRole === "ADMIN" ? handleDeleteUser : undefined}
+          currentUserId={userId ?? undefined}
+        />
         <AssetList assets={assets} isLoading={assetsLoading} />
       </div>
 

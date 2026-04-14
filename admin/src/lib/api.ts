@@ -96,3 +96,10 @@ export async function nuclearReset() {
 export async function createUser(data: { name: string; phoneNumber: string; email?: string; team?: string }) {
   return api<{ user: { id: string; name: string; phoneNumber: string }; message: string }>("POST", "/api/admin/users", data);
 }
+
+export async function deleteUser(userId: string) {
+  return api<{
+    message: string;
+    deleted: { assets: number; clips: number; chatMessages: number; errorLogs: number; muxAssets: number; localFiles: number };
+  }>("DELETE", `/api/admin/users/${userId}`);
+}

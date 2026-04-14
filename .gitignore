@@ -1,6 +1,9 @@
 # Dependencies
 node_modules/
 
+#powerpoint
+*.pptx
+generate_pitch_deck.*
 # Environment
 .env
 .env.*

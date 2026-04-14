@@ -334,4 +334,84 @@ export default async function adminRoutes(fastify) {
         };
     });
 
+    /**
+     * DELETE /api/admin/users/:id
+     * Hard-wipe a user and ALL their data: Mux assets, local files,
+     * clips, assets, form responses, chat messages, error logs.
+     */
+    fastify.delete('/api/admin/users/:id', {
+        preHandler: [fastify.authenticate, fastify.authorizeAdmin],
+    }, async (request, reply) => {
+        const { id } = request.params;
+
+        // Guard: admin cannot delete themselves
+        if (request.user.sub === id) {
+            return reply.status(400).send({ error: 'Cannot delete your own account' });
+        }
+
+        // Verify user exists
+        const target = await prisma.user.findUnique({ where: { id } });
+        if (!target) {
+            return reply.status(404).send({ error: 'User not found' });
+        }
+
+        const counts = { muxAssets: 0, localFiles: 0 };
+
+        // 1. Collect Mux asset IDs from user's clips before deleting DB rows
+        const userClips = await prisma.clip.findMany({
+            where: { asset: { userId: id } },
+            select: { muxAssetId: true, storageUrl: true },
+        });
+
+        // 2. Delete Mux assets remotely
+        if (isMuxEnabled) {
+            for (const clip of userClips) {
+                if (clip.muxAssetId) {
+                    const ok = await deleteMuxAsset(clip.muxAssetId);
+                    if (ok) counts.muxAssets++;
+                }
+            }
+        }
+
+        // 3. Delete local video files from disk
+        const { unlink } = await import('fs/promises');
+        const path = await import('path');
+        for (const clip of userClips) {
+            if (clip.storageUrl?.startsWith('/uploads/')) {
+                try {
+                    const filePath = path.resolve(process.cwd(), clip.storageUrl.slice(1));
+                    await unlink(filePath);
+                    counts.localFiles++;
+                } catch (err) {
+                    if (err.code !== 'ENOENT') {
+                        console.warn(`🗑️ Failed to delete ${clip.storageUrl}:`, err.message);
+                    }
+                }
+            }
+        }
+
+        // 4. Delete DB records in FK-safe order
+        const chatDeleted = await prisma.chatMessage.deleteMany({ where: { userId: id } });
+        const errorDeleted = await prisma.errorLog.deleteMany({ where: { userId: id } });
+        // Assets cascade-delete their clips, form responses, and asset-linked chat messages
+        const assetDeleted = await prisma.asset.deleteMany({ where: { userId: id } });
+
+        // 5. Delete the user record
+        await prisma.user.delete({ where: { id } });
+
+        console.log(`🗑️ Admin deleted user: ${target.name} (${target.phoneNumber}) — ${assetDeleted.count} assets, ${counts.muxAssets} Mux assets`);
+
+        return {
+            message: `User ${target.name} deleted with all associated data`,
+            deleted: {
+                assets: assetDeleted.count,
+                clips: userClips.length,
+                chatMessages: chatDeleted.count,
+                errorLogs: errorDeleted.count,
+                muxAssets: counts.muxAssets,
+                localFiles: counts.localFiles,
+            },
+        };
+    });
+
 }

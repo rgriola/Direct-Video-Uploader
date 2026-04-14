@@ -50,7 +50,7 @@ struct InstructionsView: View {
                 VStack(alignment: .leading, spacing: Theme.space16) {
                     instructionRow(
                         emoji: "⚠️",
-                        text: "Keep Fixer open until the upload is 100% complete. Closing Fixer will stop cancel the upload."
+                        text: "Keep Fixer open until the upload is 100% complete. Closing Fixer will cancel the upload."
                     )
                     instructionRow(
                         icon: "paperplane.fill",
@@ -90,7 +90,7 @@ struct InstructionsView: View {
                     .font(Theme.display44)
                     .foregroundStyle(Theme.purple)
 
-                Text("Recommeded iPhone Settings")
+                Text("Recommended iPhone Settings")
                     .font(Theme.font20Bold)
                     .foregroundStyle(Theme.white)
 
@@ -128,22 +128,22 @@ struct InstructionsView: View {
                                 .font(Theme.font16Semibold)
                                 .foregroundStyle(Theme.amber)
 
-                            Text("When your phone is locked media is automatically sent to your iCloud. This allows sharing across your devices and optimizes storage. By default videos are compressed during this process unless you turn off this setting.")
+                            Text("When your phone is locked, media is automatically sent to your iCloud. This allows sharing across your devices and optimizes storage. By default videos are compressed during this process unless you turn off this setting.")
                                 .font(Theme.font16Regular)
                                 .foregroundStyle(Theme.white.opacity(0.85))
                             
-                            Text("Video already in iCloud significantly delays the upload process: iCloud download > Convert video > Fixer upload > Server encoding.")
+                            Text("Videos already in iCloud significantly delay the upload process: iCloud download > Convert video > Fixer upload > Server encoding.")
                                 .font(Theme.font16Regular)
                                 .foregroundStyle(Theme.white.opacity(0.85))
                         }
 
                         // Turn it off note
                         VStack(alignment: .leading, spacing: Theme.space8) {
-                            Text("Setting Suggestion")
+                            Text("Setting Suggestions")
                                 .font(Theme.font16Semibold)
                                 .foregroundStyle(Theme.white)
 
-                            Text("- Keep media local on your device.")
+                            Text("- Keep media local on your device")
                                 .font(Theme.font16Regular)
                                 .foregroundStyle(Theme.white.opacity(0.85))
                             
@@ -151,7 +151,7 @@ struct InstructionsView: View {
                                 .font(Theme.font16Regular)
                                 .foregroundStyle(Theme.white.opacity(0.85))
                             
-                            Text("- Turn on GPS for more complete metadata.")
+                            Text("- Turn on GPS for more complete metadata")
                                 .font(Theme.font16Regular)
                                 .foregroundStyle(Theme.white.opacity(0.85))
 
@@ -186,10 +186,10 @@ struct InstructionsView: View {
                     stepRow(icon: "checkmark.circle.fill", text: "Confirms the video selection.")
                     stepRow(icon: "scissors", text: "Trim clip or click Next >> to skip. Trim just like in iMovie.")
                     stepRow(icon: "mic.circle.fill", text: "Option to transcribe audio. \nThis is an on/off toggle.")
-                    stepRow(icon: "arrow.up.circle.fill", text: "Start video upload. Keep Fixer Open")
-                    stepRow(icon: "chart.bar.fill", text: "Progress bar appears, your video is uploading")
+                    stepRow(icon: "arrow.up.circle.fill", text: "Start video upload. Keep Fixer open.")
+                    stepRow(icon: "chart.bar.fill", text: "Progress bar appears. The video is uploading.")
                     stepRow(icon: "text.cursor", text: "Required Form Fields: \n**Slug** and **Description** - scroll down and send.")
-                    stepRow(icon: "exclamationmark.triangle.fill", text: "Do NOT close Fixer — the upload will stop.")
+                    stepRow(icon: "exclamationmark.triangle.fill",text: "Do NOT close Fixer — the upload will stop")
                 }
                 .padding(.horizontal, Theme.space24)
 
@@ -217,17 +217,17 @@ struct InstructionsView: View {
                 VStack(alignment: .leading, spacing: Theme.space16) {
                     instructionRow(
                         emoji: "📍",
-                        text: "Fixer reads GPS, file type, size, duration, and device info from your video and populates the asset form for you."
+                        text: "Fixer reads GPS, timestamp, file type, size, duration, and device info from your video and populates the asset form for you."
                     )
 
                     instructionRow(
                         emoji: "🎙️",
-                        text: "If you choose to transcribe audio Fixer uses Apple's Speech Recognition to create it. You should always check for accuracy of the transcription."
+                        text: "If you choose to transcribe audio, Fixer uses Apple's Speech Recognition to create it. Always check for transcription accuracy."
                     )
 
                     instructionRow(
                         emoji: "📎",
-                        text: "The metadata is returned to you with the clip number and link."
+                        text: "The metadata is returned with the clip number and link."
                     )
                     instructionRow(
                         emoji: "✅",
@@ -236,7 +236,7 @@ struct InstructionsView: View {
 
                     instructionRow(
                         emoji: "#️⃣",
-                        text: "As soon as the metadata is processed you can Slack your team with the info."
+                        text: "Once the metadata is available, remember to Slack your team."
                     )
                 }
                 .padding(.horizontal, Theme.space24)
@@ -277,7 +277,7 @@ struct InstructionsView: View {
                     )
                     instructionRow(
                         emoji: "📝",
-                        text: "If your slug form wasn't completed, finish it here — Fixer will update the form."
+                        text: "If your slug form was incompleted, finish it here — Fixer will update the form."
                     )
                 }
                 .padding(.horizontal, Theme.space24)
