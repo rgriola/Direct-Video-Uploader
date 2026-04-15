@@ -43,8 +43,13 @@ Once installed, you can open Fixer two ways:
 
 ### Your Login
 
-- **Phone:** (your phone number)
-- **PIN:** 1234
+To sign in to Fixer you'll need three things — your admin will provide all of these:
+
+- **Company Code** — 3–4 letter code for your organization (e.g. `CNN`)
+- **Phone Number** — the 10-digit number your admin registered for you
+- **PIN** — provided by your admin (you'll want to change this)
+
+> ⚠️ **Account required:** Fixer accounts are admin-provisioned. You cannot self-register. Your admin must add your phone number to the system before you can log in.
 
 ---
 
