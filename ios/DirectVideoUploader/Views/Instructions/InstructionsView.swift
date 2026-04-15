@@ -5,18 +5,19 @@ struct InstructionsView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var currentPage = 0
 
-    private let pageCount = 5
+    private let pageCount = 6
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
             Theme.black.ignoresSafeArea()
 
             TabView(selection: $currentPage) {
-                firstThingsPage.tag(0)
-                iphoneMediaPage.tag(1)
-                howToUsePage.tag(2)
-                behindTheScenesPage.tag(3)
-                archivePage.tag(4)
+                disclosure.tag(0)
+                firstThingsPage.tag(1)
+                iphoneMediaPage.tag(2)
+                howToUsePage.tag(3)
+                behindTheScenesPage.tag(4)
+                archivePage.tag(5)
             }
             .tabViewStyle(.page(indexDisplayMode: .always))
             .indexViewStyle(.page(backgroundDisplayMode: .always))
@@ -32,6 +33,36 @@ struct InstructionsView: View {
         }
     }
 
+    private var disclosure: some View {
+        ScrollView {
+            VStack(spacing: Theme.space24) {
+                Spacer().frame(height: Theme.space32)
+
+                Image(systemName: "sos")
+                    .font(Theme.display44)
+                    .foregroundStyle(Theme.red)
+
+                Text("DISCLOSURE - BETA FISH")
+                    .font(Theme.font20Bold)
+                    .foregroundStyle(Theme.yellow)
+
+                Text("""
+                    This is a beta version of Fixer available to anyone with the right access codes.
+
+                    Video uploaded to our server stand-in, Mux.com, is available for anyone to view who has access to this app.
+                    
+                    Swipe right to continue with our guide and Thank You for taking a look at the Fixer Beta. >>
+                    """)
+                    .font(Theme.font28Bold)
+                    .foregroundStyle(Theme.white)
+                    .multilineTextAlignment(.center)
+
+                Spacer()
+            }
+            .padding(.horizontal, Theme.space24)
+            .padding(.bottom, 60) // room for page dots
+        }
+    }
     // MARK: - Page 1: First Things to Know
 
     private var firstThingsPage: some View {

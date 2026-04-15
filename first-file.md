@@ -1,6 +1,6 @@
 ### SPEC
 
-### to the any agent
+### to the agent
 
 - this file is not to be edited. I use this to build out prompts for you.
 - I may add notes about my thinking on this project but these are not cannonical just working through details.
@@ -1030,5 +1030,8 @@ add.
 - Add User Company to user profile on iOS and Dashboard. 
 - Clips should include company name in metadata list. 
 
+- Read this back to me and confirm you understand the changes. 
+
+- admins still see everything and only non-admin dashboard users see filtered results? << Yes. a non-admin should see their company's clips only, theirs + other staff.  Admins see all for now. 
 
 

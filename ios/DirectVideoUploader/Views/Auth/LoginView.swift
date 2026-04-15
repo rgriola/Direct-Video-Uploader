@@ -179,10 +179,10 @@ struct LoginView: View {
                 
                 // Demo hint
                 VStack(spacing: Theme.space4) {
-                    Text("Demo Account")
+                    Text("Built With Love")
                         .font(Theme.font11Semibold)
                         .foregroundStyle(Theme.white.opacity(0.3))
-                    Text("Phone: 5055034455 · PIN: 1234")
+                    Text("")
                         .font(Theme.mono11Medium)
                         .foregroundStyle(Theme.white.opacity(0.25))
                 }
