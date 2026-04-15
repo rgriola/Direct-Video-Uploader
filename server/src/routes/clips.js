@@ -1,9 +1,11 @@
 /**
- * Clip Viewer — Public page to view a video clip with metadata.
+ * Clip Viewer — Authenticated page to view a video clip with metadata.
+ * Requires cookie-based auth (phone + PIN + company code).
  * Accessible at GET /clips/:mediasourceId
  */
 import prisma from '../lib/prisma.js';
 import { MUX_ENV_KEY } from '../lib/mux.js';
+import { verifyPin, hashPin, dbRetry } from '../lib/utils.js';
 
 /** Escape HTML special characters to prevent XSS (#5). */
 function escapeHtml(str) {
@@ -17,19 +19,221 @@ function escapeHtml(str) {
 }
 
 export default async function clipRoutes(fastify) {
+
+    // ─── Shared Styles ──────────────────────────────────────
+    const loginPageCSS = `
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { background: #0E0F14; color: #E2E4ED; font-family: 'Outfit', sans-serif;
+               display: flex; align-items: center; justify-content: center;
+               min-height: 100vh; padding: 24px; }
+        .card { background: #16171E; border: 1px solid rgba(255,255,255,0.06);
+                border-radius: 16px; padding: 40px 32px; width: 100%; max-width: 380px; }
+        .logo { text-align: center; margin-bottom: 24px; }
+        .logo span { font-size: 28px; }
+        h1 { font-size: 1.1rem; font-weight: 600; text-align: center; margin-bottom: 24px;
+             color: rgba(226,228,237,0.7); }
+        label { display: block; font-size: 0.75rem; font-weight: 600; letter-spacing: 0.05em;
+                color: rgba(226,228,237,0.4); margin-bottom: 6px; text-transform: uppercase; }
+        input { width: 100%; padding: 12px 14px; background: rgba(255,255,255,0.04);
+                border: 1px solid rgba(255,255,255,0.08); border-radius: 10px;
+                color: #E2E4ED; font-family: 'Outfit', sans-serif; font-size: 0.95rem;
+                margin-bottom: 16px; outline: none; transition: border-color 0.2s; }
+        input:focus { border-color: rgba(168,85,247,0.5); }
+        input::placeholder { color: rgba(226,228,237,0.2); }
+        button { width: 100%; padding: 14px; background: linear-gradient(135deg, #A855F7, #7C3AED);
+                 color: white; border: none; border-radius: 10px; font-family: 'Outfit', sans-serif;
+                 font-size: 1rem; font-weight: 600; cursor: pointer; transition: opacity 0.2s; }
+        button:hover { opacity: 0.9; }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+        .error { background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3);
+                 border-radius: 8px; padding: 10px 14px; margin-bottom: 16px;
+                 font-size: 0.85rem; color: #F87171; }
+        .footer { text-align: center; margin-top: 20px; font-size: 0.7rem;
+                  color: rgba(226,228,237,0.2); }
+    `;
+    const googleFontsHead = '<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">';
+
+    // Cookie options — HttpOnly, 7-day expiry, scoped to /clips
+    const COOKIE_NAME = 'fixer_clip_token';
+    const cookieOpts = (isSecure) => ({
+        path: '/clips',
+        httpOnly: true,
+        secure: isSecure,
+        sameSite: 'lax',
+        maxAge: 7 * 24 * 60 * 60, // 7 days in seconds
+    });
+
+    // ─── Helper: verify clip cookie ─────────────────────────
+    async function verifyClipCookie(request, reply) {
+        const token = request.cookies?.[COOKIE_NAME];
+        if (!token) return null;
+        try {
+            const decoded = fastify.jwt.verify(token);
+            request.user = decoded;
+            return decoded;
+        } catch {
+            reply.clearCookie(COOKIE_NAME, { path: '/clips' });
+            return null;
+        }
+    }
+
+    // ─── Helper: check org access ───────────────────────────
+    // Admins see everything; regular users only see clips from their org
+    function canAccessClip(viewer, clipUploaderCompanyCode) {
+        if (!viewer) return false;
+        if (viewer.role === 'ADMIN') return true;
+        if (!viewer.companyCode) return false;
+        if (!clipUploaderCompanyCode) return false;
+        return viewer.companyCode.toLowerCase() === clipUploaderCompanyCode.toLowerCase();
+    }
+
+    /**
+     * GET /clips/login
+     * Render a login form for the clip viewer.
+     */
+    fastify.get('/clips/login', async (request, reply) => {
+        // Already logged in? Redirect to the clip they wanted
+        const user = await verifyClipCookie(request, reply);
+        if (user && request.query.redirect) {
+            return reply.redirect(request.query.redirect);
+        }
+
+        const error = request.query.error || '';
+        const redirect = escapeHtml(request.query.redirect || '');
+
+        const html = `<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Fixer — Sign In to View Clip</title>
+${googleFontsHead}
+<style>${loginPageCSS}</style>
+</head><body>
+<div class="card">
+    <div class="logo"><span>🎬</span></div>
+    <h1>Sign in to view this clip</h1>
+    ${error ? `<div class="error">${escapeHtml(error)}</div>` : ''}
+    <form method="POST" action="/clips/login">
+        <input type="hidden" name="redirect" value="${redirect}" />
+        <label for="companyCode">Company Code</label>
+        <input id="companyCode" name="companyCode" type="text" placeholder="ABC or ABCD"
+               maxlength="4" pattern="[A-Za-z]{3,4}" required autocomplete="off" />
+        <label for="phoneNumber">Phone Number</label>
+        <input id="phoneNumber" name="phoneNumber" type="tel" placeholder="10-digit phone"
+               maxlength="10" pattern="[0-9]{10}" required autocomplete="tel" />
+        <label for="pin">PIN</label>
+        <input id="pin" name="pin" type="password" placeholder="••••"
+               maxlength="8" required autocomplete="current-password" />
+        <button type="submit">Sign In</button>
+    </form>
+    <div class="footer">Fixer &middot; Secure Clip Viewer</div>
+</div>
+</body></html>`;
+
+        reply.type('text/html').send(html);
+    });
+
+    /**
+     * POST /clips/login
+     * Validate credentials → set HttpOnly cookie → redirect to clip.
+     */
+    fastify.post('/clips/login', {
+        config: {
+            rateLimit: { max: 5, timeWindow: '1 minute' },
+        },
+    }, async (request, reply) => {
+        const { phoneNumber, pin, companyCode, redirect } = request.body || {};
+        const redirectTo = redirect || '/clips/login';
+
+        // Validate inputs
+        if (!phoneNumber || !pin || !companyCode) {
+            return reply.redirect(`/clips/login?error=${encodeURIComponent('All fields are required')}&redirect=${encodeURIComponent(redirectTo)}`);
+        }
+
+        // Look up user
+        const user = await dbRetry(() => prisma.user.findUnique({
+            where: { phoneNumber },
+            include: { organization: true },
+        }));
+
+        if (!user || user.status !== 'ACTIVE') {
+            return reply.redirect(`/clips/login?error=${encodeURIComponent('Invalid credentials')}&redirect=${encodeURIComponent(redirectTo)}`);
+        }
+
+        // Verify PIN
+        if (!(await verifyPin(pin, user.pinHash))) {
+            return reply.redirect(`/clips/login?error=${encodeURIComponent('Invalid credentials')}&redirect=${encodeURIComponent(redirectTo)}`);
+        }
+
+        // Verify company code
+        if (!user.companyCode || user.companyCode.toLowerCase() !== companyCode.toLowerCase()) {
+            return reply.redirect(`/clips/login?error=${encodeURIComponent('Invalid credentials')}&redirect=${encodeURIComponent(redirectTo)}`);
+        }
+
+        // Auto-migrate legacy SHA-256 hash to bcrypt
+        if (user.pinHash && !user.pinHash.startsWith('$2')) {
+            const bcryptHash = await hashPin(pin);
+            await dbRetry(() => prisma.user.update({
+                where: { id: user.id },
+                data: { pinHash: bcryptHash },
+            }));
+        }
+
+        // Generate JWT (7-day expiry)
+        const token = fastify.jwt.sign(
+            {
+                id: user.id,
+                phoneNumber: user.phoneNumber,
+                name: user.name,
+                role: user.role || 'USER',
+                companyCode: user.companyCode || null,
+            },
+            { expiresIn: '7d' }
+        );
+
+        // Set HttpOnly cookie
+        const isSecure = request.protocol === 'https';
+        reply.setCookie(COOKIE_NAME, token, cookieOpts(isSecure));
+
+        console.log(`🔐 Clip login: ${user.name} (${user.phoneNumber}) [${user.companyCode}]`);
+
+        // Redirect to the clip they wanted to view
+        return reply.redirect(redirectTo.startsWith('/clips/') ? redirectTo : '/clips/login');
+    });
+
+    /**
+     * POST /clips/logout
+     * Clear the clip viewer cookie.
+     */
+    fastify.post('/clips/logout', async (request, reply) => {
+        reply.clearCookie(COOKIE_NAME, { path: '/clips' });
+        return reply.redirect('/clips/login');
+    });
+
     /**
      * GET /clips/:mediasourceId/status
      * Lightweight JSON endpoint — polled by the clip viewer JS when the video
-     * is not yet ready. Returns { ready: bool, muxPlaybackId: string|null }.
-     * Public (no auth required) — only returns play-readiness, no private data.
+     * is not yet ready. Requires clip auth cookie.
      */
     fastify.get('/clips/:mediasourceId/status', async (request, reply) => {
+        // Auth check
+        const viewer = await verifyClipCookie(request, reply);
+        if (!viewer) return reply.status(401).send({ error: 'Unauthorized' });
+
         const { mediasourceId } = request.params;
         if (!mediasourceId || mediasourceId === 'undefined') {
             return reply.status(404).send({ error: 'Not found' });
         }
         const asset = await prisma.asset.findFirst({ where: { mediasourceId } });
         if (!asset) return reply.status(404).send({ error: 'Not found' });
+
+        // Org access check
+        const uploader = await prisma.user.findFirst({
+            where: { id: asset.userId },
+            select: { companyCode: true },
+        });
+        if (!canAccessClip(viewer, uploader?.companyCode)) {
+            return reply.status(403).send({ error: 'Access denied' });
+        }
 
         const clip = await prisma.clip.findFirst({
             where: { assetId: asset.id },
@@ -47,10 +251,17 @@ export default async function clipRoutes(fastify) {
 
     /**
      * GET /clips/:mediasourceId
-     * Render a public clip viewer page (dark theme, video player + metadata).
+     * Authenticated clip viewer page (dark theme, video player + metadata).
+     * Requires cookie auth; org-scoped (admins see all).
      */
     fastify.get('/clips/:mediasourceId', async (request, reply) => {
         const { mediasourceId } = request.params;
+
+        // ── Auth gate ──
+        const viewer = await verifyClipCookie(request, reply);
+        if (!viewer) {
+            return reply.redirect(`/clips/login?redirect=${encodeURIComponent(request.url)}`);
+        }
 
         // Reject obviously invalid IDs (e.g. "undefined", empty, non-numeric)
         if (!mediasourceId || mediasourceId === 'undefined' || mediasourceId === 'null') {
@@ -91,6 +302,19 @@ export default async function clipRoutes(fastify) {
             });
 
             asset = { ...asset, clips, formResponse, user };
+
+            // ── Org-scoped access check ──
+            if (!canAccessClip(viewer, user?.companyCode)) {
+                reply.status(403).type('text/html').send(`
+                    <!DOCTYPE html>
+                    <html><head><title>Access Denied</title>
+                    <style>body{background:#0E0F14;color:#E2E4ED;font-family:'Outfit',sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;flex-direction:column;gap:12px}
+                    h1{font-size:1.5rem;opacity:0.7}p{font-size:0.9rem;opacity:0.4}a{color:#A855F7}</style></head>
+                    <body><h1>🔒 Access Denied</h1><p>This clip belongs to a different organization.</p>
+                    <a href="/clips/login">Sign in with a different account</a></body></html>
+                `);
+                return;
+            }
         } catch (err) {
             fastify.log.error({ err, mediasourceId }, 'Clip viewer DB query failed');
             reply.status(500).type('text/html').send(`

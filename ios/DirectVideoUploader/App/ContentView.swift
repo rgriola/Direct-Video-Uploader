@@ -6,10 +6,18 @@ struct ContentView: View {
     @Environment(WebSocketService.self) private var ws
     @Environment(\.scenePhase) private var scenePhase
     @State private var backgroundDisconnectTask: Task<Void, Never>?
+    @State private var sessionCheckComplete = false
     
     var body: some View {
         Group {
-            if auth.isAuthenticated {
+            if !sessionCheckComplete {
+                // Resolving stored token — show a neutral loading screen
+                Theme.black.ignoresSafeArea()
+                    .overlay {
+                        ProgressView()
+                            .tint(Theme.white.opacity(0.4))
+                    }
+            } else if auth.isAuthenticated && auth.currentUser != nil {
                 TabView {
                     ChatView()
                         .tabItem {
@@ -42,10 +50,19 @@ struct ContentView: View {
         }
         .preferredColorScheme(.dark)
         .task {
-            // Try to restore session on launch
+            // Validate stored token before showing any UI
             if auth.token != nil {
-                try? await auth.fetchMe()
+                do {
+                    try await auth.fetchMe()
+                } catch {
+                    // fetchMe already calls logout() on 401/403;
+                    // any other error (network down) also forces login
+                    // so the user doesn't get stuck on a blank profile.
+                    print("⚠️ [Session] Restore failed: \(error.localizedDescription) — clearing session")
+                    auth.logout()
+                }
             }
+            sessionCheckComplete = true
         }
         .onChange(of: scenePhase) { _, newPhase in
             switch newPhase {

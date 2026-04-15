@@ -12,6 +12,8 @@ import fastifyJwt from '@fastify/jwt';
 import fastifyStatic from '@fastify/static';
 import rateLimit from '@fastify/rate-limit';
 import helmet from '@fastify/helmet';
+import cookie from '@fastify/cookie';
+import formbody from '@fastify/formbody';
 import { Server as SocketIOServer } from 'socket.io';
 import path from 'path';
 import crypto from 'crypto';
@@ -87,6 +89,12 @@ await fastify.register(helmet, {
     crossOriginEmbedderPolicy: false,
 });
 
+// Cookie support for clip viewer auth (HttpOnly session cookie)
+await fastify.register(cookie);
+
+// Form body parsing for clip viewer login form (application/x-www-form-urlencoded)
+await fastify.register(formbody);
+
 // B7: Global rate limiting — sensible defaults, per-route overrides below
 await fastify.register(rateLimit, {
     global: true,
@@ -147,6 +155,21 @@ fastify.decorate('authenticate', async function (request, reply) {
 fastify.decorate('authorizeAdmin', async function (request, reply) {
     if (request.user?.role !== 'ADMIN') {
         reply.status(403).send({ error: 'Admin access required' });
+    }
+});
+
+// Clip viewer cookie-based auth (reads JWT from HttpOnly cookie)
+fastify.decorate('clipAuthenticate', async function (request, reply) {
+    const token = request.cookies?.fixer_clip_token;
+    if (!token) return null; // No cookie → caller decides what to do
+    try {
+        const decoded = fastify.jwt.verify(token);
+        request.user = decoded;
+        return decoded;
+    } catch {
+        // Expired/invalid cookie — clear it
+        reply.clearCookie('fixer_clip_token', { path: '/clips' });
+        return null;
     }
 });
 
