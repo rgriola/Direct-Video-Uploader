@@ -7,6 +7,12 @@
 - I share this with you because I want you to be successful.
 
 # Issues
+Apr 30 2026
+- Add Photo Pipeline and File Pipeline
+- Add custom url and instructions for connecting to customer storage, list requirements for successful storage.  Create instructions to create AWS S3 Bucket, or other storage platforms.
+- Add feature to upload video cards directly from the camera, this would require reading metadata, idenifying files structure and naming conventions for specific camera brands ie Sony, Canon.  This is part security feature to protect the integrity of the footage, ie Cameras are registered to specific photographers, even cards have serial numbers.
+- Filter videos for video feeds. 
+
 - While there is an active the server and iOS continue to handshake. This process is ok however we need to add logic to 
 supress the handshake message while there is an active upload in progress, that is bits being transfered to the video server.
 this creates a continous stream of messages when the user is just going back and forth between apps. 
@@ -51,3 +57,24 @@ For a better UX the chat UI should reset after a video is selected. We could use
 
 - Mediasource Search
 - Mediasource Viewer (for feeds)
+
+*** issue ***
+- Apple Developer Account Distribution Approval Rejection
+- The Fixer, this iOS app, is being rejected by the App store for distribution. 
+- This is the following reason they specifically provided:
+[apple email]
+
+- Can you review this app, dashboard and try and determine what changes need to be mad to allow wide public distribution?
+
+- I believe allowing users to sign up for an account using their own credentials (email/password) account creation. 
+- Allowing a user to sign up as an enterprise user (email/password) account creation. 
+- allowing users to provide their own URL's for cold video storage (AWS S3, Google Cloud Storage, etc.) and URL for Streaming Processing similar to Mux.com but using their own credentials and storage, not my account. 
+- Allowing Free Use for 7 days trial period. 
+- Allowing Pro account after this period per seat for a fee
+
+- Issue with the above. The app was designed for a Test Case and interface with MUX and its webhooks.  
+- How would our biz logic change for iOS. We could bypass just to help upload video to cold storage for example and create a context form file to be placed on their storage with the two pieces linked, same name but different extension.
+
+- Any guidence would be apprecitated I am open to suggestions.
+- Or would it be better just to move this to enterprise? Or should I just nail down the testflight path before I get larger company asssets .   
+- I need to demo this for staff not in my city over Zoom and I want to give them access but have and impossible time walking people through the testflight > demo app process. 

@@ -3,7 +3,6 @@
 - NOTES for me. I need to consider the upload feature, sidecars + interaction with Lightroom + Classic. Also a way to manage LR Classic catalogs + thumbnails ie; Are catalogs connected by year? Month? Can the dashboard using Adobe Extensions auto create and connect catalogs so search works across all the catalogs.  Also how can an AI implimentation on the Photo Dash assist search, vetting and scanning photos, using LR Facial Recognition, can this be done? Is this complicated?  Is there a way to make the upload process TEXT to Number > Dumps on Server (original Fixer idea for video). 
 
 
-
 > **Product identity:** Photo-Fixer is an **organize → transport → deliver** app.
 > The end destination is **Adobe Lightroom**. Every architectural decision must ask:
 > "Will this photo land in Lightroom ready to catalog with correct metadata?"

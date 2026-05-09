@@ -10,7 +10,7 @@
 
 ## Changelog (v3 → v4)
 
-- **Branding:** Server contact renamed from "Video Upload Server" to **Mediasource Fixer**.
+- **Branding:** Server contact renamed from "Video Upload Server" to **Fixer**.
 - **Chat Demo:** Interactive HTML demo (`chat-demo.html`) built with step-by-step controls, Slack sidebar mockup, metadata/form sheets, and orientation-aware video thumbnails.
 - **Slack Integration:** Users can trigger a Slack post from the chat (e.g., `#team-alerts @carrie.smith`). The demo simulates a `#team-alerts` channel message with a threaded reply.
 - **WebSocket Architecture:** Server connection uses **WebSockets** (not hardcoded polling) for real-time bidirectional messaging between the app and server.

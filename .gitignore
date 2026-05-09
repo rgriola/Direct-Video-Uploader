@@ -65,3 +65,6 @@ admin/tsconfig.tsbuildinfo
 conversation-list.png
 text-flow.png
 mux-mediasource-fixer.env
+
+# Stray FFmpeg MPEG-TS captures (*.ts = Transport Stream, not TypeScript)
+output.ts

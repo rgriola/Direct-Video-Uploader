@@ -6,14 +6,14 @@ The iOS app currently scatters **50+ ad-hoc `.font(.system(size: …))` calls** 
 
 ## Current Problems (Audit Summary)
 
-| Problem | Example |
-|---|---|
-| **Font sizes are magic numbers** | `.font(.system(size: 16))`, `.font(.system(size: 13, weight: .semibold))` appear 50+ times with no shared constant |
-| **Same role, different sizes** | Timestamp: `size: 10` in `MessageBubble`, `size: 12` in `SentUploadBubble`, `size: 12` in `ArchiveRowView` |
-| **Hardcoded colors bypass Theme** | `InputBar.swift` uses `Color(hex: "#1C3A5F")`, `Color(hex: "#D4D4D4")`, `Color(hex: "#ADADAD")` instead of Theme tokens |
-| **Duplicated button styling** | Metadata + View buttons are copy-pasted across `MessageBubble.confirmationContent`, `formRequestContent`, and `ArchiveRowView` |
-| **No shared button style** | Every button manually sets `.padding`, `.background`, `.foregroundStyle`, `.clipShape` individually |
-| **Inconsistent badge styling** | Slack channel/mention badges define their own padding/radius inline |
+| Problem                           | Example                                                                                                                        |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| **Font sizes are magic numbers**  | `.font(.system(size: 16))`, `.font(.system(size: 13, weight: .semibold))` appear 50+ times with no shared constant             |
+| **Same role, different sizes**    | Timestamp: `size: 10` in `MessageBubble`, `size: 12` in `SentUploadBubble`, `size: 12` in `ArchiveRowView`                     |
+| **Hardcoded colors bypass Theme** | `InputBar.swift` uses `Color(hex: "#1C3A5F")`, `Color(hex: "#D4D4D4")`, `Color(hex: "#ADADAD")` instead of Theme tokens        |
+| **Duplicated button styling**     | Metadata + View buttons are copy-pasted across `MessageBubble.confirmationContent`, `formRequestContent`, and `ArchiveRowView` |
+| **No shared button style**        | Every button manually sets `.padding`, `.background`, `.foregroundStyle`, `.clipShape` individually                            |
+| **Inconsistent badge styling**    | Slack channel/mention badges define their own padding/radius inline                                                            |
 
 ---
 
@@ -192,12 +192,12 @@ These views also use ad-hoc fonts. We'll update them for full consistency:
 
 ## What Changes After This
 
-| Before | After |
-|---|---|
-| Change a timestamp font → edit 4 files | Change `Theme.timestampFont` → one line |
-| Change button style → edit 5 button instances | Change `ChatActionButton` → one place |
-| Hardcoded `Color(hex:)` in `InputBar` | `Theme.inputBarBg` / `Theme.actionBlue` |
-| 10+ different font sizes for similar roles | Named tokens: `bodyFont`, `captionFont`, `timestampFont` |
+| Before                                        | After                                                    |
+| --------------------------------------------- | -------------------------------------------------------- |
+| Change a timestamp font → edit 4 files        | Change `Theme.timestampFont` → one line                  |
+| Change button style → edit 5 button instances | Change `ChatActionButton` → one place                    |
+| Hardcoded `Color(hex:)` in `InputBar`         | `Theme.inputBarBg` / `Theme.actionBlue`                  |
+| 10+ different font sizes for similar roles    | Named tokens: `bodyFont`, `captionFont`, `timestampFont` |
 
 ---
 
@@ -207,11 +207,13 @@ These views also use ad-hoc fonts. We'll update them for full consistency:
 > There are **no existing unit tests** in this project. The verification is build-based + visual.
 
 ### Build Verification
+
 1. Open `ios/DirectVideoUploader.xcodeproj` in Xcode
 2. Build for iPhone simulator (⌘B) — must compile with **zero errors**
 3. The refactoring is pure visual-token replacement; no logic changes
 
 ### Manual Visual Verification
+
 After building, run on the simulator and verify these screens look **identical** to the current version:
 
 1. **Login screen** — fonts and layout unchanged

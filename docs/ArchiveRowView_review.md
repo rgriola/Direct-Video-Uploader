@@ -7,15 +7,15 @@
 
 ## Summary Table
 
-| # | Severity | Issue | Lines |
-|---|---|---|---|
-| 1 | 🔴 High | `phAssetToTempFile` continuation has no double-resume guard | L618–641 |
-| 2 | 🟠 Medium | `handleReupload` uses `loadTransferable` — loads full video into memory | L549 |
-| 3 | 🟠 Medium | `isReuploadingVideo = false` scattered across 6 exits, no `defer` | L492, 496, 551, 568, 579, 602 |
-| 4 | 🟡 Low | `handleReupload` temp file has no UUID subdirectory — filename collision risk | L555–557 |
-| 5 | 🟡 Low | `parseISO8601` is now a dead wrapper — 1 line, calls `DVUDateFormatting.parseISO` | L538–540 |
-| 6 | 🟡 Low | `buildFormFields()` duplicated — exact copy exists in `ChatViewModel` | L420–427 |
-| 7 | 🟡 Low | `submitFormFromArchive` does raw `URLRequest` — bypasses `AuthService.authenticatedRequest` | L429–451 |
+| #   | Severity  | Issue                                                                                       | Lines                         |
+| --- | --------- | ------------------------------------------------------------------------------------------- | ----------------------------- |
+| 1   | 🔴 High   | `phAssetToTempFile` continuation has no double-resume guard                                 | L618–641                      |
+| 2   | 🟠 Medium | `handleReupload` uses `loadTransferable` — loads full video into memory                     | L549                          |
+| 3   | 🟠 Medium | `isReuploadingVideo = false` scattered across 6 exits, no `defer`                           | L492, 496, 551, 568, 579, 602 |
+| 4   | 🟡 Low    | `handleReupload` temp file has no UUID subdirectory — filename collision risk               | L555–557                      |
+| 5   | 🟡 Low    | `parseISO8601` is now a dead wrapper — 1 line, calls `DVUDateFormatting.parseISO`           | L538–540                      |
+| 6   | 🟡 Low    | `buildFormFields()` duplicated — exact copy exists in `ChatViewModel`                       | L420–427                      |
+| 7   | 🟡 Low    | `submitFormFromArchive` does raw `URLRequest` — bypasses `AuthService.authenticatedRequest` | L429–451                      |
 
 ---
 
@@ -167,6 +167,7 @@ private func parseISO8601(_ str: String) -> Date? {
 ```
 
 **Fix:** Delete it. Replace the one call site at L477 directly:
+
 ```swift
 // L477 — before
 let capturedDate = parseISO8601(capturedAtStr)

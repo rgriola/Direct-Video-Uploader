@@ -34,6 +34,7 @@ once — first with a degraded/proxy result, then the final one. Resuming a
 > technically "local" but have a low-res cached proxy).
 
 **Fix:** Add a `resumed` guard flag:
+
 ```swift
 return await withCheckedContinuation { continuation in
     var resumed = false
@@ -71,7 +72,8 @@ failed, and the system retries endlessly with no escape hatch and no user
 feedback beyond the error banner (which may flash on/off as `loadError` is
 cleared and re-set each cycle). The spinner also keeps spinning.
 
-**Fix:** After `defer` in L229–234, only call `handleConfirm()` if loading *succeeded*:
+**Fix:** After `defer` in L229–234, only call `handleConfirm()` if loading _succeeded_:
+
 ```swift
 defer {
     isLoadingMetadata = false
@@ -107,6 +109,7 @@ If a user picks a VP9 video, the fast path will return the raw FourCC string
 ### 2 — `PHAsset.fetchAssets` called 3× for one selection
 
 For a single video pick, the same `identifier` triggers three separate fetches:
+
 1. L286 — `resolveOriginalFilename`
 2. L297 — `resolveVideoURL`
 3. L317 — `extractMetadataFromPHAsset`
@@ -136,15 +139,16 @@ low (local files are usually the original), but switching to
 formatters and a `parseISO(_:)` helper (String→Date). But **4 other files**
 still allocate their own `ISO8601DateFormatter()` instances:
 
-| File | Lines | Pattern |
-|---|---|---|
-| **VideoMetadataExtractor.swift** | L63 | `ISO8601DateFormatter().string(from: dateValue)` — new instance each call |
-| **VideoLibraryView.swift** | L327 | `ISO8601DateFormatter().string(from: $0)` — same |
-| **ChatViewModel.swift** | L39 | `private static let isoFormatter` — its own cached copy |
-| **ArchiveListView.swift** | L14, L18, L27, L32 | Local formatter + inline fallback `ISO8601DateFormatter()` |
-| **ArchiveRowView.swift** | L34, L36, L541, L543 | Same local + fallback pattern |
+| File                             | Lines                | Pattern                                                                   |
+| -------------------------------- | -------------------- | ------------------------------------------------------------------------- |
+| **VideoMetadataExtractor.swift** | L63                  | `ISO8601DateFormatter().string(from: dateValue)` — new instance each call |
+| **VideoLibraryView.swift**       | L327                 | `ISO8601DateFormatter().string(from: $0)` — same                          |
+| **ChatViewModel.swift**          | L39                  | `private static let isoFormatter` — its own cached copy                   |
+| **ArchiveListView.swift**        | L14, L18, L27, L32   | Local formatter + inline fallback `ISO8601DateFormatter()`                |
+| **ArchiveRowView.swift**         | L34, L36, L541, L543 | Same local + fallback pattern                                             |
 
 **Fix (3 steps):**
+
 1. Add a `Date→String` method to `DVUDateFormatting` (it only has `String→Date` today):
    ```swift
    static func isoString(from date: Date) -> String {
@@ -168,6 +172,7 @@ Two different library videos can share the same camera filename (e.g.
 would silently overwrite the first temp file.
 
 **Fix:** Write into a UUID-named subdirectory of `temporaryDirectory`:
+
 ```swift
 let subdir = FileManager.default.temporaryDirectory
     .appendingPathComponent(UUID().uuidString)
@@ -185,6 +190,7 @@ let tempURL = subdir.appendingPathComponent(originalName)
 that could be hundreds of MB, this can cause a visible UI hitch.
 
 **Fix:** Capture the URL and dispatch deletion to a background task:
+
 ```swift
 if url.path.hasPrefix(tempDir) {
     Task.detached(priority: .utility) {
@@ -206,16 +212,16 @@ if url.path.hasPrefix(tempDir) {
 
 ## Summary Table
 
-| # | Severity | Issue | Location |
-|---|---|---|---|
-| Bug 1 | 🔴 High | Continuation double-resume crash | L300 |
-| Bug 2 | 🔴 High | Infinite retry loop on load failure | L229 |
-| 1 | 🟠 Medium | `codecName` duplicated, VP9/MPEG-4 missing | L369, Extractor L104 |
-| 2 | 🟡 Low-Med | 3× redundant `PHAsset.fetchAssets` per pick | L286, L297, L317 |
-| 3 | 🟡 Low | `.fastFormat` may serve proxy, not original | L304 |
-| 4 | 🟡 Low | `ISO8601DateFormatter()` scattered — 5 files ignoring `DVUDateFormatting` | L327 + 4 other files |
-| 5 | 🟡 Low | Temp filename collision in `VideoTransferable` | L402 |
-| 6 | ⚪ Cosmetic | Sync `removeItem` on main thread | L274 |
+| #     | Severity    | Issue                                                                     | Location             |
+| ----- | ----------- | ------------------------------------------------------------------------- | -------------------- |
+| Bug 1 | 🔴 High     | Continuation double-resume crash                                          | L300                 |
+| Bug 2 | 🔴 High     | Infinite retry loop on load failure                                       | L229                 |
+| 1     | 🟠 Medium   | `codecName` duplicated, VP9/MPEG-4 missing                                | L369, Extractor L104 |
+| 2     | 🟡 Low-Med  | 3× redundant `PHAsset.fetchAssets` per pick                               | L286, L297, L317     |
+| 3     | 🟡 Low      | `.fastFormat` may serve proxy, not original                               | L304                 |
+| 4     | 🟡 Low      | `ISO8601DateFormatter()` scattered — 5 files ignoring `DVUDateFormatting` | L327 + 4 other files |
+| 5     | 🟡 Low      | Temp filename collision in `VideoTransferable`                            | L402                 |
+| 6     | ⚪ Cosmetic | Sync `removeItem` on main thread                                          | L274                 |
 
 ---
 

@@ -995,43 +995,50 @@ add.
 - We need a gentle way to prevent the uploader from allowing photos to be selected. Its fine for viewing.
 - The Libary view still trys to upload a photo if selected.
 
-*** Task ***
+**_ Task _**
 
 - Add a Photo View to the app
-- the photo view should contain just the footer nav bar, header, Photo as the Title,the background from Archieve View/Profile views the gradiant,  And a Placeholder text saying "Photo View" in the center.  
+- the photo view should contain just the footer nav bar, header, Photo as the Title,the background from Archieve View/Profile views the gradiant, And a Placeholder text saying "Photo View" in the center.
 - For the Nav Bar Icon use "photo.on.rectangle.angle"
-- This is a TBD feature I only need a view that I can add a text to to explain the feature. 
+- This is a TBD feature I only need a view that I can add a text to to explain the feature.
 
 .... Apr 13 2026
-*** Task ***
-- Add Admin feature to remove a user from the app. 
-- This would be a hard wipe of the user and all their data. 
-- Add the delete Toggle Button at the end of the user row in Users Panel, Add Alert and confirmation prompt.
-- This is an admin feature only. 
-- Review how to impliment this and show me a plan, I will approve then code. 
+**_ Task _**
 
+- Add Admin feature to remove a user from the app.
+- This would be a hard wipe of the user and all their data.
+- Add the delete Toggle Button at the end of the user row in Users Panel, Add Alert and confirmation prompt.
+- This is an admin feature only.
+- Review how to impliment this and show me a plan, I will approve then code.
 
 ... Apr 14 2026
-*** Task ***
+**_ Task _**
+
 - Update Dashboard, Database and iOS app to allow for organizational accounts
 - Add create a table column for enterpirse users with the following:
-- Company Name :  (50 Characters Letters only no Numbers or Special Characters), 
-- Company Code : (4 Letter Code A-Z, a-z only) 
+- Company Name : (50 Characters Letters only no Numbers or Special Characters),
+- Company Code : (4 Letter Code A-Z, a-z only)
 - Date Joined : Timestamp of when company added by admin (use server timestamp)
 
-- Add Admin feature to create and manage organizations UI has : Company Name, Company Code [Add Button], [Delete Button], [Edit Button]. Add/Delete can be a toggle button : Make sure to add a confirmation prompt for delete. Company Table should NOT be added to Nuclear Delete. 
+- Add Admin feature to create and manage organizations UI has : Company Name, Company Code [Add Button], [Delete Button], [Edit Button]. Add/Delete can be a toggle button : Make sure to add a confirmation prompt for delete. Company Table should NOT be added to Nuclear Delete.
 
-- Add company code to user table and user profile. This can be empty. 
-- Add Admin Feature to Edit User Profile to add a Company Code to a user. 
+- Add company code to user table and user profile. This can be empty.
+- Add Admin Feature to Edit User Profile to add a Company Code to a user.
 
-- iOS app login requires Company Code + Phone Number + PIN. User may be part of one Org, one phone number one org, phone numbers are always unqiue. 
-- dashboard login remains the same, but only shows user company videos. 
+- iOS app login requires Company Code + Phone Number + PIN. User may be part of one Org, one phone number one org, phone numbers are always unqiue.
+- dashboard login remains the same, but only shows user company videos.
 
-- Add User Company to user profile on iOS and Dashboard. 
-- Clips should include company name in metadata list. 
+- Add User Company to user profile on iOS and Dashboard.
+- Clips should include company name in metadata list.
 
-- Read this back to me and confirm you understand the changes. 
+- Read this back to me and confirm you understand the changes.
 
-- admins still see everything and only non-admin dashboard users see filtered results? << Yes. a non-admin should see their company's clips only, theirs + other staff.  Admins see all for now. 
+- admins still see everything and only non-admin dashboard users see filtered results? << Yes. a non-admin should see their company's clips only, theirs + other staff. Admins see all for now.
+
+..
+Enterprise Plan Apr 27 + Task.
 
 
+...
+May 9 2026 
+- 
