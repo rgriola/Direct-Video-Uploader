@@ -1,4 +1,4 @@
-// Last updated: May 9, 2026 - 6:40pm - GPT-5.3-Codex
+// Last updated: May 9, 2026 - 7:22pm - GPT-5.3-Codex
 /**
  * Upload Cleanup — Background Job (B4)
  *
@@ -19,11 +19,12 @@ import path from 'path';
 const CLEANUP_INTERVAL_MS = 5 * 60 * 1000;   // 5 minutes
 const ORPHAN_THRESHOLD_MS = 60 * 60 * 1000;  // 1 hour
 let intervalId = null;
+let cleanupLog = null;
 
 /**
  * Find and clean up orphaned UPLOADING assets.
  */
-async function cleanupOrphanedUploads() {
+async function cleanupOrphanedUploads(log = cleanupLog) {
     try {
         const cutoff = new Date(Date.now() - ORPHAN_THRESHOLD_MS);
 
@@ -40,7 +41,7 @@ async function cleanupOrphanedUploads() {
 
         if (orphanedAssets.length === 0) return;
 
-        console.log(`🧹 Upload cleanup: found ${orphanedAssets.length} orphaned UPLOADING asset(s)`);
+        log?.info({ orphanedCount: orphanedAssets.length }, 'Upload cleanup found orphaned uploading assets');
 
         for (const asset of orphanedAssets) {
             const ageMin = Math.round((Date.now() - new Date(asset.createdAt).getTime()) / 60000);
@@ -52,7 +53,7 @@ async function cleanupOrphanedUploads() {
                     const filePath = path.resolve(process.cwd(), clip.storageUrl.replace(/^\//, ''));
                     try {
                         await fs.unlink(filePath);
-                        console.log(`🧹 Deleted orphaned file: ${filePath}`);
+                        log?.info({ filePath }, 'Deleted orphaned upload file');
                     } catch {
                         // File may not exist — that's fine
                     }
@@ -65,7 +66,14 @@ async function cleanupOrphanedUploads() {
                 data: { status: 'ERROR' },
             }));
 
-            console.log(`🧹 Marked asset ${asset.mediasourceId} as ERROR (stuck ${ageMin}min, user: ${redactedUserName})`);
+            log?.warn(
+                {
+                    mediasourceId: asset.mediasourceId,
+                    ageMinutes: ageMin,
+                    userName: redactedUserName,
+                },
+                'Marked orphaned uploading asset as error'
+            );
 
             // Alert via Slack
             if (slack.isConfigured()) {
@@ -77,19 +85,23 @@ async function cleanupOrphanedUploads() {
             }
         }
     } catch (err) {
-        console.error('🧹 Upload cleanup error:', err.message);
+        log?.error({ err: { message: err.message } }, 'Upload cleanup job failed');
     }
 }
 
 /**
  * Start the periodic cleanup job.
  */
-export function startUploadCleanup() {
+export function startUploadCleanup(fastify) {
     if (intervalId) return;
-    console.log('🧹 Upload cleanup job started (every 5 min, orphan threshold: 1 hour)');
-    intervalId = setInterval(cleanupOrphanedUploads, CLEANUP_INTERVAL_MS);
+    cleanupLog = fastify?.log ?? null;
+    cleanupLog?.info(
+        { intervalMinutes: 5, orphanThresholdMinutes: 60 },
+        'Upload cleanup worker started'
+    );
+    intervalId = setInterval(() => cleanupOrphanedUploads(cleanupLog), CLEANUP_INTERVAL_MS);
     // Run once immediately on startup
-    cleanupOrphanedUploads();
+    cleanupOrphanedUploads(cleanupLog);
 }
 
 /**
@@ -99,5 +111,6 @@ export function stopUploadCleanup() {
     if (intervalId) {
         clearInterval(intervalId);
         intervalId = null;
+        cleanupLog?.info('Upload cleanup worker stopped');
     }
 }

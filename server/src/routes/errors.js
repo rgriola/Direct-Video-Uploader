@@ -1,4 +1,4 @@
-// Last updated: May 9, 2026 - 6:11pm
+// Last updated: May 9, 2026 - 7:35pm - GPT-5.3-Codex
 /**
  * Error logging routes — Persist errors from iOS, server, dashboard.
  * Future: trigger text/email notifications for CRITICAL errors.
@@ -45,7 +45,17 @@ export default async function errorRoutes(fastify) {
         //   await sendNotification(request.user, errorLog);
         // }
 
-        console.log(`⚠️ [ErrorLog][${requestId}] ${severity || 'WARNING'} — ${source}/${category}: ${message}`);
+        request.log.warn(
+            {
+                requestId,
+                severity: severity?.toUpperCase() || 'WARNING',
+                source,
+                category,
+                messageLength: String(message).length,
+                assetId: assetId || null,
+            },
+            'Client error log captured'
+        );
 
         return { errorLog: { id: errorLog.id, createdAt: errorLog.createdAt } };
     });

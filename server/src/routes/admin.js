@@ -1,4 +1,4 @@
-// Last updated: May 9, 2026 - 5:59pm
+// Last updated: May 9, 2026 - 7:34pm - GPT-5.3-Codex
 /**
  * Admin routes — Dashboard data, user management, asset overview.
  * All data is LIVE — no simulated actions.
@@ -7,6 +7,7 @@ import { Prisma } from '@prisma/client';
 import prisma from '../lib/prisma.js';
 import { hashPin } from '../lib/utils.js';
 import { deleteMuxAsset, isMuxEnabled } from '../lib/mux.js';
+import { redactCompanyCode, redactPersonName, redactPhoneNumber } from '../lib/redact.js';
 
 export default async function adminRoutes(fastify) {
 
@@ -208,7 +209,7 @@ export default async function adminRoutes(fastify) {
      */
     fastify.post('/api/admin/cleanup-assets', {
         preHandler: [fastify.authenticate],
-    }, async () => {
+    }, async (request) => {
         // Find UPLOADING assets with 0 clips using Prisma ORM
         const staleAssets = await prisma.asset.findMany({
             where: {
@@ -234,7 +235,10 @@ export default async function adminRoutes(fastify) {
             where: { id: { in: ids } },
         });
 
-        console.log(`🧹 Cleaned ${ids.length} stale UPLOADING assets:`, ids.map(id => id.slice(0, 8)));
+        request.log.info(
+            { cleanedCount: ids.length, assetIdPrefixes: ids.map(id => id.slice(0, 8)) },
+            'Cleaned stale uploading assets'
+        );
 
         return {
             cleaned: ids.length,
@@ -284,7 +288,14 @@ export default async function adminRoutes(fastify) {
             },
         });
 
-        console.log(`👤 Admin created user: ${name} (${phoneNumber})${companyCode ? ` [${companyCode}]` : ''}`);
+        request.log.info(
+            {
+                userName: redactPersonName(name),
+                phoneNumber: redactPhoneNumber(phoneNumber),
+                companyCode: redactCompanyCode(companyCode),
+            },
+            'Admin created user'
+        );
 
         return {
             user: {
@@ -339,7 +350,15 @@ export default async function adminRoutes(fastify) {
             await prisma.$executeRaw`ALTER SEQUENCE IF EXISTS mediasource_id_seq RESTART WITH 100000001`;
         } catch { /* sequence may not exist — safe to ignore */ }
 
-        console.log(`☢️  Nuclear reset by admin — ${assetDeleted.count} assets, ${clipDeleted.count} clips, ${results.muxDeleted} Mux assets deleted`);
+        request.log.warn(
+            {
+                assetCount: assetDeleted.count,
+                clipCount: clipDeleted.count,
+                muxDeleted: results.muxDeleted,
+                muxFailed: results.muxFailed,
+            },
+            'Admin performed nuclear reset'
+        );
 
         return {
             message: 'Nuclear reset complete — all data wiped except users',
@@ -408,7 +427,10 @@ export default async function adminRoutes(fastify) {
                     counts.localFiles++;
                 } catch (err) {
                     if (err.code !== 'ENOENT') {
-                        console.warn(`🗑️ Failed to delete ${clip.storageUrl}:`, err.message);
+                        request.log.warn(
+                            { storageUrl: clip.storageUrl, err: { message: err.message } },
+                            'Failed to delete local clip file during user delete'
+                        );
                     }
                 }
             }
@@ -423,7 +445,16 @@ export default async function adminRoutes(fastify) {
         // 5. Delete the user record
         await prisma.user.delete({ where: { id } });
 
-        console.log(`🗑️ Admin deleted user: ${target.name} (${target.phoneNumber}) — ${assetDeleted.count} assets, ${counts.muxAssets} Mux assets`);
+        request.log.warn(
+            {
+                userName: redactPersonName(target.name),
+                phoneNumber: redactPhoneNumber(target.phoneNumber),
+                assetCount: assetDeleted.count,
+                muxAssetCount: counts.muxAssets,
+                localFileCount: counts.localFiles,
+            },
+            'Admin deleted user and associated data'
+        );
 
         return {
             message: `User ${target.name} deleted with all associated data`,
@@ -496,7 +527,10 @@ export default async function adminRoutes(fastify) {
             },
         });
 
-        console.log(`🏢 Admin created org: ${org.companyName} (${org.companyCode})`);
+        request.log.info(
+            { companyName: org.companyName, companyCode: org.companyCode },
+            'Admin created organization'
+        );
 
         return {
             organization: {
@@ -582,7 +616,10 @@ export default async function adminRoutes(fastify) {
             return org;
         });
 
-        console.log(`🏢 Admin updated org: ${updated.companyName} (${updated.companyCode})`);
+        request.log.info(
+            { companyName: updated.companyName, companyCode: updated.companyCode },
+            'Admin updated organization'
+        );
 
         return {
             organization: {
@@ -621,7 +658,10 @@ export default async function adminRoutes(fastify) {
 
         await prisma.organization.delete({ where: { companyCode: code } });
 
-        console.log(`🏢 Admin deleted org: ${org.companyName} (${org.companyCode})`);
+        request.log.warn(
+            { companyName: org.companyName, companyCode: org.companyCode },
+            'Admin deleted organization'
+        );
 
         return { message: `Deleted organization ${org.companyName} (${org.companyCode})` };
     });
@@ -672,7 +712,14 @@ export default async function adminRoutes(fastify) {
             include: { organization: true },
         });
 
-        console.log(`✏️ Admin edited user: ${updated.name} (${updated.phoneNumber}) — ${JSON.stringify(data)}`);
+        request.log.info(
+            {
+                userName: redactPersonName(updated.name),
+                phoneNumber: redactPhoneNumber(updated.phoneNumber),
+                changedFields: Object.keys(data),
+            },
+            'Admin edited user profile'
+        );
 
         return {
             user: {

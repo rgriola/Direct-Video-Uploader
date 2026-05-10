@@ -1,4 +1,4 @@
-// Last updated: May 9, 2026 - 5:59pm
+// Last updated: May 9, 2026 - 7:19pm - GPT-5.3-Codex
 /**
  * Mux Webhook Routes
  *
@@ -33,13 +33,13 @@ export default async function muxWebhookRoutes(fastify) {
     }, async (request, reply) => {
         // ─── Signature Verification ───────────────────────────────
         if (!MUX_WEBHOOK_SECRET) {
-            console.error('🛑 MUX_WEBHOOK_SECRET missing — rejecting webhook');
+            request.log.error('MUX_WEBHOOK_SECRET missing — rejecting webhook');
             return reply.status(500).send({ error: 'Webhook signature verification not configured' });
         }
 
         const signature = request.headers['mux-signature'];
         if (!signature) {
-            console.warn('🎬 Mux webhook missing Mux-Signature header — rejected');
+            request.log.warn('Mux webhook missing signature header');
             return reply.status(401).send({ error: 'Missing signature' });
         }
 
@@ -49,7 +49,7 @@ export default async function muxWebhookRoutes(fastify) {
                 : (typeof request.body === 'string' ? request.body : JSON.stringify(request.body));
             muxClient.webhooks.verifySignature(rawBody, { 'mux-signature': signature }, MUX_WEBHOOK_SECRET);
         } catch (err) {
-            console.warn('🎬 Mux webhook signature verification failed:', err.message);
+            request.log.warn({ err: { message: err.message } }, 'Mux webhook signature verification failed');
             return reply.status(401).send({ error: 'Invalid signature' });
         }
 
@@ -64,7 +64,7 @@ export default async function muxWebhookRoutes(fastify) {
         const eventType = event?.type;
         const eventData = event?.data;
 
-        console.log(`🎬 Mux webhook: ${eventType}`);
+        request.log.info({ eventType }, 'Mux webhook received');
 
         switch (eventType) {
             // Upload completed → Mux created an asset. Store the asset ID on our clip.
@@ -84,7 +84,7 @@ export default async function muxWebhookRoutes(fastify) {
                         where: { id: clip.id },
                         data: { muxAssetId },
                     }));
-                    console.log(`🎬 Mux asset ${muxAssetId} linked to clip ${clip.id}`);
+                    request.log.info({ muxAssetId, clipId: clip.id }, 'Linked mux asset to clip');
                 }
                 break;
             }
@@ -102,7 +102,7 @@ export default async function muxWebhookRoutes(fastify) {
                 const muxPlaybackId = publicPlayback?.id;
 
                 if (!muxPlaybackId) {
-                    console.warn(`🎬 Mux asset ${muxAssetId} ready but no public playback ID`);
+                    request.log.warn({ muxAssetId }, 'Mux asset ready without public playback ID');
                     break;
                 }
 
@@ -138,7 +138,7 @@ export default async function muxWebhookRoutes(fastify) {
                         },
                     }));
 
-                    console.log(`🎬 Mux ready: clip ${clip.id} → playbackId ${muxPlaybackId}`);
+                    request.log.info({ clipId: clip.id, muxPlaybackId }, 'Mux asset ready');
 
                     // ─── Temp file cleanup ────────────────────────────────
                     // Delete local file now that Mux has the video
@@ -146,11 +146,14 @@ export default async function muxWebhookRoutes(fastify) {
                         const localPath = path.resolve(process.cwd(), clip.storageUrl.slice(1));
                         try {
                             await fs.unlink(localPath);
-                            console.log(`🗑️ Deleted local file: ${clip.storageUrl}`);
+                            request.log.info({ storageUrl: clip.storageUrl }, 'Deleted local clip file after mux ready');
                         } catch (unlinkErr) {
                             // File may already be gone (Render ephemeral disk) — that's OK
                             if (unlinkErr.code !== 'ENOENT') {
-                                console.warn(`🗑️ Failed to delete ${clip.storageUrl}:`, unlinkErr.message);
+                                request.log.warn(
+                                    { storageUrl: clip.storageUrl, err: { message: unlinkErr.message } },
+                                    'Failed to delete local clip file after mux ready'
+                                );
                             }
                         }
                     }
@@ -190,7 +193,7 @@ export default async function muxWebhookRoutes(fastify) {
                         }
                     }
                 } else {
-                    console.warn(`🎬 Mux asset ${muxAssetId} ready but no matching clip found`);
+                    request.log.warn({ muxAssetId }, 'Mux asset ready but no matching clip found');
                 }
                 break;
             }
@@ -200,7 +203,7 @@ export default async function muxWebhookRoutes(fastify) {
                 const muxAssetId = eventData?.id;
                 const errors = eventData?.errors;
 
-                console.error(`🎬 Mux asset ${muxAssetId} errored:`, errors);
+                request.log.error({ muxAssetId, errors }, 'Mux asset errored');
 
                 const clip = await dbRetry(() =>
                     prisma.clip.findFirst({ where: { muxAssetId } })
@@ -221,7 +224,7 @@ export default async function muxWebhookRoutes(fastify) {
 
             default:
                 // Log unhandled event types for debugging
-                console.log(`🎬 Mux webhook (unhandled): ${eventType}`);
+                request.log.info({ eventType }, 'Mux webhook event unhandled');
         }
 
         // Always return 200 so Mux doesn't retry

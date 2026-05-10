@@ -1,4 +1,4 @@
-// Last updated: May 9, 2026 - 6:07pm
+// Last updated: May 9, 2026 - 7:19pm - GPT-5.3-Codex
 /**
  * Clip Viewer — Authenticated page to view a video clip with metadata.
  * Requires cookie-based auth (phone + PIN + company code).
@@ -7,6 +7,7 @@
 import prisma from '../lib/prisma.js';
 import { MUX_ENV_KEY } from '../lib/mux.js';
 import { verifyPin, hashPin, dbRetry } from '../lib/utils.js';
+import { redactCompanyCode, redactPersonName, redactPhoneNumber } from '../lib/redact.js';
 
 /** Escape HTML special characters to prevent XSS (#5). */
 function escapeHtml(str) {
@@ -198,7 +199,14 @@ ${googleFontsHead}
         const isSecure = request.protocol === 'https';
         reply.setCookie(COOKIE_NAME, token, cookieOpts(isSecure));
 
-        console.log(`🔐 Clip login: ${user.name} (${user.phoneNumber}) [${user.companyCode}]`);
+        request.log.info(
+            {
+                userName: redactPersonName(user.name),
+                phoneNumber: redactPhoneNumber(user.phoneNumber),
+                companyCode: redactCompanyCode(user.companyCode),
+            },
+            'Clip viewer login success'
+        );
 
         // Redirect to the clip they wanted to view
         return reply.redirect(redirectTo.startsWith('/clips/') ? redirectTo : '/clips/login');

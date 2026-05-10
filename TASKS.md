@@ -1,6 +1,6 @@
 # Fixer — Enterprise Readiness Tasks
 
-> Last audit sync: May 9, 2026 - 7:00pm - GPT-5.3-Codex
+> Last audit sync: May 9, 2026 - 8:49pm - GPT-5.3-Codex
 
 > Companion to [ENTERPRISE_READINESS_PLAN.md](ENTERPRISE_READINESS_PLAN.md).
 > Check items off as you complete them. Each task should be a single PR.
@@ -127,7 +127,7 @@
 - [ ] Add per-user limits on authenticated routes
 - [ ] Add `X-RateLimit-*` response headers
 - [ ] WebSocket throttling (10 msgs / 10s)
-- [ ] Mux upload creation: 5/hour per user
+- [ ] Mux upload creation: 10/hour per user - We will be using multiple clip uploads soon so this may no longer work. 
 
 ---
 
@@ -177,15 +177,15 @@
 - [ ] `DELETE /api/admin/users/:id` (soft delete)
 - [ ] Admin dashboard: invite/suspend/delete UI
 
-### 2.5 Transactional Email
+### 2.5 Transactional Email 
 
-- [ ] Pick provider (Resend / SES / Postmark)
-- [ ] Create `server/src/lib/email.js`
+- [ ] Pick provider (Resend / SES / Postmark) 
+- [ ] Create `server/src/lib/email.js` 
 - [ ] Set up SPF, DKIM, DMARC for `ms-fixer.com`
 - [ ] Build templates (invite, reset, security-alert, MFA-disabled)
 - [ ] Bounce webhook handling
 - [ ] Unsubscribe link on non-transactional emails
-- [ ] Per-recipient send rate limit (5/hour)
+- [ ] Per-recipient send rate limit (5/hour) 
 
 ---
 
@@ -213,7 +213,7 @@
 - [ ] `POST /api/admin/assets/:id/restore` (SUPER_ADMIN only)
 - [ ] Purge job: hard delete past retention window
 - [ ] Per-org `dataRetentionDays`
-- [ ] Mux asset deletion at hard-purge time
+- [ ] Mux asset deletion at hard-purge time 
 
 ### 3.3 GDPR / CCPA Endpoints
 
@@ -268,13 +268,13 @@
 - [ ] Crash reporting + breadcrumbs
 - [ ] PII scrubbing config
 
-### 4.5 Feature Flags
+### 4.5 Feature Flags - Skip this 
 
-- [ ] Pick provider (Unleash / LaunchDarkly / PostHog)
-- [ ] Create `server/src/lib/flags.js`
+- [ ] Pick provider (Unleash / LaunchDarkly / PostHog) - skip
+- [ ] Create `server/src/lib/flags.js` 
 - [ ] Wrap risky changes (SSO, MFA, retention purge, transcription)
-- [ ] iOS: launch-time flag fetch + foreground refresh
-- [ ] Admin dashboard: SUPER_ADMIN flag toggle UI
+- [ ] iOS: launch-time flag fetch + foreground refresh 
+- [ ] Admin dashboard: SUPER_ADMIN flag toggle UI 
 
 ---
 
@@ -363,12 +363,12 @@
 
 ### 7.1 Server Unit Tests
 
-- [ ] `lib/utils.js`
-- [ ] `lib/mux.js` (mocked SDK)
-- [ ] `lib/slack.js` (mocked HTTP)
+- [x] `lib/utils.js`
+- [x] `lib/mux.js` (mocked SDK)
+- [x] `lib/slack.js` (mocked HTTP)
 - [ ] `lib/audit.js`
-- [ ] `jobs/mux-sync.js`
-- [ ] `jobs/upload-cleanup.js`
+- [x] `jobs/mux-sync.js`
+- [x] `jobs/upload-cleanup.js`
 
 ### 7.2 Server Integration Tests
 
@@ -376,7 +376,7 @@
 - [ ] Assets: full lifecycle
 - [ ] Admin: user CRUD, role checks, pagination
 - [ ] Clips: form submit, status, viewer auth
-- [ ] Webhooks: Mux signature, ready, error
+- [x] Webhooks: Mux signature, ready, error
 - [ ] Rate limiting (verify 429)
 - [ ] RBAC matrix (each role × each endpoint)
 

@@ -1,4 +1,4 @@
-// Last updated: May 9, 2026 - 6:11pm
+// Last updated: May 9, 2026 - 7:20pm - GPT-5.3-Codex
 /**
  * WebSocket handler — Socket.IO event management.
  * Handles real-time communication between the iOS app and server.
@@ -7,6 +7,7 @@ import crypto from 'node:crypto';
 import prisma from '../lib/prisma.js';
 import * as slack from '../lib/slack.js';
 import { PUBLIC_URL } from '../lib/config.js';
+import { redactPersonName } from '../lib/redact.js';
 
 /** Greeting templates — `{time}` is replaced with time-of-day, `{name}` with first name. */
 const GREETINGS = [
@@ -77,7 +78,7 @@ function getTip() {
  * Handle a Slack command — parse #channels and @mentions, post via Slack API,
  * persist to DB, and send confirmation/error bubble back to iOS.
  */
-async function handleSlackCommand(socket, userId, assetId, channels, mentions, originalText) {
+async function handleSlackCommand(socket, userId, assetId, channels, mentions, originalText, log) {
     const now = new Date().toISOString();
     const correlation = { requestId: `ws:${socket.id}` };
 
@@ -97,7 +98,7 @@ async function handleSlackCommand(socket, userId, assetId, channels, mentions, o
             },
         });
     } catch (dbErr) {
-        console.error('DB write failed (slack command):', dbErr.message);
+        log.error({ err: { message: dbErr.message } }, 'DB write failed for slack command');
     }
 
     // Check if Slack is configured
@@ -141,7 +142,7 @@ async function handleSlackCommand(socket, userId, assetId, channels, mentions, o
             }
         }
     } catch (err) {
-        console.error('Failed to look up asset for Slack:', err.message);
+        log.error({ err: { message: err.message } }, 'Failed to look up asset for slack command');
     }
 
     // No asset found — tell user to upload first
@@ -180,13 +181,13 @@ async function handleSlackCommand(socket, userId, assetId, channels, mentions, o
         slug: asset?.formResponse?.slug,
         capturedAt: asset?.clips?.[0]?.capturedAt,
     });
-    console.log(`📣 Slack post for #${mediasourceId}: slug="${asset?.formResponse?.slug || '(none)'}"`);
+    log.info({ mediasourceId, hasSlug: !!asset?.formResponse?.slug }, 'Prepared slack post payload');
 
     const results = [];
 
     // Post to each #channel
     for (const ch of channels) {
-        console.log(`📣 Posting to #${ch} for ${socket.userName}`);
+        log.info({ channel: `#${ch}` }, 'Posting slack channel message');
         const result = await slack.postToChannel(ch, msgText, blocks, correlation);
         results.push({ type: 'channel', target: `#${ch}`, ...result });
     }
@@ -194,7 +195,7 @@ async function handleSlackCommand(socket, userId, assetId, channels, mentions, o
     // Send DM to each @mention (only if not also posting to a channel — avoids double-notify)
     if (channels.length === 0) {
         for (const name of mentions) {
-            console.log(`📨 DM to @${name} for ${socket.userName}`);
+            log.info({ mention: `@${name}` }, 'Posting slack direct message');
             const result = await slack.postDM(name, msgText, blocks, correlation);
             results.push({ type: 'dm', target: `@${name}`, ...result });
         }
@@ -239,6 +240,8 @@ async function handleSlackCommand(socket, userId, assetId, channels, mentions, o
 }
 
 export function setupWebSocket(io, fastify) {
+    const log = fastify.log;
+
     // Track which sockets belong to which user
     const userSockets = new Map(); // userId → Set<socketId>
     fastify.decorate('userSockets', userSockets);
@@ -255,7 +258,7 @@ export function setupWebSocket(io, fastify) {
 
     // Log Engine.IO-level connection errors (upgrade failures, transport issues)
     io.engine.on('connection_error', (err) => {
-        console.error('🔌 [Engine.IO] Connection error:', err.message, err.context || '');
+        log.error({ err: { message: err.message }, context: err.context || null }, 'Engine.IO connection error');
     });
 
     io.use(async (socket, next) => {
@@ -264,7 +267,7 @@ export function setupWebSocket(io, fastify) {
                 || socket.handshake.headers?.authorization?.replace('Bearer ', '');
 
             if (!token) {
-                console.warn('🔐 [WS Auth] No token provided — rejecting connection');
+                log.warn({ socketId: socket.id }, 'WS auth rejected: no token provided');
                 return next(new Error('Authentication required'));
             }
 
@@ -280,7 +283,7 @@ export function setupWebSocket(io, fastify) {
             socket.deviceModel = socket.handshake.auth?.deviceModel || null;
             next();
         } catch (err) {
-            console.warn(`🔐 [WS Auth] Token verification failed: ${err.message}`);
+            log.warn({ err: { message: err.message }, socketId: socket.id }, 'WS auth rejected: token verification failed');
             next(new Error('Invalid token'));
         }
     });
@@ -311,7 +314,16 @@ export function setupWebSocket(io, fastify) {
             const allUserSockets = userSockets.get(userId) ?? new Set();
             const iosCountForUser = [...allUserSockets].filter(id => iosSockets.has(id)).length;
             const deviceLabel = socket.deviceName ? ` on ${socket.deviceName} (${socket.deviceModel || 'iOS'})` : '';
-            console.log(`✅ iOS connected: ${socket.userName}${deviceLabel} — iOS clients: ${iosSockets.size}, user iOS sockets: ${iosCountForUser}`);
+            log.info(
+                {
+                    userName: redactPersonName(socket.userName),
+                    deviceName: socket.deviceName || null,
+                    deviceModel: socket.deviceModel || null,
+                    iosClients: iosSockets.size,
+                    userIosSockets: iosCountForUser,
+                },
+                'iOS socket connected'
+            );
 
             // Greet every iOS device — multiple phones uploading is a feature
             const firstName = (socket.userName || '').split(' ')[0] || socket.userName;
@@ -348,14 +360,20 @@ export function setupWebSocket(io, fastify) {
          * video:upload — Client signals a video upload is starting.
          */
         socket.on('video:upload', async (data) => {
-            console.log(`📹 Upload started by ${socket.userName}:`, data);
+            log.info(
+                {
+                    userName: redactPersonName(socket.userName),
+                    assetId: data?.assetId || null,
+                },
+                'Websocket upload start event received'
+            );
 
             // Cancel any pending debounced auto-reply — user is uploading
             const pending = pendingReplies.get(userId);
             if (pending) {
                 clearTimeout(pending.timer);
                 pendingReplies.delete(userId);
-                console.log(`⏱️ Cancelled debounced reply for ${socket.userName} (upload started)`);
+                log.debug({ userName: redactPersonName(socket.userName) }, 'Cancelled pending debounced auto-reply on upload start');
             }
 
             // The actual file upload happens over HTTP (multipart).
@@ -385,7 +403,14 @@ export function setupWebSocket(io, fastify) {
 
                 if (!sanitized) return; // Drop empty messages
 
-                console.log(`💬 Message from ${socket.userName}: ${sanitized}`);
+                log.info(
+                    {
+                        userName: redactPersonName(socket.userName),
+                        messageLength: sanitized.length,
+                        assetId: assetId || null,
+                    },
+                    'Websocket message received'
+                );
 
                 // ─── Slack command detection ───
                 const trimmed = sanitized;
@@ -394,7 +419,7 @@ export function setupWebSocket(io, fastify) {
                 const isSlackCommand = channels.length > 0 || mentions.length > 0;
 
                 if (isSlackCommand) {
-                    await handleSlackCommand(socket, userId, assetId, channels, mentions, trimmed);
+                    await handleSlackCommand(socket, userId, assetId, channels, mentions, trimmed, log);
                     return; // Skip auto-reply for Slack commands
                 }
 
@@ -410,7 +435,7 @@ export function setupWebSocket(io, fastify) {
                         },
                     });
                 } catch (dbErr) {
-                    console.error('DB write failed (outgoing):', dbErr.message);
+                    log.error({ err: { message: dbErr.message } }, 'DB write failed for outgoing websocket message');
                 }
 
                 // Debounced auto-reply — tolerate rapid-fire texts, consolidate into one reply
@@ -448,7 +473,7 @@ export function setupWebSocket(io, fastify) {
                     }, DEBOUNCE_MS);
                 }
             } catch (err) {
-                console.error('message:send error:', err);
+                log.error({ err }, 'message:send websocket handler failed');
             }
         });
 
@@ -477,7 +502,10 @@ export function setupWebSocket(io, fastify) {
 
             // Only log iOS disconnects (admin churn is silent)
             if (wasIos) {
-                console.log(`❌ IOS disconnected: ${socket.userName} — iOS: ${iosSockets.size}`);
+                log.info(
+                    { userName: redactPersonName(socket.userName), iosClients: iosSockets.size },
+                    'iOS socket disconnected'
+                );
             }
         });
     });

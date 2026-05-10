@@ -87,7 +87,7 @@ Installs dependencies for `server/` and `admin/`, pushes Prisma schema, generate
 
 ### 2. Run Everything
 
-```bash
+```bash run from root 
 npm run dev
 ```
 

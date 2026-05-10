@@ -1,4 +1,4 @@
-// Last updated: May 9, 2026 - 6:11pm
+// Last updated: May 9, 2026 - 7:21pm - GPT-5.3-Codex
 /**
  * Mux Status Sync — Background Job
  *
@@ -17,12 +17,14 @@ import * as slack from '../lib/slack.js';
 const SYNC_INTERVAL_MS = 2 * 60 * 1000;  // 2 minutes
 const STALE_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes before alerting
 let intervalId = null;
+let syncLog = null;
 
 /**
  * Check all PROCESSING clips and sync status from Mux.
  */
 async function syncProcessingClips(fastify) {
     if (!isMuxEnabled) return;
+    const log = fastify.log;
     const io = fastify.io;
     const userSockets = fastify.userSockets;
 
@@ -38,7 +40,7 @@ async function syncProcessingClips(fastify) {
 
         if (stuckClips.length === 0) return;
 
-        console.log(`🔄 Mux sync: checking ${stuckClips.length} PROCESSING clip(s)`);
+        log.info({ clipCount: stuckClips.length }, 'Mux sync checking processing clips');
 
         for (const clip of stuckClips) {
             const age = Date.now() - new Date(clip.createdAt).getTime();
@@ -53,7 +55,7 @@ async function syncProcessingClips(fastify) {
                         data: { muxAssetId: upload.asset_id },
                     }));
                     clip.muxAssetId = upload.asset_id;
-                    console.log(`🔄 Mux sync: linked asset ${upload.asset_id} to clip ${clip.id}`);
+                    log.info({ clipId: clip.id, muxAssetId: upload.asset_id }, 'Mux sync linked asset to clip');
                 }
             }
 
@@ -76,7 +78,10 @@ async function syncProcessingClips(fastify) {
                             data: { status: 'READY' },
                         }));
 
-                        console.log(`🔄 Mux sync: clip ${clip.id} (#${clip.asset.mediasourceId}) → READY (was stuck ${ageMin}min)`);
+                        log.info(
+                            { clipId: clip.id, mediasourceId: clip.asset.mediasourceId, ageMinutes: ageMin },
+                            'Mux sync moved clip to ready'
+                        );
 
                         // Notify only the asset owner (not all clients)
                         const ownerSockets = userSockets?.get(clip.asset.userId);
@@ -116,7 +121,7 @@ async function syncProcessingClips(fastify) {
                         data: { status: 'ERROR' },
                     }));
 
-                    console.error(`🔄 Mux sync: clip ${clip.id} (#${clip.asset.mediasourceId}) → ERROR`);
+                    log.error({ clipId: clip.id, mediasourceId: clip.asset.mediasourceId }, 'Mux sync moved clip to error');
 
                     // Alert via Slack
                     if (slack.isConfigured()) {
@@ -128,11 +133,22 @@ async function syncProcessingClips(fastify) {
                     }
                 } else if (age > STALE_THRESHOLD_MS) {
                     // Still processing after threshold — log warning (only once per cycle)
-                    console.warn(`🔄 Mux sync: clip ${clip.id} (#${clip.asset.mediasourceId}) still processing after ${ageMin}min (Mux status: ${muxAsset?.status || 'unknown'})`);
+                    log.warn(
+                        {
+                            clipId: clip.id,
+                            mediasourceId: clip.asset.mediasourceId,
+                            ageMinutes: ageMin,
+                            muxStatus: muxAsset?.status || 'unknown',
+                        },
+                        'Mux sync clip still processing past stale threshold'
+                    );
                 }
             } else if (age > 15 * 60 * 1000) {
                 // No muxAssetId after 15 min — upload never completed, mark as ERROR
-                console.error(`🔄 Mux sync: clip ${clip.id} (#${clip.asset.mediasourceId}) has no Mux asset after ${ageMin}min — marking ERROR`);
+                log.error(
+                    { clipId: clip.id, mediasourceId: clip.asset.mediasourceId, ageMinutes: ageMin },
+                    'Mux sync clip missing mux asset past timeout; marking error'
+                );
                 await dbRetry(() => prisma.clip.update({
                     where: { id: clip.id },
                     data: { status: 'ERROR' },
@@ -150,11 +166,14 @@ async function syncProcessingClips(fastify) {
                 }
             } else if (age > STALE_THRESHOLD_MS) {
                 // No muxAssetId but under 30min — still waiting
-                console.warn(`🔄 Mux sync: clip ${clip.id} (#${clip.asset.mediasourceId}) has no Mux asset after ${ageMin}min`);
+                log.warn(
+                    { clipId: clip.id, mediasourceId: clip.asset.mediasourceId, ageMinutes: ageMin },
+                    'Mux sync clip still waiting for mux asset id'
+                );
             }
         }
     } catch (err) {
-        console.error('🔄 Mux sync error:', err.message);
+        log.error({ err: { message: err.message } }, 'Mux sync job failed');
     }
 }
 
@@ -162,7 +181,7 @@ async function syncProcessingClips(fastify) {
  * Backfill READY clips that are missing muxPlaybackId.
  * These clips were marked READY before playback data was saved.
  */
-async function backfillMissingPlaybackIds() {
+async function backfillMissingPlaybackIds(log) {
     if (!isMuxEnabled) return;
 
     try {
@@ -173,7 +192,7 @@ async function backfillMissingPlaybackIds() {
 
         if (clips.length === 0) return;
 
-        console.log(`🔄 Mux backfill: ${clips.length} READY clip(s) missing playbackId`);
+        log.info({ clipCount: clips.length }, 'Mux backfill checking ready clips missing playback id');
 
         for (const clip of clips) {
             let assetId = clip.muxAssetId;
@@ -198,12 +217,12 @@ async function backfillMissingPlaybackIds() {
                         where: { id: clip.id },
                         data: { muxPlaybackId: playbackId, streamUrl, thumbnailUrl },
                     }));
-                    console.log(`🔄 Mux backfill: clip ${clip.id} → playbackId: ${playbackId}`);
+                    log.info({ clipId: clip.id, muxPlaybackId: playbackId }, 'Mux backfill wrote playback id');
                 }
             }
         }
     } catch (err) {
-        console.error('🔄 Mux backfill error:', err.message);
+        log.error({ err: { message: err.message } }, 'Mux backfill job failed');
     }
 }
 
@@ -212,8 +231,11 @@ async function backfillMissingPlaybackIds() {
  * @param {import('socket.io').Server} io — Socket.IO server for push notifications
  */
 export function startMuxSync(fastify) {
+    const log = fastify.log;
+    syncLog = log;
+
     if (!isMuxEnabled) {
-        console.log('⏭️  Mux sync skipped — Mux not configured');
+        log.info('Mux sync skipped because mux is not configured');
         return;
     }
 
@@ -221,11 +243,11 @@ export function startMuxSync(fastify) {
     setTimeout(() => syncProcessingClips(fastify), 10_000);
 
     // Backfill READY clips missing playback data (one-time on boot)
-    setTimeout(() => backfillMissingPlaybackIds(), 15_000);
+    setTimeout(() => backfillMissingPlaybackIds(log), 15_000);
 
     // Then run on interval
     intervalId = setInterval(() => syncProcessingClips(fastify), SYNC_INTERVAL_MS);
-    console.log(`[Background Worker] Working for the man... 🔄 checking PROCESSING clips every ${SYNC_INTERVAL_MS / 1000}s`);
+    log.info({ intervalSeconds: SYNC_INTERVAL_MS / 1000 }, 'Mux sync worker started');
 }
 
 /** Stop the sync loop (called during graceful shutdown). */
@@ -233,6 +255,6 @@ export function stopMuxSync() {
     if (intervalId) {
         clearInterval(intervalId);
         intervalId = null;
-        console.log('🔄 Mux sync stopped');
+        syncLog?.info('Mux sync stopped');
     }
 }

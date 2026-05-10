@@ -1,4 +1,4 @@
-// Last updated: May 9, 2026 - 6:40pm - GPT-5.3-Codex
+// Last updated: May 9, 2026 - 7:22pm - GPT-5.3-Codex
 /**
  * Fixer — Server Entry Point
  *
@@ -520,7 +520,7 @@ const start = async () => {
 
         // Start background jobs
         startMuxSync(fastify);
-        startUploadCleanup();
+        startUploadCleanup(fastify);
     } catch (err) {
         fastify.log.error(err);
         process.exit(1);

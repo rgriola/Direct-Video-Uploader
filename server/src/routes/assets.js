@@ -1,4 +1,4 @@
-// Last updated: May 9, 2026 - 6:40pm - GPT-5.3-Codex
+// Last updated: May 9, 2026 - 7:18pm - GPT-5.3-Codex
 /**
  * Asset routes — Create, upload, retrieve, submit form.
  */
@@ -92,12 +92,21 @@ export default async function assetRoutes(fastify) {
             try {
                 upload = await getMuxUpload(existingClip.muxUploadId);
             } catch (err) {
-                console.warn(`🎬 Could not fetch Mux upload ${existingClip.muxUploadId}: ${err.message}`);
+                request.log.warn(
+                    {
+                        muxUploadId: existingClip.muxUploadId,
+                        err: { message: err.message },
+                    },
+                    'Could not fetch Mux upload status'
+                );
             }
 
             // Only reuse if Mux upload is still in 'waiting' state (accepting bytes)
             if (upload?.url && upload.status === 'waiting') {
-                console.log(`🎬 Reusing existing PROCESSING clip ${existingClip.id} for asset #${asset.mediasourceId}`);
+                request.log.info(
+                    { clipId: existingClip.id, mediasourceId: asset.mediasourceId },
+                    'Reusing existing processing clip upload'
+                );
                 return {
                     uploadUrl: upload.url,
                     clipId: existingClip.id,
@@ -106,7 +115,14 @@ export default async function assetRoutes(fastify) {
             }
             // Upload expired, cancelled, timed-out, errored, or already used —
             // delete the stale clip and create a fresh one below
-            console.log(`🎬 Mux upload ${existingClip.muxUploadId} status: ${upload?.status ?? 'unknown'} — creating fresh upload for asset #${asset.mediasourceId}`);
+            request.log.info(
+                {
+                    muxUploadId: existingClip.muxUploadId,
+                    muxUploadStatus: upload?.status ?? 'unknown',
+                    mediasourceId: asset.mediasourceId,
+                },
+                'Creating fresh direct upload after stale mux upload state'
+            );
             await dbRetry(() => prisma.clip.delete({ where: { id: existingClip.id } }));
             await dbRetry(() => prisma.asset.update({
                 where: { id },
@@ -157,7 +173,10 @@ export default async function assetRoutes(fastify) {
             },
         }));
 
-        console.log(`🎬 Mux direct upload created for clip ${clipId}, asset #${asset.mediasourceId}`);
+        request.log.info(
+            { clipId, mediasourceId: asset.mediasourceId, muxUploadId: muxResult.muxUploadId },
+            'Created mux direct upload URL'
+        );
 
         // Push form request via WebSocket
         const originalName = clientMeta.fileName || asset.originalFileName || asset.mediasourceId;
@@ -395,7 +414,10 @@ export default async function assetRoutes(fastify) {
             },
         });
 
-        console.log(`📝 Transcript saved for clip ${clip.id} (${segments?.length ?? 0} segments)`);
+        request.log.info(
+            { clipId: clip.id, segmentCount: segments?.length ?? 0 },
+            'Transcript saved for clip'
+        );
 
         return { ok: true, clipId: clip.id, segmentCount: segments?.length ?? 0 };
     });

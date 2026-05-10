@@ -1,0 +1,294 @@
+// Last updated: May 9, 2026 - 7:25pm - GPT-5.3-Codex
+import Fastify from 'fastify';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+
+const prismaMock = {
+    $executeRawUnsafe: vi.fn(),
+    $queryRawUnsafe: vi.fn(),
+    asset: {
+        create: vi.fn(),
+        findUnique: vi.fn(),
+        findMany: vi.fn(),
+        update: vi.fn(),
+    },
+    clip: {
+        findFirst: vi.fn(),
+        create: vi.fn(),
+        update: vi.fn(),
+        delete: vi.fn(),
+    },
+    user: {
+        findUnique: vi.fn(),
+    },
+    formResponse: {
+        upsert: vi.fn(),
+    },
+    chatMessage: {
+        create: vi.fn(),
+        findMany: vi.fn(),
+    },
+};
+
+const muxMock = {
+    createDirectUpload: vi.fn(),
+    getMuxUpload: vi.fn(),
+};
+
+vi.mock('../lib/prisma.js', () => ({
+    default: prismaMock,
+}));
+
+vi.mock('../lib/mux.js', () => ({
+    isMuxEnabled: true,
+    createDirectUpload: muxMock.createDirectUpload,
+    getMuxUpload: muxMock.getMuxUpload,
+    MUX_ENV_KEY: 'test-env',
+}));
+
+let assetRoutes;
+let app;
+let ioEmitSpy;
+let ioToSpy;
+
+beforeAll(async () => {
+    ({ default: assetRoutes } = await import('../routes/assets.js'));
+});
+
+beforeEach(async () => {
+    vi.clearAllMocks();
+
+    prismaMock.$executeRawUnsafe.mockResolvedValue(undefined);
+    prismaMock.$queryRawUnsafe.mockResolvedValue([{ val: 100000001 }]);
+
+    prismaMock.asset.create.mockResolvedValue({
+        id: 'asset-1',
+        mediasourceId: '100000001',
+        mediasourceUrl: '/clips/100000001',
+        originalFileName: 'video.mp4',
+        status: 'UPLOADING',
+        clipCount: 0,
+        totalDuration: 0,
+    });
+    prismaMock.asset.findUnique.mockResolvedValue(null);
+    prismaMock.asset.findMany.mockResolvedValue([]);
+    prismaMock.asset.update.mockResolvedValue({});
+
+    prismaMock.clip.findFirst.mockResolvedValue(null);
+    prismaMock.clip.create.mockResolvedValue({});
+    prismaMock.clip.update.mockResolvedValue({});
+    prismaMock.clip.delete.mockResolvedValue({});
+
+    prismaMock.user.findUnique.mockResolvedValue({ id: 'user-1', name: 'Fallback User' });
+    prismaMock.formResponse.upsert.mockResolvedValue({
+        id: 'form-1',
+        assetId: 'asset-1',
+        slug: 'fallback-user',
+        type: 'Raw',
+        description: 'Fallback User',
+        priority: 'MEDIUM',
+    });
+    prismaMock.chatMessage.create.mockResolvedValue({});
+    prismaMock.chatMessage.findMany.mockResolvedValue([{ id: 'msg-1', content: { text: 'hello' } }]);
+
+    muxMock.createDirectUpload.mockResolvedValue({
+        uploadUrl: 'https://mux.example/upload/new',
+        muxUploadId: 'upload-new',
+    });
+    muxMock.getMuxUpload.mockResolvedValue(null);
+
+    ioEmitSpy = vi.fn();
+    ioToSpy = vi.fn(() => ({ emit: ioEmitSpy }));
+
+    app = Fastify({ logger: false });
+
+    app.decorate('authenticate', async (request) => {
+        request.user = {
+            id: 'user-1',
+            name: 'David Burgess',
+            role: 'USER',
+        };
+    });
+
+    app.decorate('io', { to: ioToSpy });
+    app.decorate('userSockets', new Map([['user-1', new Set(['socket-1'])]]));
+
+    await app.register(assetRoutes);
+});
+
+afterEach(async () => {
+    await app.close();
+});
+
+describe('assets route deeper coverage', () => {
+    it('creates an asset with generated mediasource id', async () => {
+        const response = await app.inject({
+            method: 'POST',
+            url: '/api/assets',
+            payload: { fileName: 'field-clip.mp4' },
+        });
+
+        expect(response.statusCode).toBe(200);
+        expect(prismaMock.$executeRawUnsafe).toHaveBeenCalled();
+        expect(prismaMock.$queryRawUnsafe).toHaveBeenCalled();
+
+        const body = response.json();
+        expect(body.asset.mediasourceId).toBe('100000001');
+        expect(body.asset.status).toBe('UPLOADING');
+    });
+
+    it('rejects unsupported mux upload mime types', async () => {
+        prismaMock.asset.findUnique.mockResolvedValue({
+            id: 'asset-1',
+            userId: 'user-1',
+            mediasourceId: '100000001',
+            mediasourceUrl: '/clips/100000001',
+            originalFileName: 'video.mp4',
+        });
+
+        const response = await app.inject({
+            method: 'POST',
+            url: '/api/assets/asset-1/mux-upload',
+            payload: {
+                metadata: { mimeType: 'text/plain' },
+            },
+        });
+
+        expect(response.statusCode).toBe(415);
+        expect(response.json().error).toContain('Unsupported media type');
+        expect(prismaMock.clip.create).not.toHaveBeenCalled();
+    });
+
+    it('reuses existing waiting mux upload for idempotency', async () => {
+        prismaMock.asset.findUnique.mockResolvedValue({
+            id: 'asset-1',
+            userId: 'user-1',
+            mediasourceId: '100000001',
+            mediasourceUrl: '/clips/100000001',
+            originalFileName: 'video.mp4',
+        });
+        prismaMock.clip.findFirst.mockResolvedValue({
+            id: 'clip-existing',
+            muxUploadId: 'upload-existing',
+        });
+        muxMock.getMuxUpload.mockResolvedValue({
+            id: 'upload-existing',
+            status: 'waiting',
+            url: 'https://mux.example/upload/existing',
+        });
+
+        const response = await app.inject({
+            method: 'POST',
+            url: '/api/assets/asset-1/mux-upload',
+            payload: {
+                metadata: { mimeType: 'video/mp4' },
+            },
+        });
+
+        expect(response.statusCode).toBe(200);
+        expect(response.json()).toEqual({
+            uploadUrl: 'https://mux.example/upload/existing',
+            clipId: 'clip-existing',
+            muxUploadId: 'upload-existing',
+        });
+        expect(prismaMock.clip.create).not.toHaveBeenCalled();
+    });
+
+    it('replaces stale mux upload and creates a fresh processing clip', async () => {
+        prismaMock.asset.findUnique.mockResolvedValue({
+            id: 'asset-1',
+            userId: 'user-1',
+            mediasourceId: '100000001',
+            mediasourceUrl: '/clips/100000001',
+            originalFileName: 'video.mp4',
+        });
+        prismaMock.clip.findFirst.mockResolvedValue({
+            id: 'clip-stale',
+            muxUploadId: 'upload-stale',
+        });
+        muxMock.getMuxUpload.mockResolvedValue({
+            id: 'upload-stale',
+            status: 'timed_out',
+            url: null,
+        });
+
+        const response = await app.inject({
+            method: 'POST',
+            url: '/api/assets/asset-1/mux-upload',
+            payload: {
+                metadata: {
+                    mimeType: 'video/mp4',
+                    fileName: 'late-night.mp4',
+                    fileSize: '1234',
+                    duration: '12',
+                    resolution: '1920x1080',
+                    codec: 'h264',
+                },
+            },
+        });
+
+        expect(response.statusCode).toBe(200);
+        expect(response.json().uploadUrl).toBe('https://mux.example/upload/new');
+        expect(response.json().muxUploadId).toBe('upload-new');
+
+        expect(prismaMock.clip.delete).toHaveBeenCalledWith({ where: { id: 'clip-stale' } });
+        expect(prismaMock.clip.create).toHaveBeenCalledTimes(1);
+        expect(prismaMock.asset.update).toHaveBeenCalled();
+        expect(ioToSpy).toHaveBeenCalledWith('socket-1');
+        expect(ioEmitSpy).toHaveBeenCalledWith(
+            'upload:complete',
+            expect.objectContaining({
+                assetId: 'asset-1',
+                mediasourceId: '100000001',
+            })
+        );
+    });
+
+    it('validates transcript payload and handles missing clip', async () => {
+        const badRequest = await app.inject({
+            method: 'PATCH',
+            url: '/api/assets/asset-1/transcript',
+            payload: {},
+        });
+
+        expect(badRequest.statusCode).toBe(400);
+
+        prismaMock.clip.findFirst.mockResolvedValue(null);
+        const missingClip = await app.inject({
+            method: 'PATCH',
+            url: '/api/assets/asset-1/transcript',
+            payload: { transcript: 'hello world' },
+        });
+
+        expect(missingClip.statusCode).toBe(404);
+        expect(missingClip.json()).toEqual({ error: 'No clip found for this asset' });
+    });
+
+    it('saves transcript text and segment list', async () => {
+        prismaMock.clip.findFirst.mockResolvedValue({ id: 'clip-1' });
+
+        const response = await app.inject({
+            method: 'PATCH',
+            url: '/api/assets/asset-1/transcript',
+            payload: {
+                transcript: 'First sentence. Second sentence.',
+                segments: [
+                    { word: 'First', start: 0, end: 0.2, confidence: 0.99 },
+                    { word: 'sentence', start: 0.21, end: 0.5, confidence: 0.96 },
+                ],
+            },
+        });
+
+        expect(response.statusCode).toBe(200);
+        expect(prismaMock.clip.update).toHaveBeenCalledWith({
+            where: { id: 'clip-1' },
+            data: {
+                transcript: 'First sentence. Second sentence.',
+                transcriptSegments: [
+                    { word: 'First', start: 0, end: 0.2, confidence: 0.99 },
+                    { word: 'sentence', start: 0.21, end: 0.5, confidence: 0.96 },
+                ],
+            },
+        });
+        expect(response.json()).toEqual({ ok: true, clipId: 'clip-1', segmentCount: 2 });
+    });
+});
