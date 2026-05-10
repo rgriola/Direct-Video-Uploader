@@ -1,4 +1,4 @@
-// May 10, 2026 - 10:15am - GitHub Copilot (GPT-5.3-Codex)
+// May 10, 2026 - 3:07pm - GitHub Copilot (GPT-5.3-Codex)
 import Foundation
 import Observation
 import UIKit
@@ -16,6 +16,7 @@ struct SentUploadInfo {
 struct ArchiveState {
     var assetId: String?
     var mediasourceId: String?
+    var mediasourceUrl: String?
     var originalFileName: String?
     var formSlug: String?
     var duration: Int?
@@ -76,6 +77,22 @@ final class ChatViewModel {
     private var lastStagedHasLocation: Bool = false
     private var pendingPHAssetIdentifier: String?
     private var uploadTask: Task<Void, Never>?
+    private let messagePolicy = MessagePolicyCoordinator()
+
+    private enum WorkflowStage: Int {
+        case unknown = 0
+        case uploading = 10
+        case formRequested = 20
+        case formConfirmed = 30
+        case processing = 40
+        case ready = 50
+        case failed = 60
+    }
+
+    private var workflowStages: [String: WorkflowStage] = [:]
+    private var hasBlockingConnectivityIssue = false
+    private var blockingConnectivityAssetId: String?
+    private let reconnectWarningThreshold = 3
 
     // MARK: - Dependencies
 
@@ -96,26 +113,32 @@ final class ChatViewModel {
 
     private func setupWebSocketHandlers() {
         ws.onMessage = { [weak self] message in
-            self?.messages.append(message)
+            guard let self else { return }
+
+            self.clearBlockingConnectivityIssueIfNeeded(assetId: message.assetId)
+
             // When server confirms a Slack post, mark the last outgoing
             // .slackPost as confirmed so the bubble switches to "Sent".
             if message.messageType == .slackPost,
                 message.direction == .incoming
             {
-                if let outId = self?.messages.last(where: {
+                if let outId = self.messages.last(where: {
                     $0.messageType == .slackPost && $0.direction == .outgoing
-                        && !(self?.slackConfirmedIds.contains($0.id) ?? true)
+                        && !self.slackConfirmedIds.contains($0.id)
                 })?.id {
-                    self?.slackConfirmedIds.insert(outId)
+                    self.slackConfirmedIds.insert(outId)
                 }
             }
+
+            self.appendMessage(message, source: .websocket)
+
             // Auto-download thumbnail for Slack confirmation bubbles
             if message.messageType == .slackPost,
                 message.direction == .incoming,
                 let urlStr = message.content.thumbnailUrl,
                 let url = URL(string: urlStr)
             {
-                self?.downloadSlackThumbnail(url: url, messageId: message.id)
+                self.downloadSlackThumbnail(url: url, messageId: message.id)
             }
         }
 
@@ -123,6 +146,12 @@ final class ChatViewModel {
             guard let self else { return }
             let assetId = data["assetId"] as? String ?? ""
             print("✅ Upload complete for asset: \(assetId)")
+
+            self.clearBlockingConnectivityIssueIfNeeded(assetId: assetId)
+
+            if !assetId.isEmpty {
+                _ = self.promoteStage(for: assetId, to: .processing)
+            }
 
             // Fetch the full asset (with clips) so MetadataView can display it
             Task { @MainActor in
@@ -134,6 +163,12 @@ final class ChatViewModel {
             guard let self else { return }
             let assetId = data["assetId"] as? String
             self.currentAssetId = assetId
+
+            self.clearBlockingConnectivityIssueIfNeeded(assetId: assetId)
+
+            if let assetId {
+                _ = self.promoteStage(for: assetId, to: .formRequested)
+            }
 
             // Store form context for ContextFormView header
             self.form.originalFileName = data["originalFileName"] as? String
@@ -163,6 +198,10 @@ final class ChatViewModel {
 
         ws.onFormConfirmed = { [weak self] data in
             guard let self else { return }
+            let assetId = data["assetId"] as? String
+
+            self.clearBlockingConnectivityIssueIfNeeded(assetId: assetId)
+
             let fallbackText =
                 data["messageFallbackText"] as? String
                 ?? data["message"] as? String
@@ -176,96 +215,100 @@ final class ChatViewModel {
             let originalFileName = data["originalFileName"] as? String
             let capturedAt = data["capturedAt"] as? String
 
-            let confirmation = ChatMessage(
-                id: UUID().uuidString,
-                userId: nil,
-                assetId: data["assetId"] as? String,
-                direction: .incoming,
-                messageType: .confirmation,
-                content: MessageContent(
-                    text: fallbackText,
-                    code: messageCode,
-                    params: messageParams,
-                    fallbackText: fallbackText,
-                    schemaVersion: messageSchemaVersion,
-                    slug: nil,
-                    mediasourceId: mediasourceId,
-                    mediasourceUrl: mediasourceUrl,
-                    originalFileName: originalFileName,
-                    capturedAt: capturedAt
-                ),
-                createdAt: DVUDateFormatting.isoString(from: Date())
+            let previousStage = self.promoteStage(for: assetId, to: .formConfirmed)
+            let hasExistingFormConfirmation = self.hasWorkflowMessage(
+                code: messageCode,
+                assetId: assetId,
+                mediasourceId: mediasourceId
             )
-            self.messages.append(confirmation)
+
+            if previousStage != .failed,
+                previousStage.rawValue >= WorkflowStage.formConfirmed.rawValue,
+                hasExistingFormConfirmation
+            {
+                return
+            }
+
+            self.ensureFormConfirmedMessage(
+                assetId: assetId,
+                mediasourceId: mediasourceId,
+                mediasourceUrl: mediasourceUrl,
+                originalFileName: originalFileName,
+                capturedAt: capturedAt,
+                fallbackText: fallbackText,
+                code: messageCode,
+                params: messageParams,
+                schemaVersion: messageSchemaVersion,
+                source: .workflow
+            )
         }
 
         ws.onMuxReady = { [weak self] data in
             guard let self else { return }
             let assetId = data["assetId"] as? String
             let mediasourceId = data["mediasourceId"] as? String
+            let mediasourceUrl = data["mediasourceUrl"] as? String
             let originalFileName = data["originalFileName"] as? String
             let formSlug = data["formSlug"] as? String
             let duration = data["duration"] as? Int
             let resolution = data["resolution"] as? String
             let fileSize = data["fileSize"] as? String
 
+            self.clearBlockingConnectivityIssueIfNeeded(assetId: assetId)
+
+            let hasSubmittedForm =
+                !(formSlug?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+            if hasSubmittedForm {
+                // If form:confirmed arrives late (or is missed), ensure the metadata
+                // confirmation bubble still appears before the ready summary.
+                self.ensureFormConfirmedMessage(
+                    assetId: assetId,
+                    mediasourceId: mediasourceId,
+                    mediasourceUrl: mediasourceUrl,
+                    originalFileName: originalFileName,
+                    capturedAt: nil,
+                    fallbackText: nil,
+                    source: .workflow
+                )
+            }
+
             print("✅ [Mux Ready] Asset \(assetId ?? "?") confirmed on Mediasource")
 
-            // Store archive metadata
-            self.archive.assetId = assetId
-            self.archive.mediasourceId = mediasourceId
-            self.archive.originalFileName = originalFileName
-            self.archive.formSlug = formSlug
-            self.archive.duration = duration
-            self.archive.resolution = resolution
-            self.archive.fileSize = fileSize
-
-            // Append the summary bubble as a chat message
-            let summaryMessage = ChatMessage(
-                id: UUID().uuidString,
-                userId: nil,
-                assetId: assetId,
-                direction: .incoming,
-                messageType: .muxReady,
-                content: MessageContent(
-                    text: "Mediasource confirmed.",
+            let previousStage = self.promoteStage(for: assetId, to: .ready)
+            if previousStage != .failed,
+                previousStage.rawValue >= WorkflowStage.ready.rawValue
+            {
+                let missingSummary = !self.hasWorkflowMessage(
                     code: "IOS_MUX_READY_SUMMARY",
-                    params: mediasourceId.map { ["mediasourceId": $0] },
-                    fallbackText: "Mediasource confirmed.",
-                    schemaVersion: MessageCatalog.schemaVersion,
-                    mediasourceId: mediasourceId,
-                    originalFileName: originalFileName,
-                    duration: duration,
-                    resolution: resolution
-                ),
-                createdAt: DVUDateFormatting.isoString(from: Date())
-            )
-            self.messages.append(summaryMessage)
-            self.isArchived = true
-
-            // After 1 second, append a normalized follow-up message.
-            let firstName =
-                self.auth.currentUser?.name.components(separatedBy: " ").first ?? "Friend"
-            Task { @MainActor in
-                try? await Task.sleep(for: .seconds(1))
-                let message = "\(firstName), your video is confirmed. Go ahead and #Slack this."
-                let followUp = ChatMessage(
-                    id: UUID().uuidString,
-                    userId: nil,
-                    assetId: nil,
-                    direction: .incoming,
-                    messageType: .greeting,
-                    content: MessageContent(
-                        text: message,
-                        code: "IOS_MUX_READY_FOLLOWUP",
-                        params: ["firstName": firstName],
-                        fallbackText: message,
-                        schemaVersion: MessageCatalog.schemaVersion
-                    ),
-                    createdAt: DVUDateFormatting.isoString(from: Date())
+                    assetId: assetId,
+                    mediasourceId: mediasourceId
                 )
-                self.messages.append(followUp)
+                let missingFollowup = !self.hasWorkflowMessage(
+                    code: "IOS_MUX_READY_FOLLOWUP",
+                    assetId: assetId,
+                    mediasourceId: mediasourceId
+                )
+
+                if !missingSummary, !missingFollowup {
+                    return
+                }
+
+                // Recovery path for reconnect churn: if stage is already READY but
+                // UI messages are missing, clear asset dedupe and backfill them.
+                self.messagePolicy.resetAssetScope(assetId: assetId)
             }
+
+            self.applyReadyWorkflowState(
+                assetId: assetId,
+                mediasourceId: mediasourceId,
+                mediasourceUrl: mediasourceUrl,
+                originalFileName: originalFileName,
+                formSlug: formSlug,
+                duration: duration,
+                resolution: resolution,
+                fileSize: fileSize,
+                source: .workflow
+            )
         }
 
     }
@@ -273,8 +316,16 @@ final class ChatViewModel {
     // MARK: - Connection State Handlers
 
     private func setupConnectionHandlers() {
+        ws.onConnected = { [weak self] in
+            guard let self else { return }
+            Task { @MainActor in
+                await self.reconcileActiveWorkflowStateAfterReconnect()
+            }
+        }
+
         ws.onReconnecting = { [weak self] attempt, maxAttempts in
             guard let self else { return }
+            guard attempt >= self.reconnectWarningThreshold else { return }
             // Connection state is reflected in ChatHeaderView (Ready / Working / Trying to connect)
             // Report to server DB (best-effort — may fail if offline)
             Task {
@@ -301,6 +352,462 @@ final class ChatViewModel {
 
     // MARK: - Error Helpers
 
+    private func isConnectivityIssue(_ error: Error) -> Bool {
+        let nsError = error as NSError
+
+        if nsError.domain == NSURLErrorDomain {
+            let code = URLError.Code(rawValue: nsError.code)
+            switch code {
+            case .notConnectedToInternet,
+                .networkConnectionLost,
+                .timedOut,
+                .cannotConnectToHost,
+                .cannotFindHost,
+                .dnsLookupFailed,
+                .resourceUnavailable,
+                .internationalRoamingOff,
+                .callIsActive,
+                .dataNotAllowed,
+                .secureConnectionFailed:
+                return true
+            default:
+                break
+            }
+        }
+
+        if let urlError = error as? URLError {
+            switch urlError.code {
+            case .notConnectedToInternet,
+                .networkConnectionLost,
+                .timedOut,
+                .cannotConnectToHost,
+                .cannotFindHost,
+                .dnsLookupFailed,
+                .resourceUnavailable,
+                .internationalRoamingOff,
+                .callIsActive,
+                .dataNotAllowed,
+                .secureConnectionFailed:
+                return true
+            default:
+                break
+            }
+        }
+
+        return false
+    }
+
+    private func noteBlockingConnectivityIssue(operation: String, assetId: String?) {
+        guard !hasBlockingConnectivityIssue else { return }
+
+        hasBlockingConnectivityIssue = true
+        blockingConnectivityAssetId = assetId
+
+        let connectivityMessage = ChatMessage(
+            id: UUID().uuidString,
+            userId: nil,
+            assetId: assetId,
+            direction: .incoming,
+            messageType: .text,
+            content: MessageContent(
+                text:
+                    "Connection interrupted while \(operation). Upload and metadata sync are paused until reconnection.",
+                code: "IOS_CONNECTIVITY_BLOCKING",
+                params: ["operation": operation],
+                fallbackText:
+                    "Connection interrupted while \(operation). Upload and metadata sync are paused until reconnection.",
+                schemaVersion: MessageCatalog.schemaVersion
+            ),
+            createdAt: DVUDateFormatting.isoString(from: Date())
+        )
+        appendMessage(connectivityMessage, source: .workflow)
+    }
+
+    private func clearBlockingConnectivityIssueIfNeeded(assetId: String?) {
+        guard hasBlockingConnectivityIssue else { return }
+
+        hasBlockingConnectivityIssue = false
+        let recoveredAssetId = assetId ?? blockingConnectivityAssetId
+        blockingConnectivityAssetId = nil
+
+        let recoveredMessage = ChatMessage(
+            id: UUID().uuidString,
+            userId: nil,
+            assetId: recoveredAssetId,
+            direction: .incoming,
+            messageType: .text,
+            content: MessageContent(
+                text: "Connection restored. Upload and metadata sync resumed.",
+                code: "IOS_CONNECTIVITY_RECOVERED",
+                fallbackText: "Connection restored. Upload and metadata sync resumed.",
+                schemaVersion: MessageCatalog.schemaVersion
+            ),
+            createdAt: DVUDateFormatting.isoString(from: Date())
+        )
+        appendMessage(recoveredMessage, source: .workflow)
+    }
+
+    private func promoteStage(for assetId: String?, to stage: WorkflowStage) -> WorkflowStage {
+        guard let assetId, !assetId.isEmpty else { return .unknown }
+
+        let previous = workflowStages[assetId] ?? .unknown
+
+        if stage == .failed {
+            if previous != .failed {
+                workflowStages[assetId] = .failed
+                messagePolicy.resetAssetScope(assetId: assetId)
+            }
+            return previous
+        }
+
+        if previous == .failed {
+            workflowStages[assetId] = stage
+            return previous
+        }
+
+        if stage.rawValue > previous.rawValue {
+            workflowStages[assetId] = stage
+        }
+        return previous
+    }
+
+    private func inferredStage(from asset: Asset) -> WorkflowStage {
+        switch asset.status {
+        case .error:
+            return .failed
+        case .ready:
+            return .ready
+        case .processing:
+            return .processing
+        case .uploading:
+            if asset.formResponse != nil {
+                return .formConfirmed
+            }
+            return .uploading
+        }
+    }
+
+    private func applyReadyWorkflowState(
+        assetId: String?,
+        mediasourceId: String?,
+        mediasourceUrl: String?,
+        originalFileName: String?,
+        formSlug: String?,
+        duration: Int?,
+        resolution: String?,
+        fileSize: String?,
+        source: MessagePolicyCoordinator.Source
+    ) {
+        // Store archive metadata
+        archive.assetId = assetId
+        archive.mediasourceId = mediasourceId
+        archive.mediasourceUrl = mediasourceUrl
+        archive.originalFileName = originalFileName
+        archive.formSlug = formSlug
+        archive.duration = duration
+        archive.resolution = resolution
+        archive.fileSize = fileSize
+        isArchived = true
+
+        let hasSummary = hasWorkflowMessage(
+            code: "IOS_MUX_READY_SUMMARY",
+            assetId: assetId,
+            mediasourceId: mediasourceId
+        )
+
+        if !hasSummary {
+            let summaryMessage = ChatMessage(
+                id: UUID().uuidString,
+                userId: nil,
+                assetId: assetId,
+                direction: .incoming,
+                messageType: .muxReady,
+                content: MessageContent(
+                    text: "Mediasource confirmed.",
+                    code: "IOS_MUX_READY_SUMMARY",
+                    params: mediasourceId.map { ["mediasourceId": $0] },
+                    fallbackText: "Mediasource confirmed.",
+                    schemaVersion: MessageCatalog.schemaVersion,
+                    slug: formSlug,
+                    mediasourceId: mediasourceId,
+                    mediasourceUrl: mediasourceUrl,
+                    originalFileName: originalFileName,
+                    duration: duration,
+                    resolution: resolution
+                ),
+                createdAt: DVUDateFormatting.isoString(from: Date())
+            )
+            appendMessage(summaryMessage, source: source)
+        }
+
+        // After 1 second, append a normalized follow-up message.
+        let hasFollowup = hasWorkflowMessage(
+            code: "IOS_MUX_READY_FOLLOWUP",
+            assetId: assetId,
+            mediasourceId: mediasourceId
+        )
+        guard !hasFollowup else { return }
+
+        let firstName = auth.currentUser?.name.components(separatedBy: " ").first ?? "there"
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(1))
+
+            guard
+                !self.hasWorkflowMessage(
+                    code: "IOS_MUX_READY_FOLLOWUP",
+                    assetId: assetId,
+                    mediasourceId: mediasourceId
+                )
+            else {
+                return
+            }
+
+            let message = "You're a rock star. Send another video when ready."
+            let followUp = ChatMessage(
+                id: UUID().uuidString,
+                userId: nil,
+                assetId: assetId,
+                direction: .incoming,
+                messageType: .greeting,
+                content: MessageContent(
+                    text: message,
+                    code: "IOS_MUX_READY_FOLLOWUP",
+                    params: ["firstName": firstName],
+                    fallbackText: message,
+                    schemaVersion: MessageCatalog.schemaVersion
+                ),
+                createdAt: DVUDateFormatting.isoString(from: Date())
+            )
+            self.appendMessage(followUp, source: source)
+        }
+    }
+
+    private func activeSlackTargetAssetId() -> String? {
+        if let currentAssetId, !currentAssetId.isEmpty {
+            return currentAssetId
+        }
+
+        if isArchived,
+            let archivedAssetId = archive.assetId,
+            !archivedAssetId.isEmpty
+        {
+            return archivedAssetId
+        }
+
+        return nil
+    }
+
+    private func ensureFormConfirmedMessage(
+        assetId: String?,
+        mediasourceId: String?,
+        mediasourceUrl: String?,
+        originalFileName: String?,
+        capturedAt: String?,
+        fallbackText: String?,
+        code: String = "WS_FORM_CONFIRMED",
+        params: [String: String]? = nil,
+        schemaVersion: Int? = nil,
+        source: MessagePolicyCoordinator.Source
+    ) {
+        guard
+            !hasWorkflowMessage(
+                code: code,
+                assetId: assetId,
+                mediasourceId: mediasourceId
+            )
+        else {
+            return
+        }
+
+        let resolvedFallback =
+            fallbackText
+            ?? MessageCatalog.resolve(code: code, params: params ?? [:])
+            ?? "High five. I will text when the video is done. Metadata is ready, and you can Slack your team below."
+
+        let confirmation = ChatMessage(
+            id: UUID().uuidString,
+            userId: nil,
+            assetId: assetId,
+            direction: .incoming,
+            messageType: .confirmation,
+            content: MessageContent(
+                text: resolvedFallback,
+                code: code,
+                params: params,
+                fallbackText: resolvedFallback,
+                schemaVersion: schemaVersion ?? MessageCatalog.schemaVersion,
+                slug: nil,
+                mediasourceId: mediasourceId,
+                mediasourceUrl: mediasourceUrl,
+                originalFileName: originalFileName,
+                capturedAt: capturedAt
+            ),
+            createdAt: DVUDateFormatting.isoString(from: Date())
+        )
+        appendMessage(confirmation, source: source)
+    }
+
+    private func appendReconciledFormConfirmed(
+        asset: Asset,
+        source: MessagePolicyCoordinator.Source = .workflow
+    ) {
+        guard asset.formResponse != nil else { return }
+
+        let fallback =
+            MessageCatalog.resolve(code: "WS_FORM_CONFIRMED", params: [:])
+            ?? "High five. I will text when the video is done. Metadata is ready, and you can Slack your team below."
+
+        ensureFormConfirmedMessage(
+            assetId: asset.id,
+            mediasourceId: asset.mediasourceId,
+            mediasourceUrl: asset.mediasourceUrl,
+            originalFileName: asset.originalFileName ?? asset.clips?.first?.originalFileName,
+            capturedAt: asset.clips?.first?.capturedAt,
+            fallbackText: fallback,
+            source: source
+        )
+    }
+
+    private func reconcileWorkflowState(
+        from asset: Asset,
+        source: MessagePolicyCoordinator.Source = .workflow
+    ) {
+        let reconciledStage = inferredStage(from: asset)
+        let previousStage = promoteStage(for: asset.id, to: reconciledStage)
+
+        if reconciledStage == .failed,
+            previousStage != .failed
+        {
+            appendErrorBubble(
+                "Upload failed: Processing error",
+                assetId: asset.id,
+                code: "IOS_UPLOAD_FAILED",
+                params: ["reason": "Processing error"]
+            )
+            return
+        }
+
+        if asset.formResponse != nil,
+            reconciledStage.rawValue >= WorkflowStage.formConfirmed.rawValue
+        {
+            appendReconciledFormConfirmed(asset: asset, source: source)
+        }
+
+        if reconciledStage == .ready {
+            if previousStage != .failed,
+                previousStage.rawValue >= WorkflowStage.ready.rawValue
+            {
+                let missingSummary = !hasWorkflowMessage(
+                    code: "IOS_MUX_READY_SUMMARY",
+                    assetId: asset.id,
+                    mediasourceId: asset.mediasourceId
+                )
+                let missingFollowup = !hasWorkflowMessage(
+                    code: "IOS_MUX_READY_FOLLOWUP",
+                    assetId: asset.id,
+                    mediasourceId: asset.mediasourceId
+                )
+
+                if !missingSummary, !missingFollowup {
+                    return
+                }
+
+                messagePolicy.resetAssetScope(assetId: asset.id)
+            }
+
+            applyReadyWorkflowState(
+                assetId: asset.id,
+                mediasourceId: asset.mediasourceId,
+                mediasourceUrl: asset.mediasourceUrl,
+                originalFileName: asset.originalFileName
+                    ?? asset.clips?.first?.originalFileName,
+                formSlug: asset.formResponse?.slug,
+                duration: asset.clips?.first?.duration,
+                resolution: asset.clips?.first?.resolution,
+                fileSize: asset.clips?.first?.fileSize,
+                source: source
+            )
+        }
+    }
+
+    private func hasWorkflowMessage(
+        code: String,
+        assetId: String?,
+        mediasourceId: String?
+    ) -> Bool {
+        messages.contains { message in
+            guard message.content.code == code else { return false }
+
+            if let assetId, !assetId.isEmpty,
+                message.assetId == assetId
+            {
+                return true
+            }
+
+            if let mediasourceId, !mediasourceId.isEmpty,
+                message.content.mediasourceId == mediasourceId
+            {
+                return true
+            }
+
+            return false
+        }
+    }
+
+    private func reconcileActiveWorkflowStateAfterReconnect() async {
+        guard auth.isAuthenticated else { return }
+        guard let assetId = currentAssetId ?? archive.assetId else { return }
+
+        let request = auth.authenticatedRequest(for: ServerConfig.assetURL(assetId))
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
+            guard statusCode == 200 else { return }
+
+            let detail = try JSONDecoder().decode(AssetDetailResponse.self, from: data)
+            let asset = detail.asset
+            lastAsset = asset
+            lastClip = asset.clips?.first
+
+            clearBlockingConnectivityIssueIfNeeded(assetId: asset.id)
+            reconcileWorkflowState(from: asset, source: .workflow)
+        } catch {
+            if isConnectivityIssue(error) {
+                noteBlockingConnectivityIssue(operation: "syncing workflow state", assetId: assetId)
+            }
+            print("⚠️ [Reconnect] State reconcile skipped: \(error.localizedDescription)")
+        }
+    }
+
+    /// Central append gate for progressive messaging and dedupe policy.
+    private func appendMessage(_ message: ChatMessage, source: MessagePolicyCoordinator.Source) {
+        let shouldDebugCode = {
+            guard let code = message.content.code else { return false }
+            return code == "WS_FORM_CONFIRMED"
+                || code == "IOS_MUX_READY_SUMMARY"
+                || code == "IOS_MUX_READY_FOLLOWUP"
+        }()
+
+        guard messagePolicy.shouldPresent(message, source: source) else {
+            if shouldDebugCode {
+                let identity = message.assetId ?? message.content.mediasourceId ?? "n/a"
+                print(
+                    "⚠️ [Chat] Dropped message by policy: code=\(message.content.code ?? "n/a") source=\(source) target=\(identity)"
+                )
+            }
+            return
+        }
+
+        messages.append(message)
+
+        if shouldDebugCode {
+            let identity = message.assetId ?? message.content.mediasourceId ?? "n/a"
+            print(
+                "💬 [Chat] Appended message: code=\(message.content.code ?? "n/a") source=\(source) target=\(identity) total=\(messages.count)"
+            )
+        }
+    }
+
     /// Show an error message to the user as a chat bubble.
     private func appendErrorBubble(
         _ text: String,
@@ -323,7 +830,7 @@ final class ChatViewModel {
             ),
             createdAt: DVUDateFormatting.isoString(from: Date())
         )
-        messages.append(errorMsg)
+        appendMessage(errorMsg, source: .error)
     }
 
     /// Report an error to the server's error_logs table (best-effort, fire-and-forget).
@@ -363,9 +870,10 @@ final class ChatViewModel {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         let range = NSRange(trimmed.startIndex..., in: trimmed)
         let isSlackCommand = Self.slackCommandPattern?.firstMatch(in: trimmed, range: range) != nil
+        let slackTargetAssetId = isSlackCommand ? activeSlackTargetAssetId() : nil
 
         // If Slack command but no current upload, tell user to upload first
-        if isSlackCommand && currentAssetId == nil && !isArchived {
+        if isSlackCommand && slackTargetAssetId == nil {
             let localOut = ChatMessage(
                 id: UUID().uuidString,
                 userId: auth.currentUser?.id,
@@ -375,7 +883,7 @@ final class ChatViewModel {
                 content: MessageContent(text: text),
                 createdAt: DVUDateFormatting.isoString(from: Date())
             )
-            messages.append(localOut)
+            appendMessage(localOut, source: .outgoing)
             let reply = ChatMessage(
                 id: UUID().uuidString,
                 userId: nil,
@@ -392,7 +900,7 @@ final class ChatViewModel {
                 ),
                 createdAt: DVUDateFormatting.isoString(from: Date())
             )
-            messages.append(reply)
+            appendMessage(reply, source: .workflow)
             return
         }
 
@@ -406,11 +914,21 @@ final class ChatViewModel {
             content: MessageContent(text: text),
             createdAt: DVUDateFormatting.isoString(from: Date())
         )
-        messages.append(localMessage)
+        appendMessage(localMessage, source: .outgoing)
+
+        let messageAssetId: String? = {
+            if let currentAssetId, !currentAssetId.isEmpty {
+                return currentAssetId
+            }
+            if isSlackCommand {
+                return slackTargetAssetId
+            }
+            return nil
+        }()
 
         // Send via WebSocket — always pass explicit assetId so the server
         // doesn't fall back to "most recent READY asset" (wrong metadata bug).
-        ws.sendMessage(text: text, assetId: currentAssetId ?? archive.assetId)
+        ws.sendMessage(text: text, assetId: messageAssetId)
     }
     // MARK: - Create Asset (Video Upload Flow)
 
@@ -443,6 +961,8 @@ final class ChatViewModel {
             }
 
             currentAssetId = asset.id
+            _ = promoteStage(for: asset.id, to: .uploading)
+            clearBlockingConnectivityIssueIfNeeded(assetId: asset.id)
 
             // Add outgoing video message locally — also cache thumbnail for VideoBubble
             let msgId = UUID().uuidString
@@ -455,7 +975,7 @@ final class ChatViewModel {
                 content: MessageContent(text: "📹 \(fileName)", fileName: fileName),
                 createdAt: DVUDateFormatting.isoString(from: Date())
             )
-            messages.append(videoMessage)
+            appendMessage(videoMessage, source: .outgoing)
 
             // Cache metadata so VideoBubble can render the card
             sentUploads[msgId] = SentUploadInfo(
@@ -476,10 +996,14 @@ final class ChatViewModel {
             return asset
         } catch {
             let errorDesc = error.localizedDescription
-            appendErrorBubble(
-                "Could not start upload. Please try again.",
-                code: "IOS_UPLOAD_START_FAILED"
-            )
+            if isConnectivityIssue(error) {
+                noteBlockingConnectivityIssue(operation: "starting upload", assetId: nil)
+            } else {
+                appendErrorBubble(
+                    "Could not start upload. Please try again.",
+                    code: "IOS_UPLOAD_START_FAILED"
+                )
+            }
             Task {
                 await reportError(
                     category: "upload",
@@ -519,12 +1043,17 @@ final class ChatViewModel {
             )
         } catch {
             print("❌ [Upload] Failed for asset \(assetId): \(error)")
-            appendErrorBubble(
-                "Upload failed: \(error.localizedDescription)",
-                assetId: assetId,
-                code: "IOS_UPLOAD_FAILED",
-                params: ["reason": error.localizedDescription]
-            )
+            _ = promoteStage(for: assetId, to: .failed)
+            if isConnectivityIssue(error) {
+                noteBlockingConnectivityIssue(operation: "uploading video", assetId: assetId)
+            } else {
+                appendErrorBubble(
+                    "Upload failed: \(error.localizedDescription)",
+                    assetId: assetId,
+                    code: "IOS_UPLOAD_FAILED",
+                    params: ["reason": error.localizedDescription]
+                )
+            }
             Task {
                 await reportError(
                     category: "upload",
@@ -644,6 +1173,9 @@ final class ChatViewModel {
         uploadTask = nil
         isUploading = false
         uploadProgress = 0
+        if let assetId = currentAssetId {
+            _ = promoteStage(for: assetId, to: .failed)
+        }
         appendErrorBubble("Upload cancelled.", code: "IOS_UPLOAD_CANCELLED")
     }
 
@@ -708,7 +1240,7 @@ final class ChatViewModel {
             ),
             createdAt: DVUDateFormatting.isoString(from: Date())
         )
-        messages.append(transcribingMsg)
+        appendMessage(transcribingMsg, source: .workflow)
 
         if let result = await transcriber.transcribe(videoURL: fileURL) {
             await sendTranscript(assetId: assetId, result: result)
@@ -800,7 +1332,7 @@ final class ChatViewModel {
             ),
             createdAt: DVUDateFormatting.isoString(from: Date())
         )
-        messages.append(msg)
+        appendMessage(msg, source: .workflow)
     }
 
     // MARK: - Submit Form
@@ -822,15 +1354,21 @@ final class ChatViewModel {
             form.submitError = nil
             showFormSheet = false
             PendingForm.clear()
+            clearBlockingConnectivityIssueIfNeeded(assetId: assetId)
         } catch {
             print("❌ Failed to submit form:", error)
             // Keep form open so user can retry — show error in chat too
             form.submitError = "Failed to send form. Please try again."
-            appendErrorBubble(
-                "Form submission failed. The form is still open. Please retry.",
-                assetId: assetId,
-                code: "IOS_FORM_SUBMIT_FAILED"
-            )
+            if isConnectivityIssue(error) {
+                noteBlockingConnectivityIssue(
+                    operation: "submitting form details", assetId: assetId)
+            } else {
+                appendErrorBubble(
+                    "Form submission failed. The form is still open. Please retry.",
+                    assetId: assetId,
+                    code: "IOS_FORM_SUBMIT_FAILED"
+                )
+            }
             Task {
                 await reportError(
                     category: "form",
@@ -846,6 +1384,10 @@ final class ChatViewModel {
 
     func connectWebSocket() {
         guard let token = auth.token else { return }
+        workflowStages.removeAll()
+        messagePolicy.resetForFreshConnection()
+        hasBlockingConnectivityIssue = false
+        blockingConnectivityAssetId = nil
         // Fresh conversation — clear old messages
         messages.removeAll()
         // Tear down any existing connection/reconnect loop before connecting with fresh token
@@ -866,13 +1408,19 @@ final class ChatViewModel {
             let response = try JSONDecoder().decode(AssetDetailResponse.self, from: data)
             self.lastAsset = response.asset
             self.lastClip = response.asset.clips?.first
+            clearBlockingConnectivityIssueIfNeeded(assetId: assetId)
+            reconcileWorkflowState(from: response.asset, source: .workflow)
         } catch {
             print("❌ Failed to fetch asset detail:", error)
-            appendErrorBubble(
-                "Could not load video details.",
-                assetId: assetId,
-                code: "IOS_ASSET_DETAILS_LOAD_FAILED"
-            )
+            if isConnectivityIssue(error) {
+                noteBlockingConnectivityIssue(operation: "syncing metadata", assetId: assetId)
+            } else {
+                appendErrorBubble(
+                    "Could not load video details.",
+                    assetId: assetId,
+                    code: "IOS_ASSET_DETAILS_LOAD_FAILED"
+                )
+            }
         }
     }
 
@@ -930,6 +1478,12 @@ final class ChatViewModel {
         }
         formFields = buildFormFields()
         showFormSheet = true
+
+        // Reconcile immediately after restoring pending form so relaunches after
+        // force-quit can catch up missed state changes without waiting for another reconnect.
+        Task { @MainActor in
+            await reconcileActiveWorkflowStateAfterReconnect()
+        }
     }
 
     /// Build the standard form fields (used for both live and recovery).
@@ -941,6 +1495,10 @@ final class ChatViewModel {
 
     /// Clear current conversation and start fresh for a new upload.
     func startNewConversation() {
+        workflowStages.removeAll()
+        messagePolicy.resetForNewConversation()
+        hasBlockingConnectivityIssue = false
+        blockingConnectivityAssetId = nil
         messages.removeAll()
         currentAssetId = nil
         isArchived = false
@@ -977,28 +1535,35 @@ final class ChatViewModel {
             ),
             createdAt: DVUDateFormatting.isoString(from: Date())
         )
-        messages.append(greeting)
+        appendMessage(greeting, source: .workflow)
     }
 
     /// Send a Slack share for the archived asset.
     func shareToSlack(text: String) {
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        guard let archiveAssetId = archive.assetId, !archiveAssetId.isEmpty else {
+            appendErrorBubble(
+                "Upload a video first and I can grab the metadata so you can Slack it. Previous uploads are in your Archive, and you can Slack from there.",
+                code: "IOS_SLACK_REQUIRES_UPLOAD"
+            )
+            return
+        }
 
         // Optimistic UI — add Slack post message locally
         let localMessage = ChatMessage(
             id: UUID().uuidString,
             userId: auth.currentUser?.id,
-            assetId: archive.assetId,
+            assetId: archiveAssetId,
             direction: .outgoing,
             messageType: .slackPost,
             content: MessageContent(text: text),
             createdAt: DVUDateFormatting.isoString(from: Date())
         )
-        messages.append(localMessage)
+        appendMessage(localMessage, source: .outgoing)
         showSlackShareSheet = false
 
         // Send via WebSocket — server detects #channel/@mention pattern
-        ws.sendMessage(text: text, assetId: archive.assetId)
+        ws.sendMessage(text: text, assetId: archiveAssetId)
     }
 
     /// Download a thumbnail image and cache it for the Slack bubble.
