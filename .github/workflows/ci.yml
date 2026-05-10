@@ -1,4 +1,4 @@
-# Last updated: May 9, 2026 - 6:40pm - GPT-5.3-Codex
+# Last updated: May 10, 2026 - 10:15am - GitHub Copilot (GPT-5.3-Codex)
 name: CI
 
 on:
@@ -9,6 +9,16 @@ on:
       - staging
 
 jobs:
+  ios-launchscreen-guard:
+    name: iOS Launch Screen Guard
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify launch screen contract
+        run: bash ./scripts/verify-ios-launchscreen.sh
+
   server-tests:
     name: Server Tests
     runs-on: ubuntu-latest

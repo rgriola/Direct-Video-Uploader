@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# May 10, 2026 - 10:15am - GitHub Copilot (GPT-5.3-Codex)
+set -euo pipefail
+
+repo_root="$(git rev-parse --show-toplevel)"
+cd "$repo_root"
+
+if [[ "$(uname)" != "Darwin" ]]; then
+  echo "[launchscreen-guard] Non-macOS environment detected. Skipping launch screen check."
+  exit 0
+fi
+
+bash ./scripts/verify-ios-launchscreen.sh

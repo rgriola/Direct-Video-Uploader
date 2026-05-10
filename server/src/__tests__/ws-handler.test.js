@@ -1,4 +1,4 @@
-// Last updated: May 9, 2026 - 7:30pm - GPT-5.3-Codex
+// Last updated: May 10, 2026 - 10:37am - GitHub Copilot (GPT-5.3-Codex)
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const prismaMock = {
@@ -182,6 +182,9 @@ describe('ws handler targeted coverage', () => {
             'message:new',
             expect.objectContaining({
                 messageType: 'GREETING',
+                content: expect.objectContaining({
+                    code: 'WS_GREETING_CONNECTED',
+                }),
             })
         );
 
@@ -190,6 +193,9 @@ describe('ws handler targeted coverage', () => {
             'message:new',
             expect.objectContaining({
                 messageType: 'SYSTEM_NOTE',
+                content: expect.objectContaining({
+                    code: 'WS_SYSTEM_TIP_GUIDE',
+                }),
             })
         );
     });
@@ -249,7 +255,110 @@ describe('ws handler targeted coverage', () => {
             expect.objectContaining({
                 messageType: 'SLACK_POST',
                 content: expect.objectContaining({
+                    code: 'WS_SLACK_NOT_CONFIGURED',
                     text: expect.stringContaining('Slack is not configured'),
+                }),
+            })
+        );
+    });
+
+    it('emits coded slack confirmation when channel post succeeds', async () => {
+        const { io, harness } = createIoHarness();
+        const fastify = createFastifyHarness();
+        fastify.jwt.verify.mockReturnValue({
+            id: 'user-1',
+            name: 'David Burgess',
+            phoneNumber: '5055551000',
+        });
+        slackMock.isConfigured.mockReturnValue(true);
+        slackMock.postToChannel.mockResolvedValue({ ok: true, channel: '#team-alerts' });
+
+        setupWebSocket(io, fastify);
+
+        const socket = createSocket({ token: 'valid-token', clientType: 'ios' });
+        await harness.authMiddleware(socket, vi.fn());
+        harness.connectionHandler(socket);
+
+        await socket.handlers['message:send']({
+            text: '#team-alerts clip ready',
+        });
+
+        expect(socket.emit).toHaveBeenCalledWith(
+            'message:new',
+            expect.objectContaining({
+                messageType: 'SLACK_POST',
+                content: expect.objectContaining({
+                    code: 'WS_SLACK_CONFIRMATION_OK',
+                    params: expect.objectContaining({
+                        targets: '#team-alerts',
+                    }),
+                }),
+            })
+        );
+    });
+
+    it('emits requires-upload code when slack command has no ready asset', async () => {
+        const { io, harness } = createIoHarness();
+        const fastify = createFastifyHarness();
+        fastify.jwt.verify.mockReturnValue({
+            id: 'user-1',
+            name: 'David Burgess',
+            phoneNumber: '5055551000',
+        });
+        slackMock.isConfigured.mockReturnValue(true);
+        prismaMock.asset.findFirst.mockResolvedValue(null);
+
+        setupWebSocket(io, fastify);
+
+        const socket = createSocket({ token: 'valid-token', clientType: 'ios' });
+        await harness.authMiddleware(socket, vi.fn());
+        harness.connectionHandler(socket);
+
+        await socket.handlers['message:send']({
+            text: '#team-alerts clip ready',
+        });
+
+        expect(socket.emit).toHaveBeenCalledWith(
+            'message:new',
+            expect.objectContaining({
+                messageType: 'TEXT',
+                content: expect.objectContaining({
+                    code: 'WS_SLACK_REQUIRES_UPLOAD',
+                }),
+            })
+        );
+    });
+
+    it('emits failure confirmation code when slack post fails', async () => {
+        const { io, harness } = createIoHarness();
+        const fastify = createFastifyHarness();
+        fastify.jwt.verify.mockReturnValue({
+            id: 'user-1',
+            name: 'David Burgess',
+            phoneNumber: '5055551000',
+        });
+        slackMock.isConfigured.mockReturnValue(true);
+        slackMock.postToChannel.mockResolvedValue({ ok: false, error: 'channel_not_found' });
+
+        setupWebSocket(io, fastify);
+
+        const socket = createSocket({ token: 'valid-token', clientType: 'ios' });
+        await harness.authMiddleware(socket, vi.fn());
+        harness.connectionHandler(socket);
+
+        await socket.handlers['message:send']({
+            text: '#does-not-exist clip ready',
+        });
+
+        expect(socket.emit).toHaveBeenCalledWith(
+            'message:new',
+            expect.objectContaining({
+                messageType: 'SLACK_POST',
+                content: expect.objectContaining({
+                    code: 'WS_SLACK_CONFIRMATION_FAILED',
+                    params: expect.objectContaining({
+                        failedTargets: expect.stringContaining('#does-not-exist'),
+                    }),
                 }),
             })
         );
@@ -291,7 +400,8 @@ describe('ws handler targeted coverage', () => {
                 messageType: 'TEXT',
                 direction: 'INCOMING',
                 content: expect.objectContaining({
-                    text: expect.stringContaining('send me your videos'),
+                    code: 'WS_TEXT_AUTO_REPLY_SEND_VIDEO',
+                    text: expect.stringContaining('Send me your videos'),
                 }),
             })
         );

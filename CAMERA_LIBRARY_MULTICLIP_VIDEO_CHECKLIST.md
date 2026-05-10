@@ -37,12 +37,12 @@ Create file:
 - ios/DirectVideoUploader/Models/VideoBatch.swift
 
 Add:
-- VideoBatchContext (slug, type, description, priority, destination, notes)
-- VideoBatchItem (localId, fileName, status, progress, assetId, error)
+- VideoBatchContext (slug, type, description, priority,destination)
+- VideoBatchItem (localId, fileName, status, progress, assetId, error, org)
 - VideoBatchState (queued, indexing, uploading, paused, complete, partialFailed)
 
 Acceptance:
-- Models compile and support serialization to disk.
+- Models compile and support serialization to disk. 
 
 ### Step 2 — Add Batch Persistence (iOS)
 
@@ -58,7 +58,7 @@ Add methods:
 Acceptance:
 - Batch state survives app relaunch. 
 
-### Step 3 — Upgrade VideoLibraryView to Multiselect
+### Step 3 — Upgrade VideoLibraryView to Multiselect 
 
 Modify:
 - ios/DirectVideoUploader/Views/Chat/VideoLibraryView.swift

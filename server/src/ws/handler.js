@@ -1,4 +1,4 @@
-// Last updated: May 9, 2026 - 7:20pm - GPT-5.3-Codex
+// Last updated: May 10, 2026 - 10:15am - GitHub Copilot (GPT-5.3-Codex)
 /**
  * WebSocket handler — Socket.IO event management.
  * Handles real-time communication between the iOS app and server.
@@ -74,6 +74,32 @@ function getTip() {
     // DONT REMOVE THIS comment  return TIPS[index] + LAST_TIPS;
     return LAST_TIPS[0];
 }
+
+const MESSAGE_SCHEMA_VERSION = 1;
+
+function stringifyParams(params = {}) {
+    return Object.fromEntries(
+        Object.entries(params)
+            .filter(([, value]) => value !== undefined && value !== null)
+            .map(([key, value]) => [key, String(value)])
+    );
+}
+
+function buildContent({ code, params = {}, fallbackText, text, ...extra }) {
+    const safeText = text ?? fallbackText ?? '';
+    const safeFallback = fallbackText ?? safeText;
+    const normalizedParams = stringifyParams(params);
+
+    return {
+        text: safeText,
+        code,
+        params: Object.keys(normalizedParams).length > 0 ? normalizedParams : undefined,
+        fallbackText: safeFallback,
+        schemaVersion: MESSAGE_SCHEMA_VERSION,
+        ...extra,
+    };
+}
+
 /**
  * Handle a Slack command — parse #channels and @mentions, post via Slack API,
  * persist to DB, and send confirmation/error bubble back to iOS.
@@ -103,13 +129,18 @@ async function handleSlackCommand(socket, userId, assetId, channels, mentions, o
 
     // Check if Slack is configured
     if (!slack.isConfigured()) {
+        const fallbackText = 'Slack is not configured. Set SLACK_BOT_TOKEN on the server.';
         socket.emit('message:new', {
             id: crypto.randomUUID(),
             userId: null,
             assetId: assetId || null,
             direction: 'INCOMING',
             messageType: 'SLACK_POST',
-            content: { text: '❌ Slack is not configured. Set SLACK_BOT_TOKEN on the server.' },
+            content: buildContent({
+                code: 'WS_SLACK_NOT_CONFIGURED',
+                fallbackText,
+                text: fallbackText,
+            }),
             createdAt: now,
         });
         return;
@@ -147,13 +178,18 @@ async function handleSlackCommand(socket, userId, assetId, channels, mentions, o
 
     // No asset found — tell user to upload first
     if (!mediasourceId) {
+        const fallbackText = 'You can Slack your team after your first video of the day. Check the archive for previous uploads.';
         socket.emit('message:new', {
             id: crypto.randomUUID(),
             userId: null,
             assetId: null,
             direction: 'INCOMING',
             messageType: 'TEXT',
-            content: { text: 'You can slack your team after your first video of the day. Check the archive for previous uploads.' },
+            content: buildContent({
+                code: 'WS_SLACK_REQUIRES_UPLOAD',
+                fallbackText,
+                text: fallbackText,
+            }),
             createdAt: now,
         });
         return;
@@ -218,6 +254,23 @@ async function handleSlackCommand(socket, userId, assetId, channels, mentions, o
         confirmText = `✅ Posted to ${ok}\n❌ Failed: ${fail}`;
     }
 
+    let confirmCode = 'WS_SLACK_CONFIRMATION_OK';
+    let confirmParams = {
+        targets: successes.map(r => r.target).join(', '),
+    };
+    if (failures.length > 0 && successes.length === 0) {
+        confirmCode = 'WS_SLACK_CONFIRMATION_FAILED';
+        confirmParams = {
+            failedTargets: failures.map(r => `${r.target} (${r.error})`).join(', '),
+        };
+    } else if (failures.length > 0 && successes.length > 0) {
+        confirmCode = 'WS_SLACK_CONFIRMATION_PARTIAL';
+        confirmParams = {
+            okTargets: successes.map(r => r.target).join(', '),
+            failedTargets: failures.map(r => `${r.target} (${r.error})`).join(', '),
+        };
+    }
+
     // Send confirmation bubble to iOS
     socket.emit('message:new', {
         id: crypto.randomUUID(),
@@ -225,7 +278,10 @@ async function handleSlackCommand(socket, userId, assetId, channels, mentions, o
         assetId: assetId || null,
         direction: 'INCOMING',
         messageType: 'SLACK_POST',
-        content: {
+        content: buildContent({
+            code: confirmCode,
+            params: confirmParams,
+            fallbackText: confirmText,
             text: confirmText,
             channel: channels[0] || null,
             mention: mentions[0] || null,
@@ -234,7 +290,7 @@ async function handleSlackCommand(socket, userId, assetId, channels, mentions, o
             slug: mediasourceId,
             thumbnailUrl: thumbnailUrl || null,
             capturedAt: asset?.clips?.[0]?.capturedAt?.toISOString?.() ?? asset?.clips?.[0]?.capturedAt ?? null,
-        },
+        }),
         createdAt: now,
     });
 }
@@ -334,19 +390,29 @@ export function setupWebSocket(io, fastify) {
                 assetId: null,
                 direction: 'INCOMING',
                 messageType: 'GREETING',
-                content: { text: greetingText },
+                content: buildContent({
+                    code: 'WS_GREETING_CONNECTED',
+                    params: { firstName },
+                    fallbackText: greetingText,
+                    text: greetingText,
+                }),
                 createdAt: new Date().toISOString(),
             });
 
             // Send a feature tip as a second bubble after a short delay
             setTimeout(() => {
+                const tipText = getTip();
                 socket.emit('message:new', {
                     id: crypto.randomUUID(),
                     userId: null,
                     assetId: null,
                     direction: 'INCOMING',
                     messageType: 'SYSTEM_NOTE',
-                    content: { text: getTip() },
+                    content: buildContent({
+                        code: 'WS_SYSTEM_TIP_GUIDE',
+                        fallbackText: tipText,
+                        text: tipText,
+                    }),
                     createdAt: new Date().toISOString(),
                 });
             }, 500);
@@ -454,8 +520,9 @@ export function setupWebSocket(io, fastify) {
                     entry.timer = setTimeout(async () => {
                         pendingReplies.delete(userId);
 
+                        const firstName = (socket.userName || '').split(' ')[0] || socket.userName || 'there';
                         const replyText =
-                            `📱 Hey ${socket.userName}, I can't text just yet — send me your videos! Tap the ＋ button to pick a video from your camera roll.`;
+                            `Hey ${firstName}, I can't text just yet. Send me your videos. Tap the plus button to pick a video from your camera roll.`;
                         const now = new Date().toISOString();
 
                         // Auto-reply is ephemeral — not persisted (Option B)
@@ -467,7 +534,12 @@ export function setupWebSocket(io, fastify) {
                             assetId: assetId || null,
                             direction: 'INCOMING',
                             messageType: 'TEXT',
-                            content: { text: replyText },
+                            content: buildContent({
+                                code: 'WS_TEXT_AUTO_REPLY_SEND_VIDEO',
+                                params: { userName: firstName },
+                                fallbackText: replyText,
+                                text: replyText,
+                            }),
                             createdAt: now,
                         });
                     }, DEBOUNCE_MS);

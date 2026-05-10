@@ -1,3 +1,4 @@
+// May 10, 2026 - 10:15am - GitHub Copilot (GPT-5.3-Codex)
 import SwiftUI
 
 /// Individual chat bubble — handles outgoing (blue, right) and incoming (gray, left).
@@ -6,13 +7,13 @@ struct MessageBubble: View {
     var thumbnail: UIImage?
     var slackSent: Bool = false
     var onTapMetadata: (() -> Void)?
-    
+
     private var isOutgoing: Bool { message.isOutgoing }
-    
+
     var body: some View {
         HStack {
             if isOutgoing { Spacer(minLength: 60) }
-            
+
             VStack(alignment: isOutgoing ? .trailing : .leading, spacing: 4) {
                 // Bubble content
                 bubbleContent
@@ -29,14 +30,14 @@ struct MessageBubble: View {
                         .padding(.horizontal, 4)
                 }
             }
-            
+
             if !isOutgoing { Spacer(minLength: 60) }
         }
         .padding(.vertical, 2)
     }
-    
+
     // MARK: - Bubble Content
-    
+
     @ViewBuilder
     private var bubbleContent: some View {
         switch message.messageType {
@@ -50,17 +51,17 @@ struct MessageBubble: View {
             textContent
         }
     }
-    
+
     // MARK: - Text
-    
+
     private var textContent: some View {
         Text(message.content.displayText)
             .font(Theme.font16Regular)
             .foregroundStyle(isOutgoing ? Theme.white : Theme.black)
     }
-    
+
     // MARK: - Video
-    
+
     private var videoContent: some View {
         HStack(spacing: 8) {
             Image(systemName: "video.fill")
@@ -70,16 +71,16 @@ struct MessageBubble: View {
         }
         .foregroundStyle(isOutgoing ? Theme.white : Theme.black)
     }
-    
+
     // MARK: - Confirmation
-    
+
     private var confirmationContent: some View {
         VStack(alignment: .leading, spacing: 8) {
             // Main confirmation text
-            Text(message.content.text ?? "Upload confirmed")
+            Text(message.content.displayText)
                 .font(Theme.font16Regular)
                 .foregroundStyle(Theme.black)
-            
+
             // Slug
             if let slug = message.content.slug {
                 Text(slug)
@@ -87,7 +88,7 @@ struct MessageBubble: View {
                     .foregroundStyle(Theme.black)
                     .lineLimit(1)
             }
-            
+
             // Mediasource ID + Metadata button on same line
             if let msId = message.content.mediasourceId {
                 HStack(spacing: 4) {
@@ -96,9 +97,9 @@ struct MessageBubble: View {
                     Text(msId)
                         .font(Theme.mono16Bold)
                         .foregroundStyle(Theme.black)
-                    
+
                     Spacer()
-                    
+
                     if let onTapMetadata {
                         ChatActionButton(
                             icon: "info.circle.fill",
@@ -111,15 +112,15 @@ struct MessageBubble: View {
             }
         }
     }
-    
+
     // MARK: - Slack
-    
+
     @ViewBuilder
     private var slackContent: some View {
         if isOutgoing {
             // Outgoing — sending/sent indicator
             VStack(alignment: .leading, spacing: 6) {
-                Text(message.content.text ?? "")
+                Text(message.content.displayText)
                     .font(Theme.font16Regular)
                     .foregroundStyle(Theme.white)
 
@@ -205,9 +206,9 @@ struct MessageBubble: View {
             }
         }
     }
-    
+
     // MARK: - Timestamp
-    
+
     private var formattedTime: String? {
         guard let dateStr = message.createdAt else { return nil }
         return DVUDateFormatting.timeOnly(dateStr)

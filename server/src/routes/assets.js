@@ -1,4 +1,4 @@
-// Last updated: May 9, 2026 - 7:18pm - GPT-5.3-Codex
+// Last updated: May 10, 2026 - 10:15am - GitHub Copilot (GPT-5.3-Codex)
 /**
  * Asset routes — Create, upload, retrieve, submit form.
  */
@@ -345,6 +345,7 @@ export default async function assetRoutes(fastify) {
         const io = fastify.io;
         const userSockets = fastify.userSockets?.get(request.user.id);
         const clip = asset.clips?.[0];
+        const messageFallbackText = "High five. I'll text when the video is done. Metadata is ready, and you can Slack your team below.";
         if (userSockets) {
             for (const socketId of userSockets) {
                 io.to(socketId).emit('form:confirmed', {
@@ -356,7 +357,11 @@ export default async function assetRoutes(fastify) {
                     formType: formResponse.type,
                     formDescription: formResponse.description,
                     formPriority: formResponse.priority,
-                    message: `🙌 High Five! \nI'll text when the video is done. \nMetadata is ready, you can Slack your team below.`,
+                    messageCode: 'WS_FORM_CONFIRMED',
+                    messageParams: {},
+                    messageFallbackText,
+                    messageSchemaVersion: 1,
+                    message: messageFallbackText,
                 });
             }
         }
@@ -369,7 +374,10 @@ export default async function assetRoutes(fastify) {
                 direction: 'OUTGOING',
                 messageType: 'FORM_SUBMITTED',
                 content: {
-                    text: '✅ Form submitted',
+                    text: 'Form submitted',
+                    code: 'WS_FORM_SUBMITTED',
+                    fallbackText: 'Form submitted',
+                    schemaVersion: 1,
                     slug: formResponse.slug,
                     type: formResponse.type,
                     priority: formResponse.priority,

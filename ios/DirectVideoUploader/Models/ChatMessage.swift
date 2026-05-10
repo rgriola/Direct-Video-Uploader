@@ -1,3 +1,4 @@
+// May 10, 2026 - 10:15am - GitHub Copilot (GPT-5.3-Codex)
 import Foundation
 import SwiftUI
 
@@ -11,7 +12,7 @@ struct ChatMessage: Codable, Identifiable {
     let messageType: MessageType
     let content: MessageContent
     let createdAt: String?
-    
+
     /// Whether this message is from the user (outgoing) or server (incoming)
     var isOutgoing: Bool {
         direction == .outgoing
@@ -40,6 +41,10 @@ enum MessageType: String, Codable {
 /// Flexible content container — matches the JSON `content` field from the server.
 struct MessageContent: Codable {
     let text: String?
+    let code: String?
+    let params: [String: String]?
+    let fallbackText: String?
+    let schemaVersion: Int?
     let fileName: String?
     let slug: String?
     let mediasourceId: String?
@@ -48,9 +53,7 @@ struct MessageContent: Codable {
     let channel: String?
     let mention: String?
     let thumbnailUrl: String?
-    
 
-    
     // Metadata summary fields (populated on upload response / form request bubbles)
     let originalFileName: String?
     let userName: String?
@@ -62,9 +65,13 @@ struct MessageContent: Codable {
     let codec: String?
     let resolution: String?
     let hasRichMeta: Bool?
-    
+
     init(
         text: String? = nil,
+        code: String? = nil,
+        params: [String: String]? = nil,
+        fallbackText: String? = nil,
+        schemaVersion: Int? = nil,
         fileName: String? = nil,
         slug: String? = nil,
         mediasourceId: String? = nil,
@@ -85,6 +92,10 @@ struct MessageContent: Codable {
         hasRichMeta: Bool? = nil
     ) {
         self.text = text
+        self.code = code
+        self.params = params
+        self.fallbackText = fallbackText
+        self.schemaVersion = schemaVersion
         self.fileName = fileName
         self.slug = slug
         self.mediasourceId = mediasourceId
@@ -104,10 +115,10 @@ struct MessageContent: Codable {
         self.resolution = resolution
         self.hasRichMeta = hasRichMeta
     }
-    
+
     /// Display text for the chat bubble
     var displayText: String {
-        text ?? fileName ?? "..."
+        MessageCatalog.resolve(content: self)
     }
 }
 
@@ -116,13 +127,16 @@ struct MessageContent: Codable {
 struct FormField: Codable, Identifiable {
     let id: String
     let label: String
-    let type: String     // "text", "select", "textarea"
+    let type: String  // "text", "select", "textarea"
     let value: String?
     let options: [String]?
     let required: Bool?
     let isReadOnly: Bool?
-    
-    init(id: String = UUID().uuidString, label: String, type: String = "text", value: String? = nil, options: [String]? = nil, required: Bool? = nil, isReadOnly: Bool? = nil) {
+
+    init(
+        id: String = UUID().uuidString, label: String, type: String = "text", value: String? = nil,
+        options: [String]? = nil, required: Bool? = nil, isReadOnly: Bool? = nil
+    ) {
         self.id = id
         self.label = label
         self.type = type
@@ -140,8 +154,9 @@ extension FormField {
             FormField(id: "slug", label: "Slug / Title", type: "text", value: nil),
             FormField(id: "type", label: "Content Type", type: "select", options: ["Raw", "Cut"]),
             FormField(id: "description", label: "Description / Notes", type: "textarea"),
-            FormField(id: "priority", label: "Priority", type: "select", value: "Low",
-                      options: ["Low", "Medium", "High", "Critical"]),
+            FormField(
+                id: "priority", label: "Priority", type: "select", value: "Low",
+                options: ["Low", "Medium", "High", "Critical"]),
         ]
     }
 }
