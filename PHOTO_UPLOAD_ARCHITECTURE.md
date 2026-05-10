@@ -1,5 +1,6 @@
 # Photo-Fixer — Upload Pipeline Architecture
 - May 3 2026
+- Last updated: May 9, 2026 - 10:29pm - GPT-5.3-Codex
 - NOTES for me. I need to consider the upload feature, sidecars + interaction with Lightroom + Classic. Also a way to manage LR Classic catalogs + thumbnails ie; Are catalogs connected by year? Month? Can the dashboard using Adobe Extensions auto create and connect catalogs so search works across all the catalogs.  Also how can an AI implimentation on the Photo Dash assist search, vetting and scanning photos, using LR Facial Recognition, can this be done? Is this complicated?  Is there a way to make the upload process TEXT to Number > Dumps on Server (original Fixer idea for video). 
 
 
@@ -8,7 +9,8 @@
 > "Will this photo land in Lightroom ready to catalog with correct metadata?"
 >
 > Status: Design phase — no implementation yet.
-> Last updated: May 1, 2026
+> Last updated: May 9, 2026 - 10:29pm - GPT-5.3-Codex
+> Quick reference: [Photo Metadata Cheat Sheet](PHOTO_METADATA_CHEAT_SHEET.md)
 
 ---
 
@@ -25,18 +27,18 @@ clear status messages at every stage of the transport.
 
 ---
 
-## 2. Authentication — Supabase Email Auth
+## 2. Authentication — Keep Phone Number + PIN + Org Code (Demo Scope)
 
-Replace the phone/PIN model for Photo-Fixer with **Supabase email auth**:
+For demo development, Photo-Fixer keeps the existing Fixer auth model:
 
-- Simpler onboarding — email + password, magic link option
-- Supabase handles JWTs, refresh tokens, password reset emails
-- Row-level security ties projects to `auth.uid()`
-- Pairs naturally with the email notification system (§6)
-- Optional: SMS via Twilio for delivery confirmations (extra service, not P1)
+- Login uses `companyCode + phoneNumber + pin`
+- Server verifies account is `ACTIVE` and issues JWT
+- JWT carries: `id`, `role`, `companyCode`
+- All project/photo API access is scoped by `companyCode`
+- Optional SMS notifications remain independent of auth provider
 
-> The existing video pipeline's phone/PIN auth is left untouched.
-> Photo-Fixer can share the same Supabase project or run independently.
+> The existing video pipeline auth remains unchanged.
+> Supabase email auth can be revisited post-demo as a migration project, not P1.
 
 ---
 
@@ -51,7 +53,7 @@ Replace the phone/PIN model for Photo-Fixer with **Supabase email auth**:
         ├─ 4. Upload (zip/multipart → catch server)
         └─ 5. Status notifications → sender + receiver
                         │
-                        ▼ HTTPS (write-only public endpoint)
+                        ▼ HTTPS (authenticated endpoint; no anonymous upload/download)
 [Catch Server — user-owned, minimal overhead]
         │
         ├─ Validate format
@@ -270,13 +272,27 @@ Background uploads use `URLSessionConfiguration.background` — same pattern as 
 | `DRAFT` | "Not uploaded yet" | — |
 | `UPLOADING` | "Sending · 3 of 12 photos" | — |
 | `PROCESSING` | "Arrived · preparing files" | — |
+| `READY_PENDING_NOTIFY` | "✅ Processed · sending notifications" | — |
 | `READY` | "✅ Delivered · ready in Lightroom" | Email: "Your photos are ready" |
 | `PARTIAL` | "⚠️ 2 of 12 failed — tap to retry" | — |
 | `FAILED` | "❌ Upload failed — [reason]" | — |
 
+### Status Semantics (Decision)
+
+To avoid ambiguity:
+
+- `technicalStatus`: `DRAFT | UPLOADING | PROCESSING | PARTIAL | FAILED | READY`
+- `deliveryStatus`: `PENDING | NOTIFIED | FAILED`
+
+Operational rule:
+
+- Processing job completion sets `technicalStatus=READY` and `deliveryStatus=PENDING`
+- Notification workers update `deliveryStatus=NOTIFIED` when sender/receiver alerts succeed
+- UI label "Delivered" is shown only when `technicalStatus=READY` and `deliveryStatus=NOTIFIED`
+
 ### Notification Channels
 
-**Email (P1 — Supabase transactional email):**
+**Email (P1 — transactional email provider):**
 - Sender: upload complete confirmation with photo count + project title
 - Receiver: "Project [Title] delivered — [N] photos ready to import"
   - Includes: thumbnail grid preview, download link (if applicable)
@@ -303,7 +319,7 @@ All errors log to server `ErrorLog` table (existing schema) with `source: 'photo
 
 ### 7.1 Catch Server Design
 
-> **Decision:** Write-only public endpoint on a protected IP.
+> **Decision:** Authenticated ingest endpoint + scoped download access.
 > Minimal server overhead — no rendering, no transcoding.
 > Receives bytes → writes to storage → queues post-processing jobs.
 
@@ -312,7 +328,7 @@ The catch server can be:
 - A separate Render service from the video backend
 - Serverless (Cloudflare Workers + R2) — no server to maintain
 
-Authentication: JWT from Supabase. The upload endpoint validates the token but
+Authentication: existing Fixer JWT (phone/PIN/org). The upload endpoint validates token + org scope but
 otherwise does minimal work. All heavy processing (exiftool, Sharp) is queued.
 
 ### 7.2 Routes (`server/src/routes/photos.js`)
@@ -326,28 +342,63 @@ DELETE /api/photos/projects/:id          Soft delete
 
 POST   /api/photos/upload                Per-photo multipart upload
 POST   /api/photos/upload/batch          Zip/tar batch upload (P2 experiment)
-GET    /api/photos/:id/download/original Stream original bytes
-GET    /api/photos/:id/download/tagged   Stream exiftool-processed copy
-GET    /api/photos/:id/thumbnail         800px JPEG thumbnail
+GET    /api/photos/:id/download/original Stream original bytes (auth + org scoped)
+GET    /api/photos/:id/download/tagged   Stream exiftool-processed copy (auth + org scoped)
+GET    /api/photos/:id/thumbnail         800px JPEG thumbnail (auth + org scoped)
 PATCH  /api/photos/:id/sidecar           Update sidecar (re-triggers exiftool job)
 
-GET    /api/admin/photos/projects        All orgs — separate admin section
+GET    /api/admin/photos/projects        ADMIN: own org only
+GET    /api/admin/photos/projects/all    SUPER_ADMIN only (optional post-demo)
 ```
+
+### 7.2A Access Policy — Org Scoping
+
+| Role | Allowed scope |
+|------|----------------|
+| `USER` | Own projects/photos only (`userId === request.user.id`) |
+| `ADMIN` | Any project/photo where `orgCode === request.user.companyCode` |
+| `SUPER_ADMIN` | All orgs (not required for demo; future toggle) |
+
+Non-negotiable rules:
+
+- Admin org scope is enforced server-side, never from client query params.
+- Cross-org resource IDs return 404 (not 403) to avoid data enumeration.
+- Download links are either authenticated route access or short-lived signed URLs.
 
 ### 7.3 Upload Handler — Zero Buffering
 
 ```js
+let storageKey = null;
+let sidecar = null;
+let fileCount = 0;
+
 for await (const part of req.parts()) {
   if (part.type === 'file' && part.fieldname === 'file') {
+    fileCount += 1;
+    if (fileCount > 1) return reply.code(400).send({ error: 'Exactly one file part is required' });
+
     // Pipe directly to storage — never buffer an 80MB RAW file in memory
-    const key = buildKey(projectId, photoId, part.filename);
-    await storage.writeStream(key, part.file);
+    const safeName = sanitizeFilename(part.filename);
+| `READY_PENDING_NOTIFY` | "✅ Processed · sending notifications" | — |
+| `READY` | "✅ Delivered · ready in Lightroom" | Email: "Your photos are ready" |
+    const sniff = await sniffFileHeader(part.file); // magic-byte detection
+    if (!isAllowedFormat(ext, sniff)) {
+      return reply.code(415).send({ error: 'Unsupported or mismatched file format' });
+    }
+
+    storageKey = buildKey(projectId, photoId, safeName);
+    await storage.writeStream(storageKey, part.file);
   } else if (part.fieldname === 'sidecar') {
     sidecar = JSON.parse(await part.toBuffer()); // JSON is small — OK to buffer
   }
 }
+
+if (!storageKey || !sidecar) {
+  return reply.code(400).send({ error: 'file and sidecar are both required' });
+}
+
 // Queue async jobs — return 202 immediately
-await jobQueue.add('process-photo', { photoId, key, sidecar });
+await jobQueue.add('process-photo', { photoId, storageKey, sidecar, orgCode, idempotencyKey });
 reply.code(202).send({ photoId, status: 'PROCESSING' });
 ```
 
@@ -379,8 +430,9 @@ async function processPhoto({ photoId, storageKey, sidecar }) {
   const thumb = await sharp(localPath).resize(800).jpeg({ quality: 85 }).toBuffer();
   await storage.upload(thumbKey(storageKey), thumb);
 
+  await db.photo.update({ where: { id: photoId }, data: { status: 'READY_PENDING_NOTIFY' } });
+  await notifyDelivery(photoId); // email sender + receiver (outbox + retries)
   await db.photo.update({ where: { id: photoId }, data: { status: 'READY' } });
-  await notifyDelivery(photoId); // email sender + receiver
 }
 
 function buildXMPFields(sidecar) {
@@ -432,8 +484,46 @@ const ALLOWED_EXTENSIONS = new Set([
 const RAW_EXTENSIONS = new Set([
   'cr2','cr3','arw','nef','orf','raf','rw2','pef','srw','dng'
 ]);
-// Extension is ground truth — MIME type is unreliable for RAW formats
+// Extension guides expected family; magic-byte sniffing is enforcement.
 ```
+
+### 7.7 Security Contract (Demo-Appropriate)
+
+Minimum contract to implement before launch:
+
+1. Auth model: phone+PIN+org JWT, validated on every photo route.
+2. Org scope: all admin list/detail/download routes filtered by `request.user.companyCode`.
+3. Least privilege:
+  - No anonymous upload/download endpoints.
+  - Admin cannot access cross-org IDs.
+4. Download safety:
+  - Option A: authenticated API streaming
+  - Option B: signed URLs with short TTL (5-15 min)
+5. Abuse controls:
+  - Per-user and per-org upload rate limits
+  - Per-file max size and max files per project
+6. Audit logging:
+  - Record userId, companyCode, projectId, photoId, action, requestId, IP.
+
+### 7.8 Validation Contract (File + Metadata)
+
+1. Validate extension allowlist and file signature (magic bytes).
+2. Reject extension/signature mismatch.
+3. Sidecar schema validation with limits:
+  - max caption length
+  - max keyword count
+  - max keyword length
+  - coordinate bounds
+4. Normalize strings (trim, control-char stripping).
+5. Preserve original bytes exactly; all writes happen to derivative files (`.xmp`, `tagged.*`, `thumb.jpg`).
+
+### 7.9 Reliability Contract (Idempotency + Delivery)
+
+1. Idempotency key per upload (`X-Upload-Id`) to prevent duplicate processing.
+2. Optional checksum (`X-File-SHA256`) for integrity verification.
+3. Queue retry policy + dead-letter queue for failed processing jobs.
+4. Notification outbox table with retries/backoff.
+5. `deliveryStatus` is independent from technical processing state.
 
 ---
 
@@ -443,10 +533,12 @@ const RAW_EXTENSIONS = new Set([
 model PhotoProject {
   id           String             @id @default(uuid())
   userId       String             @map("user_id")
+  orgCode      String             @map("org_code")
   title        String
   notes        String?
   destEmail    String?            @map("destination_email")
   status       PhotoProjectStatus @default(DRAFT)
+  deliveryStatus DeliveryStatus   @default(PENDING) @map("delivery_status")
   photoCount   Int                @default(0) @map("photo_count")
   expiresAt    DateTime?          @map("expires_at") // 7-day draft TTL
   createdAt    DateTime           @default(now()) @map("created_at")
@@ -455,11 +547,16 @@ model PhotoProject {
   user         User               @relation(fields: [userId], references: [id])
   photos       Photo[]
   @@index([userId])
+  @@index([orgCode, createdAt])
   @@map("photo_projects")
 }
 
 enum PhotoProjectStatus {
-  DRAFT UPLOADING PROCESSING READY PARTIAL FAILED ARCHIVED
+  DRAFT UPLOADING PROCESSING READY_PENDING_NOTIFY READY PARTIAL FAILED ARCHIVED
+}
+
+enum DeliveryStatus {
+  PENDING NOTIFIED FAILED
 }
 
 model Photo {
@@ -484,7 +581,7 @@ model Photo {
   @@map("photos")
 }
 
-enum PhotoStatus { UPLOADING PROCESSING READY ERROR }
+enum PhotoStatus { UPLOADING PROCESSING READY_PENDING_NOTIFY READY ERROR }
 ```
 
 ---
@@ -525,7 +622,7 @@ Slack is socketed in — implementation left to the user to connect their own wo
 ```js
 // server/src/lib/notifiers/index.js
 const notifiers = [
-  new EmailNotifier(),          // P1 — Supabase transactional email
+  new EmailNotifier(),          // P1 — transactional email provider
   new SMSNotifier(),            // P3 — Twilio (opt-in)
   new SlackNotifier(),          // P4 — user provides Bot Token + Channel ID
 ];
@@ -546,10 +643,10 @@ User connects it by adding `SLACK_BOT_TOKEN` and `SLACK_PHOTO_CHANNEL` env vars.
 > from the video asset table.
 
 Admin dashboard additions:
-- `/admin/photos` — project list, all orgs, searchable by title / sender / date
+- `/admin/photos` — project list, ADMIN sees own org only (SUPER_ADMIN all orgs optional)
 - `/admin/photos/:id` — project gallery view (thumbnail grid), metadata panel
 - Download buttons: original / tagged / XMP sidecar per photo
-- Status badges: DRAFT / PROCESSING / READY / ERROR
+- Status badges: DRAFT / PROCESSING / READY_PENDING_NOTIFY / READY / ERROR
 - Re-trigger exiftool job button (for fixing metadata after the fact)
 
 ---
@@ -558,7 +655,11 @@ Admin dashboard additions:
 
 ### P1 — Core Pipeline
 
-- [ ] Supabase auth integration (email)
+- [ ] Keep existing phoneNumber + pin + org auth for all photo routes
+- [ ] Enforce ADMIN org scoping on photo admin routes and downloads
+- [ ] Implement Security Contract (§7.7)
+- [ ] Implement Validation Contract (§7.8)
+- [ ] Implement Reliability Contract (§7.9)
 - [ ] `PhotoFormatResolver.swift`
 - [ ] `PhotoSidecar.swift` + `ImageIO` extraction
 - [ ] `PhotoProject.swift` models + 7-day expiry logic
@@ -601,18 +702,19 @@ Admin dashboard additions:
 ---
 
 ## 13. Design Decision Log
-
 | Decision | Choice | Rationale |
 |---|---|---|
 | End destination | Adobe Lightroom | XMP sidecars for RAW; embedded IPTC for JPEG/TIFF |
 | Metadata write | Hybrid: server exiftool | Original untouched in transit; server bakes metadata post-arrival |
 | RAW metadata | `.xmp` sidecar | Lightroom standard — it writes .xmp, so we write .xmp |
 | JPEG/TIFF metadata | Embedded via exiftool | Lightroom reads embedded; no sidecar needed |
-| Auth | Supabase email | Simpler for photo users vs. phone/PIN; transactional email built-in |
+| Auth | Phone number + PIN + org code (demo) | Reuses current Fixer login model and minimizes migration risk |
 | UX flow | Name project → pick photos | Project is the umbrella; photos live under it |
 | Upload mode | Per-photo multipart (P1), zip batch (P4 experiment) | Per-photo allows granular retry; zip tested for reliability later |
 | Thumbnails | Server-side Sharp, async | Validates file integrity; no battery hit on device |
 | Draft TTL | 7 days auto-delete | Prevents stale drafts accumulating on device |
+| Admin scope | Org-scoped by `companyCode` | Prevents cross-org access in demo and enterprise |
+| Delivery semantics | Technical status + delivery status | Avoids showing "Delivered" before notifications actually succeed |
 | Slack | Socketed notifier | User connects their own workspace; not a P1 dependency |
 | Org quotas | Skipped | Handled by customer's own storage capacity |
 | Admin UI | Separate from video | Photos deserve clean dedicated UX |
@@ -625,3 +727,58 @@ Admin dashboard additions:
 - Existing video pipeline (Mux, WebSocket, `ChatViewModel`, `Asset`/`Clip` tables)
 - Existing phone/PIN auth for the video app
 - `PhotosView.swift` is the only existing iOS file replaced
+
+---
+
+## 15. EXIF/IPTC Foundation (Practical Truth)
+
+### 15.1 What metadata exists and where it lives
+
+Think of three layers:
+
+1. EXIF: camera/capture metadata (date/time, camera model, lens, exposure, GPS).
+2. IPTC: editorial metadata (caption, headline, keywords, copyright, credit, location).
+3. XMP: modern metadata container Adobe tools use; can carry IPTC and custom fields.
+
+### 15.2 By file type
+
+| File type | Can contain EXIF | Can contain IPTC/XMP embedded | Best practice for this plan |
+|-----------|------------------|-------------------------------|-----------------------------|
+| RAW (`.cr3`, `.nef`, `.arw`, etc.) | Yes (camera writes) | Sometimes readable, but direct writes are risky/inconsistent | Keep original untouched; write `.xmp` sidecar |
+| JPEG | Yes | Yes | Embed IPTC/XMP into tagged copy |
+| TIFF | Yes | Yes | Embed IPTC/XMP into tagged copy |
+| HEIC | Yes | Limited/varies by ecosystem | Embed where supported, keep sidecar JSON as source of truth |
+
+### 15.3 What can be added safely
+
+- RAW: add editorial metadata via `.xmp` sidecar.
+- JPEG/TIFF: add IPTC/XMP into file copy (`tagged.*`), preserve original.
+- EXIF capture fields should usually be preserved; only allow controlled overrides (date/GPS correction) with audit trail.
+
+### 15.4 How to read metadata without heavy coding
+
+Use `exiftool` from terminal:
+
+```bash
+# All metadata, grouped, readable
+exiftool -a -G1 -s /path/to/file.CR3
+
+# Focused capture + editorial fields
+exiftool -DateTimeOriginal -Make -Model -LensModel -ISO -ShutterSpeed -Aperture \
+  -GPSLatitude -GPSLongitude -Headline -Caption-Abstract -Keywords -Copyright \
+  /path/to/file.jpg
+
+# Show XMP sidecar values
+exiftool -a -G1 -s /path/to/file.xmp
+
+# Compare original vs tagged output quickly
+exiftool -a -G1 -s original.jpg > original.meta.txt
+exiftool -a -G1 -s tagged.jpg > tagged.meta.txt
+diff -u original.meta.txt tagged.meta.txt
+```
+
+No-code/low-code inspection options:
+
+- Lightroom Classic Metadata panel (best practical view for editorial workflow).
+- macOS Finder/Preview Inspector (basic EXIF only, limited IPTC visibility).
+- ExifTool GUI wrappers if preferred, while keeping ExifTool as ground truth.
