@@ -1,4 +1,4 @@
-// Last updated: May 10, 2026 - 10:37am - GitHub Copilot (GPT-5.3-Codex)
+// Last updated: May 10, 2026 - 6:46pm - GitHub Copilot (GPT-5.3-Codex)
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const prismaMock = {
@@ -6,6 +6,7 @@ const prismaMock = {
         create: vi.fn(),
     },
     asset: {
+        findMany: vi.fn(),
         findFirst: vi.fn(),
     },
 };
@@ -13,6 +14,7 @@ const prismaMock = {
 const slackMock = {
     isConfigured: vi.fn(),
     buildAssetMessage: vi.fn(),
+    buildBatchAssetMessage: vi.fn(),
     postToChannel: vi.fn(),
     postDM: vi.fn(),
 };
@@ -24,6 +26,7 @@ vi.mock('../lib/prisma.js', () => ({
 vi.mock('../lib/slack.js', () => ({
     isConfigured: slackMock.isConfigured,
     buildAssetMessage: slackMock.buildAssetMessage,
+    buildBatchAssetMessage: slackMock.buildBatchAssetMessage,
     postToChannel: slackMock.postToChannel,
     postDM: slackMock.postDM,
 }));
@@ -42,6 +45,7 @@ beforeEach(() => {
     vi.clearAllMocks();
 
     prismaMock.chatMessage.create.mockResolvedValue({});
+    prismaMock.asset.findMany.mockResolvedValue([]);
     prismaMock.asset.findFirst.mockResolvedValue({
         mediasourceId: '100000001',
         formResponse: { slug: 'breaking-news' },
@@ -51,6 +55,10 @@ beforeEach(() => {
     slackMock.isConfigured.mockReturnValue(false);
     slackMock.buildAssetMessage.mockReturnValue({
         text: 'message-text',
+        blocks: [],
+    });
+    slackMock.buildBatchAssetMessage.mockReturnValue({
+        text: 'batch-message-text',
         blocks: [],
     });
     slackMock.postToChannel.mockResolvedValue({ ok: true, channel: '#news' });
@@ -293,6 +301,53 @@ describe('ws handler targeted coverage', () => {
                         targets: '#team-alerts',
                     }),
                 }),
+            })
+        );
+    });
+
+    it('builds multiclip slack payload when iOS sends assetIds', async () => {
+        const { io, harness } = createIoHarness();
+        const fastify = createFastifyHarness();
+        fastify.jwt.verify.mockReturnValue({
+            id: 'user-1',
+            name: 'David Burgess',
+            phoneNumber: '5055551000',
+        });
+        slackMock.isConfigured.mockReturnValue(true);
+        prismaMock.asset.findMany.mockResolvedValue([
+            {
+                id: 'asset-1',
+                mediasourceId: '100000001',
+                formResponse: { slug: 'protest 1' },
+                clips: [{ muxPlaybackId: 'play-1', capturedAt: new Date('2026-05-10T10:00:00.000Z'), duration: 12, resolution: '1920×1080' }],
+            },
+            {
+                id: 'asset-2',
+                mediasourceId: '100000002',
+                formResponse: { slug: 'protest 2' },
+                clips: [{ muxPlaybackId: 'play-2', capturedAt: new Date('2026-05-10T10:02:00.000Z'), duration: 15, resolution: '1920×1080' }],
+            },
+        ]);
+
+        setupWebSocket(io, fastify);
+
+        const socket = createSocket({ token: 'valid-token', clientType: 'ios' });
+        await harness.authMiddleware(socket, vi.fn());
+        harness.connectionHandler(socket);
+
+        await socket.handlers['message:send']({
+            text: '#team-alerts clips ready',
+            assetId: 'asset-1',
+            assetIds: ['asset-1', 'asset-2'],
+        });
+
+        expect(slackMock.buildBatchAssetMessage).toHaveBeenCalledWith(
+            expect.objectContaining({
+                userName: 'David Burgess',
+                assets: expect.arrayContaining([
+                    expect.objectContaining({ mediasourceId: '100000001' }),
+                    expect.objectContaining({ mediasourceId: '100000002' }),
+                ]),
             })
         );
     });

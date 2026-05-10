@@ -1,4 +1,4 @@
-// Last updated: May 9, 2026 - 6:55pm - GPT-5.3-Codex
+// Last updated: May 10, 2026 - 6:46pm - GitHub Copilot (GPT-5.3-Codex)
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const originalSlackToken = process.env.SLACK_BOT_TOKEN;
@@ -73,5 +73,42 @@ describe('lib/slack', () => {
         expect(message.blocks).toHaveLength(2);
         expect(message.blocks[0].accessory.image_url).toBe('https://img.example.com/tn.jpg');
         expect(message.text.includes('please review')).toBe(false);
+    });
+
+    it('builds multiclip message with ordered MS IDs, metadata, and URLs', async () => {
+        const mod = await loadSlackModule(undefined);
+
+        const message = mod.buildBatchAssetMessage({
+            userName: 'David',
+            mention: '@desk',
+            assets: [
+                {
+                    mediasourceId: '100000101',
+                    clipUrl: 'https://ms-fixer.test/clips/100000101',
+                    slug: 'Protest 1',
+                    capturedAt: '2026-05-10T18:00:00.000Z',
+                    duration: 12,
+                    resolution: '1920×1080',
+                },
+                {
+                    mediasourceId: '100000102',
+                    clipUrl: 'https://ms-fixer.test/clips/100000102',
+                    slug: 'Protest 2',
+                    capturedAt: '2026-05-10T18:01:00.000Z',
+                    duration: 14,
+                    resolution: '1920×1080',
+                },
+            ],
+        });
+
+        expect(message.text).toContain('2 New Videos from David');
+        expect(message.blocks[1].text.text).toContain('1. MS# `100000101`');
+        expect(message.blocks[1].text.text).toContain('2. MS# `100000102`');
+        expect(message.blocks[1].text.text).toContain('<https://ms-fixer.test/clips/100000101|Open clip>');
+        expect(message.blocks[1].text.text).toContain('<https://ms-fixer.test/clips/100000102|Open clip>');
+        expect(message.blocks.at(-1)).toEqual({
+            type: 'context',
+            elements: [{ type: 'mrkdwn', text: '@desk please review' }],
+        });
     });
 });

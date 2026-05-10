@@ -1,4 +1,4 @@
-// May 10, 2026 - 11:06am - GitHub Copilot (GPT-5.3-Codex)
+// May 10, 2026 - 8:18pm - GitHub Copilot (GPT-5.3-Codex)
 import Foundation
 import SwiftUI
 
@@ -72,6 +72,7 @@ struct MessageContent: Codable {
     let capturedAt: String?
     let codec: String?
     let resolution: String?
+    let fileSize: String?
     let hasRichMeta: Bool?
 
     init(
@@ -97,6 +98,7 @@ struct MessageContent: Codable {
         capturedAt: String? = nil,
         codec: String? = nil,
         resolution: String? = nil,
+        fileSize: String? = nil,
         hasRichMeta: Bool? = nil
     ) {
         self.text = text
@@ -121,6 +123,7 @@ struct MessageContent: Codable {
         self.capturedAt = capturedAt
         self.codec = codec
         self.resolution = resolution
+        self.fileSize = fileSize
         self.hasRichMeta = hasRichMeta
     }
 

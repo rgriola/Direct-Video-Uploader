@@ -1,4 +1,4 @@
-// May 10, 2026 - 3:34pm - GitHub Copilot (GPT-5.3-Codex)
+// May 10, 2026 - 8:18pm - GitHub Copilot (GPT-5.3-Codex)
 import SwiftUI
 
 /// Main chat view — mirrors the `chat-demo.html` layout.
@@ -51,6 +51,27 @@ struct ChatView: View {
                                     )
                                     .id("staged-video-preview")
                                 }
+
+                                if vm.hasActiveBatch {
+                                    BatchUploadBubble(
+                                        state: vm.batchState,
+                                        totalCount: vm.batchItems.count,
+                                        completedCount: vm.batchCompletedCount,
+                                        failedCount: vm.batchFailedCount,
+                                        progress: vm.batchProgress,
+                                        fileNames: vm.batchDisplayFileNames,
+                                        onSend: {
+                                            Task { await vm.confirmBatchUpload() }
+                                        },
+                                        onCancel: {
+                                            vm.cancelStagedBatch()
+                                        },
+                                        onRetry: {
+                                            Task { await vm.retryFailedBatchItems() }
+                                        }
+                                    )
+                                    .id("batch-upload-preview")
+                                }
                             }
                         }
                         .padding(.horizontal, 12)
@@ -63,6 +84,12 @@ struct ChatView: View {
                         scrollToBottom(proxy: proxy)
                     }
                     .onChange(of: viewModel?.isUploading) { _, _ in
+                        scrollToBottom(proxy: proxy)
+                    }
+                    .onChange(of: viewModel?.batchProgress) { _, _ in
+                        scrollToBottom(proxy: proxy)
+                    }
+                    .onChange(of: viewModel?.hasActiveBatch) { _, _ in
                         scrollToBottom(proxy: proxy)
                     }
                     .scrollDismissesKeyboard(.interactively)
@@ -81,12 +108,10 @@ struct ChatView: View {
         }
         .sheet(isPresented: $showVideoLibrary) {
             VideoLibraryView(
-                onConfirm: { fileURL, fileName, metadata, phAssetId in
+                onConfirmBatch: { selectedVideos in
                     showVideoLibrary = false
                     Task {
-                        await viewModel?.stageVideo(
-                            fileURL: fileURL, fileName: fileName, metadata: metadata,
-                            phAssetIdentifier: phAssetId)
+                        await viewModel?.stageVideoBatch(selectedVideos: selectedVideos)
                     }
                 },
                 onDismiss: {
@@ -100,7 +125,7 @@ struct ChatView: View {
                 set: { viewModel?.showFormSheet = $0 }
             )
         ) {
-            if let vm = viewModel, let assetId = vm.currentAssetId {
+            if let vm = viewModel {
                 ContextFormView(
                     fields: vm.formFields,
                     originalFileName: vm.form.originalFileName,
@@ -111,7 +136,7 @@ struct ChatView: View {
                     submitError: vm.form.submitError,
                     onSubmit: { formData in
                         vm.form.submitError = nil  // Clear previous error
-                        Task { await vm.submitForm(assetId: assetId, formData: formData) }
+                        Task { await vm.submitCurrentForm(formData: formData) }
                     },
                     onCancel: {
                         vm.cancelForm()
@@ -126,7 +151,11 @@ struct ChatView: View {
             )
         ) {
             if let vm = viewModel, let clip = vm.lastClip {
-                MetadataView(clip: clip, asset: vm.lastAsset, thumbnail: vm.form.thumbnail)
+                MetadataView(
+                    clip: clip,
+                    asset: vm.lastAsset,
+                    thumbnail: vm.metadataSheetThumbnail ?? vm.form.thumbnail
+                )
             }
         }
         .sheet(
@@ -169,7 +198,9 @@ struct ChatView: View {
 
     private func scrollToBottom(proxy: ScrollViewProxy) {
         let targetId: String? =
-            if viewModel?.stagedVideo != nil {
+            if viewModel?.hasActiveBatch == true {
+                "batch-upload-preview"
+            } else if viewModel?.stagedVideo != nil {
                 "staged-video-preview"
             } else {
                 viewModel?.messages.last?.id
@@ -197,11 +228,25 @@ struct ChatView: View {
             )
             .id(message.id)
         } else if message.messageType == .muxReady {
-            let summaryMediasourceId = message.content.mediasourceId ?? vm.archive.mediasourceId
-            let summaryMediasourceUrl = message.content.mediasourceUrl ?? vm.archive.mediasourceUrl
-            let summaryFormSlug = message.content.slug ?? vm.archive.formSlug
-            let summaryDuration = message.content.duration ?? vm.archive.duration
-            let summaryResolution = message.content.resolution ?? vm.archive.resolution
+            let canUseArchiveFallback = message.assetId == vm.archive.assetId
+            let summaryMediasourceId =
+                message.content.mediasourceId
+                ?? (canUseArchiveFallback ? vm.archive.mediasourceId : nil)
+            let summaryMediasourceUrl =
+                message.content.mediasourceUrl
+                ?? (canUseArchiveFallback ? vm.archive.mediasourceUrl : nil)
+            let summaryFormSlug =
+                message.content.slug
+                ?? (canUseArchiveFallback ? vm.archive.formSlug : nil)
+            let summaryDuration =
+                message.content.duration
+                ?? (canUseArchiveFallback ? vm.archive.duration : nil)
+            let summaryResolution =
+                message.content.resolution
+                ?? (canUseArchiveFallback ? vm.archive.resolution : nil)
+            let summaryFileSize =
+                message.content.fileSize
+                ?? (canUseArchiveFallback ? vm.archive.fileSize : nil)
 
             ConversationSummaryBubble(
                 mediasourceId: summaryMediasourceId,
@@ -209,7 +254,7 @@ struct ChatView: View {
                 formSlug: summaryFormSlug,
                 duration: summaryDuration,
                 resolution: summaryResolution,
-                fileSize: vm.archive.fileSize
+                fileSize: summaryFileSize
             )
             .id(message.id)
         } else {
@@ -219,7 +264,8 @@ struct ChatView: View {
                     ? (vm.slackThumbnails[message.id] ?? vm.form.thumbnail) : nil,
                 slackSent: message.messageType == .slackPost && message.isOutgoing
                     && vm.slackConfirmedIds.contains(message.id),
-                onTapMetadata: message.messageType == .confirmation ? { vm.showMetadata() } : nil
+                onTapMetadata: message.messageType == .confirmation
+                    ? { vm.showMetadata(for: message.assetId) } : nil
             )
             .id(message.id)
         }

@@ -1,4 +1,4 @@
-// May 10, 2026 - 3:19pm - GitHub Copilot (GPT-5.3-Codex)
+// May 10, 2026 - 6:46pm - GitHub Copilot (GPT-5.3-Codex)
 import Foundation
 import Network
 import Observation
@@ -379,9 +379,10 @@ final class WebSocketService {
 
     // MARK: - Send
 
-    func sendMessage(text: String, assetId: String? = nil) {
+    func sendMessage(text: String, assetId: String? = nil, assetIds: [String]? = nil) {
         var payload: [String: Any] = ["text": text]
         if let assetId { payload["assetId"] = assetId }
+        if let assetIds, !assetIds.isEmpty { payload["assetIds"] = assetIds }
         guard let jsonData = try? JSONSerialization.data(withJSONObject: payload),
             let jsonString = String(data: jsonData, encoding: .utf8)
         else { return }

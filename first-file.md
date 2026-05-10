@@ -1040,5 +1040,10 @@ Enterprise Plan Apr 27 + Task.
 
 
 ...
-May 9 2026 
-- 
+May 10 2026 
+- Multiple Clip Video Upload
+- How to Group Videos. Title extension 1, 2, 3
+- Slack Group MS# Main Project Title. Main Caption. 
+
+- Can I add in iOS caption modification after upload. A change to the form if someone else is modifying ... conflicts can occur. How to handle? Updates One Line User ie; @rodczaro - then update to caption. Leave Title, allow caption with update user + update. 
+- Lassoed URL. 

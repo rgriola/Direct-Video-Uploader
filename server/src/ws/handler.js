@@ -1,4 +1,4 @@
-// Last updated: May 10, 2026 - 10:15am - GitHub Copilot (GPT-5.3-Codex)
+// Last updated: May 10, 2026 - 6:46pm - GitHub Copilot (GPT-5.3-Codex)
 /**
  * WebSocket handler — Socket.IO event management.
  * Handles real-time communication between the iOS app and server.
@@ -104,7 +104,7 @@ function buildContent({ code, params = {}, fallbackText, text, ...extra }) {
  * Handle a Slack command — parse #channels and @mentions, post via Slack API,
  * persist to DB, and send confirmation/error bubble back to iOS.
  */
-async function handleSlackCommand(socket, userId, assetId, channels, mentions, originalText, log) {
+async function handleSlackCommand(socket, userId, assetId, assetIds, channels, mentions, originalText, log) {
     const now = new Date().toISOString();
     const correlation = { requestId: `ws:${socket.id}` };
 
@@ -120,6 +120,7 @@ async function handleSlackCommand(socket, userId, assetId, channels, mentions, o
                     text: originalText,
                     channel: channels[0] || null,
                     mention: mentions[0] || null,
+                    assetIds: Array.isArray(assetIds) && assetIds.length > 0 ? assetIds : undefined,
                 },
             },
         });
@@ -146,38 +147,101 @@ async function handleSlackCommand(socket, userId, assetId, channels, mentions, o
         return;
     }
 
-    // Resolve asset — use explicit assetId if provided (archive), else most recent READY
-    let mediasourceId = null;
-    let clipUrl = null;
-    let thumbnailUrl = null;
-    let asset = null;
+    // Resolve assets for Slack payload.
+    // If iOS sends assetIds, build a multiclip post in that exact order.
+    // Otherwise fall back to explicit assetId or most recent READY asset.
+    let slackAssets = [];
+    let primaryAsset = null;
+
     try {
-        const where = assetId
-            ? { id: assetId, userId }
-            : { userId, status: 'READY' };
-        asset = await prisma.asset.findFirst({
-            where,
-            orderBy: { createdAt: 'desc' },
-            select: {
-                mediasourceId: true,
-                formResponse: { select: { slug: true } },
-                clips: { select: { muxPlaybackId: true, capturedAt: true }, take: 1, orderBy: { createdAt: 'desc' } },
-            },
-        });
-        if (asset?.mediasourceId) {
-            mediasourceId = asset.mediasourceId;
-            clipUrl = `${PUBLIC_URL}/clips/${mediasourceId}`;
-            const playbackId = asset.clips?.[0]?.muxPlaybackId;
-            if (playbackId) {
-                thumbnailUrl = `https://image.mux.com/${playbackId}/thumbnail.png?width=640`;
+        if (Array.isArray(assetIds) && assetIds.length > 0) {
+            const requestedIds = [...new Set(assetIds)].slice(0, 20);
+            const assets = await prisma.asset.findMany({
+                where: {
+                    userId,
+                    id: { in: requestedIds },
+                },
+                select: {
+                    id: true,
+                    mediasourceId: true,
+                    formResponse: { select: { slug: true } },
+                    clips: {
+                        select: { muxPlaybackId: true, capturedAt: true, duration: true, resolution: true },
+                        take: 1,
+                        orderBy: { createdAt: 'desc' },
+                    },
+                },
+            });
+
+            const assetMap = new Map(assets.map((entry) => [entry.id, entry]));
+            const orderedAssets = requestedIds.map((id) => assetMap.get(id)).filter(Boolean);
+
+            slackAssets = orderedAssets
+                .filter((entry) => entry.mediasourceId)
+                .map((entry) => {
+                    const clip = entry.clips?.[0];
+                    const playbackId = clip?.muxPlaybackId;
+                    return {
+                        assetId: entry.id,
+                        mediasourceId: entry.mediasourceId,
+                        clipUrl: `${PUBLIC_URL}/clips/${entry.mediasourceId}`,
+                        slug: entry.formResponse?.slug || null,
+                        capturedAt: clip?.capturedAt || null,
+                        duration: clip?.duration || null,
+                        resolution: clip?.resolution || null,
+                        thumbnailUrl: playbackId
+                            ? `https://image.mux.com/${playbackId}/thumbnail.png?width=640`
+                            : null,
+                    };
+                });
+        }
+
+        if (slackAssets.length === 0) {
+            const where = assetId
+                ? { id: assetId, userId }
+                : { userId, status: 'READY' };
+            const asset = await prisma.asset.findFirst({
+                where,
+                orderBy: { createdAt: 'desc' },
+                select: {
+                    id: true,
+                    mediasourceId: true,
+                    formResponse: { select: { slug: true } },
+                    clips: {
+                        select: { muxPlaybackId: true, capturedAt: true, duration: true, resolution: true },
+                        take: 1,
+                        orderBy: { createdAt: 'desc' },
+                    },
+                },
+            });
+
+            if (asset?.mediasourceId) {
+                const clip = asset.clips?.[0];
+                const playbackId = clip?.muxPlaybackId;
+                slackAssets = [
+                    {
+                        assetId: asset.id,
+                        mediasourceId: asset.mediasourceId,
+                        clipUrl: `${PUBLIC_URL}/clips/${asset.mediasourceId}`,
+                        slug: asset.formResponse?.slug || null,
+                        capturedAt: clip?.capturedAt || null,
+                        duration: clip?.duration || null,
+                        resolution: clip?.resolution || null,
+                        thumbnailUrl: playbackId
+                            ? `https://image.mux.com/${playbackId}/thumbnail.png?width=640`
+                            : null,
+                    },
+                ];
             }
         }
+
+        primaryAsset = slackAssets[0] || null;
     } catch (err) {
         log.error({ err: { message: err.message } }, 'Failed to look up asset for slack command');
     }
 
     // No asset found — tell user to upload first
-    if (!mediasourceId) {
+    if (!primaryAsset?.mediasourceId) {
         const fallbackText = 'You can Slack your team after your first video of the day. Check the archive for previous uploads.';
         socket.emit('message:new', {
             id: crypto.randomUUID(),
@@ -208,16 +272,41 @@ async function handleSlackCommand(socket, userId, assetId, channels, mentions, o
         slackMentionStr = resolved.join(' ');
     }
 
-    const { text: msgText, blocks } = slack.buildAssetMessage({
-        userName: socket.userName,
-        mediasourceId: mediasourceId || 'N/A',
-        clipUrl: clipUrl || '(no clip ready)',
-        mention: slackMentionStr,
-        thumbnailUrl,
-        slug: asset?.formResponse?.slug,
-        capturedAt: asset?.clips?.[0]?.capturedAt,
-    });
-    log.info({ mediasourceId, hasSlug: !!asset?.formResponse?.slug }, 'Prepared slack post payload');
+    let payload;
+    if (slackAssets.length > 1) {
+        payload = slack.buildBatchAssetMessage({
+            userName: socket.userName,
+            assets: slackAssets.map((entry) => ({
+                mediasourceId: entry.mediasourceId,
+                clipUrl: entry.clipUrl,
+                slug: entry.slug,
+                capturedAt: entry.capturedAt,
+                duration: entry.duration,
+                resolution: entry.resolution,
+            })),
+            mention: slackMentionStr,
+        });
+    } else {
+        payload = slack.buildAssetMessage({
+            userName: socket.userName,
+            mediasourceId: primaryAsset.mediasourceId || 'N/A',
+            clipUrl: primaryAsset.clipUrl || '(no clip ready)',
+            mention: slackMentionStr,
+            thumbnailUrl: primaryAsset.thumbnailUrl,
+            slug: primaryAsset.slug,
+            capturedAt: primaryAsset.capturedAt,
+        });
+    }
+
+    const { text: msgText, blocks } = payload;
+    log.info(
+        {
+            mediasourceId: primaryAsset.mediasourceId,
+            hasSlug: !!primaryAsset.slug,
+            clipCount: slackAssets.length,
+        },
+        'Prepared slack post payload'
+    );
 
     const results = [];
 
@@ -285,11 +374,11 @@ async function handleSlackCommand(socket, userId, assetId, channels, mentions, o
             text: confirmText,
             channel: channels[0] || null,
             mention: mentions[0] || null,
-            mediasourceId,
+            mediasourceId: primaryAsset.mediasourceId,
             userName: socket.userName,
-            slug: mediasourceId,
-            thumbnailUrl: thumbnailUrl || null,
-            capturedAt: asset?.clips?.[0]?.capturedAt?.toISOString?.() ?? asset?.clips?.[0]?.capturedAt ?? null,
+            slug: primaryAsset.slug || primaryAsset.mediasourceId,
+            thumbnailUrl: primaryAsset.thumbnailUrl || null,
+            capturedAt: primaryAsset.capturedAt?.toISOString?.() ?? primaryAsset.capturedAt ?? null,
         }),
         createdAt: now,
     });
@@ -458,7 +547,15 @@ export function setupWebSocket(io, fastify) {
          */
         socket.on('message:send', async (data) => {
             try {
-                const { text, assetId } = data;
+                const { text, assetId, assetIds: rawAssetIds } = data;
+                const assetIds = Array.isArray(rawAssetIds)
+                    ? [...new Set(
+                        rawAssetIds
+                            .filter((id) => typeof id === 'string')
+                            .map((id) => id.trim())
+                            .filter(Boolean)
+                    )].slice(0, 20)
+                    : [];
 
                 // C4: Sanitize incoming message — length limit + strip control chars
                 const MAX_MESSAGE_LENGTH = 500;
@@ -474,6 +571,7 @@ export function setupWebSocket(io, fastify) {
                         userName: redactPersonName(socket.userName),
                         messageLength: sanitized.length,
                         assetId: assetId || null,
+                        assetIdsCount: assetIds.length,
                     },
                     'Websocket message received'
                 );
@@ -485,7 +583,16 @@ export function setupWebSocket(io, fastify) {
                 const isSlackCommand = channels.length > 0 || mentions.length > 0;
 
                 if (isSlackCommand) {
-                    await handleSlackCommand(socket, userId, assetId, channels, mentions, trimmed, log);
+                    await handleSlackCommand(
+                        socket,
+                        userId,
+                        assetId,
+                        assetIds,
+                        channels,
+                        mentions,
+                        trimmed,
+                        log
+                    );
                     return; // Skip auto-reply for Slack commands
                 }
 

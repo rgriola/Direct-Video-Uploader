@@ -1,4 +1,4 @@
-// May 10, 2026 - 3:07pm - GitHub Copilot (GPT-5.3-Codex)
+// May 10, 2026 - 8:18pm - GitHub Copilot (GPT-5.3-Codex)
 import Foundation
 import Observation
 import UIKit
@@ -44,6 +44,7 @@ final class ChatViewModel {
     var currentAssetId: String?
     var showFormSheet = false
     var showMetadataSheet = false
+    var metadataSheetThumbnail: UIImage?
     var formFields: [FormField] = []
     var uploadProgress: Double = 0
     var isUploading = false
@@ -54,6 +55,36 @@ final class ChatViewModel {
     var stagedVideo: StagedVideo?
     var isProcessingVideo = false
     var transcribeOnUpload = false
+
+    // Batch upload state (multiclip flow)
+    var currentBatchId: String?
+    var stagedBatchVideos: [SelectedVideo] = []
+    var batchItems: [VideoBatchItem] = []
+    var batchContext: VideoBatchContext?
+    var batchProgress: Double = 0
+    var isBatchUploading = false
+    var suppressPerAssetFormSheet = false
+    var batchState: VideoBatchState = .queued
+
+    var hasActiveBatch: Bool {
+        currentBatchId != nil && !batchItems.isEmpty
+    }
+
+    var batchCompletedCount: Int {
+        batchItems.filter { $0.status == .complete }.count
+    }
+
+    var batchFailedCount: Int {
+        batchItems.filter { $0.status == .failed }.count
+    }
+
+    var batchDisplayFileNames: [String] {
+        Array(batchItems.prefix(3).map(\.fileName))
+    }
+
+    var canRetryFailedBatchItems: Bool {
+        !isBatchUploading && batchItems.contains { $0.status == .failed }
+    }
 
     // Archive state — conversation closed after mux:ready or new upload
     var isArchived = false
@@ -77,7 +108,12 @@ final class ChatViewModel {
     private var lastStagedHasLocation: Bool = false
     private var pendingPHAssetIdentifier: String?
     private var uploadTask: Task<Void, Never>?
+    private var pendingBatchFormData: [String: String]?
+    private var awaitingGroupedFormForBatch = false
+    private var sentUploadsByAssetId: [String: SentUploadInfo] = [:]
+    private var assetDetailCache: [String: Asset] = [:]
     private let messagePolicy = MessagePolicyCoordinator()
+    private let batchCoordinator = VideoBatchUploadCoordinator(maxConcurrentUploads: 2)
 
     private enum WorkflowStage: Int {
         case unknown = 0
@@ -107,6 +143,7 @@ final class ChatViewModel {
         setupWebSocketHandlers()
         setupConnectionHandlers()
         checkPendingForm()  // Check for form that was pending when app was killed
+        restorePendingBatchState()
     }
 
     // MARK: - WebSocket Handlers
@@ -176,6 +213,16 @@ final class ChatViewModel {
             self.form.duration = data["duration"] as? Int
             if let dateVal = data["capturedAt"] as? String {
                 self.form.capturedAt = dateVal
+            }
+
+            if self.suppressPerAssetFormSheet {
+                if let assetId {
+                    Task { @MainActor in
+                        _ = await self.applyGroupedFormToAsset(assetId: assetId)
+                    }
+                }
+                self.showFormSheet = false
+                return
             }
 
             self.formFields = self.buildFormFields()
@@ -533,7 +580,8 @@ final class ChatViewModel {
                     mediasourceUrl: mediasourceUrl,
                     originalFileName: originalFileName,
                     duration: duration,
-                    resolution: resolution
+                    resolution: resolution,
+                    fileSize: fileSize
                 ),
                 createdAt: DVUDateFormatting.isoString(from: Date())
             )
@@ -595,6 +643,18 @@ final class ChatViewModel {
         }
 
         return nil
+    }
+
+    private func activeSlackTargetAssetIds() -> [String]? {
+        let ids =
+            batchItems
+            .filter { $0.status == .complete }
+            .compactMap(\.assetId)
+
+        guard ids.count > 1 else { return nil }
+
+        var seen = Set<String>()
+        return ids.filter { seen.insert($0).inserted }
     }
 
     private func ensureFormConfirmedMessage(
@@ -768,6 +828,7 @@ final class ChatViewModel {
             let asset = detail.asset
             lastAsset = asset
             lastClip = asset.clips?.first
+            assetDetailCache[asset.id] = asset
 
             clearBlockingConnectivityIssueIfNeeded(assetId: asset.id)
             reconcileWorkflowState(from: asset, source: .workflow)
@@ -871,9 +932,10 @@ final class ChatViewModel {
         let range = NSRange(trimmed.startIndex..., in: trimmed)
         let isSlackCommand = Self.slackCommandPattern?.firstMatch(in: trimmed, range: range) != nil
         let slackTargetAssetId = isSlackCommand ? activeSlackTargetAssetId() : nil
+        let slackTargetAssetIds = isSlackCommand ? activeSlackTargetAssetIds() : nil
 
         // If Slack command but no current upload, tell user to upload first
-        if isSlackCommand && slackTargetAssetId == nil {
+        if isSlackCommand && slackTargetAssetId == nil && (slackTargetAssetIds?.isEmpty ?? true) {
             let localOut = ChatMessage(
                 id: UUID().uuidString,
                 userId: auth.currentUser?.id,
@@ -920,6 +982,9 @@ final class ChatViewModel {
             if let currentAssetId, !currentAssetId.isEmpty {
                 return currentAssetId
             }
+            if let firstBatchAssetId = slackTargetAssetIds?.first {
+                return firstBatchAssetId
+            }
             if isSlackCommand {
                 return slackTargetAssetId
             }
@@ -928,7 +993,11 @@ final class ChatViewModel {
 
         // Send via WebSocket — always pass explicit assetId so the server
         // doesn't fall back to "most recent READY asset" (wrong metadata bug).
-        ws.sendMessage(text: text, assetId: messageAssetId)
+        ws.sendMessage(
+            text: text,
+            assetId: messageAssetId,
+            assetIds: isSlackCommand ? slackTargetAssetIds : nil
+        )
     }
     // MARK: - Create Asset (Video Upload Flow)
 
@@ -978,13 +1047,15 @@ final class ChatViewModel {
             appendMessage(videoMessage, source: .outgoing)
 
             // Cache metadata so VideoBubble can render the card
-            sentUploads[msgId] = SentUploadInfo(
+            let uploadInfo = SentUploadInfo(
                 thumbnail: form.thumbnail,
                 fileName: fileName,
                 createdDate: lastStagedCreatedDate ?? DVUDateFormatting.longDate(from: Date()),
                 hasLocation: lastStagedHasLocation,
                 transcribeEnabled: transcribeOnUpload
             )
+            sentUploads[msgId] = uploadInfo
+            sentUploadsByAssetId[asset.id] = uploadInfo
 
             // Notify WebSocket with real file size
             ws.sendVideoUpload(
@@ -1128,6 +1199,330 @@ final class ChatViewModel {
             thumbnail: thumbnail,
             metadata: metadata
         )
+    }
+
+    /// Stage one or more selected videos. Single-item selection keeps the existing flow.
+    func stageVideoBatch(selectedVideos: [SelectedVideo]) async {
+        guard !selectedVideos.isEmpty else { return }
+
+        if selectedVideos.count == 1, let single = selectedVideos.first {
+            resetBatchState(clearDisk: true)
+            await stageVideo(
+                fileURL: single.fileURL,
+                fileName: single.fileName,
+                metadata: single.metadata,
+                phAssetIdentifier: single.phAssetIdentifier
+            )
+            return
+        }
+
+        if isArchived || currentAssetId != nil {
+            startNewConversation()
+        }
+
+        cancelStagedVideo()
+        resetBatchState(clearDisk: true)
+
+        currentBatchId = UUID().uuidString
+        stagedBatchVideos = selectedVideos
+        batchItems = selectedVideos.map {
+            VideoBatchItem(localId: $0.id, fileName: $0.fileName, org: nil)
+        }
+        batchState = .queued
+        batchProgress = 0
+        isBatchUploading = false
+        suppressPerAssetFormSheet = false
+        awaitingGroupedFormForBatch = false
+        pendingBatchFormData = nil
+        batchContext = nil
+
+        form.originalFileName = "\(selectedVideos.count) videos"
+        form.capturedAt = selectedVideos.first?.metadata.capturedAt
+        form.clipCount = selectedVideos.count
+        form.duration = selectedVideos.reduce(0) { $0 + $1.metadata.duration }
+        form.submitError = nil
+        if let first = selectedVideos.first {
+            form.thumbnail = await StagedVideo.generateThumbnail(from: first.fileURL)
+        }
+
+        persistBatchState()
+    }
+
+    /// Open the grouped context form for a staged batch.
+    func confirmBatchUpload() async {
+        guard !stagedBatchVideos.isEmpty else { return }
+        guard !isBatchUploading else { return }
+        awaitingGroupedFormForBatch = true
+        formFields = buildFormFields()
+        form.submitError = nil
+        showFormSheet = true
+    }
+
+    /// Retry only failed batch items.
+    func retryFailedBatchItems() async {
+        guard canRetryFailedBatchItems else { return }
+        await runBatchUpload(retryFailedOnly: true)
+    }
+
+    /// Entry-point for ContextFormView submits; routes to batch or single-asset flow.
+    func submitCurrentForm(formData: [String: String]) async {
+        if awaitingGroupedFormForBatch {
+            awaitingGroupedFormForBatch = false
+            pendingBatchFormData = formData
+            batchContext = VideoBatchContext(
+                slug: formData["slug"] ?? "",
+                type: formData["type"] ?? "Raw",
+                description: formData["description"] ?? "",
+                priority: formData["priority"] ?? "Low",
+                destination: formData["destination"],
+                org: formData["org"]
+            )
+            showFormSheet = false
+            await uploadBatchItemsSequentialOrBoundedConcurrency()
+            return
+        }
+
+        guard let assetId = currentAssetId else { return }
+        await submitForm(assetId: assetId, formData: formData)
+    }
+
+    /// Run the staged batch upload queue.
+    func uploadBatchItemsSequentialOrBoundedConcurrency() async {
+        await runBatchUpload(retryFailedOnly: false)
+    }
+
+    /// Apply one grouped form payload to a specific asset.
+    func applyGroupedFormToAsset(assetId: String) async -> Bool {
+        guard let formData = buildSequencedBatchFormData(for: assetId) else { return false }
+        return await submitGroupedFormPayload(assetId: assetId, formData: formData)
+    }
+
+    /// Cancel a staged batch before upload starts.
+    func cancelStagedBatch() {
+        resetBatchState(clearDisk: true)
+        showFormSheet = false
+    }
+
+    private func runBatchUpload(retryFailedOnly: Bool) async {
+        guard !isBatchUploading else { return }
+        guard !batchItems.isEmpty else { return }
+        guard pendingBatchFormData != nil else { return }
+
+        isBatchUploading = true
+        suppressPerAssetFormSheet = true
+        batchState = .uploading
+        form.submitError = nil
+        persistBatchState()
+
+        let localIds = batchCoordinator.executionOrder(
+            for: batchItems, retryFailedOnly: retryFailedOnly)
+
+        for localId in localIds {
+            guard let itemIndex = batchItems.firstIndex(where: { $0.localId == localId }) else {
+                continue
+            }
+            guard let selected = stagedBatchVideos.first(where: { $0.id == localId }) else {
+                markBatchItemFailed(index: itemIndex, message: "Clip reference was lost.")
+                continue
+            }
+
+            batchItems[itemIndex].status = .creatingAsset
+            batchItems[itemIndex].error = nil
+            batchItems[itemIndex].progress = 0
+            persistBatchState()
+
+            lastStagedCreatedDate = selected.metadata.capturedAt.map {
+                DVUDateFormatting.longDate($0)
+            }
+            lastStagedHasLocation = selected.metadata.gpsLat != nil
+            pendingPHAssetIdentifier = selected.phAssetIdentifier
+            form.thumbnail = await StagedVideo.generateThumbnail(from: selected.fileURL)
+
+            guard
+                let asset = await createAsset(
+                    fileName: selected.fileName, fileURL: selected.fileURL)
+            else {
+                markBatchItemFailed(index: itemIndex, message: "Could not create upload asset.")
+                continue
+            }
+
+            batchItems[itemIndex].assetId = asset.id
+            batchItems[itemIndex].status = .uploading
+            persistBatchState()
+
+            await uploadVideo(
+                assetId: asset.id, fileURL: selected.fileURL, metadata: selected.metadata)
+            let stage = workflowStages[asset.id] ?? .unknown
+            if stage == .failed {
+                markBatchItemFailed(index: itemIndex, message: "Upload failed.")
+                continue
+            }
+
+            batchItems[itemIndex].status = .applyingForm
+            persistBatchState()
+
+            let didApplyForm = await applyGroupedFormToAsset(assetId: asset.id)
+            if !didApplyForm {
+                markBatchItemFailed(index: itemIndex, message: "Could not apply grouped form.")
+                continue
+            }
+
+            batchItems[itemIndex].status = .complete
+            batchItems[itemIndex].progress = 1
+            cleanupTempFileIfNeeded(selected.fileURL)
+
+            batchProgress = computeBatchProgress()
+            persistBatchState()
+        }
+
+        isBatchUploading = false
+        suppressPerAssetFormSheet = false
+        batchProgress = computeBatchProgress()
+
+        let failedCount = batchItems.filter { $0.status == .failed }.count
+        batchState = failedCount > 0 ? .partialFailed : .complete
+
+        if failedCount == 0 {
+            stagedBatchVideos.removeAll()
+            pendingBatchFormData = nil
+            if let currentBatchId {
+                PendingBatchStore.clear(batchId: currentBatchId)
+            }
+        } else {
+            persistBatchState()
+        }
+    }
+
+    private func submitGroupedFormPayload(assetId: String, formData: [String: String]) async -> Bool
+    {
+        var request = auth.authenticatedRequest(for: ServerConfig.formURL(assetId), method: "POST")
+        request.httpBody = try? JSONSerialization.data(withJSONObject: formData)
+
+        do {
+            let (_, response) = try await URLSession.shared.data(for: request)
+            let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
+            guard statusCode >= 200, statusCode < 300 else {
+                throw URLError(.badServerResponse)
+            }
+            clearBlockingConnectivityIssueIfNeeded(assetId: assetId)
+            return true
+        } catch {
+            if isConnectivityIssue(error) {
+                noteBlockingConnectivityIssue(operation: "applying grouped form", assetId: assetId)
+            }
+            Task {
+                await reportError(
+                    category: "form",
+                    message: "Grouped form apply failed: \(error.localizedDescription)",
+                    severity: "ERROR",
+                    assetId: assetId
+                )
+            }
+            return false
+        }
+    }
+
+    private func buildSequencedBatchFormData(for assetId: String) -> [String: String]? {
+        guard var formData = pendingBatchFormData else { return nil }
+        guard batchItems.count > 1 else { return formData }
+        guard let itemIndex = batchItems.firstIndex(where: { $0.assetId == assetId }) else {
+            return formData
+        }
+
+        let sequenceNumber = itemIndex + 1
+        let baseTitle = (formData["slug"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if !baseTitle.isEmpty {
+            formData["slug"] = makeSequencedTitle(
+                baseTitle: baseTitle, sequenceNumber: sequenceNumber)
+        }
+
+        return formData
+    }
+
+    private func makeSequencedTitle(baseTitle: String, sequenceNumber: Int) -> String {
+        let trimmed = baseTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        let parts = trimmed.split(separator: " ")
+
+        if parts.count > 1, let trailingNumber = Int(parts.last ?? ""), trailingNumber > 0 {
+            let root = parts.dropLast().joined(separator: " ")
+            return "\(root) \(sequenceNumber)"
+        }
+
+        return "\(trimmed) \(sequenceNumber)"
+    }
+
+    private func markBatchItemFailed(index: Int, message: String) {
+        guard batchItems.indices.contains(index) else { return }
+        batchItems[index].status = .failed
+        batchItems[index].error = message
+        batchItems[index].progress = 0
+        batchProgress = computeBatchProgress()
+        persistBatchState()
+    }
+
+    private func computeBatchProgress() -> Double {
+        guard !batchItems.isEmpty else { return 0 }
+        let total = batchItems.reduce(0) { partial, item in
+            partial + min(max(item.progress, 0), 1)
+        }
+        return total / Double(batchItems.count)
+    }
+
+    private func persistBatchState() {
+        guard let currentBatchId else { return }
+        let snapshot = VideoBatch(
+            id: currentBatchId,
+            createdAt: Date(),
+            state: batchState,
+            items: batchItems,
+            context: batchContext
+        )
+        PendingBatchStore.save(snapshot)
+    }
+
+    private func restorePendingBatchState() {
+        guard let pending = PendingBatchStore.loadLatest() else { return }
+        if pending.state == .complete {
+            PendingBatchStore.clear(batchId: pending.id)
+            return
+        }
+
+        currentBatchId = pending.id
+        batchItems = pending.items
+        batchContext = pending.context
+        batchState = pending.state
+        batchProgress = pending.overallProgress
+    }
+
+    private func resetBatchState(clearDisk: Bool) {
+        let batchIdToClear = currentBatchId
+        let videosToCleanup = stagedBatchVideos
+
+        for video in videosToCleanup {
+            cleanupTempFileIfNeeded(video.fileURL)
+        }
+
+        currentBatchId = nil
+        stagedBatchVideos.removeAll()
+        batchItems.removeAll()
+        batchContext = nil
+        batchProgress = 0
+        isBatchUploading = false
+        suppressPerAssetFormSheet = false
+        batchState = .queued
+        pendingBatchFormData = nil
+        awaitingGroupedFormForBatch = false
+
+        if clearDisk, let batchIdToClear {
+            PendingBatchStore.clear(batchId: batchIdToClear)
+        }
+    }
+
+    private func cleanupTempFileIfNeeded(_ url: URL) {
+        let tempDir = FileManager.default.temporaryDirectory.path
+        if url.path.hasPrefix(tempDir) {
+            cleanupTempFile(url)
+        }
     }
 
     /// User confirmed upload — proceed with create asset + upload.
@@ -1312,6 +1707,13 @@ final class ChatViewModel {
     /// PendingForm stays on disk so the form can be reopened later from Archive.
     /// Video continues uploading in background.
     func cancelForm() {
+        if awaitingGroupedFormForBatch {
+            showFormSheet = false
+            form.submitError = nil
+            resetBatchState(clearDisk: true)
+            return
+        }
+
         showFormSheet = false
         isArchived = true
 
@@ -1408,6 +1810,7 @@ final class ChatViewModel {
             let response = try JSONDecoder().decode(AssetDetailResponse.self, from: data)
             self.lastAsset = response.asset
             self.lastClip = response.asset.clips?.first
+            self.assetDetailCache[response.asset.id] = response.asset
             clearBlockingConnectivityIssueIfNeeded(assetId: assetId)
             reconcileWorkflowState(from: response.asset, source: .workflow)
         } catch {
@@ -1424,8 +1827,39 @@ final class ChatViewModel {
         }
     }
 
-    func showMetadata() {
+    private func metadataThumbnail(for assetId: String?) -> UIImage? {
+        guard let assetId, !assetId.isEmpty else {
+            return form.thumbnail
+        }
+        return sentUploadsByAssetId[assetId]?.thumbnail ?? form.thumbnail
+    }
+
+    func showMetadata(for assetId: String? = nil) {
+        let targetAssetId = assetId ?? currentAssetId ?? archive.assetId
+
+        if let targetAssetId,
+            let cachedAsset = assetDetailCache[targetAssetId]
+        {
+            lastAsset = cachedAsset
+            lastClip = cachedAsset.clips?.first
+            metadataSheetThumbnail = metadataThumbnail(for: targetAssetId)
+            guard lastClip != nil else { return }
+            showMetadataSheet = true
+            return
+        }
+
+        if let targetAssetId {
+            metadataSheetThumbnail = metadataThumbnail(for: targetAssetId)
+            Task { @MainActor in
+                await fetchAssetDetail(assetId: targetAssetId)
+                metadataSheetThumbnail = metadataThumbnail(for: targetAssetId)
+                showMetadataSheet = lastClip != nil
+            }
+            return
+        }
+
         guard lastClip != nil else { return }
+        metadataSheetThumbnail = form.thumbnail
         showMetadataSheet = true
     }
 
@@ -1495,6 +1929,7 @@ final class ChatViewModel {
 
     /// Clear current conversation and start fresh for a new upload.
     func startNewConversation() {
+        resetBatchState(clearDisk: true)
         workflowStages.removeAll()
         messagePolicy.resetForNewConversation()
         hasBlockingConnectivityIssue = false
@@ -1511,10 +1946,13 @@ final class ChatViewModel {
         uploadProgress = 0
         showFormSheet = false
         showMetadataSheet = false
+        metadataSheetThumbnail = nil
         showSlackShareSheet = false
         sentUploads.removeAll()
+        sentUploadsByAssetId.removeAll()
         slackThumbnails.removeAll()
         slackConfirmedIds.removeAll()
+        assetDetailCache.removeAll()
         lastStagedCreatedDate = nil
         lastStagedHasLocation = false
 
@@ -1563,7 +2001,7 @@ final class ChatViewModel {
         showSlackShareSheet = false
 
         // Send via WebSocket — server detects #channel/@mention pattern
-        ws.sendMessage(text: text, assetId: archiveAssetId)
+        ws.sendMessage(text: text, assetId: archiveAssetId, assetIds: activeSlackTargetAssetIds())
     }
 
     /// Download a thumbnail image and cache it for the Slack bubble.
