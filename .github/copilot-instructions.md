@@ -5,7 +5,7 @@
 
 - DO NOT CHANGE THE info.plist or project.yml WITHOUT MY APPROVAL. THE BELOW CODE MUST STAY.
 
-- any file updated must have Date and Time added or updated at the top of the file ie; May 9, 2026 - 3:30pm.
+- any file updated must have Date and Time added or updated at the top of the file ie; May 9, 2026 - 3:30pm - Add Agent Name ie; Claude OPUS 4.6
 
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

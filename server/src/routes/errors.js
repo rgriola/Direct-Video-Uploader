@@ -1,3 +1,4 @@
+// Last updated: May 9, 2026 - 6:11pm
 /**
  * Error logging routes — Persist errors from iOS, server, dashboard.
  * Future: trigger text/email notifications for CRITICAL errors.
@@ -17,10 +18,15 @@ export default async function errorRoutes(fastify) {
         },
     }, async (request) => {
         const { source, category, message, details, severity, assetId } = request.body || {};
+        const requestId = request.id;
 
         if (!source || !category || !message) {
             return { error: 'Missing required fields: source, category, message' };
         }
+
+        const normalizedDetails = (details && typeof details === 'object' && !Array.isArray(details))
+            ? { ...details, requestId }
+            : (details != null ? { requestId, value: details } : { requestId });
 
         const errorLog = await prisma.errorLog.create({
             data: {
@@ -29,7 +35,7 @@ export default async function errorRoutes(fastify) {
                 source: source || 'unknown',
                 category: category || 'general',
                 message,
-                details: details || null,
+                details: normalizedDetails,
                 severity: severity?.toUpperCase() || 'WARNING',
             },
         });
@@ -39,7 +45,7 @@ export default async function errorRoutes(fastify) {
         //   await sendNotification(request.user, errorLog);
         // }
 
-        console.log(`⚠️ [ErrorLog] ${severity || 'WARNING'} — ${source}/${category}: ${message}`);
+        console.log(`⚠️ [ErrorLog][${requestId}] ${severity || 'WARNING'} — ${source}/${category}: ${message}`);
 
         return { errorLog: { id: errorLog.id, createdAt: errorLog.createdAt } };
     });

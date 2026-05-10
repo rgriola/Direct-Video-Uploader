@@ -1,3 +1,4 @@
+// Last updated: May 9, 2026 - 6:40pm - GPT-5.3-Codex
 /**
  * Asset routes — Create, upload, retrieve, submit form.
  */
@@ -114,6 +115,14 @@ export default async function assetRoutes(fastify) {
         }
 
         const clientMeta = request.body?.metadata || {};
+        const mimeType = String(clientMeta.mimeType || clientMeta.contentType || clientMeta.type || '')
+            .trim()
+            .toLowerCase();
+
+        if (mimeType && !ALLOWED_VIDEO_MIMES.has(mimeType)) {
+            return reply.status(415).send({ error: `Unsupported media type: ${mimeType}` });
+        }
+
         const clipId = randomUUID();
 
         // Create the Mux direct upload URL

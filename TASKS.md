@@ -1,5 +1,7 @@
 # Fixer — Enterprise Readiness Tasks
 
+> Last audit sync: May 9, 2026 - 7:00pm - GPT-5.3-Codex
+
 > Companion to [ENTERPRISE_READINESS_PLAN.md](ENTERPRISE_READINESS_PLAN.md).
 > Check items off as you complete them. Each task should be a single PR.
 
@@ -7,17 +9,17 @@
 
 ## 🚨 Quick Wins (Do This Week)
 
-- [ ] Fix SQL injection — parameterize `companyCode` in [server/src/routes/admin.js](server/src/routes/admin.js)
-- [ ] Enable Mux webhook signature verification unconditionally (remove dev bypass)
-- [ ] Add startup secret validation (fail fast if env vars missing)
-- [ ] Remove stack traces from production error responses
-- [ ] Pin Node.js version in [render.yaml](render.yaml) (`nodeVersion: '22.x'`)
-- [ ] Create `.env.example` with all required vars documented
-- [ ] Add `User.status` check inside `fastify.authenticate` decorator
-- [ ] Add `bodyLimit` to non-multipart routes
-- [ ] Drop `--accept-data-loss` flag from `prisma db push` in [render.yaml](render.yaml)
-- [ ] Add `SECURITY.md` + `/.well-known/security.txt`
-- [ ] Enable Dependabot (one PR adds `.github/dependabot.yml`)
+- [x] Fix SQL injection — parameterize `companyCode` in [server/src/routes/admin.js](server/src/routes/admin.js)
+- [x] Enable Mux webhook signature verification unconditionally (remove dev bypass)
+- [x] Add startup secret validation (fail fast if env vars missing)
+- [x] Remove stack traces from production error responses
+- [x] Pin Node.js version in [render.yaml](render.yaml) (`nodeVersion: '22.x'`)
+- [x] Create `.env.example` with all required vars documented
+- [x] Add `User.status` check inside `fastify.authenticate` decorator
+- [x] Add `bodyLimit` to non-multipart routes
+- [x] Drop `--accept-data-loss` flag from `prisma db push` in [render.yaml](render.yaml)
+- [x] Add `SECURITY.md` + `/.well-known/security.txt`
+- [x] Enable Dependabot (one PR adds `.github/dependabot.yml`)
 
 ---
 
@@ -25,25 +27,25 @@
 
 ### 0.1 Test Infrastructure
 
-- [ ] Add Vitest to `server/package.json`
-- [ ] Create `server/src/__tests__/` directory
-- [ ] Write smoke tests for every existing route
-- [ ] Create `.github/workflows/ci.yml`
-- [ ] Add coverage reporting (c8)
-- [ ] Set 60% coverage gate (raise to 80% by Phase 3)
+- [x] Add Vitest to `server/package.json`
+- [x] Create `server/src/__tests__/` directory
+- [x] Write smoke tests for every existing route
+- [x] Create `.github/workflows/ci.yml`
+- [x] Add coverage reporting (Vitest V8 provider)
+- [x] Set 60% coverage gate (raise to 80% by Phase 3)
 
 ### 0.2 Request Correlation IDs
 
-- [ ] Install `@fastify/request-context` (or write UUID middleware)
-- [ ] Generate `X-Request-ID` per request
-- [ ] Attach to Pino child logger
-- [ ] Return in response headers
-- [ ] Thread through Slack alerts and error logs
+- [x] Install `@fastify/request-context` (or write UUID middleware)
+- [x] Generate `X-Request-ID` per request
+- [x] Attach to Pino child logger
+- [x] Return in response headers
+- [x] Thread through Slack alerts and error logs
 
 ### 0.3 OpenAPI / Swagger
 
-- [ ] Install `@fastify/swagger` + `@fastify/swagger-ui`
-- [ ] Register `/api/docs` (admin-auth in production)
+- [x] Install `@fastify/swagger` + `@fastify/swagger-ui`
+- [x] Register `/api/docs` (admin-auth in production)
 - [ ] Add JSON Schema to all existing route schemas
 
 ### 0.4 Redis (PREREQUISITE for 1.1, 1.5, 6.4, 6.5)
@@ -56,9 +58,9 @@
 
 ### 0.5 Versioned Migrations (CRITICAL)
 
-- [ ] Switch local dev to `prisma migrate dev`
+- [ ] Switch local dev to `prisma migrate dev` (PARTIAL: `db:migrate` script exists)
 - [ ] Generate baseline migration from current production schema
-- [ ] Replace `db push` with `migrate deploy` in [render.yaml](render.yaml)
+- [x] Replace `db push` with `migrate deploy` in [render.yaml](render.yaml)
 - [ ] Commit `server/prisma/migrations/` directory
 - [ ] Add migration review to PR checklist
 - [ ] Document rollback procedure
@@ -73,11 +75,11 @@
 
 ### 0.7 Supply Chain Security
 
-- [ ] Enable Dependabot for `server/`, `admin/`, root
-- [ ] Add `npm audit --audit-level=high` to CI
-- [ ] Enforce `npm ci --frozen-lockfile`
-- [ ] Add CodeQL workflow
-- [ ] Document license policy (no GPL/AGPL in app code)
+- [x] Enable Dependabot for `server/`, `admin/`, root
+- [x] Add `npm audit --audit-level=high` to CI
+- [x] Enforce lockfile installs in CI (`npm ci` + lockfile immutability checks)
+- [x] Add CodeQL workflow
+- [x] Document license policy (no GPL/AGPL in app code)
 
 ---
 
@@ -96,26 +98,26 @@
 
 ### 1.2 Input Validation
 
-- [ ] Add Fastify schemas to all unvalidated POST/PATCH routes
-- [ ] Install `ajv-formats`
-- [ ] Fix raw SQL `companyCode` injection in admin.js
-- [ ] MIME type check before Mux upload creation
-- [ ] Global validation error handler → consistent 422 format
+- [ ] Add Fastify schemas to all unvalidated POST/PATCH routes (PARTIAL: schemas exist on selected routes)
+- [x] Install `ajv-formats`
+- [x] Fix raw SQL `companyCode` injection in admin.js
+- [x] MIME type check before Mux upload creation
+- [x] Global validation error handler → consistent 422 format
 
 ### 1.3 PII Redaction
 
-- [ ] Create `server/src/lib/redact.js`
-- [ ] Add Pino `redact` config (`phoneNumber`, `companyCode`, `token`)
+- [x] Create `server/src/lib/redact.js`
+- [x] Add Pino `redact` config (`phoneNumber`, `companyCode`, `token`)
 - [ ] Audit all `console.log` / `fastify.log` calls
-- [ ] Redact PII in Slack alert messages
+- [x] Redact PII in Slack alert messages
 
 ### 1.4 Security Headers & CSRF
 
-- [ ] Add `Permissions-Policy` header
-- [ ] Add `Cache-Control: no-store` on auth endpoints
-- [ ] Add `@fastify/csrf-protection` to clip viewer login form ONLY
-- [ ] Strip stack traces from prod error responses
-- [ ] Make Mux webhook signature verification unconditional
+- [x] Add `Permissions-Policy` header
+- [x] Add `Cache-Control: no-store` on auth endpoints
+- [x] Add `@fastify/csrf-protection` to clip viewer login form ONLY
+- [x] Strip stack traces from prod error responses
+- [x] Make Mux webhook signature verification unconditional
 
 ### 1.5 Rate Limiting (Redis-backed)
 
@@ -138,7 +140,7 @@
 - [ ] Create `fastify.authorize(roles)` decorator factory
 - [ ] Replace all `authorizeAdmin` calls
 - [ ] Add ORG_ADMIN guards on org-level endpoints
-- [ ] Add role to JWT payload
+- [x] Add role to JWT payload
 - [ ] iOS: read/store role from JWT
 - [ ] Admin dashboard: role badges + role change UI
 
@@ -245,7 +247,7 @@
 
 ### 4.2 Structured Logging
 
-- [ ] Configure Pino: env-driven level, redact, JSON serializers
+- [x] Configure Pino: env-driven level, redact, JSON serializers
 - [ ] Add HTTP access log middleware
 - [ ] Replace emoji `console.log` calls with structured logs
 - [ ] Enable Prisma query logging in dev
@@ -254,10 +256,10 @@
 
 ### 4.3 Health & Readiness
 
-- [ ] `GET /api/health/live`
-- [ ] `GET /api/health/ready` (DB + Redis + Mux checks)
-- [ ] Point Render health check at `/ready`
-- [ ] `GET /api/metrics` (admin-only)
+- [x] `GET /api/health/live`
+- [x] `GET /api/health/ready` (DB + Redis + Mux checks)
+- [x] Point Render health check at `/ready`
+- [x] `GET /api/metrics` (admin-only)
 
 ### 4.4 iOS Error Tracking
 
@@ -312,8 +314,8 @@
 
 - [ ] Audit all secrets in Render
 - [ ] Rotate all secrets
-- [ ] Startup validation (fail fast on missing vars)
-- [ ] Pin Node.js version
+- [x] Startup validation (fail fast on missing vars)
+- [x] Pin Node.js version
 - [ ] Document rotation runbook (cadence + procedure)
 
 ### 6.2 Database Hardening
@@ -328,10 +330,10 @@
 
 ### 6.3 Zero-Downtime Deployments
 
-- [ ] Render health check tied to `/api/health/ready`
+- [x] Render health check tied to `/api/health/ready`
 - [ ] 30s `startPeriod` grace
-- [ ] Verify SIGTERM handling on background jobs
-- [ ] Graceful WebSocket drain
+- [x] Verify SIGTERM handling on background jobs
+- [x] Graceful WebSocket drain
 
 ### 6.4 Job Queue (BullMQ)
 
@@ -471,8 +473,8 @@
 
 ### 10.4 Responsible Disclosure
 
-- [ ] Add `/.well-known/security.txt`
-- [ ] Create `SECURITY.md`
+- [x] Add `/.well-known/security.txt`
+- [x] Create `SECURITY.md`
 - [ ] Set up `security@ms-fixer.com`
 
 ### 10.5 Cost Monitoring
@@ -488,17 +490,17 @@
 
 Update these counts as you go:
 
-- Quick Wins: 0 / 11
-- Phase 0: 0 / 28
-- Phase 1: 0 / 25
-- Phase 2: 0 / 35
+- Quick Wins: 11 / 11
+- Phase 0: 18 / 28
+- Phase 1: 12 / 25
+- Phase 2: 1 / 35
 - Phase 3: 0 / 26
-- Phase 4: 0 / 25
+- Phase 4: 5 / 25
 - Phase 5: 0 / 14
-- Phase 6: 0 / 25
+- Phase 6: 5 / 25
 - Phase 7: 0 / 19
 - Phase 8: 0 / 11
 - Phase 9: 0 / 11
-- Phase 10: 0 / 17
+- Phase 10: 2 / 17
 
-**Overall: 0 / 247 tasks**
+**Overall: 54 / 247 tasks**

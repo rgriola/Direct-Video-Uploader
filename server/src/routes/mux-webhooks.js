@@ -1,3 +1,4 @@
+// Last updated: May 9, 2026 - 5:59pm
 /**
  * Mux Webhook Routes
  *
@@ -14,7 +15,7 @@ import { dbRetry } from '../lib/utils.js';
 import fs from 'fs/promises';
 import path from 'path';
 
-const MUX_WEBHOOK_SECRET = process.env.MUX_WEBHOOK_SECRET || '';
+const MUX_WEBHOOK_SECRET = process.env.MUX_WEBHOOK_SECRET;
 
 // Mux v12: verifySignature is an instance method, not static
 const muxClient = new Mux();
@@ -23,9 +24,6 @@ export default async function muxWebhookRoutes(fastify) {
     /**
      * POST /api/webhooks/mux
      * Receives Mux webhook events (video.asset.ready, video.upload.asset_created, etc.)
-     *
-     * No auth — Mux signs webhooks. For now we trust the payload;
-     * add signature verification with MUX_WEBHOOK_SECRET later.
      */
     fastify.post('/api/webhooks/mux', {
         config: {
@@ -34,26 +32,35 @@ export default async function muxWebhookRoutes(fastify) {
         },
     }, async (request, reply) => {
         // ─── Signature Verification ───────────────────────────────
-        if (MUX_WEBHOOK_SECRET) {
-            const signature = request.headers['mux-signature'];
-            if (!signature) {
-                console.warn('🎬 Mux webhook missing Mux-Signature header — rejected');
-                return reply.status(401).send({ error: 'Missing signature' });
-            }
-            try {
-                // rawBody is available because of the rawBody config above
-                const rawBody = typeof request.body === 'string' ? request.body : JSON.stringify(request.body);
-                muxClient.webhooks.verifySignature(rawBody, { 'mux-signature': signature }, MUX_WEBHOOK_SECRET);
-            } catch (err) {
-                console.warn('🎬 Mux webhook signature verification failed:', err.message);
-                return reply.status(401).send({ error: 'Invalid signature' });
-            }
-        } else if (process.env.NODE_ENV === 'production') {
-            console.error('🛑 MUX_WEBHOOK_SECRET not set — rejecting webhook in production');
+        if (!MUX_WEBHOOK_SECRET) {
+            console.error('🛑 MUX_WEBHOOK_SECRET missing — rejecting webhook');
             return reply.status(500).send({ error: 'Webhook signature verification not configured' });
         }
 
-        const event = request.body;
+        const signature = request.headers['mux-signature'];
+        if (!signature) {
+            console.warn('🎬 Mux webhook missing Mux-Signature header — rejected');
+            return reply.status(401).send({ error: 'Missing signature' });
+        }
+
+        try {
+            const rawBody = request.rawBody
+                ? (Buffer.isBuffer(request.rawBody) ? request.rawBody.toString('utf8') : String(request.rawBody))
+                : (typeof request.body === 'string' ? request.body : JSON.stringify(request.body));
+            muxClient.webhooks.verifySignature(rawBody, { 'mux-signature': signature }, MUX_WEBHOOK_SECRET);
+        } catch (err) {
+            console.warn('🎬 Mux webhook signature verification failed:', err.message);
+            return reply.status(401).send({ error: 'Invalid signature' });
+        }
+
+        let event = request.body;
+        if (typeof event === 'string') {
+            try {
+                event = JSON.parse(event);
+            } catch {
+                return reply.status(400).send({ error: 'Invalid JSON payload' });
+            }
+        }
         const eventType = event?.type;
         const eventData = event?.data;
 

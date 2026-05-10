@@ -1,3 +1,4 @@
+// Last updated: May 9, 2026 - 6:07pm
 /**
  * Clip Viewer — Authenticated page to view a video clip with metadata.
  * Requires cookie-based auth (phone + PIN + company code).
@@ -100,6 +101,7 @@ export default async function clipRoutes(fastify) {
 
         const error = request.query.error || '';
         const redirect = escapeHtml(request.query.redirect || '');
+        const csrfToken = await reply.generateCsrf();
 
         const html = `<!DOCTYPE html>
 <html lang="en"><head>
@@ -113,6 +115,7 @@ ${googleFontsHead}
     <h1>Sign in to view this clip</h1>
     ${error ? `<div class="error">${escapeHtml(error)}</div>` : ''}
     <form method="POST" action="/clips/login">
+        <input type="hidden" name="_csrf" value="${escapeHtml(csrfToken)}" />
         <input type="hidden" name="redirect" value="${redirect}" />
         <label for="companyCode">Company Code</label>
         <input id="companyCode" name="companyCode" type="text" placeholder="ABC or ABCD"
@@ -137,6 +140,7 @@ ${googleFontsHead}
      * Validate credentials → set HttpOnly cookie → redirect to clip.
      */
     fastify.post('/clips/login', {
+        preValidation: [fastify.csrfProtection],
         config: {
             rateLimit: { max: 5, timeWindow: '1 minute' },
         },

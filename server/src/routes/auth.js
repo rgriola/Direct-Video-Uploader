@@ -1,3 +1,4 @@
+// Last updated: May 9, 2026 - 6:01pm
 /**
  * Auth routes — Simple phone# + PIN login for demo.
  */
@@ -5,6 +6,12 @@ import prisma from '../lib/prisma.js';
 import { verifyPin, hashPin, dbRetry } from '../lib/utils.js';
 
 export default async function authRoutes(fastify) {
+    // Auth responses should never be cached by intermediaries or clients.
+    fastify.addHook('onSend', async (request, reply, payload) => {
+        reply.header('Cache-Control', 'no-store');
+        return payload;
+    });
+
     /**
      * POST /api/auth/login
      * Body: { phoneNumber: string, pin: string }

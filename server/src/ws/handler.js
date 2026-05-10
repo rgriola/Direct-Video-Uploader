@@ -1,3 +1,4 @@
+// Last updated: May 9, 2026 - 6:11pm
 /**
  * WebSocket handler — Socket.IO event management.
  * Handles real-time communication between the iOS app and server.
@@ -78,6 +79,7 @@ function getTip() {
  */
 async function handleSlackCommand(socket, userId, assetId, channels, mentions, originalText) {
     const now = new Date().toISOString();
+    const correlation = { requestId: `ws:${socket.id}` };
 
     // Persist the outgoing Slack command message
     try {
@@ -185,7 +187,7 @@ async function handleSlackCommand(socket, userId, assetId, channels, mentions, o
     // Post to each #channel
     for (const ch of channels) {
         console.log(`📣 Posting to #${ch} for ${socket.userName}`);
-        const result = await slack.postToChannel(ch, msgText, blocks);
+        const result = await slack.postToChannel(ch, msgText, blocks, correlation);
         results.push({ type: 'channel', target: `#${ch}`, ...result });
     }
 
@@ -193,7 +195,7 @@ async function handleSlackCommand(socket, userId, assetId, channels, mentions, o
     if (channels.length === 0) {
         for (const name of mentions) {
             console.log(`📨 DM to @${name} for ${socket.userName}`);
-            const result = await slack.postDM(name, msgText, blocks);
+            const result = await slack.postDM(name, msgText, blocks, correlation);
             results.push({ type: 'dm', target: `@${name}`, ...result });
         }
     }

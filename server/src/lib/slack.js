@@ -1,3 +1,4 @@
+// Last updated: May 9, 2026 - 6:11pm
 /**
  * Slack integration — posts messages to channels and DMs via Slack Web API.
  *
@@ -20,14 +21,19 @@ export function isConfigured() {
     return !!slack;
 }
 
+function requestTag(context) {
+    return context?.requestId ? ` [requestId=${context.requestId}]` : '';
+}
+
 /**
  * Post a message to a Slack channel by name.
  * @param {string} channelName — channel name without # (e.g. "storms")
  * @param {string} text — fallback text
  * @param {object[]} [blocks] — Block Kit blocks
+ * @param {{ requestId?: string }} [context]
  * @returns {{ ok: boolean, ts?: string, error?: string }}
  */
-export async function postToChannel(channelName, text, blocks) {
+export async function postToChannel(channelName, text, blocks, context = {}) {
     if (!slack) return { ok: false, error: 'Slack not configured' };
 
     try {
@@ -39,7 +45,7 @@ export async function postToChannel(channelName, text, blocks) {
         });
         return { ok: result.ok, ts: result.ts };
     } catch (err) {
-        console.error(`Slack postToChannel #${channelName} failed:`, err.data?.error || err.message);
+        console.error(`Slack postToChannel #${channelName} failed${requestTag(context)}:`, err.data?.error || err.message);
         return { ok: false, error: err.data?.error || err.message };
     }
 }
@@ -50,9 +56,10 @@ export async function postToChannel(channelName, text, blocks) {
  * @param {string} displayName — e.g. "carrie.smith" (without @)
  * @param {string} text — fallback text
  * @param {object[]} [blocks] — Block Kit blocks
+ * @param {{ requestId?: string }} [context]
  * @returns {{ ok: boolean, ts?: string, error?: string }}
  */
-export async function postDM(displayName, text, blocks) {
+export async function postDM(displayName, text, blocks, context = {}) {
     if (!slack) return { ok: false, error: 'Slack not configured' };
 
     try {
@@ -75,7 +82,7 @@ export async function postDM(displayName, text, blocks) {
         });
         return { ok: result.ok, ts: result.ts };
     } catch (err) {
-        console.error(`Slack postDM @${displayName} failed:`, err.data?.error || err.message);
+        console.error(`Slack postDM @${displayName} failed${requestTag(context)}:`, err.data?.error || err.message);
         return { ok: false, error: err.data?.error || err.message };
     }
 }

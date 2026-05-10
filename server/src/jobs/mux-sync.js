@@ -1,3 +1,4 @@
+// Last updated: May 9, 2026 - 6:11pm
 /**
  * Mux Status Sync — Background Job
  *
@@ -120,7 +121,9 @@ async function syncProcessingClips(fastify) {
                     // Alert via Slack
                     if (slack.isConfigured()) {
                         await slack.postToChannel('general',
-                            `⚠️ Mux processing error — clip #${clip.asset.mediasourceId} failed after ${ageMin}min`
+                            `⚠️ Mux processing error — clip #${clip.asset.mediasourceId} failed after ${ageMin}min`,
+                            undefined,
+                            { requestId: 'job:mux-sync' }
                         );
                     }
                 } else if (age > STALE_THRESHOLD_MS) {
@@ -140,7 +143,9 @@ async function syncProcessingClips(fastify) {
                 }));
                 if (slack.isConfigured()) {
                     await slack.postToChannel('general',
-                        `⚠️ Upload failed — clip #${clip.asset.mediasourceId} had no Mux asset after ${ageMin}min (auto-marked ERROR)`
+                        `⚠️ Upload failed — clip #${clip.asset.mediasourceId} had no Mux asset after ${ageMin}min (auto-marked ERROR)`,
+                        undefined,
+                        { requestId: 'job:mux-sync' }
                     );
                 }
             } else if (age > STALE_THRESHOLD_MS) {

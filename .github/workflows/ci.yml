@@ -1,0 +1,65 @@
+# Last updated: May 9, 2026 - 6:40pm - GPT-5.3-Codex
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - staging
+
+jobs:
+  server-tests:
+    name: Server Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+
+      - name: Install dependencies (lockfile-enforced)
+        run: npm ci
+
+      - name: Verify lockfile unchanged
+        run: git diff --exit-code -- package-lock.json
+
+      - name: Run tests with coverage gate
+        run: npm run test:coverage
+
+      - name: Audit dependencies
+        run: npm audit --audit-level=high
+
+  admin-build:
+    name: Admin Build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: admin
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: admin/package-lock.json
+
+      - name: Install dependencies (lockfile-enforced)
+        run: npm ci
+
+      - name: Verify lockfile unchanged
+        run: git diff --exit-code -- package-lock.json
+
+      - name: Build admin
+        run: npm run build

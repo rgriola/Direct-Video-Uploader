@@ -1,3 +1,4 @@
+// Last updated: May 9, 2026 - 6:40pm - GPT-5.3-Codex
 /**
  * Upload Cleanup — Background Job (B4)
  *
@@ -11,6 +12,7 @@
 import prisma from '../lib/prisma.js';
 import { dbRetry } from '../lib/utils.js';
 import * as slack from '../lib/slack.js';
+import { redactPersonName } from '../lib/redact.js';
 import fs from 'fs/promises';
 import path from 'path';
 
@@ -42,6 +44,7 @@ async function cleanupOrphanedUploads() {
 
         for (const asset of orphanedAssets) {
             const ageMin = Math.round((Date.now() - new Date(asset.createdAt).getTime()) / 60000);
+            const redactedUserName = redactPersonName(asset.user?.name) || 'unknown';
 
             // Clean up partial upload files
             for (const clip of asset.clips) {
@@ -62,12 +65,14 @@ async function cleanupOrphanedUploads() {
                 data: { status: 'ERROR' },
             }));
 
-            console.log(`🧹 Marked asset ${asset.mediasourceId} as ERROR (stuck ${ageMin}min, user: ${asset.user?.name || 'unknown'})`);
+            console.log(`🧹 Marked asset ${asset.mediasourceId} as ERROR (stuck ${ageMin}min, user: ${redactedUserName})`);
 
             // Alert via Slack
             if (slack.isConfigured()) {
                 await slack.postToChannel('general',
-                    `🧹 Orphaned upload cleaned up — #${asset.mediasourceId} was stuck in UPLOADING for ${ageMin}min (user: ${asset.user?.name || 'unknown'})`
+                    `🧹 Orphaned upload cleaned up — #${asset.mediasourceId} was stuck in UPLOADING for ${ageMin}min (user: ${redactedUserName})`,
+                    undefined,
+                    { requestId: 'job:upload-cleanup' }
                 );
             }
         }

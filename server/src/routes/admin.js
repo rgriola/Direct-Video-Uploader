@@ -1,7 +1,9 @@
+// Last updated: May 9, 2026 - 5:59pm
 /**
  * Admin routes — Dashboard data, user management, asset overview.
  * All data is LIVE — no simulated actions.
  */
+import { Prisma } from '@prisma/client';
 import prisma from '../lib/prisma.js';
 import { hashPin } from '../lib/utils.js';
 import { deleteMuxAsset, isMuxEnabled } from '../lib/mux.js';
@@ -24,7 +26,7 @@ export default async function adminRoutes(fastify) {
 
         // Check database
         try {
-            await prisma.$queryRawUnsafe('SELECT 1');
+            await prisma.$queryRaw`SELECT 1`;
             triad.database = { status: 'ok', message: 'Connected' };
         } catch (err) {
             triad.database = { status: 'error', message: err.message };
@@ -62,7 +64,7 @@ export default async function adminRoutes(fastify) {
     fastify.get('/api/admin/stats', {
         preHandler: [fastify.authenticate],
     }, async () => {
-        const result = await prisma.$queryRawUnsafe(`
+        const result = await prisma.$queryRaw`
             SELECT 
                 (SELECT COUNT(*)::int FROM users) as users,
                 (SELECT COUNT(*)::int FROM users WHERE status = 'ACTIVE') as "activeUsers",
@@ -72,7 +74,7 @@ export default async function adminRoutes(fastify) {
                 (SELECT COUNT(*)::int FROM assets WHERE status = 'UPLOADING') as "uploadingAssets",
                 (SELECT COUNT(*)::int FROM chat_messages) as messages,
                 (SELECT COUNT(*)::int FROM clips WHERE status = 'READY') as clips
-        `);
+        `;
 
         const stats = result[0] || {};
         const userSockets = fastify.userSockets || new Map();
@@ -108,7 +110,7 @@ export default async function adminRoutes(fastify) {
     fastify.get('/api/admin/users', {
         preHandler: [fastify.authenticate],
     }, async () => {
-        const users = await prisma.$queryRawUnsafe(`
+        const users = await prisma.$queryRaw`
             SELECT u.id, u.phone_number AS "phoneNumber", u.name, u.email, u.team, u.status,
                    u.company_code AS "companyCode",
                    o.company_name AS "companyName",
@@ -118,7 +120,7 @@ export default async function adminRoutes(fastify) {
             FROM users u
             LEFT JOIN organizations o ON o.company_code = u.company_code
             ORDER BY u.created_at ASC
-        `);
+        `;
 
         // Annotate with live online status from WS connections
         const userSockets = fastify.userSockets || new Map();
@@ -147,10 +149,10 @@ export default async function adminRoutes(fastify) {
 
         // Build WHERE clause for company filtering
         const companyFilter = (!isAdmin && userCompanyCode)
-            ? `WHERE u.company_code = '${userCompanyCode.replace(/'/g, "''")}'`
-            : '';
+            ? Prisma.sql`WHERE u.company_code = ${userCompanyCode}`
+            : Prisma.empty;
 
-        const assets = await prisma.$queryRawUnsafe(`
+        const assets = await prisma.$queryRaw`
             SELECT a.id, a.mediasource_id AS "mediasourceId",
                    a.mediasource_url AS "mediasourceUrl", a.status,
                    a.clip_count::int AS "clipCount", a.total_duration_seconds::int AS "totalDuration",
@@ -177,7 +179,7 @@ export default async function adminRoutes(fastify) {
             ${companyFilter}
             ORDER BY a.created_at DESC
             LIMIT 50
-        `);
+        `;
 
         return { assets };
     });
@@ -334,7 +336,7 @@ export default async function adminRoutes(fastify) {
 
         // 4. Reset mediasource_id sequence counter (must start at 100000001 for 9-digit IDs)
         try {
-            await prisma.$queryRawUnsafe(`ALTER SEQUENCE IF EXISTS mediasource_id_seq RESTART WITH 100000001`);
+            await prisma.$executeRaw`ALTER SEQUENCE IF EXISTS mediasource_id_seq RESTART WITH 100000001`;
         } catch { /* sequence may not exist — safe to ignore */ }
 
         console.log(`☢️  Nuclear reset by admin — ${assetDeleted.count} assets, ${clipDeleted.count} clips, ${results.muxDeleted} Mux assets deleted`);

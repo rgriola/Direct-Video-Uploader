@@ -1,6 +1,6 @@
 ### SPEC
 
-### to the agent
+### to the agent - NEVER REMOVE THIS - ASK FIRST May 9, 2026 - 5:57pm
 
 - this file is not to be edited. I use this to build out prompts for you.
 - I may add notes about my thinking on this project but these are not cannonical just working through details.
