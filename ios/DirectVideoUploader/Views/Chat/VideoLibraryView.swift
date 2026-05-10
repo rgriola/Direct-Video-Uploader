@@ -1,13 +1,15 @@
-import SwiftUI
-import PhotosUI
-import Photos
 import AVFoundation
 import CoreMedia
+import Photos
+import PhotosUI
+// May 10, 2026 - 12:59pm - GitHub Copilot (GPT-5.3-Codex)
+import SwiftUI
 import UIKit
 
 /// Custom video library sheet with inline PhotosPicker — iOS 26.3 style.
 /// Provides Clear / Confirm toolbar buttons and a footer with selection count + location info.
 struct VideoLibraryView: View {
+    @Environment(\.colorScheme) private var colorScheme
     @State private var selectedItems: [PhotosPickerItem] = []
     @State private var loadedVideoURL: URL?
     @State private var loadedMetadata: VideoMetadata?
@@ -47,7 +49,7 @@ struct VideoLibraryView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbarBackground(Theme.black, for: .navigationBar)
-            .toolbarColorScheme(.dark, for: .navigationBar)
+            .toolbarColorScheme(colorScheme, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Clear") {
@@ -76,7 +78,6 @@ struct VideoLibraryView: View {
             }
         }
         .presentationDetents([.large])
-        .preferredColorScheme(.dark)
         .fullScreenCover(isPresented: $showTrimSheet) {
             if let url = loadedVideoURL {
                 VideoTrimView(
@@ -94,7 +95,7 @@ struct VideoLibraryView: View {
             }
         }
         .alert("Videos Only", isPresented: $showPhotoAlert) {
-            Button("OK", role: .cancel) { }
+            Button("OK", role: .cancel) {}
         } message: {
             Text("Fixer doesn't handle photos just yet. Only video.")
         }
@@ -191,7 +192,7 @@ struct VideoLibraryView: View {
             }
         }
     }
-    
+
     /// Handle result from the video trim editor.
     private func handleTrimResult(trimmedURL: URL) {
         // Use the trimmed file's name (includes -edited suffix if trimmed)
@@ -215,7 +216,7 @@ struct VideoLibraryView: View {
         // Reject non-video items (photos can slip through in Collections view)
         let validVideoTypes: Set<String> = [
             "public.movie", "public.video", "public.mpeg-4",
-            "com.apple.quicktime-movie", "public.avi"
+            "com.apple.quicktime-movie", "public.avi",
         ]
         let itemTypes = Set(item.supportedContentTypes.map(\.identifier))
         guard !itemTypes.isDisjoint(with: validVideoTypes) else {
@@ -240,7 +241,8 @@ struct VideoLibraryView: View {
             // Resolve PHAsset once — used for filename, video URL, and metadata
             let phAsset: PHAsset? = {
                 guard let identifier = item.itemIdentifier else { return nil }
-                return PHAsset.fetchAssets(withLocalIdentifiers: [identifier], options: nil).firstObject
+                return PHAsset.fetchAssets(withLocalIdentifiers: [identifier], options: nil)
+                    .firstObject
             }()
 
             let cameraFilename = resolveOriginalFilename(phAsset: phAsset)
@@ -248,17 +250,20 @@ struct VideoLibraryView: View {
             // Fast path: get a direct URL from PHAsset without copying the file.
             // This is how native iOS Photos loads videos instantly.
             if let phAsset,
-               let videoURL = await resolveVideoURL(phAsset: phAsset) {
+                let videoURL = await resolveVideoURL(phAsset: phAsset)
+            {
                 loadedVideoURL = videoURL
                 loadedFileName = cameraFilename ?? videoURL.lastPathComponent
                 // Pull metadata from PHAsset properties (no file I/O)
-                loadedMetadata = await extractMetadataFromPHAsset(phAsset: phAsset, videoURL: videoURL)
+                loadedMetadata = await extractMetadataFromPHAsset(
+                    phAsset: phAsset, videoURL: videoURL)
                 return
             }
 
             // Slow fallback: full file copy via Transferable (only if PHAsset path fails)
             do {
-                guard let movie = try await item.loadTransferable(type: VideoTransferable.self) else {
+                guard let movie = try await item.loadTransferable(type: VideoTransferable.self)
+                else {
                     loadError = "Could not load video from library"
                     return
                 }
@@ -307,7 +312,8 @@ struct VideoLibraryView: View {
             options.isNetworkAccessAllowed = false  // local only — skip iCloud
             options.version = .current
             options.deliveryMode = .highQualityFormat
-            PHImageManager.default().requestAVAsset(forVideo: phAsset, options: options) { avAsset, _, _ in
+            PHImageManager.default().requestAVAsset(forVideo: phAsset, options: options) {
+                avAsset, _, _ in
                 guard !resumed else { return }
                 resumed = true
                 let url = (avAsset as? AVURLAsset)?.url
@@ -318,7 +324,8 @@ struct VideoLibraryView: View {
 
     /// Extract metadata directly from PHAsset properties — no file I/O needed.
     /// Falls back to file-based extraction only for codec info.
-    private func extractMetadataFromPHAsset(phAsset: PHAsset, videoURL: URL) async -> VideoMetadata {
+    private func extractMetadataFromPHAsset(phAsset: PHAsset, videoURL: URL) async -> VideoMetadata
+    {
         let duration = Int(phAsset.duration)
         let width = phAsset.pixelWidth
         let height = phAsset.pixelHeight
@@ -339,9 +346,10 @@ struct VideoLibraryView: View {
         let asset = AVURLAsset(url: videoURL)
         var codec = "Unknown"
         if let tracks = try? await asset.loadTracks(withMediaType: .video),
-           let track = tracks.first,
-           let descriptions = try? await track.load(.formatDescriptions),
-           let desc = descriptions.first {
+            let track = tracks.first,
+            let descriptions = try? await track.load(.formatDescriptions),
+            let desc = descriptions.first
+        {
             let subType = CMFormatDescriptionGetMediaSubType(desc)
             codec = VideoMetadataExtractor.codecName(from: subType)
         }

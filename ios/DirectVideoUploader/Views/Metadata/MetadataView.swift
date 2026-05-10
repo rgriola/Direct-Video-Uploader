@@ -1,3 +1,4 @@
+// May 10, 2026 - 1:55pm - GitHub Copilot (GPT-5.3-Codex)
 import SwiftUI
 import UIKit
 
@@ -7,20 +8,21 @@ struct MetadataView: View {
     let clip: Clip
     let asset: Asset?
     var thumbnail: UIImage? = nil
-    
+
+    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dismiss) private var dismiss
-    
+
     /// Whether the clip has any meaningful metadata beyond just timestamps
     private var hasRichMeta: Bool {
-        clip.gpsLat != nil || clip.codec != nil || clip.deviceModel != nil ||
-        clip.resolution != nil || clip.duration != nil
+        clip.gpsLat != nil || clip.codec != nil || clip.deviceModel != nil || clip.resolution != nil
+            || clip.duration != nil
     }
-    
+
     var body: some View {
         NavigationStack {
             ZStack {
-                Theme.black.ignoresSafeArea()
-    
+                Theme.deepBg.ignoresSafeArea()
+
                 ScrollView {
                     VStack(spacing: 0) {
                         // Hero — file identity
@@ -37,17 +39,17 @@ struct MetadataView: View {
                                     .padding(.horizontal, 16)
                                     .padding(.bottom, 4)
                             }
-                            
+
                             Text("📄 File Metadata")
                                 .font(Theme.font20Bold)
-                                .foregroundStyle(Theme.white)
-                            
+                                .foregroundStyle(Theme.primaryText)
+
                             if let name = clip.originalFileName ?? asset?.originalFileName {
                                 Text(name)
                                     .font(Theme.mono13Medium)
-                                    .foregroundStyle(Theme.white.opacity(0.6))
+                                    .foregroundStyle(Theme.secondaryText)
                             }
-                            
+
                             if let id = asset?.mediasourceId {
                                 HStack(spacing: 4) {
                                     Text("🔗")
@@ -59,61 +61,71 @@ struct MetadataView: View {
                             }
                         }
                         .padding(.vertical, 24)
-                        
+
                         if hasRichMeta {
                             // Full metadata rows
                             VStack(spacing: 1) {
                                 // Location
                                 if let lat = clip.gpsLat, let lon = clip.gpsLon {
-                                    metadataRow(icon: "📍", label: "GPS", value: String(format: "%.4f, %.4f", lat, lon))
+                                    metadataRow(
+                                        icon: "📍", label: "GPS",
+                                        value: String(format: "%.4f, %.4f", lat, lon))
                                 }
-                                
+
                                 // Capture date
                                 if let captured = clip.capturedAt {
-                                    metadataRow(icon: "🕐", label: "Captured", value: DVUDateFormatting.longDate(captured))
+                                    metadataRow(
+                                        icon: "🕐", label: "Captured",
+                                        value: DVUDateFormatting.longDate(captured))
                                 }
-                                
+
                                 // Device
                                 if let device = clip.deviceModel {
                                     metadataRow(icon: "📱", label: "Device", value: device)
                                 }
-                                
+
                                 // OS
                                 if let os = clip.osVersion {
                                     metadataRow(icon: "⚙️", label: "OS", value: os)
                                 }
-                                
+
                                 // Codec
                                 if let codec = clip.codec {
                                     metadataRow(icon: "🎬", label: "Codec", value: codec)
                                 }
-                                
+
                                 // Resolution
                                 if let res = clip.resolution {
                                     metadataRow(icon: "📐", label: "Resolution", value: res)
                                 }
-                                
+
                                 // Orientation
                                 if let orientation = clip.orientation {
-                                    metadataRow(icon: "↔️", label: "Orientation", value: orientation.capitalized)
+                                    metadataRow(
+                                        icon: "↔️", label: "Orientation",
+                                        value: orientation.capitalized)
                                 }
-                                
+
                                 // Duration
                                 if let duration = clip.duration {
-                                    metadataRow(icon: "⏱", label: "Duration", value: DVUDateFormatting.duration(duration))
+                                    metadataRow(
+                                        icon: "⏱", label: "Duration",
+                                        value: DVUDateFormatting.duration(duration))
                                 }
-                                
+
                                 // File size
                                 if let size = clip.fileSize, let bytes = Int64(size) {
                                     let mb = Double(bytes) / 1_000_000
-                                    metadataRow(icon: "📁", label: "File Size", value: String(format: "%.1f MB", mb))
+                                    metadataRow(
+                                        icon: "📁", label: "File Size",
+                                        value: String(format: "%.1f MB", mb))
                                 }
-                                
+
                                 // Status
                                 if let status = clip.status {
                                     metadataRow(icon: "✅", label: "Status", value: status)
                                 }
-                                
+
                                 // Storage URL
                                 if let url = clip.storageUrl {
                                     metadataRow(icon: "💾", label: "Storage", value: url)
@@ -121,7 +133,7 @@ struct MetadataView: View {
                             }
                             .clipShape(RoundedRectangle(cornerRadius: Theme.radiusLg))
                             .padding(.horizontal, 16)
-                            
+
                             // Transcript section
                             if let transcript = clip.transcript, !transcript.isEmpty {
                                 VStack(alignment: .leading, spacing: 6) {
@@ -131,9 +143,9 @@ struct MetadataView: View {
                                             .foregroundStyle(Theme.blue)
                                         Text("Transcript")
                                             .font(Theme.font13Semibold)
-                                            .foregroundStyle(Theme.white)
+                                            .foregroundStyle(Theme.primaryText)
                                     }
-                                    
+
                                     Text(transcript)
                                         .font(Theme.font13Regular)
                                         .foregroundStyle(Theme.secondaryText)
@@ -154,16 +166,18 @@ struct MetadataView: View {
                                     .font(Theme.display44)
                                 Text("No Metadata Found")
                                     .font(Theme.font20Semibold)
-                                    .foregroundStyle(Theme.white)
+                                    .foregroundStyle(Theme.primaryText)
                                 Text("Add details in Mediasource.")
                                     .font(Theme.font13Regular)
-                                    .foregroundStyle(Theme.white.opacity(0.5))
-                                
+                                    .foregroundStyle(Theme.secondaryText)
+
                                 // Still show what we have: file size & timestamps
                                 VStack(spacing: 1) {
                                     if let size = clip.fileSize, let bytes = Int64(size) {
                                         let mb = Double(bytes) / 1_000_000
-                                        metadataRow(icon: "📁", label: "File Size", value: String(format: "%.1f MB", mb))
+                                        metadataRow(
+                                            icon: "📁", label: "File Size",
+                                            value: String(format: "%.1f MB", mb))
                                     }
                                     if let status = clip.status {
                                         metadataRow(icon: "✅", label: "Status", value: status)
@@ -174,10 +188,11 @@ struct MetadataView: View {
                             .padding(.horizontal, 16)
                             .padding(.vertical, 24)
                         }
-                        
+
                         // View clip link
                         if let msId = asset?.mediasourceId,
-                           let url = ServerConfig.clipURL(msId) {
+                            let url = ServerConfig.clipURL(msId)
+                        {
                             Link(destination: url) {
                                 HStack {
                                     Image(systemName: "play.circle.fill")
@@ -197,6 +212,7 @@ struct MetadataView: View {
                 }
             }
             .navigationBarTitleDisplayMode(.inline)
+            .toolbarColorScheme(colorScheme, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Done") { dismiss() }
@@ -205,33 +221,33 @@ struct MetadataView: View {
             }
         }
     }
-    
+
     // MARK: - Row
-    
+
     private func metadataRow(icon: String, label: String, value: String) -> some View {
         HStack {
             Text(icon)
                 .font(Theme.icon16)
                 .frame(width: 28)
-            
+
             Text(label)
                 .font(Theme.font13Regular)
-                .foregroundStyle(Theme.white.opacity(0.6))
+                .foregroundStyle(Theme.secondaryText)
                 .frame(width: 80, alignment: .leading)
-            
+
             Text(value)
                 .font(Theme.font13Medium)
-                .foregroundStyle(Theme.white)
-            
+                .foregroundStyle(Theme.primaryText)
+
             Spacer()
         }
         .padding(.horizontal, Theme.space16)
         .padding(.vertical, 13)
         .background(Theme.glassOverlay)
     }
-    
+
     // MARK: - Date Formatting
-    
+
     private func formatDate(_ isoString: String) -> String {
         DVUDateFormatting.longDate(isoString)
     }

@@ -1,3 +1,4 @@
+// May 10, 2026 - 1:51pm - GitHub Copilot (GPT-5.3-Codex)
 import SwiftUI
 
 /// Context form sheet — simplified "Add Details" form.
@@ -19,18 +20,19 @@ struct ContextFormView: View {
     var submitError: String?
     var onSubmit: ([String: String]) -> Void
     var onCancel: (() -> Void)?
-    
+
+    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dismiss) private var dismiss
     @State private var formValues: [String: String] = [:]
     @State private var selectedPriority: String = "Low"
     @State private var hasAttemptedSubmit = false
     @State private var showCancelConfirm = false
     @FocusState private var focusedField: FormFocus?
-    
+
     /// Only letters, numbers, dashes, and periods allowed
     private static let allowedCharacters = CharacterSet.alphanumerics
         .union(CharacterSet(charactersIn: "-. "))
-    
+
     /// Sanitize input: strip anything not in the allowed set (for slug)
     private func sanitize(_ input: String) -> String {
         String(input.unicodeScalars.filter { Self.allowedCharacters.contains($0) })
@@ -39,27 +41,29 @@ struct ContextFormView: View {
     /// Sanitize free-text description: strip only null bytes and non-printable control
     /// characters. Preserves newlines, punctuation, and all printable Unicode.
     private func sanitizeDescription(_ input: String) -> String {
-        String(input.unicodeScalars.filter { $0.value >= 32 || $0 == "\n" || $0 == "\r" || $0 == "\t" })
+        String(
+            input.unicodeScalars.filter { $0.value >= 32 || $0 == "\n" || $0 == "\r" || $0 == "\t" }
+        )
     }
-    
+
     private var isSlugValid: Bool {
         let slug = formValues["slug"]?.trimmingCharacters(in: .whitespaces) ?? ""
         return !slug.isEmpty
     }
-    
+
     private var isDescriptionValid: Bool {
         let desc = formValues["description"]?.trimmingCharacters(in: .whitespaces) ?? ""
         return !desc.isEmpty
     }
-    
+
     private var canSubmit: Bool { isSlugValid && isDescriptionValid }
-    
+
     var body: some View {
         NavigationStack {
             ZStack {
                 // 50% lighter background — visually distinct from chat area
                 Theme.formBg.ignoresSafeArea()
-                
+
                 ScrollView {
                     VStack(spacing: 20) {
                         // Clip header — thumbnail + filename + date
@@ -78,56 +82,59 @@ struct ContextFormView: View {
                                     .overlay {
                                         Image(systemName: "video.fill")
                                             .font(Theme.font20Bold)
-                                            .foregroundStyle(Theme.white.opacity(0.3))
+                                            .foregroundStyle(Theme.tertiaryText)
                                     }
                             }
-                            
+
                             VStack(alignment: .leading, spacing: 4) {
                                 // Clip count + duration
                                 HStack(spacing: 4) {
                                     let clips = clipCount ?? 1
                                     Text("\(clips) Clip")
                                         .font(Theme.font16Semibold)
-                                        .foregroundStyle(Theme.white)
+                                        .foregroundStyle(Theme.primaryText)
                                     if let dur = duration, dur > 0 {
                                         Text("· \(DVUDateFormatting.duration(dur))")
                                             .font(Theme.font16Semibold)
-                                            .foregroundStyle(Theme.white)
+                                            .foregroundStyle(Theme.primaryText)
                                     }
                                 }
-                                
+
                                 // Original filename
                                 if let name = originalFileName {
                                     Text(name)
                                         .font(Theme.font11Regular)
-                                        .foregroundStyle(Theme.white.opacity(0.5))
+                                        .foregroundStyle(Theme.secondaryText)
                                         .lineLimit(1)
                                 }
-                                
+
                                 // Captured date
                                 if let dateStr = capturedAt {
                                     Text("🕐 \(DVUDateFormatting.longDate(dateStr))")
                                         .font(Theme.font11Regular)
-                                        .foregroundStyle(Theme.white.opacity(0.4))
+                                        .foregroundStyle(Theme.secondaryText)
                                 }
                             }
-                            
+
                             Spacer()
                         }
                         .padding(14)
                         .background(Theme.glassOverlay)
                         .clipShape(RoundedRectangle(cornerRadius: Theme.radiusMd))
-                        
+
                         // Editable fields
                         VStack(spacing: 16) {
                             // Slug (required)
                             fieldSection(label: "SLUG", required: true) {
-                                TextField("", text: Binding(
-                                    get: { formValues["slug"] ?? "" },
-                                    set: { formValues["slug"] = sanitize($0) }
-                                ))
+                                TextField(
+                                    "",
+                                    text: Binding(
+                                        get: { formValues["slug"] ?? "" },
+                                        set: { formValues["slug"] = sanitize($0) }
+                                    )
+                                )
                                 .font(Theme.font16Regular)
-                                .foregroundStyle(Theme.white)
+                                .foregroundStyle(Theme.primaryText)
                                 .padding(.horizontal, Theme.space16)
                                 .padding(.vertical, 14)
                                 .background(Theme.glassOverlay)
@@ -135,13 +142,14 @@ struct ContextFormView: View {
                                 .overlay(
                                     RoundedRectangle(cornerRadius: Theme.radiusMd)
                                         .strokeBorder(
-                                            hasAttemptedSubmit && !isSlugValid ? Theme.red : Color.clear,
+                                            hasAttemptedSubmit && !isSlugValid
+                                                ? Theme.red : Color.clear,
                                             lineWidth: 1.5
                                         )
                                 )
                                 .focused($focusedField, equals: .slug)
                             }
-                            
+
                             // Type
                             fieldSection(label: "TYPE") {
                                 Menu {
@@ -151,11 +159,11 @@ struct ContextFormView: View {
                                     HStack {
                                         Text(formValues["type"] ?? "Raw")
                                             .font(Theme.font16Regular)
-                                            .foregroundStyle(Theme.white)
+                                            .foregroundStyle(Theme.primaryText)
                                         Spacer()
                                         Image(systemName: "chevron.down")
                                             .font(Theme.icon13)
-                                            .foregroundStyle(Theme.white.opacity(0.4))
+                                            .foregroundStyle(Theme.secondaryText)
                                     }
                                     .padding(.horizontal, Theme.space16)
                                     .padding(.vertical, 14)
@@ -163,15 +171,17 @@ struct ContextFormView: View {
                                     .clipShape(RoundedRectangle(cornerRadius: Theme.radiusMd))
                                 }
                             }
-                            
+
                             // Description (required)
                             fieldSection(label: "DESCRIPTION", required: true) {
-                                TextEditor(text: Binding(
-                                    get: { formValues["description"] ?? "" },
-                                    set: { formValues["description"] = sanitizeDescription($0) }
-                                ))
+                                TextEditor(
+                                    text: Binding(
+                                        get: { formValues["description"] ?? "" },
+                                        set: { formValues["description"] = sanitizeDescription($0) }
+                                    )
+                                )
                                 .font(Theme.font16Regular)
-                                .foregroundStyle(Theme.white)
+                                .foregroundStyle(Theme.primaryText)
                                 .scrollContentBackground(.hidden)
                                 .frame(minHeight: 80)
                                 .padding(Theme.space12)
@@ -180,16 +190,18 @@ struct ContextFormView: View {
                                 .overlay(
                                     RoundedRectangle(cornerRadius: Theme.radiusMd)
                                         .strokeBorder(
-                                            hasAttemptedSubmit && !isDescriptionValid ? Theme.red : Color.clear,
+                                            hasAttemptedSubmit && !isDescriptionValid
+                                                ? Theme.red : Color.clear,
                                             lineWidth: 1.5
                                         )
                                 )
                             }
-                            
+
                             // Priority (segmented)
                             fieldSection(label: "PRIORITY") {
                                 HStack(spacing: 8) {
-                                    ForEach(["Low", "Med", "High", "Critical"], id: \.self) { level in
+                                    ForEach(["Low", "Med", "High", "Critical"], id: \.self) {
+                                        level in
                                         let isSelected = selectedPriority == level
                                         Button {
                                             selectedPriority = level
@@ -197,20 +209,25 @@ struct ContextFormView: View {
                                             formValues["priority"] = fullName
                                         } label: {
                                             Text(level)
-                                                .font(Theme.font13Regular.weight(isSelected ? .semibold : .regular))
+                                                .font(
+                                                    Theme.font13Regular.weight(
+                                                        isSelected ? .semibold : .regular)
+                                                )
                                                 .frame(maxWidth: .infinity)
                                                 .padding(.vertical, 10)
                                                 .background(
                                                     isSelected
                                                         ? Theme.blue.opacity(0.25)
-                                                        : Theme.white.opacity(0.06)
+                                                        : Theme.glassOverlay
                                                 )
                                                 .foregroundStyle(
                                                     isSelected
                                                         ? Theme.blue
-                                                        : Theme.white.opacity(0.5)
+                                                        : Theme.secondaryText
                                                 )
-                                                .clipShape(RoundedRectangle(cornerRadius: Theme.radiusMd))
+                                                .clipShape(
+                                                    RoundedRectangle(cornerRadius: Theme.radiusMd)
+                                                )
                                                 .overlay(
                                                     RoundedRectangle(cornerRadius: Theme.radiusMd)
                                                         .strokeBorder(
@@ -223,7 +240,7 @@ struct ContextFormView: View {
                                 }
                             }
                         }
-                        
+
                         // Error banner (shown if form submission failed)
                         if let error = submitError {
                             HStack(spacing: 8) {
@@ -231,14 +248,14 @@ struct ContextFormView: View {
                                     .foregroundStyle(Theme.red)
                                 Text(error)
                                     .font(Theme.font13Regular)
-                                    .foregroundStyle(Theme.white)
+                                    .foregroundStyle(Theme.primaryText)
                             }
                             .padding(Theme.space12)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .background(Theme.red.opacity(0.15))
                             .clipShape(RoundedRectangle(cornerRadius: Theme.radiusMd))
                         }
-                        
+
                         // Send button — disabled when required fields are empty
                         Button {
                             hasAttemptedSubmit = true
@@ -264,7 +281,7 @@ struct ContextFormView: View {
             }
             .navigationTitle("Add Details")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbarColorScheme(.dark, for: .navigationBar)
+            .toolbarColorScheme(colorScheme, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button {
@@ -275,12 +292,12 @@ struct ContextFormView: View {
                         }
                     } label: {
                         Image(systemName: "xmark")
-                            .foregroundStyle(Theme.white.opacity(0.6))
+                            .foregroundStyle(Theme.secondaryText)
                     }
                 }
             }
             .alert("Skip Details?", isPresented: $showCancelConfirm) {
-                Button("Keep Editing", role: .cancel) { }
+                Button("Keep Editing", role: .cancel) {}
                 Button("Skip for Now", role: .destructive) {
                     onCancel?()
                     dismiss()
@@ -302,23 +319,25 @@ struct ContextFormView: View {
             if formValues["type"] == nil { formValues["type"] = "Raw" }
             // Default priority to Low
             if formValues["priority"] == nil { formValues["priority"] = "Low" }
-            
+
             // Auto-focus slug after sheet presentation animation settles
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                 focusedField = .slug
             }
         }
     }
-    
+
     // MARK: - Helpers
-    
+
     /// Section label — shows red asterisk for required fields
-    private func fieldSection<Content: View>(label: String, required: Bool = false, @ViewBuilder content: () -> Content) -> some View {
+    private func fieldSection<Content: View>(
+        label: String, required: Bool = false, @ViewBuilder content: () -> Content
+    ) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 2) {
                 Text(label)
                     .font(Theme.font11Semibold)
-                    .foregroundStyle(Theme.white.opacity(0.3))
+                    .foregroundStyle(Theme.secondaryText)
                     .tracking(0.8)
                 if required {
                     Text("*")

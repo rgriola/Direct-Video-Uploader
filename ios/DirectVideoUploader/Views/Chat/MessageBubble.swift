@@ -1,4 +1,4 @@
-// May 10, 2026 - 10:15am - GitHub Copilot (GPT-5.3-Codex)
+// May 10, 2026 - 1:51pm - GitHub Copilot (GPT-5.3-Codex)
 import SwiftUI
 
 /// Individual chat bubble — handles outgoing (blue, right) and incoming (gray, left).
@@ -26,7 +26,7 @@ struct MessageBubble: View {
                 if let time = formattedTime {
                     Text(time)
                         .font(Theme.font11Regular)
-                        .foregroundStyle(Theme.black)
+                        .foregroundStyle(Theme.secondaryText)
                         .padding(.horizontal, 4)
                 }
             }
@@ -55,9 +55,9 @@ struct MessageBubble: View {
     // MARK: - Text
 
     private var textContent: some View {
-        Text(message.content.displayText)
+        Text(message.displayText)
             .font(Theme.font16Regular)
-            .foregroundStyle(isOutgoing ? Theme.white : Theme.black)
+            .foregroundStyle(isOutgoing ? Theme.white : Theme.primaryText)
     }
 
     // MARK: - Video
@@ -66,10 +66,10 @@ struct MessageBubble: View {
         HStack(spacing: 8) {
             Image(systemName: "video.fill")
                 .font(Theme.icon13)
-            Text(message.content.displayText)
+            Text(message.displayText)
                 .font(Theme.font16Regular)
         }
-        .foregroundStyle(isOutgoing ? Theme.white : Theme.black)
+        .foregroundStyle(isOutgoing ? Theme.white : Theme.primaryText)
     }
 
     // MARK: - Confirmation
@@ -77,15 +77,15 @@ struct MessageBubble: View {
     private var confirmationContent: some View {
         VStack(alignment: .leading, spacing: 8) {
             // Main confirmation text
-            Text(message.content.displayText)
+            Text(message.displayText)
                 .font(Theme.font16Regular)
-                .foregroundStyle(Theme.black)
+                .foregroundStyle(Theme.primaryText)
 
             // Slug
             if let slug = message.content.slug {
                 Text(slug)
                     .font(Theme.mono13Medium)
-                    .foregroundStyle(Theme.black)
+                    .foregroundStyle(Theme.primaryText)
                     .lineLimit(1)
             }
 
@@ -96,7 +96,7 @@ struct MessageBubble: View {
                         .font(Theme.icon13)
                     Text(msId)
                         .font(Theme.mono16Bold)
-                        .foregroundStyle(Theme.black)
+                        .foregroundStyle(Theme.primaryText)
 
                     Spacer()
 
@@ -120,7 +120,7 @@ struct MessageBubble: View {
         if isOutgoing {
             // Outgoing — sending/sent indicator
             VStack(alignment: .leading, spacing: 6) {
-                Text(message.content.displayText)
+                Text(message.displayText)
                     .font(Theme.font16Regular)
                     .foregroundStyle(Theme.white)
 
@@ -151,7 +151,7 @@ struct MessageBubble: View {
                     .clipShape(RoundedRectangle(cornerRadius: Theme.radiusSm))
             } else {
                 RoundedRectangle(cornerRadius: Theme.radiusSm)
-                    .fill(Theme.black.opacity(0.15))
+                    .fill(Theme.glassOverlay)
                     .frame(width: 72, height: 72)
                     .overlay(
                         ProgressView()
@@ -163,20 +163,20 @@ struct MessageBubble: View {
                 if let owner = message.content.userName {
                     Text(owner)
                         .font(Theme.font16Regular)
-                        .foregroundStyle(Theme.black)
+                        .foregroundStyle(Theme.primaryText)
                 }
 
                 if let msId = message.content.mediasourceId {
                     Text("MS# \(msId)")
                         .font(Theme.font16Regular)
-                        .foregroundStyle(Theme.black)
+                        .foregroundStyle(Theme.primaryText)
                 }
 
                 // Captured date
                 if let capturedAt = message.content.capturedAt {
                     Text(DVUDateFormatting.longDate(capturedAt))
                         .font(Theme.font11Regular)
-                        .foregroundStyle(Theme.black.opacity(0.7))
+                        .foregroundStyle(Theme.secondaryText)
                 }
 
                 // Channel / mention
@@ -200,7 +200,7 @@ struct MessageBubble: View {
                     Image(systemName: "checkmark.circle.fill")
                         .foregroundStyle(Theme.green)
                     Text("Posted to Slack")
-                        .foregroundStyle(Theme.black)
+                        .foregroundStyle(Theme.primaryText)
                 }
                 .font(Theme.font13Medium)
             }

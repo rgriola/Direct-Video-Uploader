@@ -1,4 +1,4 @@
-// Last updated: May 9, 2026 - 7:19pm - GPT-5.3-Codex
+// Last updated: May 10, 2026 - 12:55pm - GitHub Copilot (GPT-5.3-Codex)
 /**
  * Mux Webhook Routes
  *
@@ -177,6 +177,7 @@ export default async function muxWebhookRoutes(fastify) {
                                     assetId: asset.id,
                                     clipId: clip.id,
                                     mediasourceId: asset.mediasourceId,
+                                    mediasourceUrl: asset.mediasourceUrl,
                                     originalFileName: asset.originalFileName,
                                     muxPlaybackId,
                                     streamUrl,
