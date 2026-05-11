@@ -1,4 +1,4 @@
-// Last updated: May 11, 2026 - 5:21pm - GitHub Copilot (GPT-5.3-Codex)
+// Last updated: May 11, 2026 - 6:47pm - GitHub Copilot (GPT-5.3-Codex)
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const muxApi = {
@@ -163,6 +163,36 @@ describe('mux lib coverage', () => {
                 }),
             })
         );
+    });
+
+    it('caps passthrough to Mux 255-char limit and drops duplicate ISO field', async () => {
+        muxApi.uploadsCreate.mockResolvedValueOnce({
+            id: 'upload-125',
+            url: 'https://mux.example/upload/125',
+        });
+
+        const mux = await importMuxModule({
+            tokenId: 'token-id',
+            tokenSecret: 'token-secret',
+        });
+
+        await mux.createDirectUpload({
+            clipId: '123e4567-e89b-12d3-a456-426614174000',
+            assetId: 'd9834164-3388-4277-8c72-8b5e0df3e107',
+            passthrough: {
+                telemetryCorrelationId: 'x'.repeat(160),
+                clientUploadStartedAtMs: 1715000000000,
+                serverUploadCreatedAt: '2026-05-11T17:00:00.000Z',
+                serverUploadCreatedAtMs: 1715446800000,
+            },
+        });
+
+        const passthrough = muxApi.uploadsCreate.mock.calls.at(-1)[0].new_asset_settings.passthrough;
+        const parsed = JSON.parse(passthrough);
+
+        expect(passthrough.length).toBeLessThanOrEqual(255);
+        expect(parsed.serverUploadCreatedAt).toBeUndefined();
+        expect(parsed.telemetryCorrelationId).toHaveLength(48);
     });
 
     it('ingests local video to mux and returns upload id', async () => {

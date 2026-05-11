@@ -1,4 +1,4 @@
-// Last updated: May 11, 2026 - 5:21pm - GitHub Copilot (GPT-5.3-Codex)
+// Last updated: May 11, 2026 - 6:47pm - GitHub Copilot (GPT-5.3-Codex)
 import Fastify from 'fastify';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -281,7 +281,6 @@ describe('assets route deeper coverage', () => {
                 passthrough: expect.objectContaining({
                     telemetryCorrelationId: 'ios-correlation-123',
                     clientUploadStartedAtMs: 1715000000000,
-                    serverUploadCreatedAt: expect.any(String),
                     serverUploadCreatedAtMs: expect.any(Number),
                 }),
             })

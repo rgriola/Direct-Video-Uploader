@@ -1,4 +1,4 @@
-// Last updated: May 11, 2026 - 5:21pm - GitHub Copilot (GPT-5.3-Codex)
+// Last updated: May 11, 2026 - 6:47pm - GitHub Copilot (GPT-5.3-Codex)
 /**
  * Mux Webhook Routes
  *
@@ -53,6 +53,14 @@ function diffMs(startIso, endIso) {
     }
 
     return Math.max(0, end - start);
+}
+
+function isoFromTimestampMs(timestampMs) {
+    if (!Number.isFinite(timestampMs) || timestampMs <= 0) {
+        return null;
+    }
+
+    return new Date(timestampMs).toISOString();
 }
 
 export default async function muxWebhookRoutes(fastify) {
@@ -178,11 +186,14 @@ export default async function muxWebhookRoutes(fastify) {
                         ? meta.telemetryCorrelationId
                         : null;
                 const clientUploadStartedAtMs = parseTimestampMs(meta?.clientUploadStartedAtMs);
-                const serverUploadCreatedAt =
+                const passthroughServerUploadCreatedAt =
                     typeof meta?.serverUploadCreatedAt === 'string'
                         ? meta.serverUploadCreatedAt
                         : null;
                 const serverUploadCreatedAtMs = parseTimestampMs(meta?.serverUploadCreatedAtMs);
+                const serverUploadCreatedAt =
+                    passthroughServerUploadCreatedAt
+                    || isoFromTimestampMs(serverUploadCreatedAtMs);
 
                 const muxUploadId = clip?.muxUploadId || null;
                 const webhookAssetCreatedAt =

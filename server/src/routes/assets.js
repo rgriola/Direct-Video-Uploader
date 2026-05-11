@@ -1,4 +1,4 @@
-// Last updated: May 11, 2026 - 5:21pm - GitHub Copilot (GPT-5.3-Codex)
+// Last updated: May 11, 2026 - 6:47pm - GitHub Copilot (GPT-5.3-Codex)
 /**
  * Asset routes — Create, upload, retrieve, submit form.
  */
@@ -205,7 +205,6 @@ export default async function assetRoutes(fastify) {
             passthrough: {
                 telemetryCorrelationId: telemetry.correlationId,
                 clientUploadStartedAtMs: telemetry.clientUploadStartedAtMs,
-                serverUploadCreatedAt: telemetry.serverUploadCreatedAt,
                 serverUploadCreatedAtMs: telemetry.serverUploadCreatedAtMs,
             },
         });

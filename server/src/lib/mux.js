@@ -1,4 +1,4 @@
-// Last updated: May 11, 2026 - 5:21pm - GitHub Copilot (GPT-5.3-Codex)
+// Last updated: May 11, 2026 - 6:47pm - GitHub Copilot (GPT-5.3-Codex)
 /**
  * Mux Video Integration
  *
@@ -20,6 +20,8 @@ import { stat } from 'fs/promises';
 const MUX_TOKEN_ID = process.env.MUX_TOKEN_ID;
 const MUX_TOKEN_SECRET = process.env.MUX_TOKEN_SECRET;
 export const MUX_ENV_KEY = process.env.MUX_ENV_KEY || '';
+const MAX_MUX_PASSTHROUGH_LENGTH = 255;
+const MAX_TELEMETRY_CORRELATION_ID_LENGTH = 48;
 
 /** Whether Mux is configured (has API credentials). */
 export const isMuxEnabled = !!(MUX_TOKEN_ID && MUX_TOKEN_SECRET);
@@ -39,6 +41,41 @@ function buildMuxPassthrough(opts = {}) {
     }
 
     return passthrough;
+}
+
+function stringifyMuxPassthrough(opts = {}) {
+    const passthrough = buildMuxPassthrough(opts);
+
+    // Mux enforces a 255-char passthrough limit. Keep ms precision field and
+    // drop duplicate ISO timestamp to preserve room for correlation metadata.
+    if (passthrough.serverUploadCreatedAt !== undefined) {
+        delete passthrough.serverUploadCreatedAt;
+    }
+
+    if (passthrough.telemetryCorrelationId !== undefined && passthrough.telemetryCorrelationId !== null) {
+        passthrough.telemetryCorrelationId = String(passthrough.telemetryCorrelationId)
+            .slice(0, MAX_TELEMETRY_CORRELATION_ID_LENGTH);
+    }
+
+    let serialized = JSON.stringify(passthrough);
+    if (serialized.length <= MAX_MUX_PASSTHROUGH_LENGTH) {
+        return serialized;
+    }
+
+    const reduced = {
+        clipId: passthrough.clipId,
+        assetId: passthrough.assetId,
+        telemetryCorrelationId: passthrough.telemetryCorrelationId,
+    };
+    serialized = JSON.stringify(reduced);
+    if (serialized.length <= MAX_MUX_PASSTHROUGH_LENGTH) {
+        return serialized;
+    }
+
+    return JSON.stringify({
+        clipId: String(passthrough.clipId || '').slice(0, 64),
+        assetId: String(passthrough.assetId || '').slice(0, 64),
+    });
 }
 
 let muxClient = null;
@@ -71,7 +108,7 @@ export async function createDirectUpload(opts = {}) {
     const upload = await muxClient.video.uploads.create({
         new_asset_settings: {
             playback_policy: ['public'],
-            passthrough: JSON.stringify(buildMuxPassthrough(opts)),
+            passthrough: stringifyMuxPassthrough(opts),
         },
         cors_origin: '*',
         timeout: 3600, // 1 hour expiry for the upload URL
@@ -109,7 +146,7 @@ export async function ingestVideo(filePath, opts = {}) {
             new_asset_settings: {
                 playback_policy: ['public'],
                 // passthrough lets us correlate webhook events back to our clip
-                passthrough: JSON.stringify(buildMuxPassthrough(opts)),
+                passthrough: stringifyMuxPassthrough(opts),
             },
             cors_origin: '*',
         });

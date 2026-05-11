@@ -1,4 +1,4 @@
-// Last updated: May 11, 2026 - 5:21pm - GitHub Copilot (GPT-5.3-Codex)
+// Last updated: May 11, 2026 - 6:47pm - GitHub Copilot (GPT-5.3-Codex)
 import Fastify from 'fastify';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -303,7 +303,6 @@ describe('mux-webhooks routes focused coverage', () => {
                         clipId: 'clip-2',
                         telemetryCorrelationId: 'ios-correlation-2',
                         clientUploadStartedAtMs: 1715000000000,
-                        serverUploadCreatedAt: '2026-05-11T17:00:00.000Z',
                         serverUploadCreatedAtMs: 1715446800000,
                     }),
                 },
@@ -320,7 +319,7 @@ describe('mux-webhooks routes focused coverage', () => {
                     correlationId: 'ios-correlation-2',
                     muxUploadId: 'upload-2',
                     clientUploadStartedAtMs: 1715000000000,
-                    serverUploadCreatedAt: '2026-05-11T17:00:00.000Z',
+                    serverUploadCreatedAt: '2024-05-11T17:00:00.000Z',
                     serverUploadCreatedAtMs: 1715446800000,
                     webhookAssetCreatedAt: expect.any(String),
                     webhookReadyAt: expect.any(String),
