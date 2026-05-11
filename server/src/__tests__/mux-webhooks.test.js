@@ -1,4 +1,4 @@
-// Last updated: May 9, 2026 - 8:23pm - GPT-5.3-Codex
+// Last updated: May 11, 2026 - 5:21pm - GitHub Copilot (GPT-5.3-Codex)
 import Fastify from 'fastify';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -246,6 +246,87 @@ describe('mux-webhooks routes focused coverage', () => {
                 clipId: 'clip-fallback',
                 muxPlaybackId: 'playback-1',
                 mediasourceId: '100000001',
+            })
+        );
+    });
+
+    it('emits upload telemetry correlation fields on mux:ready', async () => {
+        await buildApp();
+        prismaMock.clip.findFirst
+            .mockResolvedValueOnce({ id: 'clip-2', muxUploadId: 'upload-2' })
+            .mockResolvedValueOnce({
+                id: 'clip-2',
+                assetId: 'asset-2',
+                muxUploadId: 'upload-2',
+                duration: 9,
+                resolution: '1280x720',
+                fileSize: 999,
+                storageUrl: null,
+            });
+        prismaMock.asset.findUnique.mockResolvedValueOnce({
+            id: 'asset-2',
+            userId: 'user-1',
+            mediasourceId: '100000002',
+            originalFileName: 'corr.mp4',
+            formResponse: null,
+        });
+
+        const assetCreatedResponse = await app.inject({
+            method: 'POST',
+            url: '/api/webhooks/mux',
+            headers: {
+                'mux-signature': 'sig-ok',
+            },
+            payload: {
+                type: 'video.upload.asset_created',
+                data: {
+                    id: 'upload-2',
+                    asset_id: 'mux-asset-2',
+                },
+            },
+        });
+
+        expect(assetCreatedResponse.statusCode).toBe(200);
+
+        const readyResponse = await app.inject({
+            method: 'POST',
+            url: '/api/webhooks/mux',
+            headers: {
+                'mux-signature': 'sig-ok',
+            },
+            payload: {
+                type: 'video.asset.ready',
+                data: {
+                    id: 'mux-ready-2',
+                    playback_ids: [{ policy: 'public', id: 'playback-2' }],
+                    passthrough: JSON.stringify({
+                        clipId: 'clip-2',
+                        telemetryCorrelationId: 'ios-correlation-2',
+                        clientUploadStartedAtMs: 1715000000000,
+                        serverUploadCreatedAt: '2026-05-11T17:00:00.000Z',
+                        serverUploadCreatedAtMs: 1715446800000,
+                    }),
+                },
+            },
+        });
+
+        expect(readyResponse.statusCode).toBe(200);
+        expect(ioEmitSpy).toHaveBeenCalledWith(
+            'mux:ready',
+            expect.objectContaining({
+                assetId: 'asset-2',
+                clipId: 'clip-2',
+                uploadTelemetry: expect.objectContaining({
+                    correlationId: 'ios-correlation-2',
+                    muxUploadId: 'upload-2',
+                    clientUploadStartedAtMs: 1715000000000,
+                    serverUploadCreatedAt: '2026-05-11T17:00:00.000Z',
+                    serverUploadCreatedAtMs: 1715446800000,
+                    webhookAssetCreatedAt: expect.any(String),
+                    webhookReadyAt: expect.any(String),
+                    serverToAssetCreatedMs: expect.any(Number),
+                    serverToReadyMs: expect.any(Number),
+                }),
             })
         );
     });

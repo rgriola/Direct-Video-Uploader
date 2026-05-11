@@ -1,4 +1,4 @@
-// Last updated: May 10, 2026 - 10:15am - GitHub Copilot (GPT-5.3-Codex)
+// Last updated: May 11, 2026 - 5:21pm - GitHub Copilot (GPT-5.3-Codex)
 /**
  * Asset routes — Create, upload, retrieve, submit form.
  */
@@ -17,6 +17,37 @@ const ALLOWED_VIDEO_MIMES = new Set([
     'video/3gpp',
     'video/3gpp2',
 ]);
+
+function sanitizeCorrelationId(rawValue) {
+    if (rawValue === undefined || rawValue === null) return null;
+
+    const normalized = String(rawValue)
+        .replace(/[\u0000-\u001F\u007F]/g, '')
+        .trim();
+
+    if (!normalized) return null;
+    return normalized.slice(0, 128);
+}
+
+function parseUploadStartedAtMs(rawValue) {
+    if (rawValue === undefined || rawValue === null) return null;
+
+    const parsed = Number.parseInt(String(rawValue), 10);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+        return null;
+    }
+
+    return parsed;
+}
+
+function buildUploadTelemetry(correlationId, clientUploadStartedAtMs, serverUploadCreatedAt) {
+    return {
+        correlationId,
+        clientUploadStartedAtMs,
+        serverUploadCreatedAt: serverUploadCreatedAt.toISOString(),
+        serverUploadCreatedAtMs: serverUploadCreatedAt.getTime(),
+    };
+}
 
 export default async function assetRoutes(fastify) {
     /**
@@ -68,6 +99,8 @@ export default async function assetRoutes(fastify) {
         preHandler: [fastify.authenticate],
     }, async (request, reply) => {
         const { id } = request.params;
+        const headerCorrelationId = sanitizeCorrelationId(request.headers['x-upload-correlation-id']);
+        const headerUploadStartedAtMs = parseUploadStartedAtMs(request.headers['x-upload-started-at-ms']);
 
         if (!isMuxEnabled) {
             return reply.status(503).send({ error: 'Mux not configured' });
@@ -103,14 +136,25 @@ export default async function assetRoutes(fastify) {
 
             // Only reuse if Mux upload is still in 'waiting' state (accepting bytes)
             if (upload?.url && upload.status === 'waiting') {
+                const telemetry = buildUploadTelemetry(
+                    headerCorrelationId,
+                    headerUploadStartedAtMs,
+                    new Date()
+                );
+
                 request.log.info(
-                    { clipId: existingClip.id, mediasourceId: asset.mediasourceId },
+                    {
+                        clipId: existingClip.id,
+                        mediasourceId: asset.mediasourceId,
+                        telemetryCorrelationId: telemetry.correlationId,
+                    },
                     'Reusing existing processing clip upload'
                 );
                 return {
                     uploadUrl: upload.url,
                     clipId: existingClip.id,
                     muxUploadId: existingClip.muxUploadId,
+                    telemetry,
                 };
             }
             // Upload expired, cancelled, timed-out, errored, or already used —
@@ -131,6 +175,13 @@ export default async function assetRoutes(fastify) {
         }
 
         const clientMeta = request.body?.metadata || {};
+        const clientCorrelationId =
+            headerCorrelationId
+            || sanitizeCorrelationId(clientMeta.uploadCorrelationId)
+            || sanitizeCorrelationId(clientMeta.localUploadId);
+        const clientUploadStartedAtMs =
+            headerUploadStartedAtMs
+            || parseUploadStartedAtMs(clientMeta.uploadStartedAtMs);
         const mimeType = String(clientMeta.mimeType || clientMeta.contentType || clientMeta.type || '')
             .trim()
             .toLowerCase();
@@ -140,9 +191,24 @@ export default async function assetRoutes(fastify) {
         }
 
         const clipId = randomUUID();
+        const serverUploadCreatedAt = new Date();
+        const telemetry = buildUploadTelemetry(
+            clientCorrelationId,
+            clientUploadStartedAtMs,
+            serverUploadCreatedAt
+        );
 
         // Create the Mux direct upload URL
-        const muxResult = await createDirectUpload({ clipId, assetId: id });
+        const muxResult = await createDirectUpload({
+            clipId,
+            assetId: id,
+            passthrough: {
+                telemetryCorrelationId: telemetry.correlationId,
+                clientUploadStartedAtMs: telemetry.clientUploadStartedAtMs,
+                serverUploadCreatedAt: telemetry.serverUploadCreatedAt,
+                serverUploadCreatedAtMs: telemetry.serverUploadCreatedAtMs,
+            },
+        });
         if (!muxResult) {
             return reply.status(500).send({ error: 'Failed to create Mux upload' });
         }
@@ -174,7 +240,14 @@ export default async function assetRoutes(fastify) {
         }));
 
         request.log.info(
-            { clipId, mediasourceId: asset.mediasourceId, muxUploadId: muxResult.muxUploadId },
+            {
+                clipId,
+                mediasourceId: asset.mediasourceId,
+                muxUploadId: muxResult.muxUploadId,
+                telemetryCorrelationId: telemetry.correlationId,
+                clientUploadStartedAtMs: telemetry.clientUploadStartedAtMs,
+                serverUploadCreatedAt: telemetry.serverUploadCreatedAt,
+            },
             'Created mux direct upload URL'
         );
 
@@ -194,6 +267,7 @@ export default async function assetRoutes(fastify) {
             uploadUrl: muxResult.uploadUrl,
             clipId,
             muxUploadId: muxResult.muxUploadId,
+            telemetry,
         };
     });
 

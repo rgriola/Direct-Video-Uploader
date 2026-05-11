@@ -1,3 +1,4 @@
+// Last updated: May 11, 2026 - 5:21pm - GitHub Copilot (GPT-5.3-Codex)
 /**
  * Mux Video Integration
  *
@@ -23,6 +24,23 @@ export const MUX_ENV_KEY = process.env.MUX_ENV_KEY || '';
 /** Whether Mux is configured (has API credentials). */
 export const isMuxEnabled = !!(MUX_TOKEN_ID && MUX_TOKEN_SECRET);
 
+function buildMuxPassthrough(opts = {}) {
+    const passthrough = {
+        clipId: opts.clipId,
+        assetId: opts.assetId,
+    };
+
+    if (opts.passthrough && typeof opts.passthrough === 'object') {
+        for (const [key, value] of Object.entries(opts.passthrough)) {
+            if (value !== undefined && value !== null) {
+                passthrough[key] = value;
+            }
+        }
+    }
+
+    return passthrough;
+}
+
 let muxClient = null;
 
 if (isMuxEnabled) {
@@ -42,6 +60,7 @@ if (isMuxEnabled) {
  * @param {object} opts
  * @param {string} opts.clipId — Our clip ID
  * @param {string} opts.assetId — Our asset ID
+ * @param {Record<string, unknown>} [opts.passthrough] — Additional passthrough metadata for webhook correlation
  * @returns {Promise<{uploadUrl: string, muxUploadId: string} | null>}
  */
 export async function createDirectUpload(opts = {}) {
@@ -52,10 +71,7 @@ export async function createDirectUpload(opts = {}) {
     const upload = await muxClient.video.uploads.create({
         new_asset_settings: {
             playback_policy: ['public'],
-            passthrough: JSON.stringify({
-                clipId: opts.clipId,
-                assetId: opts.assetId,
-            }),
+            passthrough: JSON.stringify(buildMuxPassthrough(opts)),
         },
         cors_origin: '*',
         timeout: 3600, // 1 hour expiry for the upload URL
@@ -79,6 +95,7 @@ export async function createDirectUpload(opts = {}) {
  * @param {object} opts — Optional metadata
  * @param {string} opts.clipId — Our clip ID (stored as passthrough for webhook)
  * @param {string} opts.assetId — Our asset ID
+ * @param {Record<string, unknown>} [opts.passthrough] — Additional passthrough metadata for webhook correlation
  * @returns {Promise<{muxAssetId: string, muxUploadId: string} | null>}
  */
 export async function ingestVideo(filePath, opts = {}) {
@@ -92,10 +109,7 @@ export async function ingestVideo(filePath, opts = {}) {
             new_asset_settings: {
                 playback_policy: ['public'],
                 // passthrough lets us correlate webhook events back to our clip
-                passthrough: JSON.stringify({
-                    clipId: opts.clipId,
-                    assetId: opts.assetId,
-                }),
+                passthrough: JSON.stringify(buildMuxPassthrough(opts)),
             },
             cors_origin: '*',
         });

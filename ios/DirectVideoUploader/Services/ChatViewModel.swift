@@ -1,4 +1,4 @@
-// May 11, 2026 - 6:34pm - GitHub Copilot (GPT-5.3-Codex)
+// May 11, 2026 - 5:21pm - GitHub Copilot (GPT-5.3-Codex)
 import Foundation
 import Observation
 import UIKit
@@ -184,6 +184,7 @@ final class ChatViewModel {
         setupConnectionHandlers()
         checkPendingForm()  // Check for form that was pending when app was killed
         restorePendingBatchState()
+        rehydratePersistedUploadQueueState()
     }
 
     // MARK: - WebSocket Handlers
@@ -387,6 +388,19 @@ final class ChatViewModel {
             let duration = data["duration"] as? Int
             let resolution = data["resolution"] as? String
             let fileSize = data["fileSize"] as? String
+            let uploadTelemetry = data["uploadTelemetry"] as? [String: Any]
+
+            if let uploadTelemetry {
+                let correlationId = uploadTelemetry["correlationId"] as? String ?? "n/a"
+                let muxUploadId = uploadTelemetry["muxUploadId"] as? String ?? "n/a"
+                let serverToReadyMs = uploadTelemetry["serverToReadyMs"] as? Int
+                let serverToAssetCreatedMs = uploadTelemetry["serverToAssetCreatedMs"] as? Int
+                let readyText = serverToReadyMs.map { "\($0)ms" } ?? "n/a"
+                let assetCreatedText = serverToAssetCreatedMs.map { "\($0)ms" } ?? "n/a"
+                print(
+                    "📊 [UploadCorrelation] correlation=\(correlationId) muxUploadId=\(muxUploadId) serverToAssetCreated=\(assetCreatedText) serverToReady=\(readyText)"
+                )
+            }
 
             self.clearBlockingConnectivityIssueIfNeeded(assetId: assetId)
 
@@ -2248,10 +2262,45 @@ final class ChatViewModel {
             batchBubbleAnchorMessageId = messages.last?.id
         }
 
-        let hasRecoveryInputs = !stagedBatchVideos.isEmpty && pendingBatchFormData != nil
+        let persistedQueueByAssetId = latestPersistedUploadTasksByAssetId()
+        let hasQueueMappingsForBatch = batchItems.contains { item in
+            guard let assetId = item.assetId, !assetId.isEmpty else { return false }
+            return persistedQueueByAssetId[assetId] != nil
+        }
+
+        let hasRecoveryInputs =
+            (!stagedBatchVideos.isEmpty && pendingBatchFormData != nil) || hasQueueMappingsForBatch
 
         if hasRecoveryInputs && (pending.state == .uploading || pending.state == .paused) {
+            var hasRecoverableRunningWork = false
+
             for index in batchItems.indices where batchItems[index].status != .complete {
+                if let assetId = batchItems[index].assetId,
+                    let persistedTask = persistedQueueByAssetId[assetId]
+                {
+                    switch persistedTask.state {
+                    case .pending, .running:
+                        batchItems[index].status = .uploading
+                        batchItems[index].error = nil
+                        batchItems[index].progress = max(batchItems[index].progress, 0.05)
+                        hasRecoverableRunningWork = true
+
+                    case .completed:
+                        batchItems[index].status = .applyingForm
+                        batchItems[index].error = nil
+                        batchItems[index].progress = max(batchItems[index].progress, 0.97)
+                        hasRecoverableRunningWork = true
+
+                    case .failed:
+                        batchItems[index].status = .failed
+                        batchItems[index].error =
+                            persistedTask.errorMessage
+                            ?? "Upload interrupted by app restart. Tap Retry Failed."
+                        batchItems[index].progress = 0
+                    }
+                    continue
+                }
+
                 batchItems[index].status = .failed
                 if batchItems[index].error?.isEmpty ?? true {
                     batchItems[index].error =
@@ -2259,7 +2308,8 @@ final class ChatViewModel {
                 }
                 batchItems[index].progress = 0
             }
-            batchState = .partialFailed
+
+            batchState = hasRecoverableRunningWork ? .uploading : .partialFailed
         } else if !hasRecoveryInputs, pending.state != .queued {
             // Older snapshots may not include enough data to retry; keep the batch clearable.
             batchState = .paused
@@ -2273,6 +2323,203 @@ final class ChatViewModel {
         }
 
         persistBatchState()
+    }
+
+    private func latestPersistedUploadTasksByAssetId() -> [String: PersistedUploadTask] {
+        var latestByAssetId: [String: PersistedUploadTask] = [:]
+
+        for task in UploadQueueStore.all() {
+            if let existing = latestByAssetId[task.assetId], existing.updatedAt >= task.updatedAt {
+                continue
+            }
+            latestByAssetId[task.assetId] = task
+        }
+
+        return latestByAssetId
+    }
+
+    private func rehydratePersistedUploadQueueState() {
+        let latestByAssetId = latestPersistedUploadTasksByAssetId()
+        guard !latestByAssetId.isEmpty else { return }
+        let rehydratedTasks = Array(latestByAssetId.values)
+
+        if currentAssetId == nil,
+            let newestTask = latestByAssetId.values.max(by: { $0.updatedAt < $1.updatedAt })
+        {
+            currentAssetId = newestTask.assetId
+        }
+
+        appendUploadRestoreSummaryIfNeeded(tasks: rehydratedTasks)
+
+        var shouldPersistBatch = false
+        var hasUploadingBatchWork = false
+        var hasBatchFailures = false
+        var assetIdsToReconcile: Set<String> = []
+
+        for task in latestByAssetId.values {
+            let assetId = task.assetId
+            guard !assetId.isEmpty else { continue }
+
+            switch task.state {
+            case .pending, .running:
+                _ = promoteStage(for: assetId, to: .uploading)
+                if let index = batchItems.firstIndex(where: { $0.assetId == assetId }),
+                    batchItems[index].status != .complete
+                {
+                    batchItems[index].status = .uploading
+                    batchItems[index].error = nil
+                    batchItems[index].progress = max(batchItems[index].progress, 0.05)
+                    setBatchClipPhase(assetId: assetId, phase: .uploading)
+                    updateBatchClipProgress(assetId: assetId, progress: batchItems[index].progress)
+                    shouldPersistBatch = true
+                    hasUploadingBatchWork = true
+                }
+                assetIdsToReconcile.insert(assetId)
+
+            case .completed:
+                _ = promoteStage(for: assetId, to: .processing)
+                if let index = batchItems.firstIndex(where: { $0.assetId == assetId }),
+                    batchItems[index].status != .complete
+                {
+                    batchItems[index].status = .applyingForm
+                    batchItems[index].error = nil
+                    batchItems[index].progress = max(batchItems[index].progress, 0.97)
+                    setBatchClipPhase(assetId: assetId, phase: .processing)
+                    updateBatchClipProgress(assetId: assetId, progress: batchItems[index].progress)
+                    shouldPersistBatch = true
+                    hasUploadingBatchWork = true
+                }
+                assetIdsToReconcile.insert(assetId)
+
+            case .failed:
+                _ = promoteStage(for: assetId, to: .failed)
+                let reason =
+                    task.errorMessage?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                        == false
+                    ? task.errorMessage!
+                    : "Upload interrupted by app restart. Tap Retry Failed."
+
+                if let index = batchItems.firstIndex(where: { $0.assetId == assetId }) {
+                    batchItems[index].status = .failed
+                    batchItems[index].error = reason
+                    batchItems[index].progress = 0
+                    setBatchClipPhase(assetId: assetId, phase: .failed)
+                    updateBatchClipProgress(assetId: assetId, progress: 0)
+                    shouldPersistBatch = true
+                    hasBatchFailures = true
+                } else if !hasWorkflowMessage(
+                    code: "IOS_UPLOAD_FAILED",
+                    assetId: assetId,
+                    mediasourceId: nil
+                ) {
+                    appendErrorBubble(
+                        "Upload failed: \(reason)",
+                        assetId: assetId,
+                        code: "IOS_UPLOAD_FAILED",
+                        params: ["reason": reason]
+                    )
+                }
+            }
+        }
+
+        if hasActiveBatch {
+            if hasUploadingBatchWork {
+                batchState = .uploading
+            } else if hasBatchFailures {
+                batchState = .partialFailed
+            }
+            batchProgress = computeBatchProgress()
+
+            if shouldPersistBatch {
+                persistBatchState()
+            }
+        }
+
+        guard !assetIdsToReconcile.isEmpty else { return }
+        let orderedAssetIds = assetIdsToReconcile.sorted()
+
+        Task { @MainActor in
+            for assetId in orderedAssetIds {
+                await fetchAssetDetail(assetId: assetId)
+            }
+        }
+    }
+
+    private func appendUploadRestoreSummaryIfNeeded(tasks: [PersistedUploadTask]) {
+        guard !tasks.isEmpty else { return }
+
+        let hasExistingSummary = messages.contains { message in
+            message.content.code == "IOS_UPLOAD_RESTORE_SUMMARY"
+        }
+        guard !hasExistingSummary else { return }
+
+        let activeCount = tasks.filter { $0.state == .pending || $0.state == .running }.count
+        let awaitingMetadataCount = tasks.filter { $0.state == .completed }.count
+        let failedCount = tasks.filter { $0.state == .failed }.count
+
+        var summaryParts: [String] = []
+        if activeCount > 0 {
+            summaryParts.append("\(activeCount) active")
+        }
+        if awaitingMetadataCount > 0 {
+            summaryParts.append("\(awaitingMetadataCount) awaiting sync")
+        }
+        if failedCount > 0 {
+            summaryParts.append("\(failedCount) failed")
+        }
+
+        guard !summaryParts.isEmpty else { return }
+
+        var text =
+            "Recovered upload queue from your last session: \(summaryParts.joined(separator: ", "))."
+        if failedCount > 0 {
+            text += " Retry failed clips when ready."
+        }
+
+        let queueWaitSamples = tasks.compactMap(\.queueWaitMs)
+        let transferSamples = tasks.compactMap(\.transferDurationMs)
+        if let avgQueueWaitMs = average(queueWaitSamples),
+            let avgTransferMs = average(transferSamples)
+        {
+            text +=
+                " Recent averages - queue wait \(formatDurationMsForSummary(avgQueueWaitMs)), transfer \(formatDurationMsForSummary(avgTransferMs))."
+        }
+
+        let summaryMessage = ChatMessage(
+            id: UUID().uuidString,
+            userId: nil,
+            assetId: nil,
+            direction: .incoming,
+            messageType: .systemNote,
+            content: MessageContent(
+                text: text,
+                code: "IOS_UPLOAD_RESTORE_SUMMARY",
+                params: [
+                    "activeCount": "\(activeCount)",
+                    "awaitingMetadataCount": "\(awaitingMetadataCount)",
+                    "failedCount": "\(failedCount)",
+                ],
+                fallbackText: text,
+                schemaVersion: MessageCatalog.schemaVersion
+            ),
+            createdAt: DVUDateFormatting.isoString(from: Date())
+        )
+        appendMessage(summaryMessage, source: .workflow)
+    }
+
+    private func average(_ values: [Int]) -> Int? {
+        guard !values.isEmpty else { return nil }
+        let total = values.reduce(0, +)
+        return total / values.count
+    }
+
+    private func formatDurationMsForSummary(_ durationMs: Int) -> String {
+        if durationMs < 1000 {
+            return "\(durationMs)ms"
+        }
+
+        let seconds = Double(durationMs) / 1000
+        return String(format: "%.1fs", seconds)
     }
 
     private func resetBatchState(clearDisk: Bool) {

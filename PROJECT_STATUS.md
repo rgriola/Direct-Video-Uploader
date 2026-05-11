@@ -1,4 +1,4 @@
-May 11, 2026 - 3:46pm - GitHub Copilot (GPT-5.3-Codex)
+May 11, 2026 - 5:35pm - GitHub Copilot (GPT-5.3-Codex)
 
 # Direct Video Uploader — Project Status
 
@@ -12,7 +12,7 @@ May 11, 2026 - 3:46pm - GitHub Copilot (GPT-5.3-Codex)
 
 The **Direct Video Uploader** is a mobile-first video upload platform disguised as a text conversation. Field crew members "text" videos to the **Mediasource Fixer** server, which processes them the way a news assignment desk operates - fast, structured, and integrated with Slack.
 
-We've completed the **interactive chat demo** (HTML prototype), **project specification** (v4), the **Phase 1 server foundation** (Node.js API, WebSocket, PostgreSQL, auth, admin dashboard), the **Phase 2 - iOS Demo App** core flow (login -> chat -> video upload -> form -> confirmation -> archive), and the **Web Clip Viewer** (server-rendered at `/clips/:slug`). Latest session (May 10): **Phase 4 QA execution started**. Server tests passed (107/107), admin production build passed, iOS build passed, and unknown message-code fallback was validated with a forced unknown-code runtime harness against `MessageCatalog`. New docs were added for release notes and rollback instructions under `docs/IOS_UI_UX_PHASE4_RELEASE_NOTES.md` and `docs/IOS_UI_UX_PHASE4_ROLLBACK.md`. Remaining Phase 4 work is focused on screenshot evidence capture, final light/dark smoke scenarios, and release candidate tag/push.
+We've completed the **interactive chat demo** (HTML prototype), **project specification** (v4), the **Phase 1 server foundation** (Node.js API, WebSocket, PostgreSQL, auth, admin dashboard), the **Phase 2 - iOS Demo App** core flow (login -> chat -> video upload -> form -> confirmation -> archive), and the **Web Clip Viewer** (server-rendered at `/clips/:slug`). Latest session (May 11): implemented **Obs.10 upload telemetry + correlation** end-to-end: iOS captures URLSession task metrics, uploader sends correlation headers, server echoes telemetry from `/api/assets/:id/mux-upload`, webhooks compute `asset_created`/`ready` deltas, and `mux:ready` now includes `uploadTelemetry`. Validation is green: iOS build succeeded, Swift uploader tests passed, and server test suite passed (112/112).
 
 ---
 
@@ -179,7 +179,7 @@ cd ios && xcodegen generate && xcodebuild -project DirectVideoUploader.xcodeproj
 | WebSocket client (native)          | ✅ Connected       | `URLSessionWebSocketTask` + Socket.IO protocol         |
 | Text message send + auto-reply     | ✅ Working         | Server replies "send me your videos!"                  |
 | Video picker (PhotosPicker)        | ✅ Working         | SwiftUI `PhotosPicker` with `.videos` filter           |
-| Video upload (multipart)           | ✅ Built           | `VideoUploadService` with progress tracking            |
+| Video upload (Mux direct path)     | ✅ Built           | `VideoUploadService` uses `/api/assets/:id/mux-upload` + background PUT to Mux CDN |
 | Upload progress bar                | ✅ Built           | Inline progress bar in chat view                       |
 | Metadata display (slide-up sheet)  | 🟡 Built, untested | `MetadataView` SwiftUI sheet                           |
 | Context form (slide-up sheet)      | 🟡 Built, untested | `ContextFormView` SwiftUI sheet                        |
@@ -189,6 +189,16 @@ cd ios && xcodegen generate && xcodebuild -project DirectVideoUploader.xcodeproj
 | Xcode automatic code signing       | ✅ Done            | Team `LW5P4PVL96`, auto signing in project.yml         |
 | Centralized Theme + Formatting     | ✅ Done            | Theme.swift, DVUDateFormatting.swift, UserDefaultsKeys |
 | Video trim (pre-upload)            | ✅ Done            | UIVideoEditorController via modal host VC, .typeHigh   |
+
+**Features Added (May 11 — Session):**
+
+- **URLSessionTaskMetrics capture in uploader** — `BackgroundUploadSessionCoordinator` now implements `urlSession(_:task:didFinishCollecting:)`. Metrics are summarized (transaction count, total/request/response durations, protocol, cellular hint) and persisted in `UploadQueueStore` alongside queue-wait/transfer/retry metrics.
+- **iOS ↔ server correlation headers** — iOS uploader now sends `X-Upload-Correlation-Id` and `X-Upload-Started-At-Ms` during `POST /api/assets/:id/mux-upload`. Correlation fields are also included in metadata payload for defensive fallback.
+- **Mux-upload telemetry response** — `/api/assets/:id/mux-upload` now returns a `telemetry` object with `correlationId`, `clientUploadStartedAtMs`, `serverUploadCreatedAt`, and `serverUploadCreatedAtMs`. This is returned for both fresh URL creation and idempotent waiting-upload reuse.
+- **Webhook correlation propagation** — `mux-webhooks.js` now records `video.upload.asset_created` timestamp per `muxUploadId`, parses passthrough correlation metadata on `video.asset.ready`, computes `serverToAssetCreatedMs` and `serverToReadyMs`, and emits these under `uploadTelemetry` in `mux:ready`.
+- **Mux passthrough helper expansion** — `server/src/lib/mux.js` now merges optional passthrough metadata into Mux upload creation payloads (without breaking clipId/assetId defaults).
+- **Chat-side telemetry logging** — iOS `ChatViewModel` now logs correlation diagnostics from `mux:ready.uploadTelemetry` (`correlationId`, `muxUploadId`, server delta timings).
+- **Test coverage update** — Added/updated tests in `ios/tests/upload_queue_store_tests.swift`, `server/src/__tests__/assets-routes.test.js`, `server/src/__tests__/mux-lib.test.js`, and `server/src/__tests__/mux-webhooks.test.js` for telemetry persistence, passthrough correlation, and webhook emission payloads.
 
 **Features Added (Apr 9 — Session):**
 
@@ -767,6 +777,8 @@ Direct-Video-Uploader/
 8. **Stability Phase D** — WebSocket-only transport, temp file cleanup, replace admin raw SQL.
 
 ### Soon — Polish & Integrations
+
+Reference: See `docs/IOS_UPLOAD_QUEUE_IMPLEMENTATION_CHECKLIST.md` for the iOS upload queue implementation checklist.
 
 9. **End-to-end production testing** — Full flow on live stack (login → upload → background → resume → form → clip viewer → Slack)
 10. **Deferred security items** — JWT expiry shortening (C6), CORS tightening

@@ -1,4 +1,4 @@
-// Last updated: May 10, 2026 - 10:37am - GitHub Copilot (GPT-5.3-Codex)
+// Last updated: May 11, 2026 - 5:21pm - GitHub Copilot (GPT-5.3-Codex)
 import Fastify from 'fastify';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -185,11 +185,17 @@ describe('assets route deeper coverage', () => {
         });
 
         expect(response.statusCode).toBe(200);
-        expect(response.json()).toEqual({
+        expect(response.json()).toEqual(expect.objectContaining({
             uploadUrl: 'https://mux.example/upload/existing',
             clipId: 'clip-existing',
             muxUploadId: 'upload-existing',
-        });
+            telemetry: expect.objectContaining({
+                correlationId: null,
+                clientUploadStartedAtMs: null,
+                serverUploadCreatedAt: expect.any(String),
+                serverUploadCreatedAtMs: expect.any(Number),
+            }),
+        }));
         expect(prismaMock.clip.create).not.toHaveBeenCalled();
     });
 
@@ -241,6 +247,54 @@ describe('assets route deeper coverage', () => {
                 mediasourceId: '100000001',
             })
         );
+    });
+
+    it('passes upload correlation metadata to mux passthrough and response telemetry', async () => {
+        prismaMock.asset.findUnique.mockResolvedValue({
+            id: 'asset-1',
+            userId: 'user-1',
+            mediasourceId: '100000001',
+            mediasourceUrl: '/clips/100000001',
+            originalFileName: 'video.mp4',
+        });
+
+        const response = await app.inject({
+            method: 'POST',
+            url: '/api/assets/asset-1/mux-upload',
+            headers: {
+                'x-upload-correlation-id': 'ios-correlation-123',
+                'x-upload-started-at-ms': '1715000000000',
+            },
+            payload: {
+                metadata: {
+                    mimeType: 'video/mp4',
+                    fileName: 'correlated.mp4',
+                },
+            },
+        });
+
+        expect(response.statusCode).toBe(200);
+        expect(muxMock.createDirectUpload).toHaveBeenCalledWith(
+            expect.objectContaining({
+                clipId: expect.any(String),
+                assetId: 'asset-1',
+                passthrough: expect.objectContaining({
+                    telemetryCorrelationId: 'ios-correlation-123',
+                    clientUploadStartedAtMs: 1715000000000,
+                    serverUploadCreatedAt: expect.any(String),
+                    serverUploadCreatedAtMs: expect.any(Number),
+                }),
+            })
+        );
+
+        expect(response.json()).toEqual(expect.objectContaining({
+            telemetry: expect.objectContaining({
+                correlationId: 'ios-correlation-123',
+                clientUploadStartedAtMs: 1715000000000,
+                serverUploadCreatedAt: expect.any(String),
+                serverUploadCreatedAtMs: expect.any(Number),
+            }),
+        }));
     });
 
     it('submits form and emits coded form confirmation payload', async () => {

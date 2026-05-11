@@ -1,10 +1,10 @@
-May 11, 2026 - 3:59pm - GitHub Copilot (GPT-5.3-Codex)
+May 11, 2026 - 5:35pm - GitHub Copilot (GPT-5.3-Codex)
 
 # Direct Video Uploader — Project Specification (v4)
 
 > **Server Contact:** `Mediasource Fixer` / `800-123-4567`
 > **Platform:** iOS (registered work phones only)
-> **Design Principle:** The app looks and feels like Apple Messages. The user "texts" a video to the server. Under the hood, it's a direct background upload over WebSockets.
+> **Design Principle:** The app looks and feels like Apple Messages. The user "texts" a video to the server. Under the hood, it's a direct background upload to Mux with a WebSocket control plane.
 
 # cd admin && npm run build
 
@@ -21,6 +21,7 @@ May 11, 2026 - 3:59pm - GitHub Copilot (GPT-5.3-Codex)
 - **Hosting:** Render (persistent server + database) identified as primary demo host.
 - **Admin UI:** Planned for Phase 2 to manage users, devices, and app backend.
 - **Simple Auth for Demo:** Token-based auth (no full JWT/device enrollment for demo).
+- **Upload Observability (May 11):** Added upload correlation IDs and timestamp telemetry across iOS uploader, `/api/assets/:id/mux-upload`, and Mux webhooks (`video.upload.asset_created`, `video.asset.ready`).
 
 ---
 
@@ -125,7 +126,7 @@ The user can post the Mediasource URL and metadata to Slack directly from the ch
 
 ### 4.1 How the Upload Really Works
 
-The upload uses a **WebSocket connection** for the control plane (messages, status updates, forms) and **HTTP multipart upload** for the video payload:
+The upload uses a **WebSocket connection** for the control plane (messages, status updates, forms) and a **background direct PUT upload to Mux CDN** for the video payload:
 
 ```
 ┌──────────────────────────────────────────────────────────┐
@@ -134,12 +135,12 @@ The upload uses a **WebSocket connection** for the control plane (messages, stat
 │  1. App connects to server via WebSocket (auth token)     │
 │  2. User selects video in photo picker                    │
 │  3. App shows outgoing bubble with thumbnail + "Sending…" │
-│  4. HTTP background upload task fires:                    │
-│     ├── Full-resolution video file                        │
-│     ├── Device metadata (model, OS, orientation)          │
-│     └── Auth token                                        │
-│  5. Server sends progress updates via WebSocket           │
-│  6. On completion → WebSocket message triggers the        │
+│  4. App requests Mux direct upload URL from server:       │
+│     POST /api/assets/:id/mux-upload                       │
+│  5. Background URLSession uploads bytes directly to Mux   │
+│  6. Mux webhooks update clip/asset state on server        │
+│  7. Server emits mux:ready via WebSocket                  │
+│  8. On completion → WebSocket message triggers the        │
 │     "server reply" bubble in the chat UI                  │
 └──────────────────────────────────────────────────────────┘
 ```
@@ -148,19 +149,22 @@ The upload uses a **WebSocket connection** for the control plane (messages, stat
 | --------------------- | ------------------------------------------------------------------- |
 | **Full resolution**   | No compression. Original video uploaded as-is.                      |
 | **WebSocket control** | Real-time bidirectional messaging for status, forms, confirmations. |
-| **Background upload** | iOS `URLSession` with `background` configuration.                   |
-| **Resumable**         | `tus` protocol for large files. Survives network drops.             |
+| **Background upload** | iOS `URLSession` with shared `background` session coordinator.      |
+| **Retry behavior**    | Error-class retries with jitter backoff + stale URL refresh.        |
+| **No duplicates**     | In-flight dedupe guard + server-side idempotent mux-upload reuse.   |
 | **Progress tracking** | Real-time progress bar in the chat bubble.                          |
+| **Observability**     | Queue wait, transfer duration, retries, task metrics, correlation IDs. |
 
 ### 4.2 Server-Side Ingestion
 
 | Stage         | Detail                                                                               |
 | ------------- | ------------------------------------------------------------------------------------ |
-| **Receive**   | Accept upload via HTTP. Validate auth token.                                         |
-| **Persist**   | Store video in cloud storage. Generate unique asset ID + Mediasource URL.            |
+| **Receive**   | Accept upload-intent request (`/mux-upload`) and validate auth token.                |
+| **Allocate**  | Create clip row + Mux direct upload URL + correlation telemetry payload.             |
+| **Upload**    | iOS uploads bytes directly to Mux CDN (server is control plane only).                |
 | **Extract**   | Run metadata extraction — GPS, timestamp, device model, codec, resolution, duration. |
-| **Thumbnail** | Extract poster frame for chat bubble and forms.                                      |
-| **Reply**     | Send WebSocket message → app renders the "server reply" bubble with metadata + form. |
+| **Webhook**   | Process `video.upload.asset_created` and `video.asset.ready` events.                 |
+| **Reply**     | Send scoped `mux:ready` WebSocket event with upload telemetry correlation object.    |
 
 ---
 
@@ -354,13 +358,13 @@ graph TB
 
     CAM --> CHAT
     CHAT -->|"send video"| UPLOAD
-    UPLOAD -->|"HTTP multipart"| API
+    UPLOAD -->|"POST /api/assets/:id/mux-upload"| API
+    API -->|"direct upload URL + clip context"| UPLOAD
+    UPLOAD -->|"background PUT bytes"| MUX
     WS_CLIENT <-->|"real-time messages"| WS_SERVER
     API --> AUTH
     AUTH -->|"accept"| META
     META --> DB
-    API --> R2
-    R2 -->|"upload"| MUX
     MUX -->|"HLS stream URL"| VIEWER
     WS_SERVER -->|"push: metadata, forms, confirmations"| WS_CLIENT
     FORMUI -->|"submit form"| API
@@ -488,8 +492,9 @@ Prisma uses **PascalCase** model names and **camelCase** field names. PostgreSQL
 | `GET`        | `/api/auth/me`               | JWT  | Current user profile                        |
 | **Assets**   |                              |      |                                             |
 | `POST`       | `/api/assets`                | JWT  | Create a new asset (returns `assetId`)      |
-| `POST`       | `/api/assets/:id/upload`     | JWT  | Upload video file (multipart)               |
+| `POST`       | `/api/assets/:id/mux-upload` | JWT  | Create/reuse Mux direct upload URL + telemetry correlation payload |
 | `GET`        | `/api/assets/:id`            | JWT  | Get asset details + clip metadata           |
+| `GET`        | `/api/assets/mine`           | JWT  | Get authenticated user's asset archive list |
 | `POST`       | `/api/assets/:id/form`       | JWT  | Submit completed context form               |
 | `POST`       | `/api/assets/:id/slack`      | JWT  | Post asset to Slack channel                 |
 | **Messages** |                              |      |                                             |
@@ -501,11 +506,15 @@ Prisma uses **PascalCase** model names and **camelCase** field names. PostgreSQL
 | `PATCH`      | `/api/admin/users/:id`       | —    | Update user status/team                     |
 | `GET`        | `/api/admin/assets`          | —    | List assets with clips + form responses     |
 | `POST`       | `/api/admin/cleanup-assets`  | —    | Delete stale UPLOADING assets with no clips |
+| `POST`       | `/api/admin/sync-mux-status` | —    | Force-sync stuck Mux processing statuses    |
 | `POST`       | `/api/admin/nuclear-reset`   | JWT  | Wipe all data + Mux assets, preserve users  |
 | `PATCH`      | `/api/assets/:id/transcript` | JWT  | Save transcript text + timestamped segments |
 | **System**   |                              |      |                                             |
 | `GET`        | `/api/health`                | —    | Server health check                         |
 | `GET`        | `/api/admin/status`          | —    | Triad health (database, server, iOS, admin) |
+| `POST`       | `/api/webhooks/mux`          | —    | Mux webhook receiver (`upload.asset_created`, `asset.ready`, `asset.errored`) |
+| `GET`        | `/api/mux/status/:clipId`    | —    | Polling fallback for clip readiness checks  |
+| `GET`        | `/api/mux/env-key`           | —    | Public Mux environment key for player usage |
 | `WS`         | `/socket.io/`                | JWT  | WebSocket connection (Socket.IO)            |
 | `GET`        | `/`                          | —    | Admin dashboard UI                          |
 
@@ -519,12 +528,21 @@ The iOS demo is a **SwiftUI app** that replicates the `chat-demo.html` experienc
 | --------------------- | ------------------------------------------------------------------------------------- | ------------ |
 | **Chat UI**           | Custom SwiftUI chat view (pure SwiftUI, no third-party)                               | ✅ Verified  |
 | **WebSocket**         | `URLSessionWebSocketTask` with manual Socket.IO/Engine.IO 4 protocol framing          | ✅ Stable    |
-| **Video picker**      | SwiftUI `PhotosPicker` with `.videos` filter and `Transferable` protocol              | ✅ Verified  |
-| **Video upload**      | `VideoUploadService` — streams multipart to temp file (1MB chunks), delegate progress | ✅ Verified  |
-| **Background upload** | `URLSession` delegate-based `uploadTask` for progress tracking                        | ✅ Verified  |
+| **Video picker**      | SwiftUI `PhotosPicker` with PHAsset fast-path metadata extraction                      | ✅ Verified  |
+| **Video upload**      | `VideoUploadService` direct upload flow: `/mux-upload` → background PUT to Mux CDN   | ✅ Verified  |
+| **Background upload** | Shared `URLSessionConfiguration.background` coordinator + relaunch reconciliation      | ✅ Verified  |
+| **Retry/Dedupe**      | Error-class retry policy + in-flight duplicate guard                                   | ✅ Verified  |
+| **Upload telemetry**  | Queue wait, transfer duration, retries, URLSessionTaskMetrics, correlation IDs        | ✅ Verified  |
 | **Form sheet**        | SwiftUI `.sheet()` modifier with pre-filled form fields                               | ✅ Verified  |
 | **Metadata display**  | SwiftUI list view with key-value pairs                                                | 🟡 Untested  |
 | **Thumbnails**        | `AVAssetImageGenerator` for local preview; server poster frame for received assets    | 🔲 Not built |
+
+### 13.1 Correlation Telemetry (May 11 Build-out)
+
+- iOS sends `X-Upload-Correlation-Id` and `X-Upload-Started-At-Ms` on `POST /api/assets/:id/mux-upload`.
+- Server mirrors correlation info in the `/mux-upload` response `telemetry` object and injects it into Mux passthrough metadata.
+- `video.upload.asset_created` and `video.asset.ready` webhook handlers compute timestamp deltas and emit `uploadTelemetry` on `mux:ready`.
+- iOS logs correlation details from `mux:ready` payload and stores upload telemetry in `UploadQueueStore` for restore/debug use.
 
 ### Engine.IO 4 Protocol Note
 
@@ -569,4 +587,4 @@ Hosted on **Vercel** as a static Next.js/Vite app that reads from the PostgreSQL
 
 Planning pointer: See `docs/SECURE_MULTICLIP_SHARE_PLAN.md` for the parked secure multi-clip share links roadmap.
 
-_Spec v7 — March 25, 2026 — Admin panel (nuclear reset, create user), Apple Speech transcription endpoint, Render buildCommand fix, greeting socket fix_
+_Spec v8 — May 11, 2026 — URLSessionTaskMetrics capture, iOS/server correlation IDs, webhook telemetry propagation, direct Mux upload API surface refresh_

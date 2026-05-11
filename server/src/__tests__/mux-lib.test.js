@@ -1,4 +1,4 @@
-// Last updated: May 9, 2026 - 8:33pm - GPT-5.3-Codex
+// Last updated: May 11, 2026 - 5:21pm - GitHub Copilot (GPT-5.3-Codex)
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const muxApi = {
@@ -125,6 +125,42 @@ describe('mux lib coverage', () => {
                 },
                 cors_origin: '*',
                 timeout: 3600,
+            })
+        );
+    });
+
+    it('merges optional telemetry passthrough fields for direct upload creation', async () => {
+        muxApi.uploadsCreate.mockResolvedValueOnce({
+            id: 'upload-124',
+            url: 'https://mux.example/upload/124',
+        });
+
+        const mux = await importMuxModule({
+            tokenId: 'token-id',
+            tokenSecret: 'token-secret',
+        });
+
+        await mux.createDirectUpload({
+            clipId: 'clip-2',
+            assetId: 'asset-2',
+            passthrough: {
+                telemetryCorrelationId: 'ios-correlation-1',
+                clientUploadStartedAtMs: 1715000000000,
+                serverUploadCreatedAtMs: 1715000000500,
+            },
+        });
+
+        expect(muxApi.uploadsCreate).toHaveBeenCalledWith(
+            expect.objectContaining({
+                new_asset_settings: expect.objectContaining({
+                    passthrough: JSON.stringify({
+                        clipId: 'clip-2',
+                        assetId: 'asset-2',
+                        telemetryCorrelationId: 'ios-correlation-1',
+                        clientUploadStartedAtMs: 1715000000000,
+                        serverUploadCreatedAtMs: 1715000000500,
+                    }),
+                }),
             })
         );
     });

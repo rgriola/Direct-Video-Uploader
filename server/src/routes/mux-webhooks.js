@@ -1,4 +1,4 @@
-// Last updated: May 10, 2026 - 12:55pm - GitHub Copilot (GPT-5.3-Codex)
+// Last updated: May 11, 2026 - 5:21pm - GitHub Copilot (GPT-5.3-Codex)
 /**
  * Mux Webhook Routes
  *
@@ -16,9 +16,44 @@ import fs from 'fs/promises';
 import path from 'path';
 
 const MUX_WEBHOOK_SECRET = process.env.MUX_WEBHOOK_SECRET;
+const uploadAssetCreatedTimestamps = new Map();
 
 // Mux v12: verifySignature is an instance method, not static
 const muxClient = new Mux();
+
+function parsePassthrough(rawPassthrough) {
+    if (!rawPassthrough || typeof rawPassthrough !== 'string') return null;
+
+    try {
+        const parsed = JSON.parse(rawPassthrough);
+        return parsed && typeof parsed === 'object' ? parsed : null;
+    } catch {
+        return null;
+    }
+}
+
+function parseTimestampMs(rawValue) {
+    if (rawValue === undefined || rawValue === null) return null;
+
+    const parsed = Number.parseInt(String(rawValue), 10);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+        return null;
+    }
+
+    return parsed;
+}
+
+function diffMs(startIso, endIso) {
+    if (!startIso || !endIso) return null;
+
+    const start = Date.parse(startIso);
+    const end = Date.parse(endIso);
+    if (!Number.isFinite(start) || !Number.isFinite(end)) {
+        return null;
+    }
+
+    return Math.max(0, end - start);
+}
 
 export default async function muxWebhookRoutes(fastify) {
     /**
@@ -71,8 +106,14 @@ export default async function muxWebhookRoutes(fastify) {
             case 'video.upload.asset_created': {
                 const muxUploadId = eventData?.id;
                 const muxAssetId = eventData?.asset_id;
+                const webhookAssetCreatedAt = new Date().toISOString();
+                const passthrough = parsePassthrough(
+                    eventData?.passthrough || eventData?.new_asset_settings?.passthrough
+                );
 
                 if (!muxUploadId || !muxAssetId) break;
+
+                uploadAssetCreatedTimestamps.set(muxUploadId, webhookAssetCreatedAt);
 
                 // Find our clip by muxUploadId
                 const clip = await dbRetry(() =>
@@ -84,7 +125,16 @@ export default async function muxWebhookRoutes(fastify) {
                         where: { id: clip.id },
                         data: { muxAssetId },
                     }));
-                    request.log.info({ muxAssetId, clipId: clip.id }, 'Linked mux asset to clip');
+                    request.log.info(
+                        {
+                            muxAssetId,
+                            muxUploadId,
+                            clipId: clip.id,
+                            telemetryCorrelationId: passthrough?.telemetryCorrelationId || null,
+                            webhookAssetCreatedAt,
+                        },
+                        'Linked mux asset to clip'
+                    );
                 }
                 break;
             }
@@ -94,6 +144,7 @@ export default async function muxWebhookRoutes(fastify) {
                 const muxAssetId = eventData?.id;
                 const playbackIds = eventData?.playback_ids;
                 const passthrough = eventData?.passthrough;
+                const webhookReadyAt = new Date().toISOString();
 
                 if (!muxAssetId) break;
 
@@ -115,16 +166,41 @@ export default async function muxWebhookRoutes(fastify) {
                     prisma.clip.findFirst({ where: { muxAssetId } })
                 );
 
-                if (!clip && passthrough) {
-                    try {
-                        const meta = JSON.parse(passthrough);
-                        if (meta.clipId) {
-                            clip = await dbRetry(() =>
-                                prisma.clip.findUnique({ where: { id: meta.clipId } })
-                            );
-                        }
-                    } catch { /* passthrough wasn't valid JSON */ }
+                const meta = parsePassthrough(passthrough);
+                if (!clip && meta?.clipId) {
+                    clip = await dbRetry(() =>
+                        prisma.clip.findUnique({ where: { id: meta.clipId } })
+                    );
                 }
+
+                const telemetryCorrelationId =
+                    typeof meta?.telemetryCorrelationId === 'string'
+                        ? meta.telemetryCorrelationId
+                        : null;
+                const clientUploadStartedAtMs = parseTimestampMs(meta?.clientUploadStartedAtMs);
+                const serverUploadCreatedAt =
+                    typeof meta?.serverUploadCreatedAt === 'string'
+                        ? meta.serverUploadCreatedAt
+                        : null;
+                const serverUploadCreatedAtMs = parseTimestampMs(meta?.serverUploadCreatedAtMs);
+
+                const muxUploadId = clip?.muxUploadId || null;
+                const webhookAssetCreatedAt =
+                    muxUploadId ? uploadAssetCreatedTimestamps.get(muxUploadId) || null : null;
+                const serverToAssetCreatedMs = diffMs(serverUploadCreatedAt, webhookAssetCreatedAt);
+                const serverToReadyMs = diffMs(serverUploadCreatedAt, webhookReadyAt);
+
+                const uploadTelemetry = {
+                    correlationId: telemetryCorrelationId,
+                    muxUploadId,
+                    clientUploadStartedAtMs,
+                    serverUploadCreatedAt,
+                    serverUploadCreatedAtMs,
+                    webhookAssetCreatedAt,
+                    webhookReadyAt,
+                    serverToAssetCreatedMs,
+                    serverToReadyMs,
+                };
 
                 if (clip) {
                     await dbRetry(() => prisma.clip.update({
@@ -138,7 +214,20 @@ export default async function muxWebhookRoutes(fastify) {
                         },
                     }));
 
-                    request.log.info({ clipId: clip.id, muxPlaybackId }, 'Mux asset ready');
+                    request.log.info(
+                        {
+                            clipId: clip.id,
+                            muxPlaybackId,
+                            telemetryCorrelationId,
+                            muxUploadId,
+                            serverUploadCreatedAt,
+                            webhookAssetCreatedAt,
+                            webhookReadyAt,
+                            serverToAssetCreatedMs,
+                            serverToReadyMs,
+                        },
+                        'Mux asset ready'
+                    );
 
                     // ─── Temp file cleanup ────────────────────────────────
                     // Delete local file now that Mux has the video
@@ -189,9 +278,14 @@ export default async function muxWebhookRoutes(fastify) {
                                     duration: clip.duration,
                                     resolution: clip.resolution,
                                     fileSize: clip.fileSize?.toString() || null,
+                                    uploadTelemetry,
                                 });
                             }
                         }
+                    }
+
+                    if (muxUploadId) {
+                        uploadAssetCreatedTimestamps.delete(muxUploadId);
                     }
                 } else {
                     request.log.warn({ muxAssetId }, 'Mux asset ready but no matching clip found');
@@ -219,6 +313,10 @@ export default async function muxWebhookRoutes(fastify) {
                         where: { id: clip.assetId },
                         data: { status: 'ERROR' },
                     }));
+
+                    if (clip.muxUploadId) {
+                        uploadAssetCreatedTimestamps.delete(clip.muxUploadId);
+                    }
                 }
                 break;
             }

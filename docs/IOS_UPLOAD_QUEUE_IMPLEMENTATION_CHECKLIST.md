@@ -1,175 +1,170 @@
-May 11, 2026 - 4:22pm - GitHub Copilot (GPT-5.3-Codex)
+May 11, 2026 - 5:21pm - GitHub Copilot (GPT-5.3-Codex)
 
-# iOS Video Upload Queue Implementation Checklist
+# iOS Upload Queue Execution Plan (Future Reuse)
 
-## Goal
+## Objective
 
-Build a fast and resilient iOS upload queue for large video files that:
-- survives app backgrounding/termination,
-- gives predictable progress behavior,
-- retries safely on bad networks,
-- and reduces time-to-playable in Mux.
+Build and maintain a reliable Fixer iOS upload queue that survives app lifecycle events,
+handles weak networks safely, and keeps ingest latency predictable.
 
-## Current Baseline (Already in Place)
+## Locked Product Decisions
 
-- [x] Background URLSession upload is used in VideoUploadService.
-- [x] waitsForConnectivity and sessionSendsLaunchEvents are set.
-- [x] Batch queue concurrency is capped at 2 uploads in ChatViewModel + VideoBatchUploadCoordinator.
-- [x] Upload flow already targets Mux direct upload URLs from server.
+- Transport decision is locked to custom URLSession direct PUT uploads.
+- Mux iOS Upload SDK path is out of scope for now and tracked as N/A.
+- This plan is reusable for future reliability passes by updating status, owner, and evidence.
 
-## Phase P0 - Reliability First (Required)
+## Baseline Snapshot (Current)
 
-### 1) Use one persistent background session identifier
+- [x] Background URLSession upload path exists.
+- [x] waitsForConnectivity and sessionSendsLaunchEvents are enabled.
+- [x] Queue concurrency is currently capped at 2 in batch coordinator usage.
+- [x] Upload target is server-provided Mux direct upload URL.
 
-- [ ] Replace per-upload UUID session identifiers with one stable identifier.
-- [ ] Centralize session creation in one shared uploader/session manager.
-- [ ] Ensure all upload tasks are created from this shared session.
+## Execution Tracker
 
-Suggested touch points:
+Update the fields during each pass.
+
+| Item | Priority | Status | Owner | Evidence | Last Updated |
+| --- | --- | --- | --- | --- | --- |
+| P0.1 One persistent background session identifier | P0 | Implemented (needs QA) | iOS | VideoUploadService shared coordinator | 2026-05-11 |
+| P0.2 Background relaunch lifecycle handling | P0 | Implemented (needs QA) | iOS | App delegate bridge + completion handoff | 2026-05-11 |
+| P0.3 Persisted queue mapping and task reconciliation | P0 | Implemented (needs QA) | iOS | Upload queue store + reconcile method | 2026-05-11 |
+| P0.4 Error-class retry policy | P0 | Implemented (needs QA) | iOS | VideoUploadService retry classifier + in-flight dedupe guard | 2026-05-11 |
+| P1.5 Adaptive concurrency policy | P1 | Not Started | iOS | N/A | 2026-05-11 |
+| P1.6 URLSession network policy tuning | P1 | Not Started | iOS | N/A | 2026-05-11 |
+| P1.7 Task priority and expected-byte hints | P1 | Not Started | iOS | N/A | 2026-05-11 |
+| P2.8 Transport strategy lock | P2 | Done (A) / N/A (B) | iOS | Custom URLSession PUT retained | 2026-05-11 |
+| P2.9 Input standardization policy | P2 | Not Started | Product + iOS | N/A | 2026-05-11 |
+| Obs.10 Upload telemetry and correlation | P1 | Implemented (needs QA) | iOS + Server | URLSessionTaskMetrics capture + iOS/server correlation IDs through mux webhook telemetry | 2026-05-11 |
+
+## Work Items
+
+### P0.1 One Persistent Background Session Identifier
+
+- [x] Replace per-upload UUID session identifiers with one stable identifier.
+- [x] Centralize task creation in one shared upload session coordinator.
+- [x] Ensure all upload tasks use the shared coordinator.
+
+Touch points:
 - ios/DirectVideoUploader/Services/VideoUploadService.swift
 
-### 2) Implement background URLSession relaunch handling
+### P0.2 Background Relaunch Lifecycle Handling
 
-- [ ] Add background URLSession event capture in app lifecycle delegate.
-- [ ] Store completion handler from application handleEventsForBackgroundURLSession.
-- [ ] Call completion handler from urlSessionDidFinishEventsForBackgroundURLSession.
-- [ ] Re-associate tasks to local queue state after relaunch.
+- [x] Add app lifecycle capture for handleEventsForBackgroundURLSession.
+- [x] Store completion handler and resolve it in urlSessionDidFinishEventsForBackgroundURLSession.
+- [x] Trigger queue reconciliation on relaunch events.
 
-Suggested touch points:
-- ios/DirectVideoUploader/App/DirectVideoUploaderApp.swift (or app delegate bridge)
+Touch points:
+- ios/DirectVideoUploader/App/DirectVideoUploaderApp.swift
 - ios/DirectVideoUploader/Services/VideoUploadService.swift
 
-### 3) Persist queue state on disk
+### P0.3 Persist Queue State and Reconcile
 
-- [ ] Add UploadQueueStore persisted model (pending/running/paused/failed/completed).
-- [ ] Save mapping: localUploadId -> assetId -> fileURL -> remote upload URL -> taskIdentifier.
-- [ ] Rehydrate queue on launch and reconcile with URLSession.getAllTasks.
-- [ ] Keep this independent from chat bubble memory so uploads survive app restarts.
+- [x] Persist mapping localUploadId -> assetId -> fileURL -> remoteUploadURL -> taskIdentifier.
+- [x] Rehydrate and reconcile persisted running tasks against URLSession.getAllTasks.
+- [x] Keep queue persistence independent from chat bubble presentation state.
 
-Suggested touch points:
-- ios/DirectVideoUploader/Services (new UploadQueueStore.swift)
+Touch points:
+- ios/DirectVideoUploader/Services/VideoUploadService.swift
 - ios/DirectVideoUploader/Services/ChatViewModel.swift
 
-### 4) Improve retry behavior
+### P0.4 Improve Retry Policy
 
-- [ ] Define retry policy by error type:
-  - transient network: retry with exponential backoff + jitter,
-  - auth errors: refresh/recreate upload URL,
-  - permanent validation errors: fail fast.
-- [ ] Set max retries per upload unit and surface actionable user state.
-- [ ] Ensure retry does not create duplicate server assets.
+- [x] Add retry policy by error class:
+  - transient network: exponential backoff with jitter,
+  - auth/expired URL: refresh and resume safely,
+  - validation/permanent: fail fast.
+- [x] Cap retries per upload unit and report actionable user state.
+- [x] Prevent duplicate clip creation during retries.
 
-Suggested touch points:
+Touch points:
 - ios/DirectVideoUploader/Services/VideoUploadService.swift
 - ios/DirectVideoUploader/Utilities/RetryHelper.swift
 
-## Phase P1 - Throughput and Scheduling (High Value)
+### P1.5 Adaptive Concurrency
 
-### 5) Add adaptive concurrency policy
-
-- [ ] Keep queue-level max concurrency dynamic:
+- [ ] Dynamic queue policy:
   - Wi-Fi + charging: 2,
   - cellular or Low Power Mode: 1.
-- [ ] Use network path and power state signals to adjust queue safely.
-- [ ] Keep manual override for debug builds.
+- [ ] Manual debug override for diagnostics.
 
-Suggested touch points:
+Touch points:
 - ios/DirectVideoUploader/Services/VideoBatchUploadCoordinator.swift
 - ios/DirectVideoUploader/Services/ChatViewModel.swift
 
-### 6) Tune URLSession network policy
+### P1.6 URLSession Network Policy Tuning
 
-- [ ] Explicitly set:
-  - allowsExpensiveNetworkAccess,
-  - allowsConstrainedNetworkAccess,
-  - allowsCellularAccess,
-  - httpMaximumConnectionsPerHost (start at 2 for upload host).
-- [ ] Define policy modes:
-  - User initiated upload now (more permissive),
-  - Deferred backlog upload (more restrictive).
+- [ ] Set allowsExpensiveNetworkAccess.
+- [ ] Set allowsConstrainedNetworkAccess.
+- [ ] Set allowsCellularAccess.
+- [ ] Set httpMaximumConnectionsPerHost (start at 2).
+- [ ] Add policy mode split: user initiated vs deferred backlog.
 
-Suggested touch points:
+Touch points:
 - ios/DirectVideoUploader/Services/VideoUploadService.swift
 
-### 7) Set task hints and priorities
+### P1.7 Task Scheduling Hints
 
-- [ ] Set task.priority for urgent foreground uploads vs backlog uploads.
-- [ ] Set countOfBytesClientExpectsToSend for scheduler hints.
-- [ ] Keep resource timeout suitable for large clips and poor connectivity.
+- [ ] Set task.priority by urgency.
+- [ ] Set countOfBytesClientExpectsToSend.
+- [ ] Validate timeout settings for large clips.
 
-Suggested touch points:
+Touch points:
 - ios/DirectVideoUploader/Services/VideoUploadService.swift
 
-## Phase P2 - Fastest Time-to-Playable (Optional but Strong)
+### P2.8 Transport Strategy
 
-### 8) Choose upload transport strategy explicitly
+- [x] A) Keep custom URLSession PUT path.
+- [ ] B) Mux iOS Upload SDK pilot.
 
-- [ ] Decide one of:
-  - A) Keep custom URLSession PUT path,
-  - B) Adopt Mux iOS Upload SDK for chunking/retry/pause-resume semantics.
-- [ ] If choosing SDK path, run small pilot behind feature flag and compare metrics.
+Decision:
+- B is intentionally N/A unless product direction changes.
 
-Suggested touch points:
-- ios/DirectVideoUploader/Services/VideoUploadService.swift
-- package dependency config (if SDK adopted)
+### P2.9 Input Standardization
 
-### 9) Optimize input standardization for speed
+- [ ] Define default newsroom input profile.
+- [ ] Align QA scenarios and metadata reporting.
 
-- [ ] Decide default profile for newsroom speed:
-  - 1080p SDR preferred for faster ingest,
-  - preserve 4K only when required.
-- [ ] Surface this policy in product requirements and QA scenarios.
-- [ ] Keep metadata reporting so ops can correlate ingest delays with input type.
-
-Suggested touch points:
-- ios/DirectVideoUploader/Services/VideoUploadService.swift
-- server webhook/status reporting for non-standard input reasons
-
-## Observability Checklist (Do Before Final Tuning)
-
-### 10) Add upload telemetry
-
-- [ ] Capture URLSessionTaskMetrics per upload.
-- [ ] Log key timings:
-  - queue wait time,
-  - transfer duration,
-  - retries count,
-  - final status.
-- [ ] Correlate with server-side timestamps:
-  - mux upload created,
-  - asset_created webhook,
-  - asset.ready webhook.
-
-Suggested touch points:
+Touch points:
 - ios/DirectVideoUploader/Services/VideoUploadService.swift
 - server/src/routes/mux-webhooks.js
 
-## QA Matrix (Required)
+### Obs.10 Upload Telemetry
 
-### 11) Reliability test runs
+- [x] Capture URLSessionTaskMetrics per upload.
+- [x] Log queue wait, transfer duration, retry count, and final status.
+- [x] Correlate with server events (upload created, asset_created, asset.ready).
+
+Touch points:
+- ios/DirectVideoUploader/Services/VideoUploadService.swift
+- server/src/routes/mux-webhooks.js
+
+## QA Matrix
+
+### Reliability Runs
 
 - [ ] Start upload, lock device, wait, unlock.
 - [ ] Start upload, background app for 5+ minutes.
-- [ ] Start upload, force poor network (Wi-Fi drop -> cellular).
-- [ ] Start upload, kill app (not user force-quit), relaunch and reconcile.
+- [ ] Start upload, drop network (Wi-Fi to cellular).
+- [ ] Start upload, terminate app (not force quit), relaunch and reconcile.
 - [ ] Start 5-10 clip batch and verify ordering, retries, and no duplicates.
 
-### 12) Performance test runs
+### Performance Runs
 
-- [ ] Compare single 500MB upload on Wi-Fi vs cellular.
-- [ ] Compare queue throughput with concurrency 1 vs 2.
-- [ ] Compare ingest readiness time with 4K vs 1080p inputs.
+- [ ] Compare 500MB upload on Wi-Fi vs cellular.
+- [ ] Compare throughput at concurrency 1 vs 2.
+- [ ] Compare readiness time for 4K vs 1080p source.
 
 ## Definition of Done
 
-- [ ] Uploads reliably continue across background/suspension scenarios.
-- [ ] Queue state survives app relaunch and reconciles correctly.
-- [ ] No duplicate clips/assets from retry paths.
-- [ ] Median upload success rate and completion time improve in field tests.
-- [ ] Team has metrics dashboards/logs to diagnose regressions quickly.
+- [ ] Uploads continue reliably across background/suspension scenarios.
+- [ ] Queue mapping survives relaunch and reconciles correctly.
+- [ ] Retry path does not create duplicate clips/assets.
+- [ ] Field success rate and completion time show measurable improvement.
+- [ ] Team can diagnose regressions with upload telemetry.
 
-## Rollout Plan
+## Rollout
 
 - [ ] Stage 1: internal QA build behind feature flag.
-- [ ] Stage 2: limited pilot users (single org/team).
-- [ ] Stage 3: full rollout after 48-hour stability window.
+- [ ] Stage 2: pilot users in one org/team.
+- [ ] Stage 3: full rollout after 48 hours stable telemetry.
