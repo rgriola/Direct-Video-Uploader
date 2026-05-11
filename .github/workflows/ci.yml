@@ -14,7 +14,7 @@ jobs:
     runs-on: macos-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Verify launch screen contract
         run: bash ./scripts/verify-ios-launchscreen.sh
@@ -27,7 +27,7 @@ jobs:
         working-directory: server
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -56,7 +56,7 @@ jobs:
         working-directory: admin
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Node
         uses: actions/setup-node@v4
