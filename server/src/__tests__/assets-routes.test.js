@@ -1,4 +1,4 @@
-// Last updated: May 9, 2026 - 7:25pm - GPT-5.3-Codex
+// Last updated: May 10, 2026 - 10:37am - GitHub Copilot (GPT-5.3-Codex)
 import Fastify from 'fastify';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -241,6 +241,62 @@ describe('assets route deeper coverage', () => {
                 mediasourceId: '100000001',
             })
         );
+    });
+
+    it('submits form and emits coded form confirmation payload', async () => {
+        prismaMock.asset.findUnique.mockResolvedValue({
+            id: 'asset-1',
+            userId: 'user-1',
+            mediasourceId: '100000001',
+            mediasourceUrl: '/clips/100000001',
+            originalFileName: 'field-report.mp4',
+            clips: [{ originalFileName: 'clip-fallback.mp4', capturedAt: new Date('2026-05-10T01:02:03.000Z') }],
+        });
+        prismaMock.formResponse.upsert.mockResolvedValue({
+            id: 'form-1',
+            assetId: 'asset-1',
+            slug: 'breaking',
+            type: 'Raw',
+            description: 'A short description',
+            priority: 'HIGH',
+        });
+
+        const response = await app.inject({
+            method: 'POST',
+            url: '/api/assets/asset-1/form',
+            payload: {
+                slug: 'breaking',
+                type: 'Raw',
+                description: 'A short description',
+                priority: 'High',
+            },
+        });
+
+        expect(response.statusCode).toBe(200);
+        expect(ioToSpy).toHaveBeenCalledWith('socket-1');
+        expect(ioEmitSpy).toHaveBeenCalledWith(
+            'form:confirmed',
+            expect.objectContaining({
+                assetId: 'asset-1',
+                messageCode: 'WS_FORM_CONFIRMED',
+                messageSchemaVersion: 1,
+                messageFallbackText: expect.any(String),
+                message: expect.any(String),
+            })
+        );
+
+        expect(prismaMock.chatMessage.create).toHaveBeenCalledWith({
+            data: expect.objectContaining({
+                userId: 'user-1',
+                assetId: 'asset-1',
+                messageType: 'FORM_SUBMITTED',
+                content: expect.objectContaining({
+                    code: 'WS_FORM_SUBMITTED',
+                    fallbackText: 'Form submitted',
+                    schemaVersion: 1,
+                }),
+            }),
+        });
     });
 
     it('validates transcript payload and handles missing clip', async () => {

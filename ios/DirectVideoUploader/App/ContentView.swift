@@ -1,13 +1,15 @@
+// May 10, 2026 - 3:07pm - GitHub Copilot (GPT-5.3-Codex)
 import SwiftUI
 
 /// Root view — shows Login or Chat/Archive tabs depending on auth state.
 struct ContentView: View {
     @Environment(AuthService.self) private var auth
     @Environment(WebSocketService.self) private var ws
+    @Environment(AppearanceService.self) private var appearance
     @Environment(\.scenePhase) private var scenePhase
     @State private var backgroundDisconnectTask: Task<Void, Never>?
     @State private var sessionCheckComplete = false
-    
+
     var body: some View {
         Group {
             if !sessionCheckComplete {
@@ -24,19 +26,19 @@ struct ContentView: View {
                             Image(systemName: "bubble.left.fill")
                             Text("Chat")
                         }
-                    
+
                     ArchiveListView()
                         .tabItem {
                             Image(systemName: "archivebox.fill")
                             Text("Archive")
                         }
-                    
+
                     PhotosView()
                         .tabItem {
                             Image(systemName: "photo.fill")
                             Text("Photos")
                         }
-                    
+
                     ProfileView()
                         .tabItem {
                             Image(systemName: "person.fill")
@@ -48,7 +50,7 @@ struct ContentView: View {
                 LoginView()
             }
         }
-        .preferredColorScheme(.dark)
+        .preferredColorScheme(appearance.preferredColorScheme)
         .task {
             // Validate stored token before showing any UI
             if auth.token != nil {
@@ -58,7 +60,9 @@ struct ContentView: View {
                     // fetchMe already calls logout() on 401/403;
                     // any other error (network down) also forces login
                     // so the user doesn't get stuck on a blank profile.
-                    print("⚠️ [Session] Restore failed: \(error.localizedDescription) — clearing session")
+                    print(
+                        "⚠️ [Session] Restore failed: \(error.localizedDescription) — clearing session"
+                    )
                     auth.logout()
                 }
             }
@@ -70,8 +74,9 @@ struct ContentView: View {
                 // Cancel pending disconnect — user came back quickly
                 backgroundDisconnectTask?.cancel()
                 backgroundDisconnectTask = nil
-                // Reconnect only if socket actually closed
-                if auth.isAuthenticated, let token = auth.token, !ws.isConnected {
+                // Reconnect only when fully disconnected. If we're already in
+                // .connecting, allow that in-flight attempt to finish.
+                if auth.isAuthenticated, let token = auth.token, ws.isDisconnected {
                     print("🔄 [Scene] Returned to foreground — reconnecting WebSocket")
                     ws.reconnectFromForeground(token: token)
                 }

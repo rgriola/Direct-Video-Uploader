@@ -1,14 +1,16 @@
+// May 10, 2026 - 1:51pm - GitHub Copilot (GPT-5.3-Codex)
 import SwiftUI
 
 /// Inline summary card shown when the conversation is archived (mux:ready received).
 /// Displays metadata and offers View + Share to Slack actions.
 struct ConversationSummaryBubble: View {
     let mediasourceId: String?
+    let mediasourceUrl: String?
     let formSlug: String?
     let duration: Int?
     let resolution: String?
     let fileSize: String?
-    
+
     var body: some View {
         HStack {
             VStack(alignment: .leading, spacing: 10) {
@@ -19,10 +21,10 @@ struct ConversationSummaryBubble: View {
                         .foregroundStyle(Theme.green)
                     Text("Video Ready")
                         .font(Theme.font16Medium)
-                        .foregroundStyle(Theme.black)
+                        .foregroundStyle(Theme.primaryText)
                 }
 
-                Divider().background(Theme.black.opacity(0.1))
+                Divider().background(Theme.separator)
 
                 // Metadata rows
                 VStack(alignment: .leading, spacing: 5) {
@@ -32,11 +34,11 @@ struct ConversationSummaryBubble: View {
                                 .font(Theme.icon13)
                             Text(msId)
                                 .font(Theme.mono16Bold)
-                                .foregroundStyle(Theme.black)
+                                .foregroundStyle(Theme.primaryText)
 
                             Spacer()
 
-                            if let url = ServerConfig.clipURL(msId) {
+                            if let url = resolvedClipURL(mediasourceId: msId) {
                                 ChatActionButton(
                                     icon: "play.circle.fill",
                                     label: "View",
@@ -65,22 +67,22 @@ struct ConversationSummaryBubble: View {
         }
         .padding(.horizontal, 4)
     }
-    
+
     // MARK: - Helpers
-    
+
     private func metaRow(icon: String, label: String) -> some View {
         HStack(spacing: 8) {
             Image(systemName: icon)
                 .font(Theme.icon13)
-                .foregroundStyle(Theme.black.opacity(0.5))
+                .foregroundStyle(Theme.secondaryText)
                 .frame(width: 16)
             Text(label)
                 .font(Theme.font11Regular)
-                .foregroundStyle(Theme.black)
+                .foregroundStyle(Theme.primaryText)
                 .lineLimit(2)
         }
     }
-    
+
     private func buildDetailsString() -> String {
         [
             duration.map { DVUDateFormatting.duration($0) },
@@ -89,5 +91,20 @@ struct ConversationSummaryBubble: View {
         ]
         .compactMap { $0 }
         .joined(separator: " · ")
+    }
+
+    private func resolvedClipURL(mediasourceId: String) -> URL? {
+        if let raw = mediasourceUrl?.trimmingCharacters(in: .whitespacesAndNewlines),
+            !raw.isEmpty
+        {
+            if raw.hasPrefix("http://") || raw.hasPrefix("https://") {
+                return URL(string: raw)
+            }
+
+            let normalizedPath = raw.hasPrefix("/") ? raw : "/\(raw)"
+            return URL(string: "\(ServerConfig.baseURL.absoluteString)\(normalizedPath)")
+        }
+
+        return ServerConfig.clipURL(mediasourceId)
     }
 }

@@ -1,16 +1,18 @@
+May 10, 2026 - 4:26pm - GitHub Copilot (GPT-5.3-Codex)
+
 # Direct Video Uploader — Project Status
 
-> **Last Updated:** April 12, 2026 · EST
-> **Current Phase:** Phase 3 (Render + Cloud + Mux) — Mux pipeline fully operational + Stability A–C + Upload + Re-upload + Archive + Admin tools + Transcription + UX polish + Admin refactor + Security hardening + Clip Viewer + Permissions Profile + ChatViewModel refactor + Device tracking + Instructions overhaul + iOS architecture cleanup
-> **Overall Progress:** ████████████████████ 100% (Phase 2) · Phase 3 ~99%
+> **Last Updated:** May 10, 2026 · PT
+> **Current Phase:** Phase 4 (QA + Rollout) — iOS UI/UX refresh validation and release-readiness checks
+> **Overall Progress:** ████████████████████ 100% (Phase 2) · Phase 3 complete · Phase 4 in progress
 
 ---
 
 ## Quick Summary
 
-The **Direct Video Uploader** is a mobile-first video upload platform disguised as a text conversation. Field crew members "text" videos to the **Mediasource Fixer** server, which processes them the way a news assignment desk operates — fast, structured, and integrated with Slack.
+The **Direct Video Uploader** is a mobile-first video upload platform disguised as a text conversation. Field crew members "text" videos to the **Mediasource Fixer** server, which processes them the way a news assignment desk operates - fast, structured, and integrated with Slack.
 
-We've completed the **interactive chat demo** (HTML prototype), **project specification** (v4), the **Phase 1 server foundation** (Node.js API, WebSocket, PostgreSQL, auth, admin dashboard), the **Phase 2 — iOS Demo App** core flow (login → chat → video upload → form → confirmation → archive), and the **Web Clip Viewer** (server-rendered at `/clips/:slug`). Latest session (Apr 12): **iOS architecture cleanup — ArchiveRowView refactor + Photos tab placeholder + shared utilities**. `ArchiveRowView` gains a `RowStatus` enum as a single source of truth for the status badge and action buttons (replaces two parallel if-else chains). `FormField.defaultVideoFields()` static extension eliminates duplicated field lists between `ChatViewModel` and `ArchiveRowView`. Both Archive views now use `auth.authenticatedRequest` instead of raw Bearer headers. Critical crash fixed in `phAssetToTempFile` (double-resume continuation guard, matching the VideoLibraryView fix). `handleReupload` no longer loads full video into RAM via `loadTransferable` — uses the PHAsset fast path already in the file. Slug surfaces as the primary display name in collapsed archive rows. Resolution + codec combined into a single "Format" row. New `PhotosView` placeholder added as the 3rd tab (Chat → Archive → Photos → Profile) with matching gradient background and feature overview rows.
+We've completed the **interactive chat demo** (HTML prototype), **project specification** (v4), the **Phase 1 server foundation** (Node.js API, WebSocket, PostgreSQL, auth, admin dashboard), the **Phase 2 - iOS Demo App** core flow (login -> chat -> video upload -> form -> confirmation -> archive), and the **Web Clip Viewer** (server-rendered at `/clips/:slug`). Latest session (May 10): **Phase 4 QA execution started**. Server tests passed (107/107), admin production build passed, iOS build passed, and unknown message-code fallback was validated with a forced unknown-code runtime harness against `MessageCatalog`. New docs were added for release notes and rollback instructions under `docs/IOS_UI_UX_PHASE4_RELEASE_NOTES.md` and `docs/IOS_UI_UX_PHASE4_ROLLBACK.md`. Remaining Phase 4 work is focused on screenshot evidence capture, final light/dark smoke scenarios, and release candidate tag/push.
 
 ---
 

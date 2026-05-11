@@ -1,7 +1,13 @@
 # Camera Library Multiclip Video — Implementation Checklist
-- Last updated: May 9, 2026 - 11:01pm - GPT-5.3-Codex
+- Last updated: May 10, 2026 - 6:28pm - GitHub Copilot (GPT-5.3-Codex)
 
-Status: Draft for execution tomorrow
+Status: Implementation pass completed for iOS batch flow; server-contract validation still pending.
+
+## Execution Snapshot (May 10, 2026)
+
+- Implemented: Steps 1 through 8.
+- Pending: Step 9 API compatibility validation against server routes.
+- Build status: iOS project builds successfully after multiclip changes.
 
 ## Objective
 
@@ -31,20 +37,20 @@ Current single-clip flow and exact insertion points:
 
 ## Minimal Change Sequence (Video Only)
 
-### Step 1 — Add Batch Models (iOS)
+### Step 1 — Add Batch Models (iOS) [x]
 
 Create file:
 - ios/DirectVideoUploader/Models/VideoBatch.swift
 
 Add:
-- VideoBatchContext (slug, type, description, priority, destination, notes)
-- VideoBatchItem (localId, fileName, status, progress, assetId, error)
+- VideoBatchContext (slug, type, description, priority,destination)
+- VideoBatchItem (localId, fileName, status, progress, assetId, error, org)
 - VideoBatchState (queued, indexing, uploading, paused, complete, partialFailed)
 
 Acceptance:
-- Models compile and support serialization to disk.
+- Models compile and support serialization to disk. 
 
-### Step 2 — Add Batch Persistence (iOS)
+### Step 2 — Add Batch Persistence (iOS) [x]
 
 Create file:
 - ios/DirectVideoUploader/Services/PendingBatchStore.swift
@@ -58,7 +64,7 @@ Add methods:
 Acceptance:
 - Batch state survives app relaunch. 
 
-### Step 3 — Upgrade VideoLibraryView to Multiselect
+### Step 3 — Upgrade VideoLibraryView to Multiselect [x]
 
 Modify:
 - ios/DirectVideoUploader/Views/Chat/VideoLibraryView.swift
@@ -82,7 +88,7 @@ Methods to update:
 Acceptance:
 - User can select many camera-library videos and confirm one batch.
 
-### Step 4 — Wire Multiclip Callback in ChatView
+### Step 4 — Wire Multiclip Callback in ChatView [x]
 
 Modify:
 - ios/DirectVideoUploader/Views/Chat/ChatView.swift
@@ -95,7 +101,7 @@ Changes:
 Acceptance:
 - Batch preview appears and no regressions for existing chat screen.
 
-### Step 5 — Add Batch State to ChatViewModel
+### Step 5 — Add Batch State to ChatViewModel [x]
 
 Modify:
 - ios/DirectVideoUploader/Services/ChatViewModel.swift
@@ -123,7 +129,7 @@ Keep and reuse:
 Acceptance:
 - ViewModel can run batch upload lifecycle without breaking single-upload path.
 
-### Step 6 — Grouped Context Form (Single Entry, Multi-Apply)
+### Step 6 — Grouped Context Form (Single Entry, Multi-Apply) [x]
 
 Modify:
 - ios/DirectVideoUploader/Services/ChatViewModel.swift
@@ -140,7 +146,7 @@ Important guard:
 Acceptance:
 - User fills one form and it applies to all clips in the batch.
 
-### Step 7 — Queue Coordinator for Uploads
+### Step 7 — Queue Coordinator for Uploads [x]
 
 Create file:
 - ios/DirectVideoUploader/Services/VideoBatchUploadCoordinator.swift
@@ -154,11 +160,15 @@ Responsibilities:
 Acceptance:
 - Partial failures do not cancel successful uploads.
 
-### Step 8 — Progress UI for Batch and Per-File
+### Step 8 — Progress UI for Batch and Per-File [x]
 
 Modify:
 - ios/DirectVideoUploader/Views/Chat/VideoBubble.swift
 - ios/DirectVideoUploader/Views/Chat/MessageBubble.swift
+
+Implementation note:
+- Batch progress/status UI is implemented in VideoBubble + ChatView via `BatchUploadBubble`.
+- MessageBubble was not changed in this pass because batch rendering is handled by the dedicated batch bubble.
 
 Add:
 - Batch-level progress row
@@ -168,7 +178,7 @@ Add:
 Acceptance:
 - User sees clear queue/upload/complete/error states per clip.
 
-### Step 9 — Server Compatibility Validation (No New Endpoints Required)
+### Step 9 — Server Compatibility Validation (No New Endpoints Required) [ ]
 
 Confirm against:
 - server/src/routes/assets.js
@@ -180,6 +190,13 @@ Checks:
 
 Acceptance:
 - Multiclip flow works against current API contract.
+
+Current verification status:
+- Static route review completed in `server/src/routes/assets.js`.
+- `POST /api/assets` creates independent assets per call.
+- `POST /api/assets/:id/mux-upload` has idempotent stale-upload handling and safe recreate behavior.
+- `POST /api/assets/:id/form` uses upsert per assetId and supports repeated submissions across many assets.
+- Remaining to close Step 9: end-to-end runtime validation against live server with a real multiclip batch.
 
 ## Test Checklist
 

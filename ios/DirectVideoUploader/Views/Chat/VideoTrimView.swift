@@ -1,6 +1,7 @@
-import SwiftUI
 import AVFoundation
 import AVKit
+// May 10, 2026 - 12:59pm - GitHub Copilot (GPT-5.3-Codex)
+import SwiftUI
 import UIKit
 
 // MARK: - Public API (unchanged contract)
@@ -22,7 +23,7 @@ struct VideoTrimView: View {
     var body: some View {
         ZStack {
             Theme.black.ignoresSafeArea()
-            
+
             VStack(spacing: 0) {
                 // Toolbar
                 trimToolbar
@@ -64,13 +65,15 @@ struct VideoTrimView: View {
                 exportOverlay
             }
         }
-        .preferredColorScheme(.dark)
         .onAppear { vm.load(url: videoURL) }
         .onDisappear { vm.cleanup() }
-        .alert("Export Failed", isPresented: Binding(
-            get: { exportError != nil },
-            set: { if !$0 { exportError = nil } }
-        )) {
+        .alert(
+            "Export Failed",
+            isPresented: Binding(
+                get: { exportError != nil },
+                set: { if !$0 { exportError = nil } }
+            )
+        ) {
             Button("OK") { exportError = nil }
         } message: {
             Text(exportError ?? "")
@@ -236,9 +239,10 @@ final class TrimViewModel {
 
             // Load aspect ratio from video track
             if let tracks = try? await asset.loadTracks(withMediaType: .video),
-               let track = tracks.first,
-               let size = try? await track.load(.naturalSize),
-               let transform = try? await track.load(.preferredTransform) {
+                let track = tracks.first,
+                let size = try? await track.load(.naturalSize),
+                let transform = try? await track.load(.preferredTransform)
+            {
                 let transformed = size.applying(transform)
                 let w = abs(transformed.width)
                 let h = abs(transformed.height)
@@ -404,15 +408,19 @@ private struct TrimScrubberView: View {
                     }
 
                 // Dimmed regions outside trim
-                dimRegion(centerX: (leftX - handleWidth) / 2,
-                          width: max(leftX - handleWidth, 0),
-                          height: geo.size.height)
-                dimRegion(centerX: (rightX + handleWidth + totalW) / 2,
-                          width: max(totalW - rightX - handleWidth, 0),
-                          height: geo.size.height)
+                dimRegion(
+                    centerX: (leftX - handleWidth) / 2,
+                    width: max(leftX - handleWidth, 0),
+                    height: geo.size.height)
+                dimRegion(
+                    centerX: (rightX + handleWidth + totalW) / 2,
+                    width: max(totalW - rightX - handleWidth, 0),
+                    height: geo.size.height)
 
                 // Trim border (top + bottom yellow lines)
-                trimBorder(leftX: leftX - handleWidth, rightX: rightX + handleWidth, height: geo.size.height)
+                trimBorder(
+                    leftX: leftX - handleWidth, rightX: rightX + handleWidth,
+                    height: geo.size.height)
 
                 // Left handle
                 trimHandle(edge: .leading)
@@ -422,7 +430,9 @@ private struct TrimScrubberView: View {
                             .onChanged { val in
                                 if activeDrag == nil { vm.fireHaptic() }
                                 activeDrag = .start
-                                let newStart = clamp((val.location.x - handleWidth) / pxPerSec, min: 0, max: vm.trimEnd - minTrim)
+                                let newStart = clamp(
+                                    (val.location.x - handleWidth) / pxPerSec, min: 0,
+                                    max: vm.trimEnd - minTrim)
                                 vm.trimStart = newStart
                                 vm.seekToTrimStart()
                             }
@@ -442,7 +452,9 @@ private struct TrimScrubberView: View {
                             .onChanged { val in
                                 if activeDrag == nil { vm.fireHaptic() }
                                 activeDrag = .end
-                                let newEnd = clamp((val.location.x - handleWidth) / pxPerSec, min: vm.trimStart + minTrim, max: vm.duration)
+                                let newEnd = clamp(
+                                    (val.location.x - handleWidth) / pxPerSec,
+                                    min: vm.trimStart + minTrim, max: vm.duration)
                                 vm.trimEnd = newEnd
                                 vm.seekToTrimEnd()
                             }
@@ -477,7 +489,9 @@ private struct TrimScrubberView: View {
                                         vm.player.pause()
                                         vm.isPlaying = false
                                     }
-                                    let newTime = clamp((val.location.x - handleWidth) / pxPerSec, min: vm.trimStart, max: vm.trimEnd)
+                                    let newTime = clamp(
+                                        (val.location.x - handleWidth) / pxPerSec,
+                                        min: vm.trimStart, max: vm.trimEnd)
                                     vm.currentTime = newTime
                                     vm.seekTo(newTime)
                                 }
@@ -544,9 +558,11 @@ private struct TrimScrubberView: View {
             .frame(width: handleWidth, height: 60)
             .overlay {
                 // Chevron arrows
-                Image(systemName: edge == .leading ? "chevron.compact.left" : "chevron.compact.right")
-                    .font(Theme.font16Bold)
-                    .foregroundStyle(Theme.black)
+                Image(
+                    systemName: edge == .leading ? "chevron.compact.left" : "chevron.compact.right"
+                )
+                .font(Theme.font16Bold)
+                .foregroundStyle(Theme.black)
             }
     }
 
@@ -570,7 +586,8 @@ enum PassthroughExporter {
 
         var errorDescription: String? {
             switch self {
-            case .noCompatibleFileType: return "No compatible output file type for passthrough export."
+            case .noCompatibleFileType:
+                return "No compatible output file type for passthrough export."
             case .exportFailed(let msg): return msg
             case .cancelled: return "Export was cancelled."
             }
@@ -586,7 +603,10 @@ enum PassthroughExporter {
     ) async throws -> URL {
         let asset = AVURLAsset(url: source)
 
-        guard let session = AVAssetExportSession(asset: asset, presetName: AVAssetExportPresetPassthrough) else {
+        guard
+            let session = AVAssetExportSession(
+                asset: asset, presetName: AVAssetExportPresetPassthrough)
+        else {
             throw ExportError.noCompatibleFileType
         }
 
@@ -637,7 +657,8 @@ enum PassthroughExporter {
         case .cancelled:
             throw ExportError.cancelled
         default:
-            throw ExportError.exportFailed(session.error?.localizedDescription ?? "Unknown export error")
+            throw ExportError.exportFailed(
+                session.error?.localizedDescription ?? "Unknown export error")
         }
     }
 }

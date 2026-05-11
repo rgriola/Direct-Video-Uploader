@@ -1,4 +1,4 @@
-// Last updated: May 9, 2026 - 7:30pm - GPT-5.3-Codex
+// Last updated: May 10, 2026 - 6:46pm - GitHub Copilot (GPT-5.3-Codex)
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const prismaMock = {
@@ -6,6 +6,7 @@ const prismaMock = {
         create: vi.fn(),
     },
     asset: {
+        findMany: vi.fn(),
         findFirst: vi.fn(),
     },
 };
@@ -13,6 +14,7 @@ const prismaMock = {
 const slackMock = {
     isConfigured: vi.fn(),
     buildAssetMessage: vi.fn(),
+    buildBatchAssetMessage: vi.fn(),
     postToChannel: vi.fn(),
     postDM: vi.fn(),
 };
@@ -24,6 +26,7 @@ vi.mock('../lib/prisma.js', () => ({
 vi.mock('../lib/slack.js', () => ({
     isConfigured: slackMock.isConfigured,
     buildAssetMessage: slackMock.buildAssetMessage,
+    buildBatchAssetMessage: slackMock.buildBatchAssetMessage,
     postToChannel: slackMock.postToChannel,
     postDM: slackMock.postDM,
 }));
@@ -42,6 +45,7 @@ beforeEach(() => {
     vi.clearAllMocks();
 
     prismaMock.chatMessage.create.mockResolvedValue({});
+    prismaMock.asset.findMany.mockResolvedValue([]);
     prismaMock.asset.findFirst.mockResolvedValue({
         mediasourceId: '100000001',
         formResponse: { slug: 'breaking-news' },
@@ -51,6 +55,10 @@ beforeEach(() => {
     slackMock.isConfigured.mockReturnValue(false);
     slackMock.buildAssetMessage.mockReturnValue({
         text: 'message-text',
+        blocks: [],
+    });
+    slackMock.buildBatchAssetMessage.mockReturnValue({
+        text: 'batch-message-text',
         blocks: [],
     });
     slackMock.postToChannel.mockResolvedValue({ ok: true, channel: '#news' });
@@ -182,6 +190,9 @@ describe('ws handler targeted coverage', () => {
             'message:new',
             expect.objectContaining({
                 messageType: 'GREETING',
+                content: expect.objectContaining({
+                    code: 'WS_GREETING_CONNECTED',
+                }),
             })
         );
 
@@ -190,6 +201,9 @@ describe('ws handler targeted coverage', () => {
             'message:new',
             expect.objectContaining({
                 messageType: 'SYSTEM_NOTE',
+                content: expect.objectContaining({
+                    code: 'WS_SYSTEM_TIP_GUIDE',
+                }),
             })
         );
     });
@@ -249,7 +263,157 @@ describe('ws handler targeted coverage', () => {
             expect.objectContaining({
                 messageType: 'SLACK_POST',
                 content: expect.objectContaining({
+                    code: 'WS_SLACK_NOT_CONFIGURED',
                     text: expect.stringContaining('Slack is not configured'),
+                }),
+            })
+        );
+    });
+
+    it('emits coded slack confirmation when channel post succeeds', async () => {
+        const { io, harness } = createIoHarness();
+        const fastify = createFastifyHarness();
+        fastify.jwt.verify.mockReturnValue({
+            id: 'user-1',
+            name: 'David Burgess',
+            phoneNumber: '5055551000',
+        });
+        slackMock.isConfigured.mockReturnValue(true);
+        slackMock.postToChannel.mockResolvedValue({ ok: true, channel: '#team-alerts' });
+
+        setupWebSocket(io, fastify);
+
+        const socket = createSocket({ token: 'valid-token', clientType: 'ios' });
+        await harness.authMiddleware(socket, vi.fn());
+        harness.connectionHandler(socket);
+
+        await socket.handlers['message:send']({
+            text: '#team-alerts clip ready',
+        });
+
+        expect(socket.emit).toHaveBeenCalledWith(
+            'message:new',
+            expect.objectContaining({
+                messageType: 'SLACK_POST',
+                content: expect.objectContaining({
+                    code: 'WS_SLACK_CONFIRMATION_OK',
+                    params: expect.objectContaining({
+                        targets: '#team-alerts',
+                    }),
+                }),
+            })
+        );
+    });
+
+    it('builds multiclip slack payload when iOS sends assetIds', async () => {
+        const { io, harness } = createIoHarness();
+        const fastify = createFastifyHarness();
+        fastify.jwt.verify.mockReturnValue({
+            id: 'user-1',
+            name: 'David Burgess',
+            phoneNumber: '5055551000',
+        });
+        slackMock.isConfigured.mockReturnValue(true);
+        prismaMock.asset.findMany.mockResolvedValue([
+            {
+                id: 'asset-1',
+                mediasourceId: '100000001',
+                formResponse: { slug: 'protest 1' },
+                clips: [{ muxPlaybackId: 'play-1', capturedAt: new Date('2026-05-10T10:00:00.000Z'), duration: 12, resolution: '1920×1080' }],
+            },
+            {
+                id: 'asset-2',
+                mediasourceId: '100000002',
+                formResponse: { slug: 'protest 2' },
+                clips: [{ muxPlaybackId: 'play-2', capturedAt: new Date('2026-05-10T10:02:00.000Z'), duration: 15, resolution: '1920×1080' }],
+            },
+        ]);
+
+        setupWebSocket(io, fastify);
+
+        const socket = createSocket({ token: 'valid-token', clientType: 'ios' });
+        await harness.authMiddleware(socket, vi.fn());
+        harness.connectionHandler(socket);
+
+        await socket.handlers['message:send']({
+            text: '#team-alerts clips ready',
+            assetId: 'asset-1',
+            assetIds: ['asset-1', 'asset-2'],
+        });
+
+        expect(slackMock.buildBatchAssetMessage).toHaveBeenCalledWith(
+            expect.objectContaining({
+                userName: 'David Burgess',
+                assets: expect.arrayContaining([
+                    expect.objectContaining({ mediasourceId: '100000001' }),
+                    expect.objectContaining({ mediasourceId: '100000002' }),
+                ]),
+            })
+        );
+    });
+
+    it('emits requires-upload code when slack command has no ready asset', async () => {
+        const { io, harness } = createIoHarness();
+        const fastify = createFastifyHarness();
+        fastify.jwt.verify.mockReturnValue({
+            id: 'user-1',
+            name: 'David Burgess',
+            phoneNumber: '5055551000',
+        });
+        slackMock.isConfigured.mockReturnValue(true);
+        prismaMock.asset.findFirst.mockResolvedValue(null);
+
+        setupWebSocket(io, fastify);
+
+        const socket = createSocket({ token: 'valid-token', clientType: 'ios' });
+        await harness.authMiddleware(socket, vi.fn());
+        harness.connectionHandler(socket);
+
+        await socket.handlers['message:send']({
+            text: '#team-alerts clip ready',
+        });
+
+        expect(socket.emit).toHaveBeenCalledWith(
+            'message:new',
+            expect.objectContaining({
+                messageType: 'TEXT',
+                content: expect.objectContaining({
+                    code: 'WS_SLACK_REQUIRES_UPLOAD',
+                }),
+            })
+        );
+    });
+
+    it('emits failure confirmation code when slack post fails', async () => {
+        const { io, harness } = createIoHarness();
+        const fastify = createFastifyHarness();
+        fastify.jwt.verify.mockReturnValue({
+            id: 'user-1',
+            name: 'David Burgess',
+            phoneNumber: '5055551000',
+        });
+        slackMock.isConfigured.mockReturnValue(true);
+        slackMock.postToChannel.mockResolvedValue({ ok: false, error: 'channel_not_found' });
+
+        setupWebSocket(io, fastify);
+
+        const socket = createSocket({ token: 'valid-token', clientType: 'ios' });
+        await harness.authMiddleware(socket, vi.fn());
+        harness.connectionHandler(socket);
+
+        await socket.handlers['message:send']({
+            text: '#does-not-exist clip ready',
+        });
+
+        expect(socket.emit).toHaveBeenCalledWith(
+            'message:new',
+            expect.objectContaining({
+                messageType: 'SLACK_POST',
+                content: expect.objectContaining({
+                    code: 'WS_SLACK_CONFIRMATION_FAILED',
+                    params: expect.objectContaining({
+                        failedTargets: expect.stringContaining('#does-not-exist'),
+                    }),
                 }),
             })
         );
@@ -291,7 +455,8 @@ describe('ws handler targeted coverage', () => {
                 messageType: 'TEXT',
                 direction: 'INCOMING',
                 content: expect.objectContaining({
-                    text: expect.stringContaining('send me your videos'),
+                    code: 'WS_TEXT_AUTO_REPLY_SEND_VIDEO',
+                    text: expect.stringContaining('Send me your videos'),
                 }),
             })
         );

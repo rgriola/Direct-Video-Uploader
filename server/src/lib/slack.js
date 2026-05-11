@@ -1,4 +1,4 @@
-// Last updated: May 9, 2026 - 6:11pm
+// Last updated: May 10, 2026 - 6:46pm - GitHub Copilot (GPT-5.3-Codex)
 /**
  * Slack integration — posts messages to channels and DMs via Slack Web API.
  *
@@ -135,6 +135,17 @@ function escapeSlackMrkdwn(str) {
         .replace(/>/g, '&gt;');
 }
 
+    function formatProductionDate(capturedAt) {
+        if (!capturedAt) return '';
+
+        const date = new Date(capturedAt);
+        if (Number.isNaN(date.getTime())) return '';
+
+        return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+        + ' '
+        + date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+    }
+
 /**
  * Build a rich Slack message for a mediasource asset.
  * Layout: Thumbnail + ▶ Play side-by-side, then metadata lines with clipboard on MS#.
@@ -153,13 +164,7 @@ export function buildAssetMessage({ userName, mediasourceId, clipUrl, mention, t
     // Thumbnail — use Mux thumbnail if available, otherwise a film placeholder
     const imageUrl = thumbnailUrl || `${PUBLIC_URL}/assets/film-placeholder.svg`;
 
-    // Format production date/time from capturedAt
-    let prodDateTime = '';
-    if (capturedAt) {
-        const d = new Date(capturedAt);
-        prodDateTime = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-            + ' ' + d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-    }
+    const prodDateTime = formatProductionDate(capturedAt);
 
     // Build metadata text (left side) — each field on its own line
     const metaLines = [`*@${safeName}*`, `MS# \`${safeId}\``];
@@ -193,6 +198,66 @@ export function buildAssetMessage({ userName, mediasourceId, clipUrl, mention, t
                     action_id: 'play_clip',
                 },
             ],
+        },
+    ];
+
+    if (mention) {
+        blocks.push({
+            type: 'context',
+            elements: [{ type: 'mrkdwn', text: `${safeMention} please review` }],
+        });
+    }
+
+    return { text, blocks };
+}
+
+/**
+ * Build a rich Slack message for multiple mediasource assets.
+ * @param {{ userName: string, assets: Array<{ mediasourceId: string, clipUrl: string, slug?: string, capturedAt?: string|Date, duration?: number, resolution?: string }>, mention?: string }} opts
+ * @returns {{ text: string, blocks: object[] }}
+ */
+export function buildBatchAssetMessage({ userName, assets = [], mention }) {
+    const safeName = escapeSlackMrkdwn(userName);
+    const safeMention = escapeSlackMrkdwn(mention);
+    const clipCount = assets.length;
+    const limitedAssets = assets.slice(0, 12);
+    const remainingCount = Math.max(clipCount - limitedAssets.length, 0);
+
+    const summaryText = `🎬 ${clipCount} New Videos from ${safeName}`;
+    const mentionLine = mention ? `\n${safeMention} please review` : '';
+    const text = `${summaryText}${mentionLine}`;
+
+    const assetLines = limitedAssets.map((asset, index) => {
+        const safeId = escapeSlackMrkdwn(asset.mediasourceId || 'N/A');
+        const safeSlug = escapeSlackMrkdwn(asset.slug || 'Untitled');
+        const safeResolution = escapeSlackMrkdwn(asset.resolution || '');
+        const prodDateTime = formatProductionDate(asset.capturedAt);
+        const durationText = Number.isFinite(asset.duration)
+            ? `${Math.max(0, Number(asset.duration))}s`
+            : '';
+        const metaParts = [prodDateTime, durationText, safeResolution].filter(Boolean);
+        const metaText = metaParts.length > 0 ? ` · ${metaParts.join(' · ')}` : '';
+        return `*${index + 1}. MS# \`${safeId}\`*\n• Title: ${safeSlug}${metaText}\n• URL: <${asset.clipUrl}|Open clip>`;
+    });
+
+    if (remainingCount > 0) {
+        assetLines.push(`_...and ${remainingCount} more clips_`);
+    }
+
+    const blocks = [
+        {
+            type: 'section',
+            text: {
+                type: 'mrkdwn',
+                text: `*@${safeName}* uploaded *${clipCount}* clips.`,
+            },
+        },
+        {
+            type: 'section',
+            text: {
+                type: 'mrkdwn',
+                text: assetLines.join('\n\n'),
+            },
         },
     ];
 

@@ -1,3 +1,4 @@
+// May 10, 2026 - 3:34pm - GitHub Copilot (GPT-5.3-Codex)
 import SwiftUI
 
 /// Profile screen — user info, permission toggles, app info, and logout.
@@ -5,7 +6,9 @@ struct ProfileView: View {
     @Environment(AuthService.self) private var auth
     @Environment(WebSocketService.self) private var ws
     @Environment(PermissionManager.self) private var permissions
+    @Environment(AppearanceService.self) private var appearance
     @State private var showLogoutConfirm = false
+    @State private var showOnboardingResetConfirm = false
 
     var body: some View {
         ZStack {
@@ -15,10 +18,10 @@ struct ProfileView: View {
                 // Header
                 Text("Profile")
                     .font(Theme.font16Semibold)
-                    .foregroundStyle(Theme.white)
+                    .foregroundStyle(Theme.primaryText)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, Theme.space16)
-                    .background(Theme.black.opacity(0.94))
+                    .background(Theme.cardBg)
 
                 ScrollView {
                     VStack(spacing: Theme.space20) {
@@ -27,6 +30,9 @@ struct ProfileView: View {
 
                         // Permissions
                         permissionsSection
+
+                        // Appearance
+                        appearanceSection
 
                         // App info
                         appInfoSection
@@ -40,9 +46,23 @@ struct ProfileView: View {
                 }
             }
         }
-        .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
+        .onReceive(
+            NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)
+        ) { _ in
             // User may have changed permissions in Settings.app
             permissions.refreshStatuses()
+        }
+        .confirmationDialog(
+            "Reset onboarding?",
+            isPresented: $showOnboardingResetConfirm,
+            titleVisibility: .visible
+        ) {
+            Button("Reset Onboarding", role: .destructive) {
+                OnboardingCatalog.resetForQA()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("The onboarding walkthrough will show again on next app launch.")
         }
     }
 
@@ -66,12 +86,12 @@ struct ProfileView: View {
             if let user = auth.currentUser {
                 Text(user.name)
                     .font(Theme.font20Semibold)
-                    .foregroundStyle(Theme.white)
+                    .foregroundStyle(Theme.primaryText)
 
                 Text(user.phoneNumber)
                     .font(Theme.mono13Medium)
-                    .foregroundStyle(Theme.white.opacity(0.6))
-                
+                    .foregroundStyle(Theme.secondaryText)
+
                 if let companyName = user.companyName {
                     Text(companyName)
                         .font(Theme.font13Medium)
@@ -81,7 +101,7 @@ struct ProfileView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, Theme.space20)
-        .background(Theme.black, in: RoundedRectangle(cornerRadius: Theme.radiusLg))
+        .background(Theme.cardBg, in: RoundedRectangle(cornerRadius: Theme.radiusLg))
     }
 
     // MARK: - Permissions
@@ -121,11 +141,32 @@ struct ProfileView: View {
                     Task { await permissions.requestSpeechRecognition() }
                 }
             }
-            .background(Theme.black, in: RoundedRectangle(cornerRadius: Theme.radiusMd))
+            .background(Theme.cardBg, in: RoundedRectangle(cornerRadius: Theme.radiusMd))
         }
     }
 
     // MARK: - App Info
+
+    private var appearanceSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            sectionHeader("Appearance")
+
+            VStack(alignment: .leading, spacing: Theme.space12) {
+                Picker("Appearance", selection: appearanceModeBinding) {
+                    ForEach(AppearanceMode.allCases) { mode in
+                        Text(mode.label).tag(mode)
+                    }
+                }
+                .pickerStyle(.segmented)
+
+                Text("Choose System, Light, or Dark for Fixer.")
+                    .font(Theme.font13Regular)
+                    .foregroundStyle(Theme.secondaryText)
+            }
+            .padding(Theme.space16)
+            .background(Theme.cardBg, in: RoundedRectangle(cornerRadius: Theme.radiusMd))
+        }
+    }
 
     private var appInfoSection: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -141,10 +182,42 @@ struct ProfileView: View {
                 infoRow(
                     icon: "info.circle",
                     label: "Version",
-                    value: "\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—") (\(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "—"))"
+                    value:
+                        "\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—") (\(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "—"))"
                 )
+
+                Divider()
+                    .background(Theme.glassBorder)
+                    .padding(.leading, 52)
+
+                Button {
+                    showOnboardingResetConfirm = true
+                } label: {
+                    HStack(spacing: Theme.space12) {
+                        Image(systemName: "arrow.counterclockwise")
+                            .font(Theme.icon16)
+                            .foregroundStyle(Theme.secondaryText)
+                            .frame(width: 32, height: 32)
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Reset Onboarding")
+                                .font(Theme.font16Medium)
+                                .foregroundStyle(Theme.primaryText)
+
+                            Text("QA tool: show first-run walkthrough again")
+                                .font(Theme.font13Regular)
+                                .foregroundStyle(Theme.secondaryText)
+                        }
+
+                        Spacer()
+                    }
+                    .padding(.horizontal, Theme.space16)
+                    .padding(.vertical, Theme.space12)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
             }
-            .background(Theme.black, in: RoundedRectangle(cornerRadius: Theme.radiusMd))
+            .background(Theme.cardBg, in: RoundedRectangle(cornerRadius: Theme.radiusMd))
         }
     }
 
@@ -159,9 +232,10 @@ struct ProfileView: View {
                 .foregroundStyle(Theme.red)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 14)
-                .background(Theme.black, in: RoundedRectangle(cornerRadius: Theme.radiusMd))
+                .background(Theme.cardBg, in: RoundedRectangle(cornerRadius: Theme.radiusMd))
         }
-        .confirmationDialog("Positive?", isPresented: $showLogoutConfirm, titleVisibility: .visible) {
+        .confirmationDialog("Positive?", isPresented: $showLogoutConfirm, titleVisibility: .visible)
+        {
             Button("Logout", role: .destructive) {
                 auth.logout()
                 ws.disconnect()
@@ -174,7 +248,7 @@ struct ProfileView: View {
     private func sectionHeader(_ title: String) -> some View {
         Text(title.uppercased())
             .font(Theme.font13Semibold)
-            .foregroundStyle(Theme.white.opacity(0.5))
+            .foregroundStyle(Theme.secondaryText)
             .padding(.horizontal, Theme.space4)
             .padding(.bottom, Theme.space8)
     }
@@ -194,17 +268,19 @@ struct ProfileView: View {
                 // Icon
                 Image(systemName: icon)
                     .font(Theme.icon16)
-                    .foregroundStyle(isGranted ? Theme.green : (isDenied ? Theme.red : Theme.white.opacity(0.5)))
+                    .foregroundStyle(
+                        isGranted ? Theme.green : (isDenied ? Theme.red : Theme.tertiaryText)
+                    )
                     .frame(width: 32, height: 32)
 
                 // Labels
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
                         .font(Theme.font16Medium)
-                        .foregroundStyle(Theme.white)
+                        .foregroundStyle(Theme.primaryText)
                     Text(subtitle)
                         .font(Theme.font13Regular)
-                        .foregroundStyle(Theme.white.opacity(0.5))
+                        .foregroundStyle(Theme.secondaryText)
                 }
 
                 Spacer()
@@ -212,21 +288,24 @@ struct ProfileView: View {
                 // Status pill
                 HStack(spacing: 5) {
                     Circle()
-                        .fill(statusDotColor(isGranted: isGranted, isDenied: isDenied, isLimited: isLimited))
+                        .fill(
+                            statusDotColor(
+                                isGranted: isGranted, isDenied: isDenied, isLimited: isLimited)
+                        )
                         .frame(width: 8, height: 8)
                     Text(statusLabel)
                         .font(Theme.font13Medium)
-                        .foregroundStyle(Theme.white.opacity(0.7))
+                        .foregroundStyle(Theme.secondaryText)
                 }
                 .padding(.horizontal, 10)
                 .padding(.vertical, 5)
-                .background(Theme.white.opacity(0.08), in: Capsule())
+                .background(Theme.glassOverlay, in: Capsule())
 
                 // Chevron — hint that tapping opens Settings (unless not yet asked)
                 if isGranted || isDenied {
                     Image(systemName: "arrow.up.forward.app")
                         .font(Theme.icon13)
-                        .foregroundStyle(Theme.white.opacity(0.3))
+                        .foregroundStyle(Theme.tertiaryText)
                 }
             }
             .padding(.horizontal, Theme.space16)
@@ -240,18 +319,18 @@ struct ProfileView: View {
         HStack(spacing: Theme.space12) {
             Image(systemName: icon)
                 .font(Theme.icon16)
-                .foregroundStyle(Theme.white.opacity(0.5))
+                .foregroundStyle(Theme.secondaryText)
                 .frame(width: 32, height: 32)
 
             Text(label)
                 .font(Theme.font16Medium)
-                .foregroundStyle(Theme.white)
+                .foregroundStyle(Theme.primaryText)
 
             Spacer()
 
             Text(value)
                 .font(Theme.mono13Medium)
-                .foregroundStyle(Theme.white.opacity(0.5))
+                .foregroundStyle(Theme.secondaryText)
                 .lineLimit(1)
                 .truncationMode(.middle)
         }
@@ -263,11 +342,18 @@ struct ProfileView: View {
         if isGranted && !isLimited { return Theme.green }
         if isLimited { return Theme.amber }
         if isDenied { return Theme.red }
-        return Theme.white.opacity(0.4)  // not determined
+        return Theme.tertiaryText  // not determined
     }
 
     private var userInitial: String {
         guard let name = auth.currentUser?.name, let first = name.first else { return "?" }
         return String(first).uppercased()
+    }
+
+    private var appearanceModeBinding: Binding<AppearanceMode> {
+        Binding(
+            get: { appearance.mode },
+            set: { appearance.mode = $0 }
+        )
     }
 }

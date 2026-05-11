@@ -122,9 +122,9 @@ diff -u original.meta.txt tagged.meta.txt
 3. Write derivatives only:
 - RAW: original + .xmp
 - JPEG/TIFF: original + tagged copy
-4. Keep sidecar JSON as source-of-truth for reprocessing.
+4. Keep sidecar JSON as source-of-truth for reprocessing. 
 5. Store UTC plus original local capture context when possible.
-6. Log who changed metadata and when.
+6. Log who changed metadata and when. 
 
 ---
 

@@ -1,4 +1,4 @@
-// Last updated: May 9, 2026 - 7:22pm - GPT-5.3-Codex
+// Last updated: May 10, 2026 - 3:19pm - GPT-5.3-Codex
 /**
  * Fixer — Server Entry Point
  *
@@ -53,6 +53,7 @@ const HOST = process.env.HOST || '0.0.0.0';
 const isProduction = process.env.NODE_ENV === 'production';
 const LOG_LEVEL = process.env.LOG_LEVEL?.trim() || (isProduction ? 'info' : 'debug');
 const MAX_NON_MULTIPART_BODY_BYTES = 2 * 1024 * 1024;
+const SOCKET_IO_PATH = '/socket.io';
 
 const REQUIRED_PROD_ENV = ['DATABASE_URL', 'JWT_SECRET'];
 const REQUIRED_MUX_ENV = ['MUX_TOKEN_ID', 'MUX_TOKEN_SECRET', 'MUX_ENV_KEY', 'MUX_WEBHOOK_SECRET'];
@@ -370,6 +371,8 @@ fastify.decorate('clipAuthenticate', async function (request, reply) {
 
 // ─── Socket.IO ───────────────────────────────────────────
 const io = new SocketIOServer(fastify.server, {
+    path: SOCKET_IO_PATH,
+    addTrailingSlash: false,
     cors: {
         origin: WS_CORS_ORIGINS,
         methods: ['GET', 'POST'],

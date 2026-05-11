@@ -1,7 +1,8 @@
-import SwiftUI
-import PhotosUI
-import Photos
 import AVFoundation
+import Photos
+import PhotosUI
+// May 10, 2026 - 1:55pm - GitHub Copilot (GPT-5.3-Codex)
+import SwiftUI
 
 /// A single expandable row in the archive list showing upload metadata and actions.
 struct ArchiveRowView: View {
@@ -14,55 +15,55 @@ struct ArchiveRowView: View {
     @State private var showFormSheet = false
     @State private var formSubmitted = false
     @State private var submittedFormData: [String: String]?
-    
+
     // Re-upload state
     @State private var selectedVideoItem: PhotosPickerItem?
     @State private var isReuploadingVideo = false
     @State private var reuploadProgress: Double = 0
     @State private var reuploadError: String?
     @State private var reuploadComplete = false
-    
+
     /// Asset has no form response and user hasn't just submitted one
     private var needsDetails: Bool {
         asset.formResponse == nil && !formSubmitted
     }
-    
+
     /// Upload is stuck — status is PROCESSING and created > 5 minutes ago
     var isStuckProcessing: Bool {
         guard asset.status == .processing, !reuploadComplete else { return false }
         guard let dateStr = asset.createdAt else { return true }
         guard let created = DVUDateFormatting.parseISO(dateStr) else { return true }
-        return Date().timeIntervalSince(created) > 300 // 5 minutes
+        return Date().timeIntervalSince(created) > 300  // 5 minutes
     }
 
     /// Consolidated display state — single source of truth for both the badge and
     /// the action buttons section. Priority order matters: check in this sequence.
     private enum RowStatus {
-        case needsDetails   // yellow — form not yet filled
-        case failed         // red — error or stuck processing
-        case reuploading    // blue — active re-upload in progress
-        case processing     // blue — waiting for Mux
-        case ready          // green — fully processed
+        case needsDetails  // yellow — form not yet filled
+        case failed  // red — error or stuck processing
+        case reuploading  // blue — active re-upload in progress
+        case processing  // blue — waiting for Mux
+        case ready  // green — fully processed
     }
 
     private var rowStatus: RowStatus {
-        if needsDetails                                { return .needsDetails }
+        if needsDetails { return .needsDetails }
         if asset.status == .error || isStuckProcessing { return .failed }
-        if isReuploadingVideo                          { return .reuploading }
-        if asset.status == .processing                 { return .processing }
+        if isReuploadingVideo { return .reuploading }
+        if asset.status == .processing { return .processing }
         return .ready
     }
-    
+
     /// Whether we have a stored PHAsset identifier for auto-re-upload
     private var hasSavedPHAsset: Bool {
         PHAssetIdentifierStore.identifier(for: asset.id) != nil
     }
-    
+
     /// Whether we can auto-discover the video by capturedAt date
     private var canAutoDiscover: Bool {
         asset.clips?.first?.capturedAt != nil
     }
-    
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             // MARK: - Collapsed Row (always visible)
@@ -74,7 +75,8 @@ struct ArchiveRowView: View {
                 HStack(spacing: 12) {
                     // Thumbnail
                     if let thumbnailUrl = asset.clips?.first?.thumbnailUrl,
-                       let url = URL(string: thumbnailUrl) {
+                        let url = URL(string: thumbnailUrl)
+                    {
                         AsyncImage(url: url) { image in
                             image
                                 .resizable()
@@ -98,20 +100,23 @@ struct ArchiveRowView: View {
                                 .font(Theme.display32)
                         }
                     }
-                    
+
                     // File info
                     VStack(alignment: .leading, spacing: 3) {
-                        Text(asset.formResponse?.slug ?? asset.originalFileName ?? asset.mediasourceId ?? asset.id)
-                            .font(Theme.font16Medium)
-                            .foregroundStyle(Theme.white)
-                            .lineLimit(1)
-                        
+                        Text(
+                            asset.formResponse?.slug ?? asset.originalFileName ?? asset
+                                .mediasourceId ?? asset.id
+                        )
+                        .font(Theme.font16Medium)
+                        .foregroundStyle(Theme.primaryText)
+                        .lineLimit(1)
+
                         HStack(spacing: 6) {
                             Text(asset.mediasourceId ?? asset.id)
                                 .font(Theme.mono13Medium)
                                 .foregroundStyle(Theme.secondaryText)
                                 .lineLimit(1)
-                            
+
                             switch rowStatus {
                             case .needsDetails:
                                 Circle()
@@ -149,15 +154,15 @@ struct ArchiveRowView: View {
                             }
                         }
                     }
-                    
+
                     Spacer()
-                    
+
                     // Date + chevron
                     VStack(alignment: .trailing, spacing: 3) {
                         Text(formatShortDate(asset.createdAt))
                             .font(Theme.font11Regular)
                             .foregroundStyle(Theme.secondaryText)
-                        
+
                         Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
                             .font(Theme.icon11)
                             .foregroundStyle(Theme.tertiaryText)
@@ -167,66 +172,80 @@ struct ArchiveRowView: View {
                 .padding(.horizontal, 16)
             }
             .buttonStyle(.plain)
-            
+
             // MARK: - Expanded Detail
             if isExpanded {
                 VStack(alignment: .leading, spacing: 10) {
                     Divider()
                         .background(Theme.separator)
-                    
+
                     // Metadata grid
                     VStack(alignment: .leading, spacing: 6) {
                         if let mid = asset.mediasourceId {
                             metadataRow(label: "Mediasource", value: mid)
                         }
-                        if let slug = asset.formResponse?.slug ?? submittedFormData?["slug"], !slug.isEmpty {
+                        if let slug = asset.formResponse?.slug ?? submittedFormData?["slug"],
+                            !slug.isEmpty
+                        {
                             metadataRow(label: "Slug", value: slug)
                         }
-                        if let desc = asset.formResponse?.description ?? submittedFormData?["description"], !desc.isEmpty {
+                        if let desc = asset.formResponse?.description
+                            ?? submittedFormData?["description"], !desc.isEmpty
+                        {
                             metadataRow(label: "Description", value: desc)
                         }
-                        if let type = asset.formResponse?.type ?? submittedFormData?["type"], !type.isEmpty {
+                        if let type = asset.formResponse?.type ?? submittedFormData?["type"],
+                            !type.isEmpty
+                        {
                             metadataRow(label: "Type", value: type)
                         }
-                        if let priority = asset.formResponse?.priority ?? submittedFormData?["priority"], !priority.isEmpty {
+                        if let priority = asset.formResponse?.priority
+                            ?? submittedFormData?["priority"], !priority.isEmpty
+                        {
                             metadataRow(label: "Priority", value: priority)
                         }
-                        
+
                         // Clip metadata (first clip)
                         if let clip = asset.clips?.first {
                             if let captured = clip.capturedAt {
                                 metadataRow(label: "Recorded", value: formatShortDate(captured))
                             }
 
-                            let techSpec = [clip.resolution, clip.codec].compactMap { $0 }.joined(separator: " • ")
+                            let techSpec = [clip.resolution, clip.codec].compactMap { $0 }.joined(
+                                separator: " • ")
                             if !techSpec.isEmpty {
                                 metadataRow(label: "Format", value: techSpec)
                             }
 
                             if let dur = clip.duration {
-                                metadataRow(label: "Duration", value: DVUDateFormatting.duration(dur))
+                                metadataRow(
+                                    label: "Duration", value: DVUDateFormatting.duration(dur))
                             }
-                            
+
                             if let size = clip.fileSize {
-                                metadataRow(label: "File Size", value: DVUDateFormatting.fileSize(size))
+                                metadataRow(
+                                    label: "File Size", value: DVUDateFormatting.fileSize(size))
                             }
 
                             if let device = clip.deviceModel {
                                 metadataRow(label: "Device", value: device)
                             }
                             if clip.gpsLat != nil, clip.gpsLon != nil {
-                                metadataRow(label: "GPS", value: String(format: "%.4f, %.4f", clip.gpsLat!, clip.gpsLon!))
+                                metadataRow(
+                                    label: "GPS",
+                                    value: String(format: "%.4f, %.4f", clip.gpsLat!, clip.gpsLon!))
                             }
-                           
+
                         }
                     }
-                    
+
                     // Transcript panel (only if transcript exists)
                     if let clip = asset.clips?.first,
-                       let transcript = clip.transcript, !transcript.isEmpty {
+                        let transcript = clip.transcript, !transcript.isEmpty
+                    {
                         Divider()
                             .background(Theme.separator)
-                        
+
                         VStack(alignment: .leading, spacing: 8) {
                             HStack(spacing: 6) {
                                 Image(systemName: "text.quote")
@@ -234,10 +253,10 @@ struct ArchiveRowView: View {
                                     .foregroundStyle(Theme.blue)
                                 Text("Transcript")
                                     .font(Theme.font13Semibold)
-                                    .foregroundStyle(Theme.white)
-                                
+                                    .foregroundStyle(Theme.primaryText)
+
                                 Spacer()
-                                
+
                                 // Copy button
                                 Button {
                                     UIPasteboard.general.string = transcript
@@ -247,7 +266,7 @@ struct ArchiveRowView: View {
                                         .foregroundStyle(Theme.secondaryText)
                                 }
                             }
-                            
+
                             // Scrollable transcript text
                             ScrollView {
                                 Text(transcript)
@@ -258,7 +277,7 @@ struct ArchiveRowView: View {
                             }
                             .frame(maxHeight: 200)
                             .padding(10)
-                            .background(Theme.black.opacity(0.3))
+                            .background(Theme.glassOverlay)
                             .clipShape(RoundedRectangle(cornerRadius: Theme.radiusSm))
                         }
                     }
@@ -267,7 +286,10 @@ struct ArchiveRowView: View {
                     case .failed:
                         // Only show Re-upload when stuck
                         if hasSavedPHAsset || canAutoDiscover {
-                            archiveButton(icon: "arrow.clockwise.circle.fill", label: "Re-upload", color: Theme.red) {
+                            archiveButton(
+                                icon: "arrow.clockwise.circle.fill", label: "Re-upload",
+                                color: Theme.red
+                            ) {
                                 Task { await handleAutoReupload() }
                             }
                         } else {
@@ -293,7 +315,8 @@ struct ArchiveRowView: View {
                         HStack(spacing: 12) {
                             // Small thumbnail
                             if let thumbnailUrl = asset.clips?.first?.thumbnailUrl,
-                               let url = URL(string: thumbnailUrl) {
+                                let url = URL(string: thumbnailUrl)
+                            {
                                 AsyncImage(url: url) { image in
                                     image.resizable().aspectRatio(contentMode: .fill)
                                 } placeholder: {
@@ -305,7 +328,10 @@ struct ArchiveRowView: View {
                                 RoundedRectangle(cornerRadius: 6)
                                     .fill(Theme.cardBg)
                                     .frame(width: 36, height: 36)
-                                    .overlay(Image(systemName: "film").foregroundStyle(Theme.tertiaryText).font(Theme.icon13))
+                                    .overlay(
+                                        Image(systemName: "film").foregroundStyle(
+                                            Theme.tertiaryText
+                                        ).font(Theme.icon13))
                             }
 
                             VStack(alignment: .leading, spacing: 4) {
@@ -331,27 +357,38 @@ struct ArchiveRowView: View {
                         // Normal buttons: View, Slack, Details
                         HStack(spacing: 8) {
                             if let msId = asset.mediasourceId,
-                               let url = ServerConfig.clipURL(msId) {
-                                archiveButton(icon: "play.circle.fill", label: "View", color: Theme.green) {
+                                let url = ServerConfig.clipURL(msId)
+                            {
+                                archiveButton(
+                                    icon: "play.circle.fill", label: "View", color: Theme.green
+                                ) {
                                     UIApplication.shared.open(url)
                                 }
                             }
 
-                            archiveButton(icon: "paperplane.fill", label: "Slack", color: Theme.purple) {
+                            archiveButton(
+                                icon: "paperplane.fill", label: "Slack", color: Theme.purple
+                            ) {
                                 showSlackShare = true
                             }
 
                             if rowStatus == .needsDetails {
-                                archiveButton(icon: "square.and.pencil", label: "Add Details", color: Theme.yellow) {
+                                archiveButton(
+                                    icon: "square.and.pencil", label: "Add Details",
+                                    color: Theme.yellow
+                                ) {
                                     showFormSheet = true
                                 }
                             } else {
-                                archiveButton(icon: "checkmark.circle.fill", label: "Details", color: Theme.green.opacity(0.5)) { }
-                                    .allowsHitTesting(false)
+                                archiveButton(
+                                    icon: "checkmark.circle.fill", label: "Details",
+                                    color: Theme.green.opacity(0.5)
+                                ) {}
+                                .allowsHitTesting(false)
                             }
                         }
                     }
-                    
+
                     // Re-upload error
                     if let reuploadError {
                         Text(reuploadError)
@@ -364,7 +401,7 @@ struct ArchiveRowView: View {
                 .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
-        .background(Theme.black)
+        .background(Theme.cardBg)
         .clipShape(RoundedRectangle(cornerRadius: Theme.radiusMd))
         .sheet(isPresented: $showSlackShare) {
             SlackShareSheet(
@@ -400,9 +437,9 @@ struct ArchiveRowView: View {
             Task { await handleReupload(item: newItem) }
         }
     }
-    
+
     // MARK: - Helpers
-    
+
     @ViewBuilder
     private func metadataRow(label: String, value: String) -> some View {
         HStack(alignment: .top, spacing: 8) {
@@ -416,9 +453,11 @@ struct ArchiveRowView: View {
                 .lineLimit(3)
         }
     }
-    
+
     @ViewBuilder
-    private func archiveButton(icon: String, label: String, color: Color, action: @escaping () -> Void) -> some View {
+    private func archiveButton(
+        icon: String, label: String, color: Color, action: @escaping () -> Void
+    ) -> some View {
         Button(action: action) {
             HStack(spacing: 4) {
                 Image(systemName: icon)
@@ -433,20 +472,20 @@ struct ArchiveRowView: View {
         }
         .buttonStyle(.plain)
     }
-    
+
     private func formatShortDate(_ dateStr: String?) -> String {
         guard let dateStr else { return "" }
         return DVUDateFormatting.shortDate(dateStr)
     }
-    
+
     private func buildFormFields() -> [FormField] {
         FormField.defaultVideoFields()
     }
-    
+
     private func submitFormFromArchive(formData: [String: String]) async {
         var request = auth.authenticatedRequest(for: ServerConfig.formURL(asset.id), method: "POST")
         request.httpBody = try? JSONSerialization.data(withJSONObject: formData)
-        
+
         do {
             let (_, response) = try await URLSession.shared.data(for: request)
             if let http = response as? HTTPURLResponse, http.statusCode < 400 {
@@ -462,16 +501,16 @@ struct ArchiveRowView: View {
             print("❌ [Archive] Form submit failed: \(error.localizedDescription)")
         }
     }
-    
+
     // MARK: - Re-upload
-    
+
     /// Auto re-upload using stored PHAsset identifier or auto-discovery by capturedAt
     private func handleAutoReupload() async {
         isReuploadingVideo = true
         reuploadProgress = 0
         reuploadError = nil
         defer { if reuploadError != nil { isReuploadingVideo = false } }
-        
+
         do {
             // Strategy 1: Use stored PHAsset identifier
             if let phId = PHAssetIdentifierStore.identifier(for: asset.id) {
@@ -484,31 +523,34 @@ struct ArchiveRowView: View {
                     return
                 }
             }
-            
+
             // Strategy 2: Auto-discover by capturedAt date from clip metadata
             if let capturedAtStr = asset.clips?.first?.capturedAt,
-               let capturedDate = DVUDateFormatting.parseISO(capturedAtStr) {
-                let phAsset = discoverPHAsset(capturedAt: capturedDate, duration: asset.clips?.first?.duration)
+                let capturedDate = DVUDateFormatting.parseISO(capturedAtStr)
+            {
+                let phAsset = discoverPHAsset(
+                    capturedAt: capturedDate, duration: asset.clips?.first?.duration)
                 if let phAsset {
                     print("📷 [Archive] Auto-discovered video by capturedAt: \(capturedAtStr)")
                     // Save for future re-uploads
-                    PHAssetIdentifierStore.save(assetId: asset.id, phAssetIdentifier: phAsset.localIdentifier)
+                    PHAssetIdentifierStore.save(
+                        assetId: asset.id, phAssetIdentifier: phAsset.localIdentifier)
                     let tempURL = try await exportVideoToTemp(phAsset: phAsset)
                     defer { try? FileManager.default.removeItem(at: tempURL) }
                     try await performUpload(fileURL: tempURL)
                     return
                 }
             }
-            
+
             // Both strategies failed
             reuploadError = "Original video no longer in Library."
-            
+
         } catch {
             reuploadError = "Re-upload failed: \(error.localizedDescription)"
             print("❌ [Archive] Auto re-upload failed: \(error)")
         }
     }
-    
+
     /// Search Photos library for a video matching the capturedAt date and optional duration
     private func discoverPHAsset(capturedAt: Date, duration: Int?) -> PHAsset? {
         let options = PHFetchOptions()
@@ -521,14 +563,14 @@ struct ArchiveRowView: View {
         )
         options.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
         options.fetchLimit = 5
-        
+
         let results = PHAsset.fetchAssets(with: options)
-        
+
         // If only one match, use it
         if results.count == 1 {
             return results.firstObject
         }
-        
+
         // If multiple matches and we have duration, pick the closest match
         if let duration, results.count > 1 {
             var bestMatch: PHAsset?
@@ -542,19 +584,17 @@ struct ArchiveRowView: View {
             }
             return bestMatch
         }
-        
+
         return results.firstObject
     }
-    
 
-    
     /// Fallback re-upload using PhotosPicker selection
     private func handleReupload(item: PhotosPickerItem) async {
         isReuploadingVideo = true
         reuploadProgress = 0
         reuploadError = nil
         defer { if reuploadError != nil { isReuploadingVideo = false } }
-        
+
         do {
             // Resolve PHAsset from picker item — avoids loading full video into memory
             guard let phId = item.itemIdentifier else {
@@ -566,10 +606,11 @@ struct ArchiveRowView: View {
                 reuploadError = "Could not load video from Photos library"
                 return
             }
-            
+
             // Save the new PHAsset identifier for future re-uploads
-            PHAssetIdentifierStore.save(assetId: asset.id, phAssetIdentifier: phAsset.localIdentifier)
-            
+            PHAssetIdentifierStore.save(
+                assetId: asset.id, phAssetIdentifier: phAsset.localIdentifier)
+
             let tempURL = try await exportVideoToTemp(phAsset: phAsset)
             defer { try? FileManager.default.removeItem(at: tempURL) }
             try await performUpload(fileURL: tempURL)
@@ -578,42 +619,42 @@ struct ArchiveRowView: View {
             print("❌ [Archive] Re-upload failed: \(error)")
         }
     }
-    
+
     /// Shared upload logic for both auto and manual re-upload
     private func performUpload(fileURL: URL) async throws {
         let metadata = await VideoMetadataExtractor.extract(from: fileURL)
-        
+
         guard let token = auth.token else {
             reuploadError = "Not authenticated"
             return
         }
-        
+
         let uploader = VideoUploadService()
-        
+
         let progressTask = Task {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .milliseconds(200))
                 reuploadProgress = uploader.uploadProgress
             }
         }
-        
+
         let _ = try await uploader.uploadViaMux(
             assetId: asset.id,
             fileURL: fileURL,
             token: token,
             metadata: metadata
         )
-        
+
         progressTask.cancel()
         reuploadProgress = 1.0
         reuploadComplete = true
         isReuploadingVideo = false
         print("✅ [Archive] Re-upload complete for asset: \(asset.id)")
-        
+
         try? await Task.sleep(for: .seconds(2))
         onFormSubmitted?()
     }
-    
+
     /// Export a PHAsset video to a temporary file URL
     private func exportVideoToTemp(phAsset: PHAsset) async throws -> URL {
         let fileName = asset.originalFileName ?? "reupload.mov"
@@ -629,21 +670,22 @@ private func phAssetToTempFile(phAsset: PHAsset, fileName: String) async throws 
         let options = PHVideoRequestOptions()
         options.isNetworkAccessAllowed = true
         options.deliveryMode = .highQualityFormat
-        
-        PHImageManager.default().requestAVAsset(forVideo: phAsset, options: options) { avAsset, _, _ in
+
+        PHImageManager.default().requestAVAsset(forVideo: phAsset, options: options) {
+            avAsset, _, _ in
             guard !resumed else { return }
             resumed = true
-            
+
             guard let urlAsset = avAsset as? AVURLAsset else {
                 continuation.resume(throwing: ReuploadError.videoExportFailed)
                 return
             }
-            
+
             let subdir = FileManager.default.temporaryDirectory
                 .appendingPathComponent(UUID().uuidString)
             try? FileManager.default.createDirectory(at: subdir, withIntermediateDirectories: true)
             let tempURL = subdir.appendingPathComponent(fileName)
-            
+
             do {
                 try FileManager.default.copyItem(at: urlAsset.url, to: tempURL)
                 continuation.resume(returning: tempURL)
@@ -656,7 +698,7 @@ private func phAssetToTempFile(phAsset: PHAsset, fileName: String) async throws 
 
 private enum ReuploadError: LocalizedError {
     case videoExportFailed
-    
+
     var errorDescription: String? {
         switch self {
         case .videoExportFailed: return "Could not export video from Photos library"

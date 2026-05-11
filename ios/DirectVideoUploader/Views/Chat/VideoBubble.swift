@@ -1,19 +1,20 @@
-import SwiftUI
 import AVFoundation
+// May 10, 2026 - 6:25pm - GitHub Copilot (GPT-5.3-Codex)
+import SwiftUI
 
 /// Phase of a video bubble in the chat timeline.
 enum VideoBubblePhase {
-    case staged      // Preview — show cancel X, transcribe toggle, send button
-    case uploading   // Progress bar + spinner
+    case staged  // Preview — show cancel X, transcribe toggle, send button
+    case uploading  // Progress bar + spinner
     case processing  // Bytes uploaded, Mux is processing — spinner + text
-    case sent        // Green ✓ (mux:ready received)
+    case sent  // Green ✓ (mux:ready received)
 }
 
 /// A staged video ready for the user to preview before uploading.
 struct StagedVideo {
     let tempFileURL: URL
     let fileName: String
-    let createdDate: String?      // formatted display string
+    let createdDate: String?  // formatted display string
     let thumbnail: UIImage?
     let metadata: VideoMetadata
 }
@@ -144,7 +145,9 @@ struct VideoBubble: View {
                                 .foregroundStyle(Theme.purple)
                                 .phaseAnimator([false, true]) { content, pulse in
                                     content.opacity(pulse ? 1.0 : 0.4)
-                                } animation: { _ in .easeInOut(duration: 0.8) }
+                                } animation: { _ in
+                                    .easeInOut(duration: 0.8)
+                                }
                             Text("Mediasource processing…")
                                 .font(Theme.font11Regular)
                                 .foregroundStyle(Theme.white.opacity(0.8))
@@ -207,7 +210,9 @@ struct VideoBubble: View {
                     content
                         .opacity(pulse ? 1.0 : 0.3)
                         .scaleEffect(pulse ? 1.0 : 0.85)
-                } animation: { _ in .easeInOut(duration: 0.8) }
+                } animation: { _ in
+                    .easeInOut(duration: 0.8)
+                }
 
         case .sent:
             Image(systemName: "checkmark.circle.fill")
@@ -278,6 +283,147 @@ extension StagedVideo {
         } catch {
             print("❌ [Thumbnail] Failed to generate: \(error)")
             return nil
+        }
+    }
+}
+
+/// Summary bubble for multiclip batch uploads.
+struct BatchUploadBubble: View {
+    let state: VideoBatchState
+    let totalCount: Int
+    let completedCount: Int
+    let failedCount: Int
+    let progress: Double
+    let fileNames: [String]
+    var onSend: (() -> Void)?
+    var onCancel: (() -> Void)?
+    var onRetry: (() -> Void)?
+
+    var body: some View {
+        HStack {
+            Spacer(minLength: 60)
+
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Label("Batch Upload", systemImage: "square.stack.3d.up.fill")
+                        .font(Theme.font16Medium)
+                        .foregroundStyle(Theme.white)
+                    Spacer()
+                    Text("\(totalCount) clips")
+                        .font(Theme.font11Regular)
+                        .foregroundStyle(Theme.white.opacity(0.75))
+                }
+
+                if !fileNames.isEmpty {
+                    VStack(alignment: .leading, spacing: 4) {
+                        ForEach(fileNames, id: \.self) { fileName in
+                            Text("• \(fileName)")
+                                .font(Theme.font11Regular)
+                                .foregroundStyle(Theme.white.opacity(0.85))
+                                .lineLimit(1)
+                        }
+                    }
+                }
+
+                ProgressView(value: progress)
+                    .tint(Theme.blue)
+
+                HStack(spacing: 8) {
+                    Text("Done \(completedCount)/\(totalCount)")
+                        .font(Theme.font11Regular)
+                        .foregroundStyle(Theme.white.opacity(0.9))
+                    if failedCount > 0 {
+                        Text("• Failed \(failedCount)")
+                            .font(Theme.font11Regular)
+                            .foregroundStyle(Theme.red)
+                    }
+                    Spacer()
+                }
+
+                actionsRow
+            }
+            .padding(12)
+            .background(Theme.videoBubbleGradient)
+            .clipShape(RoundedRectangle(cornerRadius: Theme.radiusXl))
+            .overlay(
+                RoundedRectangle(cornerRadius: Theme.radiusXl)
+                    .stroke(Theme.blue.opacity(0.35), lineWidth: 1)
+            )
+        }
+        .padding(.vertical, 2)
+    }
+
+    @ViewBuilder
+    private var actionsRow: some View {
+        switch state {
+        case .queued, .indexing:
+            HStack {
+                Button("Cancel") {
+                    onCancel?()
+                }
+                .font(Theme.font11Regular)
+                .foregroundStyle(Theme.white.opacity(0.85))
+
+                Spacer()
+
+                Button("Upload") {
+                    onSend?()
+                }
+                .font(Theme.font11Regular.weight(.semibold))
+                .foregroundStyle(Theme.white)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(Theme.blue.opacity(0.45))
+                .clipShape(Capsule())
+            }
+
+        case .uploading:
+            HStack(spacing: 8) {
+                ProgressView()
+                    .scaleEffect(0.8)
+                    .tint(Theme.white)
+                Text("Uploading queue...")
+                    .font(Theme.font11Regular)
+                    .foregroundStyle(Theme.white.opacity(0.85))
+                Spacer()
+            }
+
+        case .partialFailed:
+            HStack {
+                Text("Some clips need retry")
+                    .font(Theme.font11Regular)
+                    .foregroundStyle(Theme.white.opacity(0.9))
+                Spacer()
+                Button("Retry Failed") {
+                    onRetry?()
+                }
+                .font(Theme.font11Regular.weight(.semibold))
+                .foregroundStyle(Theme.white)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(Theme.red.opacity(0.55))
+                .clipShape(Capsule())
+            }
+
+        case .complete:
+            HStack(spacing: 6) {
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundStyle(Theme.green)
+                Text("Batch complete")
+                    .font(Theme.font11Regular)
+                    .foregroundStyle(Theme.white)
+                Spacer()
+            }
+
+        case .paused:
+            HStack(spacing: 6) {
+                Image(systemName: "pause.circle.fill")
+                    .foregroundStyle(Theme.white)
+                Text("Batch paused")
+                    .font(Theme.font11Regular)
+                    .foregroundStyle(Theme.white)
+                Spacer()
+            }
         }
     }
 }

@@ -1,4 +1,4 @@
-// Last updated: May 9, 2026 - 7:21pm - GPT-5.3-Codex
+// Last updated: May 10, 2026 - 12:55pm - GitHub Copilot (GPT-5.3-Codex)
 /**
  * Mux Status Sync — Background Job
  *
@@ -33,7 +33,7 @@ async function syncProcessingClips(fastify) {
             where: { status: 'PROCESSING' },
             include: {
                 asset: {
-                    select: { id: true, mediasourceId: true, userId: true },
+                    select: { id: true, mediasourceId: true, mediasourceUrl: true, userId: true },
                 },
             },
         });
@@ -96,6 +96,7 @@ async function syncProcessingClips(fastify) {
                                     assetId: clip.asset.id,
                                     clipId: clip.id,
                                     mediasourceId: clip.asset.mediasourceId,
+                                    mediasourceUrl: clip.asset.mediasourceUrl,
                                     originalFileName: fullAsset?.originalFileName || null,
                                     muxPlaybackId: playbackId,
                                     streamUrl,

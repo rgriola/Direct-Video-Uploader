@@ -1,3 +1,4 @@
+// May 10, 2026 - 3:19pm - GitHub Copilot (GPT-5.3-Codex)
 /* ─── WebSocket hook (Socket.IO) — module-level singleton ─── */
 
 import { useEffect, useRef, useState, useCallback } from "react";
@@ -68,6 +69,8 @@ export function useSocket(onAssetChange?: () => void) {
 
     const s = io("", {
       auth: { token, clientType: "admin" },
+      path: "/socket.io",
+      addTrailingSlash: false,
       transports: ["websocket"],   // WebSocket only — no polling fallback
       reconnectionAttempts: 5,
       reconnectionDelay: 3000,

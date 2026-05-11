@@ -1,45 +1,45 @@
-import SwiftUI
-import PhotosUI
-import Photos
+// May 10, 2026 - 6:13pm - GitHub Copilot (GPT-5.3-Codex)
 import AVFoundation
 import CoreMedia
+import Photos
+import PhotosUI
+import SwiftUI
 import UIKit
 
 /// Custom video library sheet with inline PhotosPicker — iOS 26.3 style.
-/// Provides Clear / Confirm toolbar buttons and a footer with selection count + location info.
+/// Supports multi-clip selection and emits one batch callback.
 struct VideoLibraryView: View {
+    @Environment(\.colorScheme) private var colorScheme
     @State private var selectedItems: [PhotosPickerItem] = []
-    @State private var loadedVideoURL: URL?
-    @State private var loadedMetadata: VideoMetadata?
-    @State private var loadedFileName: String?
+    @State private var selectedVideos: [SelectedVideo] = []
     @State private var isLoadingMetadata = false
     @State private var pendingConfirm = false
     @State private var loadError: String?
     @State private var showTrimSheet = false
     @State private var showPhotoAlert = false
+    @State private var activeTrimVideo: SelectedVideo?
+    @State private var selectionTask: Task<Void, Never>?
+    @State private var selectionToken = UUID()
 
-    /// Called when user taps ✓ with a video selected.
-    var onConfirm: (URL, String, VideoMetadata, String?) -> Void
-    /// Called when user taps ✓ with nothing selected, or the sheet is dismissed.
+    /// Called when user confirms one or more selected videos.
+    var onConfirmBatch: ([SelectedVideo]) -> Void
+    /// Called when user taps X or confirms with no selection.
     var onDismiss: () -> Void
 
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                // Inline Photos Picker — system photo browser embedded in our view
                 PhotosPicker(
                     selection: $selectedItems,
-                    maxSelectionCount: 1,
+                    maxSelectionCount: 25,
                     selectionBehavior: .ordered,
                     matching: .videos
                 ) {
-                    // Label is ignored in inline mode
                     EmptyView()
                 }
                 .photosPickerStyle(.inline)
                 .photosPickerDisabledCapabilities(.selectionActions)
 
-                // Footer bar — video count + location status + confirm button
                 footerBar
             }
             .background(Theme.black)
@@ -47,12 +47,13 @@ struct VideoLibraryView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbarBackground(Theme.black, for: .navigationBar)
-            .toolbarColorScheme(.dark, for: .navigationBar)
+            .toolbarColorScheme(colorScheme, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Clear") {
                         selectedItems.removeAll()
-                        cleanUpLoadedVideo()
+                        cleanUpLoadedVideos()
+                        selectedVideos.removeAll()
                     }
                     .foregroundStyle(selectedItems.isEmpty ? .gray : .white)
                     .disabled(selectedItems.isEmpty)
@@ -69,22 +70,25 @@ struct VideoLibraryView: View {
             }
             .onChange(of: selectedItems) { _, newItems in
                 if newItems.isEmpty {
-                    cleanUpLoadedVideo()
+                    selectionTask?.cancel()
+                    cleanUpLoadedVideos()
+                    selectedVideos.removeAll()
+                    loadError = nil
+                    pendingConfirm = false
                 } else {
                     handleSelectionChange(newItems)
                 }
             }
         }
         .presentationDetents([.large])
-        .preferredColorScheme(.dark)
         .fullScreenCover(isPresented: $showTrimSheet) {
-            if let url = loadedVideoURL {
+            if let selected = activeTrimVideo {
                 VideoTrimView(
-                    videoURL: url,
-                    originalFileName: loadedFileName ?? url.lastPathComponent,
+                    videoURL: selected.fileURL,
+                    originalFileName: selected.fileName,
                     onTrimmed: { trimmedURL in
                         showTrimSheet = false
-                        handleTrimResult(trimmedURL: trimmedURL)
+                        handleTrimResult(trimmedURL: trimmedURL, source: selected)
                     },
                     onCancel: {
                         showTrimSheet = false
@@ -94,7 +98,7 @@ struct VideoLibraryView: View {
             }
         }
         .alert("Videos Only", isPresented: $showPhotoAlert) {
-            Button("OK", role: .cancel) { }
+            Button("OK", role: .cancel) {}
         } message: {
             Text("Fixer doesn't handle photos just yet. Only video.")
         }
@@ -104,9 +108,8 @@ struct VideoLibraryView: View {
 
     @ViewBuilder
     private var footerBar: some View {
-        if !selectedItems.isEmpty || loadedVideoURL != nil || isLoadingMetadata {
+        if !selectedItems.isEmpty || !selectedVideos.isEmpty || isLoadingMetadata {
             VStack(spacing: 0) {
-                // Error banner
                 if let error = loadError {
                     Text(error)
                         .font(Theme.font13Regular)
@@ -118,33 +121,42 @@ struct VideoLibraryView: View {
                 }
 
                 HStack(spacing: 12) {
-                    // Video info
                     if isLoadingMetadata {
                         ProgressView()
                             .tint(Theme.secondaryText)
                             .scaleEffect(0.8)
-                        Text("Loading video...")
-                            .font(Theme.font13Medium)
-                            .foregroundStyle(Theme.secondaryText)
-                    } else if loadedVideoURL != nil {
-                        Label("video queued", systemImage: "video.fill")
+                        Text(
+                            "Indexing \(selectedItems.count) video\(selectedItems.count == 1 ? "" : "s")…"
+                        )
+                        .font(Theme.font13Medium)
+                        .foregroundStyle(Theme.secondaryText)
+                    } else if isBatchReady {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Label(
+                                "\(selectedVideos.count) video\(selectedVideos.count == 1 ? "" : "s") queued",
+                                systemImage: "video.fill"
+                            )
                             .font(Theme.font13Medium)
                             .foregroundStyle(Theme.white)
 
-                        if loadedMetadata?.gpsLat != nil {
-                            Label("GPS", systemImage: "location.fill")
+                            Text(estimatedTotalBytesText)
+                                .font(Theme.font11Regular)
+                                .foregroundStyle(Theme.secondaryText)
+                        }
+
+                        if gpsVideoCount > 0 {
+                            Label("\(gpsVideoCount) GPS", systemImage: "location.fill")
                                 .font(Theme.font13Regular)
                                 .foregroundStyle(Theme.green)
                         }
                     } else {
-                        Label("Select a video", systemImage: "video")
+                        Label("Select video clips", systemImage: "video")
                             .font(Theme.font13Medium)
                             .foregroundStyle(Theme.secondaryText)
                     }
 
                     Spacer()
 
-                    // Confirm button — outside PhotosPicker touch zone
                     Button(action: handleConfirm) {
                         if pendingConfirm {
                             ProgressView()
@@ -157,11 +169,11 @@ struct VideoLibraryView: View {
                                 .symbolRenderingMode(.palette)
                                 .foregroundStyle(
                                     Theme.white,
-                                    isVideoReady ? Theme.purple : Theme.purple.opacity(0.4)
+                                    isBatchReady ? Theme.purple : Theme.purple.opacity(0.4)
                                 )
                         }
                     }
-                    .disabled(isLoadingMetadata && !pendingConfirm)
+                    .disabled(selectedItems.isEmpty || (isLoadingMetadata && !pendingConfirm))
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
@@ -172,8 +184,24 @@ struct VideoLibraryView: View {
 
     // MARK: - Computed Properties
 
-    private var isVideoReady: Bool {
-        loadedVideoURL != nil && loadedMetadata != nil
+    private var isBatchReady: Bool {
+        !selectedItems.isEmpty && selectedVideos.count == selectedItems.count
+    }
+
+    private var gpsVideoCount: Int {
+        selectedVideos.filter { $0.metadata.gpsLat != nil }.count
+    }
+
+    private var estimatedTotalBytesText: String {
+        let totalBytes = selectedVideos.reduce(Int64(0)) { partial, selected in
+            let attrs = try? FileManager.default.attributesOfItem(atPath: selected.fileURL.path)
+            let size = attrs?[.size] as? Int64 ?? 0
+            return partial + size
+        }
+        let formatter = ByteCountFormatter()
+        formatter.allowedUnits = [.useKB, .useMB, .useGB]
+        formatter.countStyle = .file
+        return formatter.string(fromByteCount: totalBytes)
     }
 
     // MARK: - Actions
@@ -181,112 +209,145 @@ struct VideoLibraryView: View {
     private func handleConfirm() {
         if selectedItems.isEmpty {
             onDismiss()
-        } else if isVideoReady {
-            showTrimSheet = true
-        } else if isLoadingMetadata || loadedVideoURL == nil {
-            pendingConfirm = true
-            if !isLoadingMetadata, let item = selectedItems.first {
-                loadError = nil
-                handleSelectionChange([item])
-            }
+            return
         }
+
+        guard isBatchReady else {
+            pendingConfirm = true
+            return
+        }
+
+        if selectedVideos.count == 1, let selected = selectedVideos.first {
+            activeTrimVideo = selected
+            showTrimSheet = true
+            return
+        }
+
+        onConfirmBatch(selectedVideos)
     }
-    
-    /// Handle result from the video trim editor.
-    private func handleTrimResult(trimmedURL: URL) {
-        // Use the trimmed file's name (includes -edited suffix if trimmed)
-        let fileName = trimmedURL.lastPathComponent
-        // Resolve PHAsset identifier for re-upload recovery
-        let phAssetId = selectedItems.first.flatMap { $0.itemIdentifier }
-        // Re-extract metadata from trimmed file (duration/fileSize changed)
+
+    private func handleTrimResult(trimmedURL: URL, source: SelectedVideo) {
         Task {
             let updatedMetadata = await VideoMetadataExtractor.extract(from: trimmedURL)
-            onConfirm(trimmedURL, fileName, updatedMetadata, phAssetId)
+            let trimmedVideo = SelectedVideo(
+                fileURL: trimmedURL,
+                fileName: trimmedURL.lastPathComponent,
+                metadata: updatedMetadata,
+                phAssetIdentifier: source.phAssetIdentifier
+            )
+            onConfirmBatch([trimmedVideo])
         }
     }
 
     private func handleSelectionChange(_ newItems: [PhotosPickerItem]) {
-        // Clean up previous loaded video (if user re-selects)
-        cleanUpLoadedVideo()
+        selectionTask?.cancel()
+        cleanUpLoadedVideos()
+        selectedVideos.removeAll()
         loadError = nil
 
-        guard let item = newItems.first else { return }
-
-        // Reject non-video items (photos can slip through in Collections view)
-        let validVideoTypes: Set<String> = [
-            "public.movie", "public.video", "public.mpeg-4",
-            "com.apple.quicktime-movie", "public.avi"
-        ]
-        let itemTypes = Set(item.supportedContentTypes.map(\.identifier))
-        guard !itemTypes.isDisjoint(with: validVideoTypes) else {
-            showPhotoAlert = true
-            selectedItems.removeAll()
-            return
-        }
-
+        let token = UUID()
+        selectionToken = token
         isLoadingMetadata = true
-        Task {
-            defer {
+
+        selectionTask = Task {
+            var loaded: [SelectedVideo] = []
+            var foundNonVideo = false
+
+            for item in newItems {
+                if Task.isCancelled { return }
+
+                let itemTypes = Set(item.supportedContentTypes.map(\.identifier))
+                let validVideoTypes: Set<String> = [
+                    "public.movie", "public.video", "public.mpeg-4",
+                    "com.apple.quicktime-movie", "public.avi",
+                ]
+                if itemTypes.isDisjoint(with: validVideoTypes) {
+                    foundNonVideo = true
+                    continue
+                }
+
+                if let selected = await loadSelectedVideo(item) {
+                    loaded.append(selected)
+                }
+            }
+
+            guard !Task.isCancelled else { return }
+
+            await MainActor.run {
+                guard selectionToken == token else { return }
                 isLoadingMetadata = false
+                selectedVideos = loaded
+
+                if foundNonVideo {
+                    showPhotoAlert = true
+                }
+
+                if loaded.count != newItems.count {
+                    loadError = "Some selected videos could not be loaded. Please re-select."
+                }
+
                 if pendingConfirm {
                     pendingConfirm = false
-                    // Only auto-confirm if loading succeeded — prevents infinite retry loop on failure
-                    if loadedVideoURL != nil {
+                    if isBatchReady {
                         handleConfirm()
                     }
                 }
             }
-
-            // Resolve PHAsset once — used for filename, video URL, and metadata
-            let phAsset: PHAsset? = {
-                guard let identifier = item.itemIdentifier else { return nil }
-                return PHAsset.fetchAssets(withLocalIdentifiers: [identifier], options: nil).firstObject
-            }()
-
-            let cameraFilename = resolveOriginalFilename(phAsset: phAsset)
-
-            // Fast path: get a direct URL from PHAsset without copying the file.
-            // This is how native iOS Photos loads videos instantly.
-            if let phAsset,
-               let videoURL = await resolveVideoURL(phAsset: phAsset) {
-                loadedVideoURL = videoURL
-                loadedFileName = cameraFilename ?? videoURL.lastPathComponent
-                // Pull metadata from PHAsset properties (no file I/O)
-                loadedMetadata = await extractMetadataFromPHAsset(phAsset: phAsset, videoURL: videoURL)
-                return
-            }
-
-            // Slow fallback: full file copy via Transferable (only if PHAsset path fails)
-            do {
-                guard let movie = try await item.loadTransferable(type: VideoTransferable.self) else {
-                    loadError = "Could not load video from library"
-                    return
-                }
-                loadedVideoURL = movie.url
-                // Prefer PHAsset filename > file system name
-                loadedFileName = cameraFilename ?? movie.url.lastPathComponent
-                loadedMetadata = await VideoMetadataExtractor.extract(from: movie.url)
-            } catch {
-                print("❌ [Library] Failed to load video: \(error)")
-                loadError = "Failed to load video: \(error.localizedDescription)"
-            }
         }
     }
 
-    private func cleanUpLoadedVideo() {
-        if let url = loadedVideoURL {
-            // Only delete temp copies we made (Transferable fallback path).
-            // Don't delete Photos library references (fast path).
-            let tempDir = FileManager.default.temporaryDirectory.path
-            if url.path.hasPrefix(tempDir) {
-                Task.detached(priority: .utility) {
-                    try? FileManager.default.removeItem(at: url)
-                }
+    private func loadSelectedVideo(_ item: PhotosPickerItem) async -> SelectedVideo? {
+        let phAsset: PHAsset? = {
+            guard let identifier = item.itemIdentifier else { return nil }
+            return PHAsset.fetchAssets(withLocalIdentifiers: [identifier], options: nil).firstObject
+        }()
+
+        let cameraFilename = resolveOriginalFilename(phAsset: phAsset)
+
+        if let phAsset,
+            let videoURL = await resolveVideoURL(phAsset: phAsset)
+        {
+            let metadata = await extractMetadataFromPHAsset(phAsset: phAsset, videoURL: videoURL)
+            return SelectedVideo(
+                fileURL: videoURL,
+                fileName: cameraFilename ?? videoURL.lastPathComponent,
+                metadata: metadata,
+                phAssetIdentifier: item.itemIdentifier
+            )
+        }
+
+        do {
+            guard let movie = try await item.loadTransferable(type: VideoTransferable.self)
+            else {
+                return nil
+            }
+
+            let metadata = await VideoMetadataExtractor.extract(from: movie.url)
+            return SelectedVideo(
+                fileURL: movie.url,
+                fileName: cameraFilename ?? movie.url.lastPathComponent,
+                metadata: metadata,
+                phAssetIdentifier: item.itemIdentifier
+            )
+        } catch {
+            print("❌ [Library] Failed to load video: \(error)")
+            return nil
+        }
+    }
+
+    private func cleanUpLoadedVideos() {
+        let tempDir = FileManager.default.temporaryDirectory.path
+        let urlsToDelete =
+            selectedVideos
+            .map(\.fileURL)
+            .filter { $0.path.hasPrefix(tempDir) }
+
+        for url in urlsToDelete {
+            Task.detached(priority: .utility) {
+                try? FileManager.default.removeItem(at: url)
             }
         }
-        loadedVideoURL = nil
-        loadedFileName = nil
-        loadedMetadata = nil
+
         isLoadingMetadata = false
     }
 
@@ -304,10 +365,11 @@ struct VideoLibraryView: View {
         await withCheckedContinuation { continuation in
             var resumed = false
             let options = PHVideoRequestOptions()
-            options.isNetworkAccessAllowed = false  // local only — skip iCloud
+            options.isNetworkAccessAllowed = false
             options.version = .current
             options.deliveryMode = .highQualityFormat
-            PHImageManager.default().requestAVAsset(forVideo: phAsset, options: options) { avAsset, _, _ in
+            PHImageManager.default().requestAVAsset(forVideo: phAsset, options: options) {
+                avAsset, _, _ in
                 guard !resumed else { return }
                 resumed = true
                 let url = (avAsset as? AVURLAsset)?.url
@@ -318,30 +380,29 @@ struct VideoLibraryView: View {
 
     /// Extract metadata directly from PHAsset properties — no file I/O needed.
     /// Falls back to file-based extraction only for codec info.
-    private func extractMetadataFromPHAsset(phAsset: PHAsset, videoURL: URL) async -> VideoMetadata {
+    private func extractMetadataFromPHAsset(phAsset: PHAsset, videoURL: URL) async -> VideoMetadata
+    {
         let duration = Int(phAsset.duration)
         let width = phAsset.pixelWidth
         let height = phAsset.pixelHeight
         let resolution = "\(max(width, height))×\(min(width, height))"
         let orientation = width >= height ? "landscape" : "portrait"
 
-        // Creation date
         let capturedAt = phAsset.creationDate.map {
             DVUDateFormatting.isoString(from: $0)
         }
 
-        // GPS from PHAsset location
         let gpsLat = phAsset.location?.coordinate.latitude
         let gpsLon = phAsset.location?.coordinate.longitude
         let gpsAltitude = phAsset.location?.altitude
 
-        // Codec — quick AVAsset header read (doesn't load full file)
         let asset = AVURLAsset(url: videoURL)
         var codec = "Unknown"
         if let tracks = try? await asset.loadTracks(withMediaType: .video),
-           let track = tracks.first,
-           let descriptions = try? await track.load(.formatDescriptions),
-           let desc = descriptions.first {
+            let track = tracks.first,
+            let descriptions = try? await track.load(.formatDescriptions),
+            let desc = descriptions.first
+        {
             let subType = CMFormatDescriptionGetMediaSubType(desc)
             codec = VideoMetadataExtractor.codecName(from: subType)
         }
