@@ -1,4 +1,4 @@
-// May 10, 2026 - 6:09pm - GitHub Copilot (GPT-5.3-Codex)
+// May 11, 2026 - 1:45pm - GitHub Copilot (GPT-5.3-Codex)
 import Foundation
 
 enum VideoBatchState: String, Codable {
@@ -85,6 +85,8 @@ struct VideoBatch: Identifiable, Codable {
      var state: VideoBatchState
      var items: [VideoBatchItem]
      var context: VideoBatchContext?
+     var stagedVideos: [SelectedVideo]?
+     var groupedFormData: [String: String]?
 
      var completedCount: Int {
           items.filter { $0.status == .complete }.count

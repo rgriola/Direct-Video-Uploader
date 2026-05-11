@@ -1,5 +1,5 @@
 import AVFoundation
-// May 10, 2026 - 6:25pm - GitHub Copilot (GPT-5.3-Codex)
+// May 11, 2026 - 6:21pm - GitHub Copilot (GPT-5.3-Codex)
 import SwiftUI
 
 /// Phase of a video bubble in the chat timeline.
@@ -8,6 +8,7 @@ enum VideoBubblePhase {
     case uploading  // Progress bar + spinner
     case processing  // Bytes uploaded, Mux is processing — spinner + text
     case sent  // Green ✓ (mux:ready received)
+    case failed  // Red ! (upload or processing failed)
 }
 
 /// A staged video ready for the user to preview before uploading.
@@ -37,6 +38,12 @@ struct VideoBubble: View {
 
     // Whether transcription was enabled for this upload (non-staged phases)
     var didTranscribe: Bool = false
+
+    // Batch clip metadata (optional, only rendered when provided)
+    var mediasourceId: String? = nil
+    var formSlug: String? = nil
+    var errorText: String? = nil
+    var onTapMetadata: (() -> Void)? = nil
 
     @State private var transcribeEnabled = false
 
@@ -156,6 +163,58 @@ struct VideoBubble: View {
                         .padding(.horizontal, 12)
                         .padding(.bottom, 10)
                     }
+
+                    if mediasourceId != nil || formSlug != nil || phase == .failed {
+                        Divider()
+                            .overlay(Theme.white.opacity(0.15))
+                            .padding(.horizontal, 12)
+
+                        VStack(alignment: .leading, spacing: 4) {
+                            if let slug = formSlug,
+                                !slug.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                            {
+                                Text(slug)
+                                    .font(Theme.mono13Medium)
+                                    .foregroundStyle(Theme.white)
+                                    .lineLimit(1)
+                            }
+
+                            if let msId = mediasourceId,
+                                !msId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                            {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "link")
+                                        .font(Theme.icon11)
+                                        .foregroundStyle(Theme.white.opacity(0.8))
+                                    Text("MS# \(msId)")
+                                        .font(Theme.mono13Medium)
+                                        .foregroundStyle(Theme.white)
+
+                                    Spacer(minLength: 8)
+
+                                    if let onTapMetadata {
+                                        ChatActionButton(
+                                            icon: "info.circle.fill",
+                                            label: "Metadata",
+                                            color: Theme.purple,
+                                            action: onTapMetadata
+                                        )
+                                    }
+                                }
+                            }
+
+                            if phase == .failed,
+                                let errorText,
+                                !errorText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                            {
+                                Text(errorText)
+                                    .font(Theme.font11Regular)
+                                    .foregroundStyle(Theme.red)
+                            }
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 10)
+                    }
                 }
                 .background(Theme.videoBubbleGradient)
                 .clipShape(RoundedRectangle(cornerRadius: Theme.radiusXl))
@@ -218,6 +277,11 @@ struct VideoBubble: View {
             Image(systemName: "checkmark.circle.fill")
                 .font(Theme.display32)
                 .foregroundStyle(Theme.green)
+
+        case .failed:
+            Image(systemName: "exclamationmark.circle.fill")
+                .font(Theme.display32)
+                .foregroundStyle(Theme.red)
         }
     }
 
@@ -225,6 +289,7 @@ struct VideoBubble: View {
         switch phase {
         case .sent: Theme.green
         case .processing: Theme.purple
+        case .failed: Theme.red
         default: Theme.blue
         }
     }
@@ -262,6 +327,12 @@ struct VideoBubble: View {
             Text("Sent")
                 .font(Theme.font11Regular)
                 .foregroundStyle(Theme.white)
+                .padding(.horizontal, 4)
+
+        case .failed:
+            Text("Failed")
+                .font(Theme.font11Regular)
+                .foregroundStyle(Theme.red)
                 .padding(.horizontal, 4)
         }
     }
@@ -305,7 +376,7 @@ struct BatchUploadBubble: View {
 
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
-                    Label("Batch Upload", systemImage: "square.stack.3d.up.fill")
+                    Label("Batch Queue", systemImage: "square.stack.3d.up.fill")
                         .font(Theme.font16Medium)
                         .foregroundStyle(Theme.white)
                     Spacer()
@@ -409,20 +480,31 @@ struct BatchUploadBubble: View {
             HStack(spacing: 6) {
                 Image(systemName: "checkmark.circle.fill")
                     .foregroundStyle(Theme.green)
-                Text("Batch complete")
+                Text("Queue complete")
                     .font(Theme.font11Regular)
                     .foregroundStyle(Theme.white)
                 Spacer()
             }
 
         case .paused:
-            HStack(spacing: 6) {
-                Image(systemName: "pause.circle.fill")
-                    .foregroundStyle(Theme.white)
-                Text("Batch paused")
-                    .font(Theme.font11Regular)
-                    .foregroundStyle(Theme.white)
+            HStack {
+                HStack(spacing: 6) {
+                    Image(systemName: "pause.circle.fill")
+                        .foregroundStyle(Theme.white)
+                    Text("Queue paused")
+                        .font(Theme.font11Regular)
+                        .foregroundStyle(Theme.white)
+                }
                 Spacer()
+                Button("Clear") {
+                    onCancel?()
+                }
+                .font(Theme.font11Regular.weight(.semibold))
+                .foregroundStyle(Theme.white)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(Theme.white.opacity(0.2))
+                .clipShape(Capsule())
             }
         }
     }

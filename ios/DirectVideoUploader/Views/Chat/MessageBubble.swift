@@ -1,4 +1,4 @@
-// May 10, 2026 - 1:51pm - GitHub Copilot (GPT-5.3-Codex)
+// May 11, 2026 - 6:35pm - GitHub Copilot (GPT-5.3-Codex)
 import SwiftUI
 
 /// Individual chat bubble — handles outgoing (blue, right) and incoming (gray, left).
@@ -9,6 +9,7 @@ struct MessageBubble: View {
     var onTapMetadata: (() -> Void)?
 
     private var isOutgoing: Bool { message.isOutgoing }
+    private var isBatchSummary: Bool { message.content.code == "IOS_BATCH_SUMMARY" }
 
     var body: some View {
         HStack {
@@ -54,10 +55,19 @@ struct MessageBubble: View {
 
     // MARK: - Text
 
+    @ViewBuilder
     private var textContent: some View {
-        Text(message.displayText)
-            .font(Theme.font16Regular)
-            .foregroundStyle(isOutgoing ? Theme.white : Theme.primaryText)
+        if isBatchSummary {
+            Text(message.displayText)
+                .font(Theme.mono11Medium)
+                .lineSpacing(3)
+                .multilineTextAlignment(.leading)
+                .foregroundStyle(isOutgoing ? Theme.white : Theme.primaryText)
+        } else {
+            Text(message.displayText)
+                .font(Theme.font16Regular)
+                .foregroundStyle(isOutgoing ? Theme.white : Theme.primaryText)
+        }
     }
 
     // MARK: - Video

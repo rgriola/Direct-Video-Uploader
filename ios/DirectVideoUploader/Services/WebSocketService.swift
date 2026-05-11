@@ -1,4 +1,4 @@
-// May 10, 2026 - 6:46pm - GitHub Copilot (GPT-5.3-Codex)
+// May 11, 2026 - 6:11pm - GitHub Copilot (GPT-5.3-Codex)
 import Foundation
 import Network
 import Observation
@@ -34,6 +34,7 @@ final class WebSocketService {
     var onFormRequest: (@MainActor ([String: Any]) -> Void)?
     var onFormConfirmed: (@MainActor ([String: Any]) -> Void)?
     var onMuxReady: (@MainActor ([String: Any]) -> Void)?
+    var onMuxErrored: (@MainActor ([String: Any]) -> Void)?
     var onConnected: (@MainActor () -> Void)?  // socket connected/reconnected
     var onReconnecting: (@MainActor (Int, Int) -> Void)?  // (attempt, maxAttempts)
     var onConnectionLost: (@MainActor () -> Void)?  // max retries exhausted
@@ -370,6 +371,11 @@ final class WebSocketService {
         case "mux:ready":
             if let dict = payload as? [String: Any] {
                 onMuxReady?(dict)
+            }
+
+        case "mux:errored":
+            if let dict = payload as? [String: Any] {
+                onMuxErrored?(dict)
             }
 
         default:

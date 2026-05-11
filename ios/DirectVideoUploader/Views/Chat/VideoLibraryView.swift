@@ -1,4 +1,4 @@
-// May 10, 2026 - 6:13pm - GitHub Copilot (GPT-5.3-Codex)
+// May 11, 2026 - 4:58pm - GitHub Copilot (GPT-5.3-Codex)
 import AVFoundation
 import CoreMedia
 import Photos
@@ -15,7 +15,6 @@ struct VideoLibraryView: View {
     @State private var isLoadingMetadata = false
     @State private var pendingConfirm = false
     @State private var loadError: String?
-    @State private var showTrimSheet = false
     @State private var showPhotoAlert = false
     @State private var activeTrimVideo: SelectedVideo?
     @State private var selectionTask: Task<Void, Never>?
@@ -81,21 +80,19 @@ struct VideoLibraryView: View {
             }
         }
         .presentationDetents([.large])
-        .fullScreenCover(isPresented: $showTrimSheet) {
-            if let selected = activeTrimVideo {
-                VideoTrimView(
-                    videoURL: selected.fileURL,
-                    originalFileName: selected.fileName,
-                    onTrimmed: { trimmedURL in
-                        showTrimSheet = false
-                        handleTrimResult(trimmedURL: trimmedURL, source: selected)
-                    },
-                    onCancel: {
-                        showTrimSheet = false
-                    }
-                )
-                .ignoresSafeArea()
-            }
+        .fullScreenCover(item: $activeTrimVideo) { selected in
+            VideoTrimView(
+                videoURL: selected.fileURL,
+                originalFileName: selected.fileName,
+                onTrimmed: { trimmedURL in
+                    activeTrimVideo = nil
+                    handleTrimResult(trimmedURL: trimmedURL, source: selected)
+                },
+                onCancel: {
+                    activeTrimVideo = nil
+                }
+            )
+            .ignoresSafeArea()
         }
         .alert("Videos Only", isPresented: $showPhotoAlert) {
             Button("OK", role: .cancel) {}
@@ -157,6 +154,20 @@ struct VideoLibraryView: View {
 
                     Spacer()
 
+                    if isSingleVideoReady {
+                        Button(action: openTrimForSingleSelection) {
+                            Text("Trim")
+                                .font(Theme.font13Semibold)
+                                .foregroundStyle(Color.black)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 8)
+                                .background(Theme.yellow)
+                                .clipShape(Capsule())
+                        }
+                        .accessibilityLabel("Trim selected video")
+                        .disabled(isLoadingMetadata || pendingConfirm)
+                    }
+
                     Button(action: handleConfirm) {
                         if pendingConfirm {
                             ProgressView()
@@ -164,13 +175,13 @@ struct VideoLibraryView: View {
                                 .scaleEffect(0.8)
                                 .frame(width: 80, height: 36)
                         } else {
-                            Image(systemName: "checkmark.circle.fill")
-                                .font(Theme.display32)
-                                .symbolRenderingMode(.palette)
-                                .foregroundStyle(
-                                    Theme.white,
-                                    isBatchReady ? Theme.purple : Theme.purple.opacity(0.4)
-                                )
+                            Text("Send")
+                                .font(Theme.font13Semibold)
+                                .foregroundStyle(Theme.white)
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 8)
+                                .background(isBatchReady ? Theme.purple : Theme.purple.opacity(0.4))
+                                .clipShape(Capsule())
                         }
                     }
                     .disabled(selectedItems.isEmpty || (isLoadingMetadata && !pendingConfirm))
@@ -186,6 +197,10 @@ struct VideoLibraryView: View {
 
     private var isBatchReady: Bool {
         !selectedItems.isEmpty && selectedVideos.count == selectedItems.count
+    }
+
+    private var isSingleVideoReady: Bool {
+        isBatchReady && selectedVideos.count == 1
     }
 
     private var gpsVideoCount: Int {
@@ -218,8 +233,7 @@ struct VideoLibraryView: View {
         }
 
         if selectedVideos.count == 1, let selected = selectedVideos.first {
-            activeTrimVideo = selected
-            showTrimSheet = true
+            onConfirmBatch([selected])
             return
         }
 
@@ -236,6 +250,15 @@ struct VideoLibraryView: View {
                 phAssetIdentifier: source.phAssetIdentifier
             )
             onConfirmBatch([trimmedVideo])
+        }
+    }
+
+    private func openTrimForSingleSelection() {
+        guard let selected = selectedVideos.first else { return }
+        // Present on next run-loop turn so PhotosPicker interaction state can settle.
+        Task { @MainActor in
+            await Task.yield()
+            activeTrimVideo = selected
         }
     }
 

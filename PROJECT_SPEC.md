@@ -1,3 +1,5 @@
+May 11, 2026 - 3:59pm - GitHub Copilot (GPT-5.3-Codex)
+
 # Direct Video Uploader — Project Specification (v4)
 
 > **Server Contact:** `Mediasource Fixer` / `800-123-4567`
@@ -564,5 +566,7 @@ Hosted on **Vercel** as a static Next.js/Vite app that reads from the PostgreSQL
 | 7   | **Hosting split?**           | All on Render vs. Render + Vercel             | Render for server/DB/WS, Vercel for web app (optional)         |
 
 ---
+
+Planning pointer: See `docs/SECURE_MULTICLIP_SHARE_PLAN.md` for the parked secure multi-clip share links roadmap.
 
 _Spec v7 — March 25, 2026 — Admin panel (nuclear reset, create user), Apple Speech transcription endpoint, Render buildCommand fix, greeting socket fix_

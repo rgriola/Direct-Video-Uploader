@@ -1,4 +1,4 @@
-// May 10, 2026 - 8:18pm - GitHub Copilot (GPT-5.3-Codex)
+// May 11, 2026 - 6:21pm - GitHub Copilot (GPT-5.3-Codex)
 import SwiftUI
 
 /// Main chat view — mirrors the `chat-demo.html` layout.
@@ -29,8 +29,23 @@ struct ChatView: View {
                     ScrollView {
                         LazyVStack(spacing: 2) {
                             if let vm = viewModel {
+                                if vm.shouldRenderBatchQueueBeforeMessages {
+                                    batchQueueBubble(vm: vm)
+                                        .id("batch-upload-preview")
+                                }
+
                                 ForEach(vm.messages) { message in
                                     messageRow(message: message, vm: vm)
+
+                                    if vm.shouldRenderBatchQueue(after: message.id) {
+                                        batchQueueBubble(vm: vm)
+                                            .id("batch-upload-preview")
+                                    }
+                                }
+
+                                if vm.shouldRenderBatchQueueAtEnd {
+                                    batchQueueBubble(vm: vm)
+                                        .id("batch-upload-preview")
                                 }
 
                                 // Staged video preview — user must confirm before upload
@@ -51,27 +66,6 @@ struct ChatView: View {
                                     )
                                     .id("staged-video-preview")
                                 }
-
-                                if vm.hasActiveBatch {
-                                    BatchUploadBubble(
-                                        state: vm.batchState,
-                                        totalCount: vm.batchItems.count,
-                                        completedCount: vm.batchCompletedCount,
-                                        failedCount: vm.batchFailedCount,
-                                        progress: vm.batchProgress,
-                                        fileNames: vm.batchDisplayFileNames,
-                                        onSend: {
-                                            Task { await vm.confirmBatchUpload() }
-                                        },
-                                        onCancel: {
-                                            vm.cancelStagedBatch()
-                                        },
-                                        onRetry: {
-                                            Task { await vm.retryFailedBatchItems() }
-                                        }
-                                    )
-                                    .id("batch-upload-preview")
-                                }
                             }
                         }
                         .padding(.horizontal, 12)
@@ -89,7 +83,7 @@ struct ChatView: View {
                     .onChange(of: viewModel?.batchProgress) { _, _ in
                         scrollToBottom(proxy: proxy)
                     }
-                    .onChange(of: viewModel?.hasActiveBatch) { _, _ in
+                    .onChange(of: viewModel?.showsBatchBubbleInTimeline) { _, _ in
                         scrollToBottom(proxy: proxy)
                     }
                     .scrollDismissesKeyboard(.interactively)
@@ -198,12 +192,14 @@ struct ChatView: View {
 
     private func scrollToBottom(proxy: ScrollViewProxy) {
         let targetId: String? =
-            if viewModel?.hasActiveBatch == true {
-                "batch-upload-preview"
-            } else if viewModel?.stagedVideo != nil {
+            if viewModel?.stagedVideo != nil {
                 "staged-video-preview"
+            } else if let lastMessageId = viewModel?.messages.last?.id {
+                lastMessageId
+            } else if viewModel?.showsBatchBubbleInTimeline == true {
+                "batch-upload-preview"
             } else {
-                viewModel?.messages.last?.id
+                nil
             }
         if let targetId {
             withAnimation(.easeOut(duration: 0.3)) {
@@ -213,18 +209,47 @@ struct ChatView: View {
     }
 
     @ViewBuilder
+    private func batchQueueBubble(vm: ChatViewModel) -> some View {
+        BatchUploadBubble(
+            state: vm.batchState,
+            totalCount: vm.batchItems.count,
+            completedCount: vm.batchCompletedCount,
+            failedCount: vm.batchFailedCount,
+            progress: vm.batchProgress,
+            fileNames: vm.batchDisplayFileNames,
+            onSend: {
+                Task { await vm.confirmBatchUpload() }
+            },
+            onCancel: {
+                vm.cancelStagedBatch()
+            },
+            onRetry: {
+                Task { await vm.retryFailedBatchItems() }
+            }
+        )
+    }
+
+    @ViewBuilder
     private func messageRow(message: ChatMessage, vm: ChatViewModel) -> some View {
         if message.messageType == .video && message.isOutgoing,
             let info = vm.sentUploads[message.id]
         {
+            let batchDisplay = vm.batchClipDisplayState(for: message.assetId)
+
             VideoBubble(
-                phase: videoBubblePhase(for: vm),
+                phase: batchDisplay?.phase ?? videoBubblePhase(for: vm),
                 thumbnail: info.thumbnail,
                 fileName: info.fileName,
                 createdDate: info.createdDate,
                 hasLocation: info.hasLocation,
-                uploadProgress: vm.uploadProgress,
-                didTranscribe: info.transcribeEnabled
+                uploadProgress: batchDisplay?.progress ?? vm.uploadProgress,
+                didTranscribe: info.transcribeEnabled,
+                mediasourceId: batchDisplay?.mediasourceId,
+                formSlug: batchDisplay?.formSlug,
+                errorText: batchDisplay?.errorText,
+                onTapMetadata: message.assetId.map { assetId in
+                    { vm.showMetadata(for: assetId) }
+                }
             )
             .id(message.id)
         } else if message.messageType == .muxReady {

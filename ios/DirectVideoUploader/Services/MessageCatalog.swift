@@ -1,4 +1,4 @@
-// May 10, 2026 - 12:25pm - GitHub Copilot (GPT-5.3-Codex)
+// May 11, 2026 - 6:23pm - GitHub Copilot (GPT-5.3-Codex)
 import Foundation
 
 /// Centralized chat copy catalog.
@@ -57,6 +57,14 @@ enum MessageCatalog {
           "{firstName}, you're a rock star. Send another video when ready.",
      ]
 
+     private static let batchClosingTemplates: [String] = [
+          "{firstName}, batch wrapped. Use #channel or @person here to Slack your clip details, then send the next upload when you're ready.",
+          "{firstName}, your batch is logged. Drop a #channel or @person message to Slack this update from chat.",
+          "{firstName}, great run. You can Slack metadata right here with # or @, and then roll the next upload.",
+          "{firstName}, queue complete. Need to notify the team? Type #channel or @person and I'll post the metadata.",
+          "{firstName}, mission complete. Slack your update from this box with #channel or @person, and let's keep moving.",
+     ]
+
      private static let templates: [String: String] = [
           // Server-driven codes
           "WS_SLACK_NOT_CONFIGURED": "Slack is not configured. Set SLACK_BOT_TOKEN on the server.",
@@ -89,6 +97,7 @@ enum MessageCatalog {
           "IOS_MUX_READY_SUMMARY": "Mediasource confirmed.",
           "IOS_MUX_READY_FOLLOWUP":
                "You're a rock star. Send another video when ready.",
+          "IOS_BATCH_HIGH_FIVE": "High five. Batch upload complete.",
           "IOS_UPLOAD_CANCELLED": "Upload cancelled.",
           "IOS_CONNECTIVITY_BLOCKING":
                "Connection interrupted while {operation}. Upload and metadata sync are paused until reconnection.",
@@ -115,6 +124,15 @@ enum MessageCatalog {
                code == "IOS_MUX_READY_FOLLOWUP"
           {
                return resolveMuxReadyFollowup(
+                    params: content.params ?? [:],
+                    fallbackText: content.fallbackText,
+                    stableSeed: stableSeed)
+          }
+
+          if let code = content.code,
+               code == "IOS_BATCH_CLOSING"
+          {
+               return resolveBatchClosing(
                     params: content.params ?? [:],
                     fallbackText: content.fallbackText,
                     stableSeed: stableSeed)
@@ -214,6 +232,26 @@ enum MessageCatalog {
 
           let template = muxReadyFollowupTemplates[
                stableIndex(seed: seedBase + "|followup", count: muxReadyFollowupTemplates.count)
+          ]
+
+          return render(template: template, params: ["firstName": firstName])
+     }
+
+     private static func resolveBatchClosing(
+          params: [String: String],
+          fallbackText: String?,
+          stableSeed: String?
+     ) -> String {
+          let firstName = normalizedFirstName(params["firstName"])
+          let seedBase = [
+               "IOS_BATCH_CLOSING",
+               stableSeed ?? "",
+               firstName,
+               fallbackText ?? "",
+          ].joined(separator: "|")
+
+          let template = batchClosingTemplates[
+               stableIndex(seed: seedBase + "|closing", count: batchClosingTemplates.count)
           ]
 
           return render(template: template, params: ["firstName": firstName])

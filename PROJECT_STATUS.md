@@ -1,8 +1,8 @@
-May 10, 2026 - 4:26pm - GitHub Copilot (GPT-5.3-Codex)
+May 11, 2026 - 3:46pm - GitHub Copilot (GPT-5.3-Codex)
 
 # Direct Video Uploader — Project Status
 
-> **Last Updated:** May 10, 2026 · PT
+> **Last Updated:** May 11, 2026 · PT
 > **Current Phase:** Phase 4 (QA + Rollout) — iOS UI/UX refresh validation and release-readiness checks
 > **Overall Progress:** ████████████████████ 100% (Phase 2) · Phase 3 complete · Phase 4 in progress
 
@@ -776,3 +776,15 @@ Direct-Video-Uploader/
 9. **Parallel form + upload** — Show form at upload start, finalize when both complete (needed with real transcoding latency)
 10. **Push notifications** — Upload status, form reminders
 11. **Onboarding flow** — First-launch experience (Milestone 8)
+
+### Parked — Secure Multi-Clip Share Links
+
+12. **Plan and scope lock** — Define v1 as one secure share URL for multiple clips, with expiry, revoke, and optional download.
+13. **Data model** — Add `share_collections`, `share_collection_items`, and `share_access_logs` (token stored as hash, never plaintext).
+14. **Server routes** — Add create/revoke endpoints plus public share-view routes (`/s/:token`, unlock if passcode-enabled, manifest, and gated download).
+15. **Share viewer page** — Mobile-first gallery page for multiple clips with clear states for expired, revoked, locked, or active shares.
+16. **Download strategy** — Short-lived signed download URLs (5-15 min TTL) with per-request authorization.
+17. **iOS integration** — Archive multi-select -> create share -> native share sheet for iMessage/SMS distribution.
+18. **Security guardrails** — Rate limits, max views (optional), audit logs for open/download, one-click revoke.
+19. **Test coverage** — Token validity, expiry/revoke behavior, unlock flow, item access boundaries, and download authorization.
+20. **Execution doc** — See `docs/SECURE_MULTICLIP_SHARE_PLAN.md` for phased implementation and acceptance criteria.

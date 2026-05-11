@@ -1,4 +1,4 @@
-// May 10, 2026 - 12:59pm - GitHub Copilot (GPT-5.3-Codex)
+// May 11, 2026 - 2:02pm - GitHub Copilot (GPT-5.3-Codex)
 import Foundation
 
 /// Centralized UserDefaults keys.
@@ -6,6 +6,7 @@ enum UserDefaultsKeys {
     static let serverURL = "dvu_server_url"
     static let authToken = "dvu_auth_token"
     static let appearanceMode = "dvu_appearance_mode"
+    static let debugGroupedFormSubmits = "dvu_debug_grouped_form_submits"
 }
 
 /// Central configuration for server connection.
