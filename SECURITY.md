@@ -1,6 +1,6 @@
 # Security Policy
 
-> Last updated: May 9, 2026 - 7:00pm - GPT-5.3-Codex
+> Last updated: May 12, 2026 - 2:44pm - GPT-5.3-Codex
 
 ## Supported Versions
 
@@ -28,6 +28,20 @@ Review requirements:
 
 - Every new dependency must be reviewed in PR before merge.
 - Any exception requires written legal approval and a documented rationale.
+
+## Dependency Vulnerability Exception Tracking
+
+Fixer uses `npm-audit-resolver` in the server package for explicit, time-bounded vulnerability exception tracking.
+
+- Tracked exceptions file: `server/audit-resolve.json`
+- CI gate command: `npm run audit:check` (runs `check-audit --audit-level=high`)
+- Interactive review command: `npm run audit:resolve`
+
+Policy for exceptions:
+
+- Exceptions must include a security rationale.
+- Exceptions must be temporary and expire automatically.
+- New unresolved vulnerabilities must fail CI until reviewed and either fixed or explicitly tracked.
 
 ## Reporting a Vulnerability
 

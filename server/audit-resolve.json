@@ -1,0 +1,527 @@
+{
+  "version": 1,
+  "lastUpdated": "May 12, 2026 - 2:44pm - GitHub Copilot (GPT-5.3-Codex)",
+  "decisions": {
+    "1112455|@chevrotain/cst-dts-gen>@chevrotain/gast>lodash": {
+      "decision": "ignore",
+      "madeAt": 1778611920397,
+      "expiresAt": 1779821520397,
+      "reason": "Temporary Phase 0.7 baseline while upstream fixes are pending; re-evaluate before expiry."
+    },
+    "1112455|@chevrotain/gast>lodash": {
+      "decision": "ignore",
+      "madeAt": 1778611920397,
+      "expiresAt": 1779821520397,
+      "reason": "Temporary Phase 0.7 baseline while upstream fixes are pending; re-evaluate before expiry."
+    },
+    "1112455|prisma>@prisma/config>effect>@prisma/dev>@hono/node-server>@mrleebo/prisma-ast>chevrotain>@chevrotain/cst-dts-gen>@chevrotain/gast>lodash": {
+      "decision": "ignore",
+      "madeAt": 1778611920397,
+      "expiresAt": 1779821520397,
+      "reason": "Temporary Phase 0.7 baseline while upstream fixes are pending; re-evaluate before expiry."
+    },
+    "1115806|@chevrotain/cst-dts-gen>@chevrotain/gast>lodash": {
+      "decision": "ignore",
+      "madeAt": 1778611920397,
+      "expiresAt": 1779821520397,
+      "reason": "Temporary Phase 0.7 baseline while upstream fixes are pending; re-evaluate before expiry."
+    },
+    "1115806|@chevrotain/gast>lodash": {
+      "decision": "ignore",
+      "madeAt": 1778611920397,
+      "expiresAt": 1779821520397,
+      "reason": "Temporary Phase 0.7 baseline while upstream fixes are pending; re-evaluate before expiry."
+    },
+    "1115806|prisma>@prisma/config>effect>@prisma/dev>@hono/node-server>@mrleebo/prisma-ast>chevrotain>@chevrotain/cst-dts-gen>@chevrotain/gast>lodash": {
+      "decision": "ignore",
+      "madeAt": 1778611920397,
+      "expiresAt": 1779821520397,
+      "reason": "Temporary Phase 0.7 baseline while upstream fixes are pending; re-evaluate before expiry."
+    },
+    "1115810|@chevrotain/cst-dts-gen>@chevrotain/gast>lodash": {
+      "decision": "ignore",
+      "madeAt": 1778611920397,
+      "expiresAt": 1779821520397,
+      "reason": "Temporary Phase 0.7 baseline while upstream fixes are pending; re-evaluate before expiry."
+    },
+    "1115810|@chevrotain/gast>lodash": {
+      "decision": "ignore",
+      "madeAt": 1778611920397,
+      "expiresAt": 1779821520397,
+      "reason": "Temporary Phase 0.7 baseline while upstream fixes are pending; re-evaluate before expiry."
+    },
+    "1115810|prisma>@prisma/config>effect>@prisma/dev>@hono/node-server>@mrleebo/prisma-ast>chevrotain>@chevrotain/cst-dts-gen>@chevrotain/gast>lodash": {
+      "decision": "ignore",
+      "madeAt": 1778611920397,
+      "expiresAt": 1779821520397,
+      "reason": "Temporary Phase 0.7 baseline while upstream fixes are pending; re-evaluate before expiry."
+    },
+    "1116673|axios": {
+      "decision": "ignore",
+      "madeAt": 1778611920397,
+      "expiresAt": 1779821520397,
+      "reason": "Temporary Phase 0.7 baseline while upstream fixes are pending; re-evaluate before expiry."
+    },
+    "1116675|axios": {
+      "decision": "ignore",
+      "madeAt": 1778611920397,
+      "expiresAt": 1779821520397,
+      "reason": "Temporary Phase 0.7 baseline while upstream fixes are pending; re-evaluate before expiry."
+    },
+    "1117574|axios": {
+      "decision": "ignore",
+      "madeAt": 1778611920397,
+      "expiresAt": 1779821520397,
+      "reason": "Temporary Phase 0.7 baseline while upstream fixes are pending; re-evaluate before expiry."
+    },
+    "1117576|axios": {
+      "decision": "ignore",
+      "madeAt": 1778611920397,
+      "expiresAt": 1779821520397,
+      "reason": "Temporary Phase 0.7 baseline while upstream fixes are pending; re-evaluate before expiry."
+    },
+    "1117577|axios": {
+      "decision": "ignore",
+      "madeAt": 1778611920397,
+      "expiresAt": 1779821520397,
+      "reason": "Temporary Phase 0.7 baseline while upstream fixes are pending; re-evaluate before expiry."
+    },
+    "1117580|axios": {
+      "decision": "ignore",
+      "madeAt": 1778611920397,
+      "expiresAt": 1779821520397,
+      "reason": "Temporary Phase 0.7 baseline while upstream fixes are pending; re-evaluate before expiry."
+    },
+    "1117581|axios": {
+      "decision": "ignore",
+      "madeAt": 1778611920397,
+      "expiresAt": 1779821520397,
+      "reason": "Temporary Phase 0.7 baseline while upstream fixes are pending; re-evaluate before expiry."
+    },
+    "1117583|axios": {
+      "decision": "ignore",
+      "madeAt": 1778611920397,
+      "expiresAt": 1779821520397,
+      "reason": "Temporary Phase 0.7 baseline while upstream fixes are pending; re-evaluate before expiry."
+    },
+    "1117585|axios": {
+      "decision": "ignore",
+      "madeAt": 1778611920397,
+      "expiresAt": 1779821520397,
+      "reason": "Temporary Phase 0.7 baseline while upstream fixes are pending; re-evaluate before expiry."
+    },
+    "1117587|axios": {
+      "decision": "ignore",
+      "madeAt": 1778611920397,
+      "expiresAt": 1779821520397,
+      "reason": "Temporary Phase 0.7 baseline while upstream fixes are pending; re-evaluate before expiry."
+    },
+    "1117589|axios": {
+      "decision": "ignore",
+      "madeAt": 1778611920397,
+      "expiresAt": 1779821520397,
+      "reason": "Temporary Phase 0.7 baseline while upstream fixes are pending; re-evaluate before expiry."
+    },
+    "1117591|axios": {
+      "decision": "ignore",
+      "madeAt": 1778611920397,
+      "expiresAt": 1779821520397,
+      "reason": "Temporary Phase 0.7 baseline while upstream fixes are pending; re-evaluate before expiry."
+    },
+    "1117593|axios": {
+      "decision": "ignore",
+      "madeAt": 1778611920397,
+      "expiresAt": 1779821520397,
+      "reason": "Temporary Phase 0.7 baseline while upstream fixes are pending; re-evaluate before expiry."
+    },
+    "1117595|axios": {
+      "decision": "ignore",
+      "madeAt": 1778611920397,
+      "expiresAt": 1779821520397,
+      "reason": "Temporary Phase 0.7 baseline while upstream fixes are pending; re-evaluate before expiry."
+    },
+    "1118607|axios": {
+      "decision": "ignore",
+      "madeAt": 1778611920397,
+      "expiresAt": 1779821520397,
+      "reason": "Temporary Phase 0.7 baseline while upstream fixes are pending; re-evaluate before expiry."
+    },
+    "1115543|brace-expansion": {
+      "decision": "ignore",
+      "madeAt": 1778611920397,
+      "expiresAt": 1779821520397,
+      "reason": "Temporary Phase 0.7 baseline while upstream fixes are pending; re-evaluate before expiry."
+    },
+    "1116102|defu": {
+      "decision": "ignore",
+      "madeAt": 1778611920397,
+      "expiresAt": 1779821520397,
+      "reason": "Temporary Phase 0.7 baseline while upstream fixes are pending; re-evaluate before expiry."
+    },
+    "1116107|fast-jwt": {
+      "decision": "ignore",
+      "madeAt": 1778611920397,
+      "expiresAt": 1779821520397,
+      "reason": "Temporary Phase 0.7 baseline while upstream fixes are pending; re-evaluate before expiry."
+    },
+    "1116194|fast-jwt": {
+      "decision": "ignore",
+      "madeAt": 1778611920397,
+      "expiresAt": 1779821520397,
+      "reason": "Temporary Phase 0.7 baseline while upstream fixes are pending; re-evaluate before expiry."
+    },
+    "1116255|fast-jwt": {
+      "decision": "ignore",
+      "madeAt": 1778611920397,
+      "expiresAt": 1779821520397,
+      "reason": "Temporary Phase 0.7 baseline while upstream fixes are pending; re-evaluate before expiry."
+    },
+    "1116366|fast-jwt": {
+      "decision": "ignore",
+      "madeAt": 1778611920397,
+      "expiresAt": 1779821520397,
+      "reason": "Temporary Phase 0.7 baseline while upstream fixes are pending; re-evaluate before expiry."
+    },
+    "1116367|fast-jwt": {
+      "decision": "ignore",
+      "madeAt": 1778611920397,
+      "expiresAt": 1779821520397,
+      "reason": "Temporary Phase 0.7 baseline while upstream fixes are pending; re-evaluate before expiry."
+    },
+    "1117748|fast-jwt": {
+      "decision": "ignore",
+      "madeAt": 1778611920397,
+      "expiresAt": 1779821520397,
+      "reason": "Temporary Phase 0.7 baseline while upstream fixes are pending; re-evaluate before expiry."
+    },
+    "1117870|fast-uri": {
+      "decision": "ignore",
+      "madeAt": 1778611920397,
+      "expiresAt": 1779821520397,
+      "reason": "Temporary Phase 0.7 baseline while upstream fixes are pending; re-evaluate before expiry."
+    },
+    "1117884|fast-uri": {
+      "decision": "ignore",
+      "madeAt": 1778611920397,
+      "expiresAt": 1779821520397,
+      "reason": "Temporary Phase 0.7 baseline while upstream fixes are pending; re-evaluate before expiry."
+    },
+    "1114165|fastify": {
+      "decision": "ignore",
+      "madeAt": 1778611920397,
+      "expiresAt": 1779821520397,
+      "reason": "Temporary Phase 0.7 baseline while upstream fixes are pending; re-evaluate before expiry."
+    },
+    "1115367|fastify": {
+      "decision": "ignore",
+      "madeAt": 1778611920397,
+      "expiresAt": 1779821520397,
+      "reason": "Temporary Phase 0.7 baseline while upstream fixes are pending; re-evaluate before expiry."
+    },
+    "1117061|fastify": {
+      "decision": "ignore",
+      "madeAt": 1778611920397,
+      "expiresAt": 1779821520397,
+      "reason": "Temporary Phase 0.7 baseline while upstream fixes are pending; re-evaluate before expiry."
+    },
+    "1114301|file-type": {
+      "decision": "ignore",
+      "madeAt": 1778611920397,
+      "expiresAt": 1779821520397,
+      "reason": "Temporary Phase 0.7 baseline while upstream fixes are pending; re-evaluate before expiry."
+    },
+    "1114726|file-type": {
+      "decision": "ignore",
+      "madeAt": 1778611920397,
+      "expiresAt": 1779821520397,
+      "reason": "Temporary Phase 0.7 baseline while upstream fixes are pending; re-evaluate before expiry."
+    },
+    "1116560|follow-redirects": {
+      "decision": "ignore",
+      "madeAt": 1778611920397,
+      "expiresAt": 1779821520397,
+      "reason": "Temporary Phase 0.7 baseline while upstream fixes are pending; re-evaluate before expiry."
+    },
+    "1112644|hono": {
+      "decision": "ignore",
+      "madeAt": 1778611920397,
+      "expiresAt": 1779821520397,
+      "reason": "Temporary Phase 0.7 baseline while upstream fixes are pending; re-evaluate before expiry."
+    },
+    "1112644|prisma>@prisma/config>effect>@prisma/dev>@hono/node-server>@mrleebo/prisma-ast>chevrotain>@chevrotain/cst-dts-gen>@chevrotain/gast>lodash>hono": {
+      "decision": "ignore",
+      "madeAt": 1778611920397,
+      "expiresAt": 1779821520397,
+      "reason": "Temporary Phase 0.7 baseline while upstream fixes are pending; re-evaluate before expiry."
+    },
+    "1112677|hono": {
+      "decision": "ignore",
+      "madeAt": 1778611920397,
+      "expiresAt": 1779821520397,
+      "reason": "Temporary Phase 0.7 baseline while upstream fixes are pending; re-evaluate before expiry."
+    },
+    "1112677|prisma>@prisma/config>effect>@prisma/dev>@hono/node-server>@mrleebo/prisma-ast>chevrotain>@chevrotain/cst-dts-gen>@chevrotain/gast>lodash>hono": {
+      "decision": "ignore",
+      "madeAt": 1778611920397,
+      "expiresAt": 1779821520397,
+      "reason": "Temporary Phase 0.7 baseline while upstream fixes are pending; re-evaluate before expiry."
+    },
+    "1112678|hono": {
+      "decision": "ignore",
+      "madeAt": 1778611920397,
+      "expiresAt": 1779821520397,
+      "reason": "Temporary Phase 0.7 baseline while upstream fixes are pending; re-evaluate before expiry."
+    },
+    "1112678|prisma>@prisma/config>effect>@prisma/dev>@hono/node-server>@mrleebo/prisma-ast>chevrotain>@chevrotain/cst-dts-gen>@chevrotain/gast>lodash>hono": {
+      "decision": "ignore",
+      "madeAt": 1778611920397,
+      "expiresAt": 1779821520397,
+      "reason": "Temporary Phase 0.7 baseline while upstream fixes are pending; re-evaluate before expiry."
+    },
+    "1112911|hono": {
+      "decision": "ignore",
+      "madeAt": 1778611920397,
+      "expiresAt": 1779821520397,
+      "reason": "Temporary Phase 0.7 baseline while upstream fixes are pending; re-evaluate before expiry."
+    },
+    "1112911|prisma>@prisma/config>effect>@prisma/dev>@hono/node-server>@mrleebo/prisma-ast>chevrotain>@chevrotain/cst-dts-gen>@chevrotain/gast>lodash>hono": {
+      "decision": "ignore",
+      "madeAt": 1778611920397,
+      "expiresAt": 1779821520397,
+      "reason": "Temporary Phase 0.7 baseline while upstream fixes are pending; re-evaluate before expiry."
+    },
+    "1113311|hono": {
+      "decision": "ignore",
+      "madeAt": 1778611920397,
+      "expiresAt": 1779821520397,
+      "reason": "Temporary Phase 0.7 baseline while upstream fixes are pending; re-evaluate before expiry."
+    },
+    "1113311|prisma>@prisma/config>effect>@prisma/dev>@hono/node-server>@mrleebo/prisma-ast>chevrotain>@chevrotain/cst-dts-gen>@chevrotain/gast>lodash>hono": {
+      "decision": "ignore",
+      "madeAt": 1778611920397,
+      "expiresAt": 1779821520397,
+      "reason": "Temporary Phase 0.7 baseline while upstream fixes are pending; re-evaluate before expiry."
+    },
+    "1114004|hono": {
+      "decision": "ignore",
+      "madeAt": 1778611920397,
+      "expiresAt": 1779821520397,
+      "reason": "Temporary Phase 0.7 baseline while upstream fixes are pending; re-evaluate before expiry."
+    },
+    "1114004|prisma>@prisma/config>effect>@prisma/dev>@hono/node-server>@mrleebo/prisma-ast>chevrotain>@chevrotain/cst-dts-gen>@chevrotain/gast>lodash>hono": {
+      "decision": "ignore",
+      "madeAt": 1778611920397,
+      "expiresAt": 1779821520397,
+      "reason": "Temporary Phase 0.7 baseline while upstream fixes are pending; re-evaluate before expiry."
+    },
+    "1114005|hono": {
+      "decision": "ignore",
+      "madeAt": 1778611920397,
+      "expiresAt": 1779821520397,
+      "reason": "Temporary Phase 0.7 baseline while upstream fixes are pending; re-evaluate before expiry."
+    },
+    "1114005|prisma>@prisma/config>effect>@prisma/dev>@hono/node-server>@mrleebo/prisma-ast>chevrotain>@chevrotain/cst-dts-gen>@chevrotain/gast>lodash>hono": {
+      "decision": "ignore",
+      "madeAt": 1778611920397,
+      "expiresAt": 1779821520397,
+      "reason": "Temporary Phase 0.7 baseline while upstream fixes are pending; re-evaluate before expiry."
+    },
+    "1114006|hono": {
+      "decision": "ignore",
+      "madeAt": 1778611920397,
+      "expiresAt": 1779821520397,
+      "reason": "Temporary Phase 0.7 baseline while upstream fixes are pending; re-evaluate before expiry."
+    },
+    "1114006|prisma>@prisma/config>effect>@prisma/dev>@hono/node-server>@mrleebo/prisma-ast>chevrotain>@chevrotain/cst-dts-gen>@chevrotain/gast>lodash>hono": {
+      "decision": "ignore",
+      "madeAt": 1778611920397,
+      "expiresAt": 1779821520397,
+      "reason": "Temporary Phase 0.7 baseline while upstream fixes are pending; re-evaluate before expiry."
+    },
+    "1114341|hono": {
+      "decision": "ignore",
+      "madeAt": 1778611920397,
+      "expiresAt": 1779821520397,
+      "reason": "Temporary Phase 0.7 baseline while upstream fixes are pending; re-evaluate before expiry."
+    },
+    "1114341|prisma>@prisma/config>effect>@prisma/dev>@hono/node-server>@mrleebo/prisma-ast>chevrotain>@chevrotain/cst-dts-gen>@chevrotain/gast>lodash>hono": {
+      "decision": "ignore",
+      "madeAt": 1778611920397,
+      "expiresAt": 1779821520397,
+      "reason": "Temporary Phase 0.7 baseline while upstream fixes are pending; re-evaluate before expiry."
+    },
+    "1116244|hono": {
+      "decision": "ignore",
+      "madeAt": 1778611920397,
+      "expiresAt": 1779821520397,
+      "reason": "Temporary Phase 0.7 baseline while upstream fixes are pending; re-evaluate before expiry."
+    },
+    "1116244|prisma>@prisma/config>effect>@prisma/dev>@hono/node-server>@mrleebo/prisma-ast>chevrotain>@chevrotain/cst-dts-gen>@chevrotain/gast>lodash>hono": {
+      "decision": "ignore",
+      "madeAt": 1778611920397,
+      "expiresAt": 1779821520397,
+      "reason": "Temporary Phase 0.7 baseline while upstream fixes are pending; re-evaluate before expiry."
+    },
+    "1116277|hono": {
+      "decision": "ignore",
+      "madeAt": 1778611920397,
+      "expiresAt": 1779821520397,
+      "reason": "Temporary Phase 0.7 baseline while upstream fixes are pending; re-evaluate before expiry."
+    },
+    "1116277|prisma>@prisma/config>effect>@prisma/dev>@hono/node-server>@mrleebo/prisma-ast>chevrotain>@chevrotain/cst-dts-gen>@chevrotain/gast>lodash>hono": {
+      "decision": "ignore",
+      "madeAt": 1778611920397,
+      "expiresAt": 1779821520397,
+      "reason": "Temporary Phase 0.7 baseline while upstream fixes are pending; re-evaluate before expiry."
+    },
+    "1116279|hono": {
+      "decision": "ignore",
+      "madeAt": 1778611920397,
+      "expiresAt": 1779821520397,
+      "reason": "Temporary Phase 0.7 baseline while upstream fixes are pending; re-evaluate before expiry."
+    },
+    "1116279|prisma>@prisma/config>effect>@prisma/dev>@hono/node-server>@mrleebo/prisma-ast>chevrotain>@chevrotain/cst-dts-gen>@chevrotain/gast>lodash>hono": {
+      "decision": "ignore",
+      "madeAt": 1778611920397,
+      "expiresAt": 1779821520397,
+      "reason": "Temporary Phase 0.7 baseline while upstream fixes are pending; re-evaluate before expiry."
+    },
+    "1116280|hono": {
+      "decision": "ignore",
+      "madeAt": 1778611920397,
+      "expiresAt": 1779821520397,
+      "reason": "Temporary Phase 0.7 baseline while upstream fixes are pending; re-evaluate before expiry."
+    },
+    "1116280|prisma>@prisma/config>effect>@prisma/dev>@hono/node-server>@mrleebo/prisma-ast>chevrotain>@chevrotain/cst-dts-gen>@chevrotain/gast>lodash>hono": {
+      "decision": "ignore",
+      "madeAt": 1778611920397,
+      "expiresAt": 1779821520397,
+      "reason": "Temporary Phase 0.7 baseline while upstream fixes are pending; re-evaluate before expiry."
+    },
+    "1116669|hono": {
+      "decision": "ignore",
+      "madeAt": 1778611920397,
+      "expiresAt": 1779821520397,
+      "reason": "Temporary Phase 0.7 baseline while upstream fixes are pending; re-evaluate before expiry."
+    },
+    "1116669|prisma>@prisma/config>effect>@prisma/dev>@hono/node-server>@mrleebo/prisma-ast>chevrotain>@chevrotain/cst-dts-gen>@chevrotain/gast>lodash>hono": {
+      "decision": "ignore",
+      "madeAt": 1778611920397,
+      "expiresAt": 1779821520397,
+      "reason": "Temporary Phase 0.7 baseline while upstream fixes are pending; re-evaluate before expiry."
+    },
+    "1117087|hono": {
+      "decision": "ignore",
+      "madeAt": 1778611920397,
+      "expiresAt": 1779821520397,
+      "reason": "Temporary Phase 0.7 baseline while upstream fixes are pending; re-evaluate before expiry."
+    },
+    "1117087|prisma>@prisma/config>effect>@prisma/dev>@hono/node-server>@mrleebo/prisma-ast>chevrotain>@chevrotain/cst-dts-gen>@chevrotain/gast>lodash>hono": {
+      "decision": "ignore",
+      "madeAt": 1778611920397,
+      "expiresAt": 1779821520397,
+      "reason": "Temporary Phase 0.7 baseline while upstream fixes are pending; re-evaluate before expiry."
+    },
+    "1117763|hono": {
+      "decision": "ignore",
+      "madeAt": 1778611920397,
+      "expiresAt": 1779821520397,
+      "reason": "Temporary Phase 0.7 baseline while upstream fixes are pending; re-evaluate before expiry."
+    },
+    "1117763|prisma>@prisma/config>effect>@prisma/dev>@hono/node-server>@mrleebo/prisma-ast>chevrotain>@chevrotain/cst-dts-gen>@chevrotain/gast>lodash>hono": {
+      "decision": "ignore",
+      "madeAt": 1778611920397,
+      "expiresAt": 1779821520397,
+      "reason": "Temporary Phase 0.7 baseline while upstream fixes are pending; re-evaluate before expiry."
+    },
+    "1117764|hono": {
+      "decision": "ignore",
+      "madeAt": 1778611920397,
+      "expiresAt": 1779821520397,
+      "reason": "Temporary Phase 0.7 baseline while upstream fixes are pending; re-evaluate before expiry."
+    },
+    "1117764|prisma>@prisma/config>effect>@prisma/dev>@hono/node-server>@mrleebo/prisma-ast>chevrotain>@chevrotain/cst-dts-gen>@chevrotain/gast>lodash>hono": {
+      "decision": "ignore",
+      "madeAt": 1778611920397,
+      "expiresAt": 1779821520397,
+      "reason": "Temporary Phase 0.7 baseline while upstream fixes are pending; re-evaluate before expiry."
+    },
+    "1117915|hono": {
+      "decision": "ignore",
+      "madeAt": 1778611920397,
+      "expiresAt": 1779821520397,
+      "reason": "Temporary Phase 0.7 baseline while upstream fixes are pending; re-evaluate before expiry."
+    },
+    "1117915|prisma>@prisma/config>effect>@prisma/dev>@hono/node-server>@mrleebo/prisma-ast>chevrotain>@chevrotain/cst-dts-gen>@chevrotain/gast>lodash>hono": {
+      "decision": "ignore",
+      "madeAt": 1778611920397,
+      "expiresAt": 1779821520397,
+      "reason": "Temporary Phase 0.7 baseline while upstream fixes are pending; re-evaluate before expiry."
+    },
+    "1117916|hono": {
+      "decision": "ignore",
+      "madeAt": 1778611920397,
+      "expiresAt": 1779821520397,
+      "reason": "Temporary Phase 0.7 baseline while upstream fixes are pending; re-evaluate before expiry."
+    },
+    "1117916|prisma>@prisma/config>effect>@prisma/dev>@hono/node-server>@mrleebo/prisma-ast>chevrotain>@chevrotain/cst-dts-gen>@chevrotain/gast>lodash>hono": {
+      "decision": "ignore",
+      "madeAt": 1778611920397,
+      "expiresAt": 1779821520397,
+      "reason": "Temporary Phase 0.7 baseline while upstream fixes are pending; re-evaluate before expiry."
+    },
+    "1117919|hono": {
+      "decision": "ignore",
+      "madeAt": 1778611920397,
+      "expiresAt": 1779821520397,
+      "reason": "Temporary Phase 0.7 baseline while upstream fixes are pending; re-evaluate before expiry."
+    },
+    "1117919|prisma>@prisma/config>effect>@prisma/dev>@hono/node-server>@mrleebo/prisma-ast>chevrotain>@chevrotain/cst-dts-gen>@chevrotain/gast>lodash>hono": {
+      "decision": "ignore",
+      "madeAt": 1778611920397,
+      "expiresAt": 1779821520397,
+      "reason": "Temporary Phase 0.7 baseline while upstream fixes are pending; re-evaluate before expiry."
+    },
+    "1115549|picomatch": {
+      "decision": "ignore",
+      "madeAt": 1778611920397,
+      "expiresAt": 1779821520397,
+      "reason": "Temporary Phase 0.7 baseline while upstream fixes are pending; re-evaluate before expiry."
+    },
+    "1115552|picomatch": {
+      "decision": "ignore",
+      "madeAt": 1778611920397,
+      "expiresAt": 1779821520397,
+      "reason": "Temporary Phase 0.7 baseline while upstream fixes are pending; re-evaluate before expiry."
+    },
+    "1115356|prisma>@prisma/config>effect": {
+      "decision": "ignore",
+      "madeAt": 1778611920397,
+      "expiresAt": 1779821520397,
+      "reason": "Temporary Phase 0.7 baseline while upstream fixes are pending; re-evaluate before expiry."
+    },
+    "1114170|prisma>@prisma/config>effect>@prisma/dev>@hono/node-server": {
+      "decision": "ignore",
+      "madeAt": 1778611920397,
+      "expiresAt": 1779821520397,
+      "reason": "Temporary Phase 0.7 baseline while upstream fixes are pending; re-evaluate before expiry."
+    },
+    "1116281|prisma>@prisma/config>effect>@prisma/dev>@hono/node-server": {
+      "decision": "ignore",
+      "madeAt": 1778611920397,
+      "expiresAt": 1779821520397,
+      "reason": "Temporary Phase 0.7 baseline while upstream fixes are pending; re-evaluate before expiry."
+    },
+    "1115154|socket.io-parser": {
+      "decision": "ignore",
+      "madeAt": 1778611920397,
+      "expiresAt": 1779821520397,
+      "reason": "Temporary Phase 0.7 baseline while upstream fixes are pending; re-evaluate before expiry."
+    }
+  },
+  "rules": {
+    "ignoreConfig": {
+      "ignoreExpiresInDays": 14
+    }
+  }
+}

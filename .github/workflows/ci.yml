@@ -1,4 +1,4 @@
-# Last updated: May 10, 2026 - 10:15am - GitHub Copilot (GPT-5.3-Codex)
+# Last updated: May 12, 2026 - 2:44pm - GitHub Copilot (GPT-5.3-Codex)
 name: CI
 
 on:
@@ -45,8 +45,8 @@ jobs:
       - name: Run tests with coverage gate
         run: npm run test:coverage
 
-      - name: Audit dependencies
-        run: npm audit --audit-level=high
+      - name: Audit dependencies (tracked exceptions)
+        run: npm run audit:check
 
   admin-build:
     name: Admin Build

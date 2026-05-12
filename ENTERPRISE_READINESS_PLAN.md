@@ -1,4 +1,4 @@
-Last updated: May 12, 2026 - 2:37pm - GitHub Copilot (GPT-5.3-Codex)
+Last updated: May 12, 2026 - 2:44pm - GitHub Copilot (GPT-5.3-Codex)
 
 # Enterprise Readiness Plan — Fixer
 
@@ -154,10 +154,10 @@ server/src/__tests__/
 
 - [x] Enable Dependabot for `server/`, `admin/`, root `package.json` (weekly cadence)
 - [x] Add `npm audit --audit-level=high` step to CI; fail build on high/critical
-- [ ] Add `npm-audit-resolver` or Snyk for tracked exceptions
+- [x] Add `npm-audit-resolver` for tracked exceptions (`server/audit-resolve.json` + `check-audit` in CI)
 - [x] Pin lockfile (`package-lock.json`) — already present, but add `npm ci --frozen-lockfile` to CI
 - [x] Add CodeQL workflow for static analysis (free for public repos; ~$X/mo for private)
-- [ ] Document policy: no new dependency without license check (no GPL/AGPL in app code)
+- [x] Document policy: no new dependency without license check (no GPL/AGPL in app code) in `SECURITY.md`
 
 ---
 
