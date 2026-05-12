@@ -1,4 +1,4 @@
-// May 10, 2026 - 8:18pm - GitHub Copilot (GPT-5.3-Codex)
+// May 11, 2026 - 9:29pm - GitHub Copilot (GPT-5.3-Codex)
 import Foundation
 import SwiftUI
 
@@ -21,9 +21,13 @@ struct ChatMessage: Codable, Identifiable {
     /// Display text resolved with a per-message stable seed.
     /// This keeps randomized catalog variants fixed for each bubble.
     var displayText: String {
-        let stableSeed = [id, createdAt ?? "", messageType.rawValue, direction.rawValue].joined(
-            separator: "|")
-        return MessageCatalog.resolve(content: content, stableSeed: stableSeed)
+        #if os(iOS)
+            let stableSeed = [id, createdAt ?? "", messageType.rawValue, direction.rawValue].joined(
+                separator: "|")
+            return MessageCatalog.resolve(content: content, stableSeed: stableSeed)
+        #else
+            return content.fallbackText ?? content.text ?? content.fileName ?? "..."
+        #endif
     }
 }
 
@@ -129,7 +133,11 @@ struct MessageContent: Codable {
 
     /// Display text for the chat bubble
     var displayText: String {
-        MessageCatalog.resolve(content: self, stableSeed: nil)
+        #if os(iOS)
+            MessageCatalog.resolve(content: self)
+        #else
+            fallbackText ?? text ?? fileName ?? "..."
+        #endif
     }
 }
 

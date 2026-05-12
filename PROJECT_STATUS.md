@@ -1,8 +1,8 @@
-May 11, 2026 - 5:35pm - GitHub Copilot (GPT-5.3-Codex)
+May 11, 2026 - 9:32pm - GitHub Copilot (GPT-5.3-Codex)
 
 # Direct Video Uploader — Project Status
 
-> **Last Updated:** May 11, 2026 · PT
+> **Last Updated:** May 11, 2026 · 9:32pm PT
 > **Current Phase:** Phase 4 (QA + Rollout) — iOS UI/UX refresh validation and release-readiness checks
 > **Overall Progress:** ████████████████████ 100% (Phase 2) · Phase 3 complete · Phase 4 in progress
 
@@ -12,7 +12,7 @@ May 11, 2026 - 5:35pm - GitHub Copilot (GPT-5.3-Codex)
 
 The **Direct Video Uploader** is a mobile-first video upload platform disguised as a text conversation. Field crew members "text" videos to the **Mediasource Fixer** server, which processes them the way a news assignment desk operates - fast, structured, and integrated with Slack.
 
-We've completed the **interactive chat demo** (HTML prototype), **project specification** (v4), the **Phase 1 server foundation** (Node.js API, WebSocket, PostgreSQL, auth, admin dashboard), the **Phase 2 - iOS Demo App** core flow (login -> chat -> video upload -> form -> confirmation -> archive), and the **Web Clip Viewer** (server-rendered at `/clips/:slug`). Latest session (May 11): implemented **Obs.10 upload telemetry + correlation** end-to-end: iOS captures URLSession task metrics, uploader sends correlation headers, server echoes telemetry from `/api/assets/:id/mux-upload`, webhooks compute `asset_created`/`ready` deltas, and `mux:ready` now includes `uploadTelemetry`. Validation is green: iOS build succeeded, Swift uploader tests passed, and server test suite passed (112/112).
+We've completed the **interactive chat demo** (HTML prototype), **project specification** (v4), the **Phase 1 server foundation** (Node.js API, WebSocket, PostgreSQL, auth, admin dashboard), the **Phase 2 - iOS Demo App** core flow (login -> chat -> video upload -> form -> confirmation -> archive), and the **Web Clip Viewer** (server-rendered at `/clips/:slug`). Latest session (May 11): implemented **Obs.10 upload telemetry + correlation** end-to-end: iOS captures URLSession task metrics, uploader sends correlation headers, server echoes telemetry from `/api/assets/:id/mux-upload`, webhooks compute `asset_created`/`ready` deltas, and `mux:ready` now includes `uploadTelemetry`. Follow-up session (May 11 evening): finalized dashboard web-session self-heal, updated asset accordion layout (Play Clip moved to top of Form Response with icon treatment), and documented local dev serving behavior (`:5173` live Vite vs `:3000` static build). Validation is green: iOS `xcodebuild` succeeded, admin build check passed, and server test suite passed (118/118).
 
 ---
 
@@ -199,6 +199,14 @@ cd ios && xcodegen generate && xcodebuild -project DirectVideoUploader.xcodeproj
 - **Mux passthrough helper expansion** — `server/src/lib/mux.js` now merges optional passthrough metadata into Mux upload creation payloads (without breaking clipId/assetId defaults).
 - **Chat-side telemetry logging** — iOS `ChatViewModel` now logs correlation diagnostics from `mux:ready.uploadTelemetry` (`correlationId`, `muxUploadId`, server delta timings).
 - **Test coverage update** — Added/updated tests in `ios/tests/upload_queue_store_tests.swift`, `server/src/__tests__/assets-routes.test.js`, `server/src/__tests__/mux-lib.test.js`, and `server/src/__tests__/mux-webhooks.test.js` for telemetry persistence, passthrough correlation, and webhook emission payloads.
+
+**Features Added (May 11 — Evening Session):**
+
+- **Dashboard auth self-heal hardening** — Improved cookie/session recovery flows across dashboard + clip viewer so stale sessions auto-logout + redirect instead of sticking on blank/redirect loops.
+- **Asset accordion layout pass** — `admin/src/components/AssetList.tsx` updated so Form Response renders as a clean list with **Play Clip** pinned at the top and icon-based affordance.
+- **Dev serving clarification** — Confirmed local behavior: `http://localhost:5173` is live Vite source; `http://localhost:3000` serves built static assets from `server/public`. Added workflow note to rebuild admin (`npm run build:admin`) when checking `:3000`.
+- **TS 6 deprecation cleanup** — `admin/tsconfig.json` updated to `"ignoreDeprecations": "6.0"` to silence the `baseUrl` deprecation warning in current tooling.
+- **Swift diagnostics stability notes** — Verified iOS app compiles cleanly with Xcode (`xcodegen generate` + `xcodebuild`) and added VS Code Swift diagnostics preference to reduce false SourceKit-only symbol cascades during indexing.
 
 **Features Added (Apr 9 — Session):**
 

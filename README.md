@@ -1,3 +1,5 @@
+May 11, 2026 - 9:32pm - GitHub Copilot (GPT-5.3-Codex)
+
 # Direct Video Uploader (DVU) — Mediasource Fixer
 
 **Direct Video Uploader** is a mobile-first video upload platform disguised as a text conversation. Field crew members "text" full-resolution videos to the **Mediasource Fixer** server, which processes them the way a news assignment desk operates — fast, structured, and integrated with Slack.
@@ -124,6 +126,18 @@ cd ios && xcodegen generate
 | `npm run build:admin` | Production build of React admin → `server/public/` (Vite only, fast)   |
 | `npm run server`      | Starts Fastify server only                                             |
 | `npm run setup`       | Fresh setup: install deps, push schema, generate client, seed          |
+
+### Dev Troubleshooting
+
+- **Dashboard edits not showing**: `http://localhost:5173` is live Vite source. `http://localhost:3000` serves static built admin from `server/public`. If changes appear stale on `:3000`, run `npm run build:admin`.
+- **Swift "Cannot find symbol" cascades in VS Code**: verify with real iOS build context before assuming a code regression:
+
+```bash
+cd ios
+xcodegen generate
+xcodebuild -project DirectVideoUploader.xcodeproj -scheme DirectVideoUploader \
+       -destination 'platform=iOS Simulator,name=iPhone 17 Pro' build
+```
 
 ---
 

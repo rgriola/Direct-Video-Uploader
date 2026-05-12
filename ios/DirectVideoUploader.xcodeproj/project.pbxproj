@@ -101,7 +101,7 @@
 		EE6E0F942C662BAFDA11CFA4 /* PendingBatchStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PendingBatchStore.swift; sourceTree = "<group>"; };
 		EF5B8A623A0F5AA9CA07EA1A /* InputBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InputBar.swift; sourceTree = "<group>"; };
 		F1FF094BA3F6CC3D1003E121 /* ChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatView.swift; sourceTree = "<group>"; };
-		FF11D8E240B8AF1F2DFFB68B /* DirectVideoUploader.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = DirectVideoUploader.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		FF11D8E240B8AF1F2DFFB68B /* DirectVideoUploader.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = DirectVideoUploader.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -482,7 +482,6 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = DirectVideoUploader/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Fixer;
-				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				INFOPLIST_KEY_NSCameraUsageDescription = "Record video to upload to the newsroom server.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Attach GPS coordinates to your video upload.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Required by the speech recognition framework for audio processing.";
@@ -500,7 +499,6 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.5.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.directvideo.uploader;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = 1;
@@ -515,7 +513,6 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = DirectVideoUploader/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Fixer;
-				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				INFOPLIST_KEY_NSCameraUsageDescription = "Record video to upload to the newsroom server.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Attach GPS coordinates to your video upload.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Required by the speech recognition framework for audio processing.";
@@ -533,7 +530,6 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.5.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.directvideo.uploader;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = 1;
