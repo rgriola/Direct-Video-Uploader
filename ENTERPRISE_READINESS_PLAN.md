@@ -1,4 +1,4 @@
-Last updated: May 12, 2026 - 2:44pm - GitHub Copilot (GPT-5.3-Codex)
+Last updated: May 12, 2026 - 2:59pm - GitHub Copilot (GPT-5.3-Codex)
 
 # Enterprise Readiness Plan — Fixer
 
@@ -116,11 +116,11 @@ server/src/__tests__/
 
 **Why first:** Token revocation, distributed rate limiting, BullMQ job queue, and Socket.IO horizontal scaling all depend on Redis. Provisioning it once up-front avoids stop-and-restart later.
 
-- [ ] Add Render Redis (or Upstash) to `render.yaml`
-- [ ] Add `REDIS_URL` env var (with TLS in production)
-- [ ] Create `server/src/lib/redis.js` — `ioredis` singleton with reconnect/backoff
-- [ ] Add Redis ping to `/api/health/ready` (Phase 4.3)
-- [ ] Document local-dev fallback: in-memory shim when `REDIS_URL` is unset
+- [x] Add Render Redis (or Upstash) to `render.yaml`
+- [x] Add `REDIS_URL` env var (with TLS in production)
+- [x] Create `server/src/lib/redis.js` — `ioredis` singleton with reconnect/backoff
+- [x] Add Redis ping to `/api/health/ready` (Phase 4.3)
+- [x] Document local-dev fallback: in-memory shim when `REDIS_URL` is unset
 
 ---
 
@@ -128,12 +128,12 @@ server/src/__tests__/
 
 **Why first / CRITICAL:** `render.yaml` currently runs `npx prisma db push --accept-data-loss` on every deploy. This silently drops columns and bypasses migration history. No serious enterprise client will accept this.
 
-- [ ] Switch local dev to `npx prisma migrate dev`
-- [ ] Generate baseline migration from current production schema (`prisma migrate diff` → SQL)
+- [x] Switch local dev to `npx prisma migrate dev`
+- [x] Generate baseline migration from current production schema (`prisma migrate diff` → SQL)
 - [x] Replace `prisma db push --accept-data-loss` with `prisma migrate deploy` in `render.yaml`
-- [ ] Commit `server/prisma/migrations/` directory
-- [ ] Add migration review to PR checklist (any schema change requires a migration file in the diff)
-- [ ] Document rollback procedure (Render rollback + `prisma migrate resolve --rolled-back`)
+- [x] Commit `server/prisma/migrations/` directory
+- [x] Add migration review to PR checklist (any schema change requires a migration file in the diff)
+- [x] Document rollback procedure (Render rollback + `prisma migrate resolve --rolled-back`)
 
 ---
 

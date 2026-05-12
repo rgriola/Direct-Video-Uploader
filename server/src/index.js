@@ -1,4 +1,4 @@
-// Last updated: May 11, 2026 - 8:17pm - GitHub Copilot (GPT-5.3-Codex)
+// Last updated: May 12, 2026 - 2:59pm - GitHub Copilot (GPT-5.3-Codex)
 /**
  * Fixer — Server Entry Point
  *
@@ -35,6 +35,7 @@ import { startMuxSync, stopMuxSync } from './jobs/mux-sync.js';
 import { startUploadCleanup, stopUploadCleanup } from './jobs/upload-cleanup.js';
 import { CORS_ORIGINS, WS_CORS_ORIGINS } from './lib/config.js';
 import prisma from './lib/prisma.js';
+import redis, { closeRedis, isRedisConfigured, redisMode } from './lib/redis.js';
 
 // ─── Global Crash Protection ─────────────────────────────
 // Prevent the process from dying on unhandled errors (Render shows 502 when this happens)
@@ -70,7 +71,7 @@ function shouldBypassGlobalRateLimit(request) {
     return !url.startsWith('/api/');
 }
 
-const REQUIRED_PROD_ENV = ['DATABASE_URL', 'JWT_SECRET'];
+const REQUIRED_PROD_ENV = ['DATABASE_URL', 'JWT_SECRET', 'REDIS_URL'];
 const REQUIRED_MUX_ENV = ['MUX_TOKEN_ID', 'MUX_TOKEN_SECRET', 'MUX_ENV_KEY', 'MUX_WEBHOOK_SECRET'];
 
 function missingEnvVars(keys) {
@@ -178,6 +179,9 @@ const fastify = Fastify({
     trustProxy: isProduction, // Trust Render's reverse proxy for correct client IPs
     bodyLimit: MAX_NON_MULTIPART_BODY_BYTES,
 });
+
+fastify.decorate('redis', redis);
+fastify.decorate('redisMode', redisMode);
 
 // ─── Plugins ─────────────────────────────────────────────
 await fastify.register(cors, {
@@ -475,6 +479,12 @@ fastify.get('/api/health/live', async () => ({
 fastify.get('/api/health/ready', async (request, reply) => {
     const checks = {
         database: { status: 'ok', message: 'Connected' },
+        redis: {
+            status: 'ok',
+            message: isRedisConfigured
+                ? 'Connected'
+                : 'In-memory fallback (REDIS_URL unset)',
+        },
         mux: { status: 'ok', message: 'Configured' },
     };
 
@@ -482,6 +492,14 @@ fastify.get('/api/health/ready', async (request, reply) => {
         await prisma.$queryRaw`SELECT 1`;
     } catch (err) {
         checks.database = { status: 'error', message: err.message };
+    }
+
+    if (isRedisConfigured) {
+        try {
+            await redis.ping();
+        } catch (err) {
+            checks.redis = { status: 'error', message: err.message };
+        }
     }
 
     const muxConfigured = !!(
@@ -495,7 +513,9 @@ fastify.get('/api/health/ready', async (request, reply) => {
         checks.mux = { status: 'error', message: 'Mux env vars missing' };
     }
 
-    const isReady = checks.database.status === 'ok' && checks.mux.status === 'ok';
+    const isReady = checks.database.status === 'ok'
+        && checks.redis.status === 'ok'
+        && checks.mux.status === 'ok';
 
     if (!isReady) {
         return reply.status(503).send({
@@ -600,6 +620,7 @@ const shutdown = async (signal) => {
         stopUploadCleanup();
         io.close();       // Close WebSocket connections
         await fastify.close(); // Stop accepting HTTP, finish in-flight requests
+        await closeRedis();
         console.log('👋 Server stopped cleanly');
     } catch (err) {
         console.error('Shutdown error:', err.message);

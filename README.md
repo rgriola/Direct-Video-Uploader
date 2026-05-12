@@ -1,4 +1,4 @@
-May 12, 2026 - 2:20pm - GitHub Copilot (GPT-5.3-Codex)
+May 12, 2026 - 2:59pm - GitHub Copilot (GPT-5.3-Codex)
 
 # Direct Video Uploader (DVU) — Mediasource Fixer
 
@@ -196,6 +196,7 @@ The server expects these in `server/.env` (see `.env.example`):
 | Variable           | Required | Description                          |
 | ------------------ | -------- | ------------------------------------ |
 | `DATABASE_URL`     | Yes      | PostgreSQL connection string         |
+| `REDIS_URL`        | Yes**    | Redis/Valkey connection string       |
 | `JWT_SECRET`       | Yes*     | JWT signing secret (*auto-generates) |
 | `MUX_TOKEN_ID`     | Yes      | Mux API token ID                     |
 | `MUX_TOKEN_SECRET` | Yes      | Mux API token secret                 |
@@ -203,6 +204,8 @@ The server expects these in `server/.env` (see `.env.example`):
 | `SLACK_BOT_TOKEN`  | No       | Slack bot OAuth token (`xoxb-...`)   |
 | `PUBLIC_URL`       | No       | Public URL for clip links            |
 | `NODE_ENV`         | No       | `production` enables SSL, trust proxy|
+
+**`REDIS_URL` fallback behavior:** local development can run without `REDIS_URL`; the server uses an in-memory Redis shim. Production requires `REDIS_URL` and startup fails fast if it is missing.
 
 ---
 
