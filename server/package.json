@@ -39,7 +39,7 @@
     "@fastify/swagger-ui": "^5.2.6",
     "@mux/mux-node": "^12.8.1",
     "@node-saml/passport-saml": "^5.1.0",
-    "@prisma/adapter-pg": "^7.4.2",
+    "@prisma/adapter-pg": "^7.8.0",
     "@prisma/client": "^7.4.2",
     "@slack/web-api": "^7.14.1",
     "ajv-formats": "^3.0.1",
