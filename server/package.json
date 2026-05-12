@@ -46,7 +46,7 @@
     "bcrypt": "^6.0.0",
     "dotenv": "^17.3.1",
     "fastify": "^5.7.4",
-    "file-type": "^21.3.0",
+    "file-type": "^22.0.1",
     "ioredis": "^5.10.1",
     "pg": "^8.19.0",
     "pino-pretty": "^13.1.3",
