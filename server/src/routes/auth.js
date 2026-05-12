@@ -1,4 +1,4 @@
-// Last updated: May 12, 2026 - 3:05pm - GitHub Copilot (GPT-5.3-Codex)
+// Last updated: May 12, 2026 - 3:12pm - GitHub Copilot (GPT-5.3-Codex)
 /**
  * Auth routes — Simple phone# + PIN login for demo.
  */
@@ -187,7 +187,16 @@ export default async function authRoutes(fastify) {
      * POST /api/auth/logout
      * Invalidates token session and clears web session cookies used by dashboard/clip viewer.
      */
-    fastify.post('/api/auth/logout', async (request, reply) => {
+    fastify.post('/api/auth/logout', {
+        schema: {
+            headers: {
+                type: 'object',
+                properties: {
+                    authorization: { type: 'string' },
+                },
+            },
+        },
+    }, async (request, reply) => {
         const bearerToken = getBearerToken(request.headers?.authorization);
         const cookieToken = request.cookies?.fixer_clip_token;
         const token = bearerToken || cookieToken || null;

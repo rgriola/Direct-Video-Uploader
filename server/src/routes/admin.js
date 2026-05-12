@@ -1,4 +1,4 @@
-// Last updated: May 12, 2026 - 3:05pm - GitHub Copilot (GPT-5.3-Codex)
+// Last updated: May 12, 2026 - 3:12pm - GitHub Copilot (GPT-5.3-Codex)
 /**
  * Admin routes — Dashboard data, user management, asset overview.
  * All data is LIVE — no simulated actions.
@@ -254,6 +254,18 @@ export default async function adminRoutes(fastify) {
      */
     fastify.post('/api/admin/users', {
         preHandler: [fastify.authenticate, fastify.authorizeAdmin],
+        schema: {
+            body: {
+                type: 'object',
+                properties: {
+                    name: { type: 'string' },
+                    phoneNumber: { type: 'string' },
+                    email: { type: 'string' },
+                    team: { type: 'string' },
+                    companyCode: { type: 'string' },
+                },
+            },
+        },
     }, async (request, reply) => {
         const { name, phoneNumber, email, team, companyCode } = request.body || {};
 
@@ -318,6 +330,15 @@ export default async function adminRoutes(fastify) {
      */
     fastify.post('/api/admin/users/:id/revoke-sessions', {
         preHandler: [fastify.authenticate, fastify.authorizeAdmin],
+        schema: {
+            params: {
+                type: 'object',
+                required: ['id'],
+                properties: {
+                    id: { type: 'string', minLength: 1 },
+                },
+            },
+        },
     }, async (request, reply) => {
         const { id } = request.params;
 
@@ -556,6 +577,15 @@ export default async function adminRoutes(fastify) {
      */
     fastify.post('/api/admin/organizations', {
         preHandler: [fastify.authenticate, fastify.authorizeAdmin],
+        schema: {
+            body: {
+                type: 'object',
+                properties: {
+                    companyName: { type: 'string' },
+                    companyCode: { type: 'string' },
+                },
+            },
+        },
     }, async (request, reply) => {
         const { companyName, companyCode } = request.body || {};
 
@@ -726,6 +756,39 @@ export default async function adminRoutes(fastify) {
      */
     fastify.patch('/api/admin/users/:id', {
         preHandler: [fastify.authenticate, fastify.authorizeAdmin],
+        schema: {
+            params: {
+                type: 'object',
+                required: ['id'],
+                properties: {
+                    id: { type: 'string', minLength: 1 },
+                },
+            },
+            body: {
+                type: 'object',
+                properties: {
+                    companyCode: {
+                        oneOf: [
+                            { type: 'string' },
+                            { type: 'null' },
+                        ],
+                    },
+                    name: { type: 'string' },
+                    team: {
+                        oneOf: [
+                            { type: 'string' },
+                            { type: 'null' },
+                        ],
+                    },
+                    email: {
+                        oneOf: [
+                            { type: 'string' },
+                            { type: 'null' },
+                        ],
+                    },
+                },
+            },
+        },
     }, async (request, reply) => {
         const { id } = request.params;
         const { companyCode, name, team, email } = request.body || {};

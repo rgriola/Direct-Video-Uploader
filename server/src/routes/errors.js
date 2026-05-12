@@ -1,4 +1,4 @@
-// Last updated: May 11, 2026 - 7:15pm - GitHub Copilot (GPT-5.3-Codex)
+// Last updated: May 12, 2026 - 3:12pm - GitHub Copilot (GPT-5.3-Codex)
 /**
  * Error logging routes — Persist errors from iOS, server, dashboard.
  * Future: trigger text/email notifications for CRITICAL errors.
@@ -13,6 +13,28 @@ export default async function errorRoutes(fastify) {
      */
     fastify.post('/api/errors', {
         preHandler: [fastify.authenticate],
+        schema: {
+            body: {
+                type: 'object',
+                properties: {
+                    source: { type: 'string' },
+                    category: { type: 'string' },
+                    message: { type: 'string' },
+                    details: {
+                        anyOf: [
+                            { type: 'object', additionalProperties: true },
+                            { type: 'array' },
+                            { type: 'string' },
+                            { type: 'number' },
+                            { type: 'boolean' },
+                            { type: 'null' },
+                        ],
+                    },
+                    severity: { type: 'string', enum: ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL', 'debug', 'info', 'warning', 'error', 'critical'] },
+                    assetId: { type: 'string' },
+                },
+            },
+        },
         config: {
             rateLimit: { max: 20, timeWindow: '1 minute' },
         },

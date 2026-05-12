@@ -1,4 +1,4 @@
-// Last updated: May 11, 2026 - 6:47pm - GitHub Copilot (GPT-5.3-Codex)
+// Last updated: May 12, 2026 - 3:12pm - GitHub Copilot (GPT-5.3-Codex)
 /**
  * Asset routes — Create, upload, retrieve, submit form.
  */
@@ -57,6 +57,14 @@ export default async function assetRoutes(fastify) {
      */
     fastify.post('/api/assets', {
         preHandler: [fastify.authenticate],
+        schema: {
+            body: {
+                type: 'object',
+                properties: {
+                    fileName: { type: 'string', maxLength: 255 },
+                },
+            },
+        },
         config: {
             rateLimit: { max: 10, timeWindow: '1 minute' },
         },
@@ -97,6 +105,24 @@ export default async function assetRoutes(fastify) {
      */
     fastify.post('/api/assets/:id/mux-upload', {
         preHandler: [fastify.authenticate],
+        schema: {
+            params: {
+                type: 'object',
+                required: ['id'],
+                properties: {
+                    id: { type: 'string', minLength: 1 },
+                },
+            },
+            body: {
+                type: 'object',
+                properties: {
+                    metadata: {
+                        type: 'object',
+                        additionalProperties: true,
+                    },
+                },
+            },
+        },
     }, async (request, reply) => {
         const { id } = request.params;
         const headerCorrelationId = sanitizeCorrelationId(request.headers['x-upload-correlation-id']);
@@ -341,6 +367,13 @@ export default async function assetRoutes(fastify) {
      */
     fastify.post('/api/assets/:id/form', {
         schema: {
+            params: {
+                type: 'object',
+                required: ['id'],
+                properties: {
+                    id: { type: 'string', minLength: 1 },
+                },
+            },
             body: {
                 type: 'object',
                 properties: {
@@ -467,6 +500,34 @@ export default async function assetRoutes(fastify) {
      * Body: { transcript: string, segments: [{word, start, end, confidence}, ...] }
      */
     fastify.patch('/api/assets/:id/transcript', {
+        schema: {
+            params: {
+                type: 'object',
+                required: ['id'],
+                properties: {
+                    id: { type: 'string', minLength: 1 },
+                },
+            },
+            body: {
+                type: 'object',
+                properties: {
+                    transcript: { type: 'string', maxLength: 10000 },
+                    segments: {
+                        type: 'array',
+                        items: {
+                            type: 'object',
+                            properties: {
+                                word: { type: 'string' },
+                                start: { type: 'number' },
+                                end: { type: 'number' },
+                                confidence: { type: 'number' },
+                            },
+                            additionalProperties: true,
+                        },
+                    },
+                },
+            },
+        },
         preHandler: [fastify.authenticate],
     }, async (request, reply) => {
         const { id } = request.params;

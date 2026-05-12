@@ -1,8 +1,8 @@
-May 12, 2026 - 3:09pm - GitHub Copilot (GPT-5.3-Codex)
+May 12, 2026 - 3:12pm - GitHub Copilot (GPT-5.3-Codex)
 
 # Fixer — Enterprise Readiness Tasks
 
-> Last audit sync: May 12, 2026 - 3:09pm - GitHub Copilot (GPT-5.3-Codex)
+> Last audit sync: May 12, 2026 - 3:12pm - GitHub Copilot (GPT-5.3-Codex)
 
 > Companion to [ENTERPRISE_READINESS_PLAN.md](ENTERPRISE_READINESS_PLAN.md).
 > Check items off as you complete them. Each task should be a single PR.
@@ -100,7 +100,7 @@ May 12, 2026 - 3:09pm - GitHub Copilot (GPT-5.3-Codex)
 
 ### 1.2 Input Validation
 
-- [ ] Add Fastify schemas to all unvalidated POST/PATCH routes (PARTIAL: schemas exist on selected routes)
+- [ ] Add Fastify schemas to all unvalidated POST/PATCH routes (PARTIAL: expanded across auth/admin/assets/errors/clips; remaining no-input maintenance/webhook endpoints)
 - [x] Install `ajv-formats`
 - [x] Fix raw SQL `companyCode` injection in admin.js
 - [x] MIME type check before Mux upload creation
