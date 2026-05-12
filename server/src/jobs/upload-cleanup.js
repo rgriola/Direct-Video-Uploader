@@ -1,4 +1,4 @@
-// Last updated: May 9, 2026 - 7:22pm - GPT-5.3-Codex
+// Last updated: May 12, 2026 - 2:20pm - GitHub Copilot (GPT-5.3-Codex)
 /**
  * Upload Cleanup — Background Job (B4)
  *
@@ -18,6 +18,7 @@ import path from 'path';
 
 const CLEANUP_INTERVAL_MS = 5 * 60 * 1000;   // 5 minutes
 const ORPHAN_THRESHOLD_MS = 60 * 60 * 1000;  // 1 hour
+const SLACK_ALERT_CHANNEL = process.env.SLACK_ALERT_CHANNEL || 'general';
 let intervalId = null;
 let cleanupLog = null;
 
@@ -77,7 +78,7 @@ async function cleanupOrphanedUploads(log = cleanupLog) {
 
             // Alert via Slack
             if (slack.isConfigured()) {
-                await slack.postToChannel('general',
+                await slack.postToChannel(SLACK_ALERT_CHANNEL,
                     `🧹 Orphaned upload cleaned up — #${asset.mediasourceId} was stuck in UPLOADING for ${ageMin}min (user: ${redactedUserName})`,
                     undefined,
                     { requestId: 'job:upload-cleanup' }

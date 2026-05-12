@@ -1,4 +1,4 @@
-Last updated: May 12, 2026 - 1:25pm - GitHub Copilot (GPT-5.3-Codex)
+Last updated: May 12, 2026 - 2:20pm - GitHub Copilot (GPT-5.3-Codex)
 
 # Enterprise Readiness Plan — Fixer
 
@@ -126,14 +126,14 @@ server/src/__tests__/
 
 ### 0.5 Versioned Migrations (Stop `db push` in Production)
 
-**Why first / CRITICAL:** `render.yaml` historically ran `npx prisma db push --accept-data-loss` on deploy. This silently drops columns and bypasses migration history. No serious enterprise client will accept this.
+**Why first / CRITICAL:** `render.yaml` currently runs `npx prisma db push --accept-data-loss` on every deploy. This silently drops columns and bypasses migration history. No serious enterprise client will accept this.
 
-- [x] Switch local dev to `npx prisma migrate dev`
-- [x] Generate baseline migration from current production schema (`prisma migrate diff` → SQL)
+- [ ] Switch local dev to `npx prisma migrate dev`
+- [ ] Generate baseline migration from current production schema (`prisma migrate diff` → SQL)
 - [x] Replace `prisma db push --accept-data-loss` with `prisma migrate deploy` in `render.yaml`
-- [x] Commit `server/prisma/migrations/` directory
-- [x] Add migration review to PR checklist (any schema change requires a migration file in the diff)
-- [x] Document rollback procedure (Render rollback + `prisma migrate resolve --rolled-back`)
+- [ ] Commit `server/prisma/migrations/` directory
+- [ ] Add migration review to PR checklist (any schema change requires a migration file in the diff)
+- [ ] Document rollback procedure (Render rollback + `prisma migrate resolve --rolled-back`)
 
 ---
 
@@ -141,12 +141,12 @@ server/src/__tests__/
 
 **Why first:** All subsequent phases need a non-prod target to validate against before shipping.
 
-- [ ] Add a `staging` service to `render.yaml` (separate DB, separate Redis, separate Mux env)
-- [ ] Auto-deploy staging from a `staging` branch
-- [ ] Use a separate Mux environment key (`MUX_ENV_KEY` already supports this)
-- [ ] Use a separate Slack channel for staging alerts
+- [x] Add a `staging` service to `render.yaml` (separate DB, separate Redis, separate Mux env)
+- [x] Auto-deploy staging from a `staging` branch
+- [x] Use a separate Mux environment key (`MUX_ENV_KEY` already supports this)
+- [x] Use a separate Slack channel for staging alerts
 - [ ] iOS: add `Debug-Staging` build configuration in `project.yml` pointing at staging URL
-- [ ] Document promotion flow: `staging` → `main` PR after smoke tests pass
+- [x] Document promotion flow: `staging` → `main` PR after smoke tests pass
 
 ---
 

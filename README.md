@@ -1,4 +1,4 @@
-May 12, 2026 - 1:25pm - GitHub Copilot (GPT-5.3-Codex)
+May 12, 2026 - 2:20pm - GitHub Copilot (GPT-5.3-Codex)
 
 # Direct Video Uploader (DVU) — Mediasource Fixer
 
@@ -211,12 +211,20 @@ The server expects these in `server/.env` (see `.env.example`):
 The repo includes `render.yaml` for Render Blueprint deploys:
 
 ```bash
-# Render auto-deploys from main branch
-# Build: npm ci → build admin → prisma generate → prisma migrate deploy → seed
+# Production auto-deploys from main branch
+# Staging auto-deploys from staging branch
+# Build: npm ci -> build admin -> prisma generate -> prisma migrate deploy -> seed
 # Start: cd server && node src/index.js
 ```
 
 Custom domain: `ms-fixer.com` · Managed PostgreSQL · No cold starts (paid tier).
+
+### Promotion Flow
+
+1. Merge feature work into `staging`.
+2. Validate in Render staging service (`direct-video-uploader-staging`).
+3. Open PR: `staging` -> `main`.
+4. After merge, Render production service auto-deploys from `main`.
 
 ## Prisma Migrations (Phase 0.5)
 

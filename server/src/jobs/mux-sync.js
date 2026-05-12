@@ -1,4 +1,4 @@
-// Last updated: May 10, 2026 - 12:55pm - GitHub Copilot (GPT-5.3-Codex)
+// Last updated: May 12, 2026 - 2:20pm - GitHub Copilot (GPT-5.3-Codex)
 /**
  * Mux Status Sync — Background Job
  *
@@ -16,6 +16,7 @@ import * as slack from '../lib/slack.js';
 
 const SYNC_INTERVAL_MS = 2 * 60 * 1000;  // 2 minutes
 const STALE_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes before alerting
+const SLACK_ALERT_CHANNEL = process.env.SLACK_ALERT_CHANNEL || 'general';
 let intervalId = null;
 let syncLog = null;
 
@@ -126,7 +127,7 @@ async function syncProcessingClips(fastify) {
 
                     // Alert via Slack
                     if (slack.isConfigured()) {
-                        await slack.postToChannel('general',
+                        await slack.postToChannel(SLACK_ALERT_CHANNEL,
                             `⚠️ Mux processing error — clip #${clip.asset.mediasourceId} failed after ${ageMin}min`,
                             undefined,
                             { requestId: 'job:mux-sync' }
@@ -159,7 +160,7 @@ async function syncProcessingClips(fastify) {
                     data: { status: 'ERROR' },
                 }));
                 if (slack.isConfigured()) {
-                    await slack.postToChannel('general',
+                    await slack.postToChannel(SLACK_ALERT_CHANNEL,
                         `⚠️ Upload failed — clip #${clip.asset.mediasourceId} had no Mux asset after ${ageMin}min (auto-marked ERROR)`,
                         undefined,
                         { requestId: 'job:mux-sync' }

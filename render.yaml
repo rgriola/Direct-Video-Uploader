@@ -1,5 +1,5 @@
 # Render Blueprint — Direct Video Uploader
-# Last updated: May 9, 2026 - 6:01pm
+# Last updated: May 12, 2026 - 2:20pm - GitHub Copilot (GPT-5.3-Codex)
 # Deploy: Connect GitHub repo → Render auto-detects this file
 # Docs: https://docs.render.com/blueprint-spec
 
@@ -8,6 +8,10 @@ databases:
     plan: free
     databaseName: directvideo
     user: directvideo
+  - name: directvideo-staging-db
+    plan: free
+    databaseName: directvideo_staging
+    user: directvideo_staging
 
 services:
   - type: web
@@ -36,7 +40,46 @@ services:
         sync: false
       - key: MUX_ENV_KEY
         sync: false
+      - key: MUX_WEBHOOK_SECRET
+        sync: false
       - key: SLACK_BOT_TOKEN
         sync: false
+      - key: SLACK_ALERT_CHANNEL
+        value: general
       - key: PUBLIC_URL
         value: https://ms-fixer.com
+
+  - type: web
+    name: direct-video-uploader-staging
+    runtime: node
+    nodeVersion: 22
+    plan: starter
+    region: oregon
+    branch: staging
+    rootDir: server
+    buildCommand: npm ci --include=dev && cd ../admin && npm ci --include=dev && npm run build && cd ../server && npx prisma generate && npx prisma migrate deploy && node src/seed.js
+    startCommand: npm run start
+    healthCheckPath: /api/health/ready
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: JWT_SECRET
+        generateValue: true
+      - key: DATABASE_URL
+        fromDatabase:
+          name: directvideo-staging-db
+          property: connectionString
+      - key: MUX_TOKEN_ID
+        sync: false
+      - key: MUX_TOKEN_SECRET
+        sync: false
+      - key: MUX_ENV_KEY
+        sync: false
+      - key: MUX_WEBHOOK_SECRET
+        sync: false
+      - key: SLACK_BOT_TOKEN
+        sync: false
+      - key: SLACK_ALERT_CHANNEL
+        value: staging-alerts
+      - key: PUBLIC_URL
+        value: https://staging.ms-fixer.com
