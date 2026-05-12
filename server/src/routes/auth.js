@@ -1,9 +1,18 @@
-// Last updated: May 11, 2026 - 7:15pm - GitHub Copilot (GPT-5.3-Codex)
+// Last updated: May 12, 2026 - 3:05pm - GitHub Copilot (GPT-5.3-Codex)
 /**
  * Auth routes — Simple phone# + PIN login for demo.
  */
+import crypto from 'node:crypto';
 import prisma from '../lib/prisma.js';
 import { verifyPin, hashPin, dbRetry } from '../lib/utils.js';
+import { createSession, deleteSession } from '../lib/session-store.js';
+
+function getBearerToken(rawHeader) {
+    if (typeof rawHeader !== 'string') return null;
+    if (!rawHeader.startsWith('Bearer ')) return null;
+    const token = rawHeader.slice(7).trim();
+    return token || null;
+}
 
 export default async function authRoutes(fastify) {
     // Auth responses should never be cached by intermediaries or clients.
@@ -101,6 +110,8 @@ export default async function authRoutes(fastify) {
             }));
         }
 
+        const jti = crypto.randomUUID();
+
         // Generate JWT (include companyCode for filtering)
         const token = fastify.jwt.sign(
             {
@@ -109,9 +120,20 @@ export default async function authRoutes(fastify) {
                 name: user.name,
                 role: user.role || 'USER',
                 companyCode: user.companyCode || null,
+                jti,
             },
             { expiresIn: '7d' }
         );
+
+        try {
+            await createSession({ userId: user.id, jti });
+        } catch (err) {
+            request.log.error(
+                { err: { message: err.message }, userId: user.id },
+                'Failed to create login session'
+            );
+            return reply.status(503).send({ error: 'Unable to establish session' });
+        }
 
         return {
             token,
@@ -163,9 +185,22 @@ export default async function authRoutes(fastify) {
 
     /**
      * POST /api/auth/logout
-     * Clears web session cookies used by dashboard/clip viewer.
+     * Invalidates token session and clears web session cookies used by dashboard/clip viewer.
      */
-    fastify.post('/api/auth/logout', async (_request, reply) => {
+    fastify.post('/api/auth/logout', async (request, reply) => {
+        const bearerToken = getBearerToken(request.headers?.authorization);
+        const cookieToken = request.cookies?.fixer_clip_token;
+        const token = bearerToken || cookieToken || null;
+
+        if (token) {
+            try {
+                const decoded = fastify.jwt.verify(token);
+                await deleteSession({ userId: decoded.id, jti: decoded.jti });
+            } catch {
+                // Best-effort logout: still clear cookies and return ok.
+            }
+        }
+
         reply.clearCookie('fixer_clip_token', { path: '/' });
         reply.clearCookie('fixer_clip_token', { path: '/clips' });
         return { ok: true };

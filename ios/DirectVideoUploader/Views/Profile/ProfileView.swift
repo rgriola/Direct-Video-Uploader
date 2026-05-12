@@ -1,4 +1,4 @@
-// May 10, 2026 - 3:34pm - GitHub Copilot (GPT-5.3-Codex)
+// May 12, 2026 - 3:05pm - GitHub Copilot (GPT-5.3-Codex)
 import SwiftUI
 
 /// Profile screen — user info, permission toggles, app info, and logout.
@@ -237,8 +237,10 @@ struct ProfileView: View {
         .confirmationDialog("Positive?", isPresented: $showLogoutConfirm, titleVisibility: .visible)
         {
             Button("Logout", role: .destructive) {
-                auth.logout()
-                ws.disconnect()
+                Task {
+                    await auth.logoutFromServer()
+                    ws.disconnect()
+                }
             }
         }
     }

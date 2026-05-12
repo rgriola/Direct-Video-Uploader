@@ -1,8 +1,8 @@
-May 12, 2026 - 2:59pm - GitHub Copilot (GPT-5.3-Codex)
+May 12, 2026 - 3:09pm - GitHub Copilot (GPT-5.3-Codex)
 
 # Fixer — Enterprise Readiness Tasks
 
-> Last audit sync: May 12, 2026 - 2:59pm - GitHub Copilot (GPT-5.3-Codex)
+> Last audit sync: May 12, 2026 - 3:09pm - GitHub Copilot (GPT-5.3-Codex)
 
 > Companion to [ENTERPRISE_READINESS_PLAN.md](ENTERPRISE_READINESS_PLAN.md).
 > Check items off as you complete them. Each task should be a single PR.
@@ -91,12 +91,12 @@ May 12, 2026 - 2:59pm - GitHub Copilot (GPT-5.3-Codex)
 
 > Requires Phase 0.4
 
-- [ ] Add `jti` claim to JWTs at login
-- [ ] Store JTIs in Redis with TTL
-- [ ] Verify JTI on every authenticated request
-- [ ] `POST /api/auth/logout` (delete JTI)
-- [ ] `POST /api/admin/users/:id/revoke-sessions`
-- [ ] iOS: call logout endpoint, clear Keychain
+- [x] Add `jti` claim to JWTs at login
+- [x] Store JTIs in Redis with TTL
+- [x] Verify JTI on every authenticated request
+- [x] `POST /api/auth/logout` (delete JTI)
+- [x] `POST /api/admin/users/:id/revoke-sessions`
+- [x] iOS: call logout endpoint, clear Keychain
 
 ### 1.2 Input Validation
 

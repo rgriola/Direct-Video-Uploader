@@ -1,4 +1,4 @@
-// Last updated: May 11, 2026 - 7:15pm - GitHub Copilot (GPT-5.3-Codex)
+// Last updated: May 12, 2026 - 3:05pm - GitHub Copilot (GPT-5.3-Codex)
 /**
  * Admin routes — Dashboard data, user management, asset overview.
  * All data is LIVE — no simulated actions.
@@ -8,6 +8,7 @@ import prisma from '../lib/prisma.js';
 import { hashPin } from '../lib/utils.js';
 import { deleteMuxAsset, isMuxEnabled } from '../lib/mux.js';
 import { redactCompanyCode, redactPersonName, redactPhoneNumber } from '../lib/redact.js';
+import { revokeUserSessions } from '../lib/session-store.js';
 
 export default async function adminRoutes(fastify) {
 
@@ -308,6 +309,57 @@ export default async function adminRoutes(fastify) {
                 companyCode: user.companyCode,
             },
             message: `Created user ${name} (PIN: 0000)`,
+        };
+    });
+
+    /**
+     * POST /api/admin/users/:id/revoke-sessions
+     * Revoke all active JWT sessions for a user and disconnect active sockets.
+     */
+    fastify.post('/api/admin/users/:id/revoke-sessions', {
+        preHandler: [fastify.authenticate, fastify.authorizeAdmin],
+    }, async (request, reply) => {
+        const { id } = request.params;
+
+        const target = await prisma.user.findUnique({
+            where: { id },
+            select: {
+                id: true,
+                name: true,
+                phoneNumber: true,
+            },
+        });
+
+        if (!target) {
+            return reply.status(404).send({ error: 'User not found' });
+        }
+
+        const revokedSessions = await revokeUserSessions(id);
+
+        let disconnectedSockets = 0;
+        const userSocketIds = fastify.userSockets?.get(id) || new Set();
+        for (const socketId of userSocketIds) {
+            const socket = fastify.io?.of('/')?.sockets?.get(socketId);
+            if (!socket) continue;
+            socket.emit('session:revoked', { reason: 'Admin revoked sessions' });
+            socket.disconnect(true);
+            disconnectedSockets += 1;
+        }
+
+        request.log.warn(
+            {
+                userName: redactPersonName(target.name),
+                phoneNumber: redactPhoneNumber(target.phoneNumber),
+                revokedSessions,
+                disconnectedSockets,
+            },
+            'Admin revoked user sessions'
+        );
+
+        return {
+            message: `Revoked ${revokedSessions} session(s) for ${target.name}`,
+            revokedSessions,
+            disconnectedSockets,
         };
     });
 

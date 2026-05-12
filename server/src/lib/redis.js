@@ -1,4 +1,4 @@
-// Last updated: May 12, 2026 - 2:59pm - GitHub Copilot (GPT-5.3-Codex)
+// Last updated: May 12, 2026 - 3:05pm - GitHub Copilot (GPT-5.3-Codex)
 import Redis from 'ioredis';
 
 const REDIS_URL = process.env.REDIS_URL?.trim() || '';
@@ -22,7 +22,12 @@ class InMemoryRedisShim {
     }
 
     async get(key) {
-        return this.store.has(key) ? this.store.get(key) : null;
+        if (!this.store.has(key)) {
+            return null;
+        }
+
+        const value = this.store.get(key);
+        return value instanceof Set ? null : value;
     }
 
     async set(key, value, ttlMode, ttlValue) {
@@ -56,6 +61,55 @@ class InMemoryRedisShim {
         return removed;
     }
 
+    async sadd(key, ...members) {
+        let set = this.store.get(key);
+        if (!(set instanceof Set)) {
+            set = new Set();
+            this.store.set(key, set);
+        }
+
+        let added = 0;
+        for (const member of members) {
+            const normalized = String(member);
+            if (!set.has(normalized)) {
+                set.add(normalized);
+                added += 1;
+            }
+        }
+
+        return added;
+    }
+
+    async smembers(key) {
+        const set = this.store.get(key);
+        if (!(set instanceof Set)) {
+            return [];
+        }
+
+        return [...set.values()];
+    }
+
+    async srem(key, ...members) {
+        const set = this.store.get(key);
+        if (!(set instanceof Set)) {
+            return 0;
+        }
+
+        let removed = 0;
+        for (const member of members) {
+            if (set.delete(String(member))) {
+                removed += 1;
+            }
+        }
+
+        if (set.size === 0) {
+            this.store.delete(key);
+            this.clearTimer(key);
+        }
+
+        return removed;
+    }
+
     async expire(key, ttlSeconds) {
         if (!this.store.has(key)) {
             return 0;
@@ -80,6 +134,7 @@ class InMemoryRedisShim {
             clearTimeout(timer);
         }
         this.timers.clear();
+        this.store.clear();
         return 'OK';
     }
 

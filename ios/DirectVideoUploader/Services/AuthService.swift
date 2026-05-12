@@ -1,3 +1,4 @@
+// May 12, 2026 - 3:05pm - GitHub Copilot (GPT-5.3-Codex)
 import Foundation
 import Observation
 
@@ -92,6 +93,24 @@ final class AuthService {
     }
     
     // MARK: - Logout
+
+    func logoutFromServer() async {
+        let authToken = token
+        defer { logout() }
+
+        guard let authToken else { return }
+
+        var request = URLRequest(url: ServerConfig.logoutURL)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(authToken)", forHTTPHeaderField: "Authorization")
+
+        do {
+            _ = try await URLSession.shared.data(for: request)
+        } catch {
+            print("⚠️ [Auth] Logout request failed: \(error.localizedDescription)")
+        }
+    }
     
     func logout() {
         token = nil

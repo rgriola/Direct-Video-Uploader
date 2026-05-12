@@ -1,4 +1,4 @@
-// Last updated: May 12, 2026 - 2:59pm - GitHub Copilot (GPT-5.3-Codex)
+// Last updated: May 12, 2026 - 3:05pm - GitHub Copilot (GPT-5.3-Codex)
 /**
  * Fixer — Server Entry Point
  *
@@ -36,6 +36,7 @@ import { startUploadCleanup, stopUploadCleanup } from './jobs/upload-cleanup.js'
 import { CORS_ORIGINS, WS_CORS_ORIGINS } from './lib/config.js';
 import prisma from './lib/prisma.js';
 import redis, { closeRedis, isRedisConfigured, redisMode } from './lib/redis.js';
+import { hasSession } from './lib/session-store.js';
 
 // ─── Global Crash Protection ─────────────────────────────
 // Prevent the process from dying on unhandled errors (Render shows 502 when this happens)
@@ -271,6 +272,10 @@ const docsGuard = async (request, reply) => {
         return reply.status(401).send({ error: 'Unauthorized' });
     }
 
+    if (!decoded?.jti || !(await hasSession(decoded.jti))) {
+        return reply.status(401).send({ error: 'Unauthorized' });
+    }
+
     const user = await prisma.user.findUnique({
         where: { id: decoded.id },
         select: { role: true, status: true },
@@ -329,6 +334,11 @@ fastify.decorate('authenticate', async function (request, reply) {
         }
 
         const decoded = fastify.jwt.verify(token);
+
+        if (!decoded?.jti || !(await hasSession(decoded.jti))) {
+            return reply.status(401).send({ error: 'Unauthorized' });
+        }
+
         request.user = decoded;
 
         const user = await prisma.user.findUnique({

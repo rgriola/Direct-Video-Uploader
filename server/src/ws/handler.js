@@ -1,4 +1,4 @@
-// Last updated: May 11, 2026 - 7:15pm - GitHub Copilot (GPT-5.3-Codex)
+// Last updated: May 12, 2026 - 3:05pm - GitHub Copilot (GPT-5.3-Codex)
 /**
  * WebSocket handler — Socket.IO event management.
  * Handles real-time communication between the iOS app and server.
@@ -8,6 +8,7 @@ import prisma from '../lib/prisma.js';
 import * as slack from '../lib/slack.js';
 import { PUBLIC_URL } from '../lib/config.js';
 import { redactPersonName } from '../lib/redact.js';
+import { hasSession } from '../lib/session-store.js';
 
 /** Greeting templates — `{time}` is replaced with time-of-day, `{name}` with first name. */
 const GREETINGS = [
@@ -447,6 +448,11 @@ export function setupWebSocket(io, fastify) {
 
             // Verify JWT
             const decoded = fastify.jwt.verify(token);
+
+            if (!decoded?.jti || !(await hasSession(decoded.jti))) {
+                log.warn({ socketId: socket.id, userId: decoded?.id || null }, 'WS auth rejected: session revoked or missing');
+                return next(new Error('Unauthorized'));
+            }
 
             // Hydrate and enforce user status/role from DB, not token claims alone.
             const user = await prisma.user.findUnique({

@@ -1,4 +1,4 @@
-Last updated: May 12, 2026 - 2:59pm - GitHub Copilot (GPT-5.3-Codex)
+Last updated: May 12, 2026 - 3:09pm - GitHub Copilot (GPT-5.3-Codex)
 
 # Enterprise Readiness Plan — Fixer
 
@@ -172,12 +172,13 @@ server/src/__tests__/
 > Depends on Phase 0.4 (Redis).
 
 - [ ] Use Redis from Phase 0.4 to store token JTI (JWT ID) with TTL matching token expiry
+- [x] Use Redis from Phase 0.4 to store token JTI (JWT ID) with TTL matching token expiry
   - On logout: delete JTI from Redis
   - On every auth check: verify JTI exists in Redis (or use a deny-list pattern for lower latency)
-- [ ] Add `jti` claim to JWT payload at login
-- [ ] Add `POST /api/auth/logout` endpoint (deletes JTI)
-- [ ] Add `POST /api/admin/users/:id/revoke-sessions` endpoint (admin forcibly logs out a user)
-- [ ] iOS: call logout endpoint on explicit sign-out; clear Keychain token
+- [x] Add `jti` claim to JWT payload at login
+- [x] Add `POST /api/auth/logout` endpoint (deletes JTI)
+- [x] Add `POST /api/admin/users/:id/revoke-sessions` endpoint (admin forcibly logs out a user)
+- [x] iOS: call logout endpoint on explicit sign-out; clear Keychain token
 
 **Files to modify:**
 

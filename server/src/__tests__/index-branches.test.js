@@ -1,4 +1,4 @@
-// Last updated: May 11, 2026 - 7:15pm - GitHub Copilot (GPT-5.3-Codex)
+// Last updated: May 12, 2026 - 3:05pm - GitHub Copilot (GPT-5.3-Codex)
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const fastifyState = {
@@ -70,7 +70,7 @@ const fastifyCtorMock = vi.fn((opts) => {
             if (fastifyState.closeError) throw fastifyState.closeError;
         }),
         jwt: {
-            verify: vi.fn(() => ({ id: 'admin-1' })),
+            verify: vi.fn(() => ({ id: 'admin-1', jti: 'session-admin' })),
         },
         io: {
             of: vi.fn(() => ({ sockets: new Map([['s1', {}]]) })),
@@ -145,6 +145,10 @@ vi.mock('../lib/config.js', () => ({
 
 vi.mock('../lib/prisma.js', () => ({
     default: prismaMock,
+}));
+
+vi.mock('../lib/session-store.js', () => ({
+    hasSession: vi.fn(async () => true),
 }));
 
 function makeReply() {
@@ -284,7 +288,7 @@ describe('index branch-heavy coverage', () => {
         expect(docsReply.status).not.toHaveBeenCalled();
 
         // authenticate success branch
-        fastify.jwt.verify.mockReturnValueOnce({ id: 'admin-1' });
+        fastify.jwt.verify.mockReturnValueOnce({ id: 'admin-1', jti: 'session-admin' });
         const authRequest = {
             headers: { authorization: 'Bearer good-token' },
             cookies: {},
@@ -295,7 +299,7 @@ describe('index branch-heavy coverage', () => {
 
         // authenticate: missing user branch
         prismaMock.user.findUnique.mockResolvedValueOnce(null);
-        fastify.jwt.verify.mockReturnValueOnce({ id: 'gone' });
+        fastify.jwt.verify.mockReturnValueOnce({ id: 'gone', jti: 'session-gone' });
         const missingUserReq = {
             headers: { authorization: 'Bearer missing-user' },
             cookies: {},
@@ -313,7 +317,7 @@ describe('index branch-heavy coverage', () => {
             name: 'User',
             phoneNumber: '5055550000',
         });
-        fastify.jwt.verify.mockReturnValueOnce({ id: 'suspended' });
+        fastify.jwt.verify.mockReturnValueOnce({ id: 'suspended', jti: 'session-suspended' });
         const suspendedReq = {
             headers: { authorization: 'Bearer suspended-token' },
             cookies: {},
@@ -437,13 +441,13 @@ describe('index branch-heavy coverage', () => {
         await docsGuard({ headers: { authorization: 'Bearer bad-token' } }, badTokenReply);
         expect(badTokenReply.status).toHaveBeenCalledWith(401);
 
-        fastify.jwt.verify.mockReturnValueOnce({ id: 'viewer-1' });
+        fastify.jwt.verify.mockReturnValueOnce({ id: 'viewer-1', jti: 'session-viewer' });
         prismaMock.user.findUnique.mockResolvedValueOnce({ role: 'USER', status: 'ACTIVE' });
         const nonAdminReply = makeReply();
         await docsGuard({ headers: { authorization: 'Bearer viewer' } }, nonAdminReply);
         expect(nonAdminReply.status).toHaveBeenCalledWith(403);
 
-        fastify.jwt.verify.mockReturnValueOnce({ id: 'admin-1' });
+        fastify.jwt.verify.mockReturnValueOnce({ id: 'admin-1', jti: 'session-admin' });
         prismaMock.user.findUnique.mockResolvedValueOnce({ role: 'ADMIN', status: 'ACTIVE' });
         const adminReply = makeReply();
         await docsGuard({ headers: { authorization: 'Bearer ok-token' } }, adminReply);

@@ -1,4 +1,4 @@
-// May 12, 2026 - 2:41pm - GitHub Copilot (GPT-5.3-Codex)
+// May 12, 2026 - 3:05pm - GitHub Copilot (GPT-5.3-Codex)
 import Foundation
 
 /// Centralized UserDefaults keys.
@@ -108,6 +108,7 @@ enum ServerConfig {
     // Auth
     static var loginURL: URL { url(for: "/api/auth/login") }
     static var meURL: URL { url(for: "/api/auth/me") }
+    static var logoutURL: URL { url(for: "/api/auth/logout") }
 
     // Assets
     static var assetsURL: URL { url(for: "/api/assets") }

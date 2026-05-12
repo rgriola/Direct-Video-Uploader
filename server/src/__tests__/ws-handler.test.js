@@ -1,4 +1,4 @@
-// Last updated: May 11, 2026 - 7:15pm - GitHub Copilot (GPT-5.3-Codex)
+// Last updated: May 12, 2026 - 3:05pm - GitHub Copilot (GPT-5.3-Codex)
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const prismaMock = {
@@ -36,6 +36,10 @@ vi.mock('../lib/slack.js', () => ({
 
 vi.mock('../lib/config.js', () => ({
     PUBLIC_URL: 'https://ms-fixer.test',
+}));
+
+vi.mock('../lib/session-store.js', () => ({
+    hasSession: vi.fn(async () => true),
 }));
 
 let setupWebSocket;
@@ -179,6 +183,7 @@ describe('ws handler targeted coverage', () => {
             id: 'user-1',
             name: 'David Burgess',
             phoneNumber: '5055551000',
+            jti: 'session-user-1',
         });
 
         setupWebSocket(io, fastify);
@@ -212,6 +217,7 @@ describe('ws handler targeted coverage', () => {
             id: 'user-1',
             name: 'David Burgess',
             phoneNumber: '5055551000',
+            jti: 'session-user-1',
         });
 
         setupWebSocket(io, fastify);
@@ -242,6 +248,7 @@ describe('ws handler targeted coverage', () => {
             id: 'user-1',
             name: 'David Burgess',
             phoneNumber: '5055551000',
+            jti: 'session-user-1',
         });
 
         setupWebSocket(io, fastify);
@@ -287,6 +294,7 @@ describe('ws handler targeted coverage', () => {
             id: 'user-1',
             name: 'David Burgess',
             phoneNumber: '5055551000',
+            jti: 'session-user-1',
         });
 
         setupWebSocket(io, fastify);
@@ -311,6 +319,7 @@ describe('ws handler targeted coverage', () => {
             id: 'user-1',
             name: 'David Burgess',
             phoneNumber: '5055551000',
+            jti: 'session-user-1',
         });
 
         setupWebSocket(io, fastify);
@@ -349,6 +358,7 @@ describe('ws handler targeted coverage', () => {
             id: 'user-1',
             name: 'David Burgess',
             phoneNumber: '5055551000',
+            jti: 'session-user-1',
         });
         slackMock.isConfigured.mockReturnValue(true);
         slackMock.postToChannel.mockResolvedValue({ ok: true, channel: '#team-alerts' });
@@ -384,6 +394,7 @@ describe('ws handler targeted coverage', () => {
             id: 'user-1',
             name: 'David Burgess',
             phoneNumber: '5055551000',
+            jti: 'session-user-1',
         });
         slackMock.isConfigured.mockReturnValue(true);
         prismaMock.asset.findMany.mockResolvedValue([
@@ -431,6 +442,7 @@ describe('ws handler targeted coverage', () => {
             id: 'user-1',
             name: 'David Burgess',
             phoneNumber: '5055551000',
+            jti: 'session-user-1',
         });
         slackMock.isConfigured.mockReturnValue(true);
         prismaMock.asset.findFirst.mockResolvedValue(null);
@@ -463,6 +475,7 @@ describe('ws handler targeted coverage', () => {
             id: 'user-1',
             name: 'David Burgess',
             phoneNumber: '5055551000',
+            jti: 'session-user-1',
         });
         slackMock.isConfigured.mockReturnValue(true);
         slackMock.postToChannel.mockResolvedValue({ ok: false, error: 'channel_not_found' });
@@ -500,6 +513,7 @@ describe('ws handler targeted coverage', () => {
             id: 'user-1',
             name: 'David Burgess',
             phoneNumber: '5055551000',
+            jti: 'session-user-1',
         });
 
         setupWebSocket(io, fastify);
@@ -541,6 +555,7 @@ describe('ws handler targeted coverage', () => {
             id: 'user-1',
             name: 'David Burgess',
             phoneNumber: '5055551000',
+            jti: 'session-user-1',
         });
 
         setupWebSocket(io, fastify);
