@@ -1,4 +1,4 @@
-// May 11, 2026 - 2:02pm - GitHub Copilot (GPT-5.3-Codex)
+// May 12, 2026 - 2:41pm - GitHub Copilot (GPT-5.3-Codex)
 import Foundation
 
 /// Centralized UserDefaults keys.
@@ -14,14 +14,16 @@ enum UserDefaultsKeys {
 /// Priority order for resolving the server URL:
 ///   1. User-saved override (UserDefaults) — set via the login screen
 ///   2. Environment variable DVU_SERVER_URL — for CI / Xcode schemes
-///   3. Simulator default → http://127.0.0.1:3000
-///   4. Physical device default → production URL (or last-known dev IP)
+///   3. Debug-Staging default → https://staging.ms-fixer.com
+///   4. Simulator default → http://127.0.0.1:3000
+///   5. Physical device default → production URL (or last-known dev IP)
 enum ServerConfig {
 
     // MARK: - Production URL (update when deployed to Render)
 
     /// The production server URL. Used as the default for physical devices in Release builds.
     private static let productionURL = "https://ms-fixer.com"
+    private static let stagingURL = "https://staging.ms-fixer.com"
 
     /// UserDefaults key for the user-saved server URL override
     private static let serverURLKey = UserDefaultsKeys.serverURL
@@ -45,11 +47,14 @@ enum ServerConfig {
                 return url
             }
 
-            // 3. Simulator → always 127.0.0.1
-            #if targetEnvironment(simulator)
+            // 3. Compile-time debug defaults (mutually exclusive per configuration)
+            #if STAGING
+                return URL(string: stagingURL)!
+            #elseif targetEnvironment(simulator)
+                // 4. Simulator → always 127.0.0.1
                 return URL(string: "http://127.0.0.1:3000")!
             #else
-                // 4. Physical device in Debug → Mac's current tethering/LAN IP
+                // 5. Physical device in Debug → Mac's current tethering/LAN IP
                 //    Update this if your IP changes (check `npm run dev` output under "iOS (LAN)")
                 return URL(string: "http://172.20.10.2:3000")!
             #endif

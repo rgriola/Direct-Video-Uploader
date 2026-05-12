@@ -1,8 +1,8 @@
-May 12, 2026 - 2:20pm - GitHub Copilot (GPT-5.3-Codex)
+May 12, 2026 - 2:37pm - GitHub Copilot (GPT-5.3-Codex)
 
 # Fixer — Enterprise Readiness Tasks
 
-> Last audit sync: May 12, 2026 - 2:20pm - GitHub Copilot (GPT-5.3-Codex)
+> Last audit sync: May 12, 2026 - 2:37pm - GitHub Copilot (GPT-5.3-Codex)
 
 > Companion to [ENTERPRISE_READINESS_PLAN.md](ENTERPRISE_READINESS_PLAN.md).
 > Check items off as you complete them. Each task should be a single PR.
@@ -72,7 +72,7 @@ May 12, 2026 - 2:20pm - GitHub Copilot (GPT-5.3-Codex)
 - [x] Add `staging` service to [render.yaml](render.yaml)
 - [ ] Separate staging DB + Redis + Mux env (PARTIAL: staging DB + Mux + Slack alert channel are separated; Redis still pending Phase 0.4)
 - [x] Auto-deploy from `staging` branch
-- [ ] Add `Debug-Staging` iOS build configuration
+- [x] Add `Debug-Staging` iOS build configuration
 - [x] Document promotion flow
 
 ### 0.7 Supply Chain Security

@@ -1,4 +1,4 @@
-Last updated: May 12, 2026 - 2:20pm - GitHub Copilot (GPT-5.3-Codex)
+Last updated: May 12, 2026 - 2:37pm - GitHub Copilot (GPT-5.3-Codex)
 
 # Enterprise Readiness Plan — Fixer
 
@@ -145,7 +145,7 @@ server/src/__tests__/
 - [x] Auto-deploy staging from a `staging` branch
 - [x] Use a separate Mux environment key (`MUX_ENV_KEY` already supports this)
 - [x] Use a separate Slack channel for staging alerts
-- [ ] iOS: add `Debug-Staging` build configuration in `project.yml` pointing at staging URL
+- [x] iOS: add `Debug-Staging` build configuration in `project.yml` pointing at staging URL
 - [x] Document promotion flow: `staging` → `main` PR after smoke tests pass
 
 ---
