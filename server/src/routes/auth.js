@@ -1,4 +1,4 @@
-// Last updated: May 12, 2026 - 3:35pm - GitHub Copilot (GPT-5.3-Codex)
+// Last updated: May 12, 2026 - 3:52pm - GitHub Copilot (GPT-5.3-Codex)
 /**
  * Auth routes — Simple phone# + PIN login for demo.
  */
@@ -50,6 +50,25 @@ export default async function authRoutes(fastify) {
         const { phoneNumber, pin } = request.body;
         const clientType = request.body.clientType || 'unknown';
         const companyCode = request.body.companyCode || null;
+        const normalizedCompanyCode = typeof companyCode === 'string'
+            ? companyCode.trim().toUpperCase()
+            : null;
+
+        // If the org is SSO-enabled, require SSO flow instead of PIN login.
+        if (normalizedCompanyCode) {
+            const org = await dbRetry(() => prisma.organization.findUnique({
+                where: { companyCode: normalizedCompanyCode },
+                select: { ssoEnabled: true },
+            }));
+
+            if (org?.ssoEnabled) {
+                return reply.status(409).send({
+                    error: 'SSO required for this organization',
+                    code: 'SSO_REQUIRED',
+                    ssoStartUrl: `/api/auth/sso/start?companyCode=${encodeURIComponent(normalizedCompanyCode)}`,
+                });
+            }
+        }
 
         // Look up user by phone number (include organization for company name)
         const user = await dbRetry(() => prisma.user.findUnique({
@@ -79,6 +98,14 @@ export default async function authRoutes(fastify) {
         const normalizedRole = normalizeRole(user.role) || Role.EDITOR;
         const isAdminClient = clientType === 'admin';
         const isAdminUser = isDashboardAdmin(normalizedRole);
+
+        if (user.organization?.ssoEnabled && !isAdminUser) {
+            return reply.status(409).send({
+                error: 'SSO required for this organization',
+                code: 'SSO_REQUIRED',
+                ssoStartUrl: `/api/auth/sso/start?companyCode=${encodeURIComponent(user.companyCode || normalizedCompanyCode || '')}`,
+            });
+        }
 
         // Company code is required for non-admin users and non-admin clients.
         // Only a real ADMIN using the admin client can bypass this check.

@@ -1,4 +1,4 @@
-// May 12, 2026 - 3:05pm - GitHub Copilot (GPT-5.3-Codex)
+// May 12, 2026 - 3:52pm - GitHub Copilot (GPT-5.3-Codex)
 import Foundation
 
 /// Centralized UserDefaults keys.
@@ -109,6 +109,26 @@ enum ServerConfig {
     static var loginURL: URL { url(for: "/api/auth/login") }
     static var meURL: URL { url(for: "/api/auth/me") }
     static var logoutURL: URL { url(for: "/api/auth/logout") }
+    static var ssoMetadataURL: URL { url(for: "/api/auth/sso/metadata") }
+    static let ssoCallbackScheme = "fixer"
+    static let ssoCallbackURLString = "fixer://sso-callback"
+
+    static func ssoConfigURL(_ companyCode: String) -> URL {
+        let normalized = companyCode.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        return url(for: "/api/auth/sso/config/\(normalized)")
+    }
+
+    static func ssoStartURL(_ companyCode: String, redirectURI: String?) -> URL {
+        let normalized = companyCode.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        var components = URLComponents(
+            url: url(for: "/api/auth/sso/start"), resolvingAgainstBaseURL: false)!
+        var queryItems = [URLQueryItem(name: "companyCode", value: normalized)]
+        if let redirectURI, !redirectURI.isEmpty {
+            queryItems.append(URLQueryItem(name: "redirectUri", value: redirectURI))
+        }
+        components.queryItems = queryItems
+        return components.url!
+    }
 
     // Assets
     static var assetsURL: URL { url(for: "/api/assets") }

@@ -1,4 +1,4 @@
-// May 12, 2026 - 3:35pm - GitHub Copilot (GPT-5.3-Codex)
+// May 12, 2026 - 3:52pm - GitHub Copilot (GPT-5.3-Codex)
 /* ─── API Types ─── */
 
 export type UserRole = "SUPER_ADMIN" | "ORG_ADMIN" | "EDITOR" | "VIEWER";
@@ -94,6 +94,10 @@ export interface Organization {
   id: string;
   companyName: string;
   companyCode: string;
+  ssoEnabled?: boolean;
+  samlMetadataUrl?: string | null;
+  samlEntityId?: string | null;
+  samlAttributeMapping?: Record<string, string> | null;
   createdAt: string;
   userCount: number;
 }

@@ -1,4 +1,4 @@
-// Last updated: May 12, 2026 - 3:05pm - GitHub Copilot (GPT-5.3-Codex)
+// Last updated: May 12, 2026 - 3:52pm - GitHub Copilot (GPT-5.3-Codex)
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const fastifyState = {
@@ -118,6 +118,7 @@ vi.mock('socket.io', () => ({
 }));
 
 vi.mock('../routes/auth.js', () => ({ default: vi.fn(async () => {}) }));
+vi.mock('../routes/auth-sso.js', () => ({ default: vi.fn(async () => {}) }));
 vi.mock('../routes/assets.js', () => ({ default: vi.fn(async () => {}) }));
 vi.mock('../routes/admin.js', () => ({ default: vi.fn(async () => {}) }));
 vi.mock('../routes/clips.js', () => ({ default: vi.fn(async () => {}) }));

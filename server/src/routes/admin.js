@@ -1,4 +1,4 @@
-// Last updated: May 12, 2026 - 3:35pm - GitHub Copilot (GPT-5.3-Codex)
+// Last updated: May 12, 2026 - 3:52pm - GitHub Copilot (GPT-5.3-Codex)
 /**
  * Admin routes — Dashboard data, user management, asset overview.
  * All data is LIVE — no simulated actions.
@@ -703,6 +703,16 @@ export default async function adminRoutes(fastify) {
     /** Validation helpers */
     const COMPANY_NAME_RE = /^[A-Za-z\s]{1,50}$/;
     const COMPANY_CODE_RE = /^[A-Za-z]{3,4}$/;
+    const isValidOptionalUrl = (value) => {
+        if (value === null || value === undefined || value === '') return true;
+        if (typeof value !== 'string') return false;
+        try {
+            const parsed = new URL(value);
+            return parsed.protocol === 'https:' || parsed.protocol === 'http:';
+        } catch {
+            return false;
+        }
+    };
 
     /**
      * GET /api/admin/organizations
@@ -721,6 +731,10 @@ export default async function adminRoutes(fastify) {
                 id: o.id,
                 companyName: o.companyName,
                 companyCode: o.companyCode,
+                ssoEnabled: o.ssoEnabled,
+                samlMetadataUrl: o.samlMetadataUrl,
+                samlEntityId: o.samlEntityId,
+                samlAttributeMapping: o.samlAttributeMapping,
                 createdAt: o.createdAt,
                 userCount: o._count.users,
             })),
@@ -739,17 +753,49 @@ export default async function adminRoutes(fastify) {
                 properties: {
                     companyName: { type: 'string' },
                     companyCode: { type: 'string' },
+                    ssoEnabled: { type: 'boolean' },
+                    samlMetadataUrl: {
+                        oneOf: [
+                            { type: 'string' },
+                            { type: 'null' },
+                        ],
+                    },
+                    samlEntityId: {
+                        oneOf: [
+                            { type: 'string' },
+                            { type: 'null' },
+                        ],
+                    },
+                    samlAttributeMapping: {
+                        oneOf: [
+                            { type: 'object', additionalProperties: { type: 'string' } },
+                            { type: 'null' },
+                        ],
+                    },
                 },
             },
         },
     }, async (request, reply) => {
-        const { companyName, companyCode } = request.body || {};
+        const {
+            companyName,
+            companyCode,
+            ssoEnabled,
+            samlMetadataUrl,
+            samlEntityId,
+            samlAttributeMapping,
+        } = request.body || {};
 
         if (!companyName || !COMPANY_NAME_RE.test(companyName)) {
             return reply.status(400).send({ error: 'Company name must be 1–50 characters, letters and spaces only' });
         }
         if (!companyCode || !COMPANY_CODE_RE.test(companyCode)) {
             return reply.status(400).send({ error: 'Company code must be 3–4 letters (A-Z, a-z)' });
+        }
+        if (!isValidOptionalUrl(samlMetadataUrl)) {
+            return reply.status(400).send({ error: 'SAML metadata URL must be a valid http(s) URL' });
+        }
+        if (ssoEnabled && (!samlMetadataUrl || !samlEntityId)) {
+            return reply.status(400).send({ error: 'SSO enabled organizations require samlMetadataUrl and samlEntityId' });
         }
 
         // Check uniqueness
@@ -762,6 +808,10 @@ export default async function adminRoutes(fastify) {
             data: {
                 companyName: companyName.trim(),
                 companyCode: companyCode.trim(),
+                ssoEnabled: !!ssoEnabled,
+                samlMetadataUrl: samlMetadataUrl || null,
+                samlEntityId: samlEntityId || null,
+                samlAttributeMapping: samlAttributeMapping || null,
             },
         });
 
@@ -775,6 +825,10 @@ export default async function adminRoutes(fastify) {
                 id: org.id,
                 companyName: org.companyName,
                 companyCode: org.companyCode,
+                ssoEnabled: org.ssoEnabled,
+                samlMetadataUrl: org.samlMetadataUrl,
+                samlEntityId: org.samlEntityId,
+                samlAttributeMapping: org.samlAttributeMapping,
                 createdAt: org.createdAt,
                 userCount: 0,
             },
@@ -790,7 +844,14 @@ export default async function adminRoutes(fastify) {
         preHandler: [fastify.authenticate, fastify.authorizeAdmin],
     }, async (request, reply) => {
         const { code } = request.params;
-        const { companyName, companyCode: newCode } = request.body || {};
+        const {
+            companyName,
+            companyCode: newCode,
+            ssoEnabled,
+            samlMetadataUrl,
+            samlEntityId,
+            samlAttributeMapping,
+        } = request.body || {};
 
         const org = await prisma.organization.findUnique({ where: { companyCode: code } });
         if (!org) {
@@ -814,6 +875,38 @@ export default async function adminRoutes(fastify) {
                 return reply.status(409).send({ error: `Code '${newCode}' is already in use` });
             }
             data.companyCode = newCode.trim();
+        }
+
+        if (ssoEnabled !== undefined) {
+            data.ssoEnabled = !!ssoEnabled;
+        }
+
+        if (samlMetadataUrl !== undefined) {
+            if (!isValidOptionalUrl(samlMetadataUrl)) {
+                return reply.status(400).send({ error: 'SAML metadata URL must be a valid http(s) URL' });
+            }
+            data.samlMetadataUrl = samlMetadataUrl || null;
+        }
+
+        if (samlEntityId !== undefined) {
+            data.samlEntityId = samlEntityId || null;
+        }
+
+        if (samlAttributeMapping !== undefined) {
+            if (samlAttributeMapping === null || samlAttributeMapping === '') {
+                data.samlAttributeMapping = null;
+            } else if (typeof samlAttributeMapping === 'object' && !Array.isArray(samlAttributeMapping)) {
+                data.samlAttributeMapping = samlAttributeMapping;
+            } else {
+                return reply.status(400).send({ error: 'samlAttributeMapping must be an object of string values' });
+            }
+        }
+
+        const targetSsoEnabled = data.ssoEnabled ?? org.ssoEnabled;
+        const targetMetadataUrl = data.samlMetadataUrl ?? org.samlMetadataUrl;
+        const targetEntityId = data.samlEntityId ?? org.samlEntityId;
+        if (targetSsoEnabled && (!targetMetadataUrl || !targetEntityId)) {
+            return reply.status(400).send({ error: 'SSO enabled organizations require samlMetadataUrl and samlEntityId' });
         }
 
         if (Object.keys(data).length === 0) {
@@ -864,6 +957,10 @@ export default async function adminRoutes(fastify) {
                 id: updated.id,
                 companyName: updated.companyName,
                 companyCode: updated.companyCode,
+                ssoEnabled: updated.ssoEnabled,
+                samlMetadataUrl: updated.samlMetadataUrl,
+                samlEntityId: updated.samlEntityId,
+                samlAttributeMapping: updated.samlAttributeMapping,
                 createdAt: updated.createdAt,
             },
             message: `Updated organization ${updated.companyName}`,

@@ -1,4 +1,4 @@
-Last updated: May 12, 2026 - 3:30pm - GitHub Copilot (GPT-5.3-Codex)
+Last updated: May 12, 2026 - 3:52pm - GitHub Copilot (GPT-5.3-Codex)
 
 # Enterprise Readiness Plan — Fixer
 
@@ -281,17 +281,17 @@ EDITOR       → can upload, submit forms, view all org clips
 VIEWER       → read-only clip access within their org
 ```
 
-- [ ] Add `role` enum values to Prisma schema: `SUPER_ADMIN`, `ORG_ADMIN`, `EDITOR`, `VIEWER`
-- [ ] Write migration to map existing `ADMIN` → `SUPER_ADMIN`, `USER` → `EDITOR`
-- [ ] Create `server/src/middleware/authorize.js` — decorator factory:
+- [x] Add `role` enum values to Prisma schema: `SUPER_ADMIN`, `ORG_ADMIN`, `EDITOR`, `VIEWER`
+- [x] Write migration to map existing `ADMIN` → `SUPER_ADMIN`, `USER` → `EDITOR`
+- [x] Create `server/src/middleware/authorize.js` — decorator factory:
   ```js
   fastify.decorate('authorize', (roles) => async (req, reply) => { ... })
   ```
-- [ ] Replace all `fastify.authorizeAdmin` calls with `fastify.authorize(['SUPER_ADMIN'])`
-- [ ] Add `ORG_ADMIN` guards to org-level management endpoints
+- [x] Replace all `fastify.authorizeAdmin` calls with `fastify.authorize(['SUPER_ADMIN'])`
+- [x] Add `ORG_ADMIN` guards to org-level management endpoints
 - [x] Update JWT payload to include role
-- [ ] Update iOS `AuthService.swift` to read and store role from JWT
-- [ ] Update admin dashboard — show role badge per user; allow role changes by SUPER_ADMIN
+- [x] Update iOS `AuthService.swift` to read and store role from JWT
+- [x] Update admin dashboard — show role badge per user; allow role changes by SUPER_ADMIN
 
 **Files to modify:**
 
@@ -309,14 +309,14 @@ VIEWER       → read-only clip access within their org
 
 **Problem:** Phone + PIN won't pass enterprise IT review.
 
-- [ ] Add `passport-saml` or `openid-client` to server
-- [ ] Add `POST /api/auth/sso/saml` callback endpoint
-- [ ] Add `GET /api/auth/sso/metadata` — expose SP metadata XML for Okta/Azure AD setup
-- [ ] Org-level SSO config: `Organization` model gets `ssoEnabled`, `samlMetadataUrl`, `samlEntityId`
-- [ ] Login flow: if org has SSO enabled, redirect to IdP instead of PIN screen
-- [ ] Fallback: PIN login remains for orgs without SSO
-- [ ] iOS: detect SSO orgs — open `ASWebAuthenticationSession` for SAML flow
-- [ ] Admin: UI to configure SSO per org (entity ID, metadata URL, attribute mapping)
+- [x] Add `passport-saml` or `openid-client` to server
+- [x] Add `POST /api/auth/sso/saml` callback endpoint
+- [x] Add `GET /api/auth/sso/metadata` — expose SP metadata XML for Okta/Azure AD setup
+- [x] Org-level SSO config: `Organization` model gets `ssoEnabled`, `samlMetadataUrl`, `samlEntityId`
+- [x] Login flow: if org has SSO enabled, redirect to IdP instead of PIN screen
+- [x] Fallback: PIN login remains for orgs without SSO
+- [x] iOS: detect SSO orgs — open `ASWebAuthenticationSession` for SAML flow
+- [x] Admin: UI to configure SSO per org (entity ID, metadata URL, attribute mapping)
 
 **Files to modify/create:**
 

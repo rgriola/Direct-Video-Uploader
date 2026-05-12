@@ -1,4 +1,4 @@
-// Last updated: May 12, 2026 - 3:35pm - GitHub Copilot (GPT-5.3-Codex)
+// Last updated: May 12, 2026 - 3:52pm - GitHub Copilot (GPT-5.3-Codex)
 /* ─── API Client ─── */
 
 let authToken: string | null = null;
@@ -119,11 +119,25 @@ export async function fetchOrganizations() {
   return api<{ organizations: Organization[] }>("GET", "/api/admin/organizations");
 }
 
-export async function createOrganization(data: { companyName: string; companyCode: string }) {
+export async function createOrganization(data: {
+  companyName: string;
+  companyCode: string;
+  ssoEnabled?: boolean;
+  samlMetadataUrl?: string | null;
+  samlEntityId?: string | null;
+  samlAttributeMapping?: Record<string, string> | null;
+}) {
   return api<{ organization: Organization; message: string }>("POST", "/api/admin/organizations", data);
 }
 
-export async function updateOrganization(code: string, data: { companyName?: string; companyCode?: string }) {
+export async function updateOrganization(code: string, data: {
+  companyName?: string;
+  companyCode?: string;
+  ssoEnabled?: boolean;
+  samlMetadataUrl?: string | null;
+  samlEntityId?: string | null;
+  samlAttributeMapping?: Record<string, string> | null;
+}) {
   return api<{ organization: Organization; message: string }>("PUT", `/api/admin/organizations/${code}`, data);
 }
 

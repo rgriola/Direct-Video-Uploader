@@ -1,5 +1,5 @@
 {
-  "lastUpdated": "May 12, 2026 - 2:59pm - GitHub Copilot (GPT-5.3-Codex)",
+  "lastUpdated": "May 12, 2026 - 3:52pm - GitHub Copilot (GPT-5.3-Codex)",
   "name": "direct-video-uploader-server",
   "version": "1.0.0",
   "type": "module",
@@ -38,6 +38,7 @@
     "@fastify/swagger": "^9.7.0",
     "@fastify/swagger-ui": "^5.2.6",
     "@mux/mux-node": "^12.8.1",
+    "@node-saml/passport-saml": "^5.1.0",
     "@prisma/adapter-pg": "^7.4.2",
     "@prisma/client": "^7.4.2",
     "@slack/web-api": "^7.14.1",

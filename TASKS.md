@@ -1,8 +1,8 @@
-May 12, 2026 - 3:35pm - GitHub Copilot (GPT-5.3-Codex)
+May 12, 2026 - 3:52pm - GitHub Copilot (GPT-5.3-Codex)
 
 # Fixer — Enterprise Readiness Tasks
 
-> Last audit sync: May 12, 2026 - 3:35pm - GitHub Copilot (GPT-5.3-Codex)
+> Last audit sync: May 12, 2026 - 3:52pm - GitHub Copilot (GPT-5.3-Codex)
 
 > Companion to [ENTERPRISE_READINESS_PLAN.md](ENTERPRISE_READINESS_PLAN.md).
 > Check items off as you complete them. Each task should be a single PR.
@@ -148,14 +148,14 @@ May 12, 2026 - 3:35pm - GitHub Copilot (GPT-5.3-Codex)
 
 ### 2.2 SSO / OAuth2
 
-- [ ] Add `passport-saml` or `openid-client`
-- [ ] `POST /api/auth/sso/saml` callback
-- [ ] `GET /api/auth/sso/metadata`
-- [ ] Add SSO fields to `Organization` model
-- [ ] Login flow: SSO redirect for SSO-enabled orgs
-- [ ] Keep PIN login as fallback for non-SSO orgs
-- [ ] iOS: `ASWebAuthenticationSession` for SAML
-- [ ] Admin: SSO config UI per org
+- [x] Add `passport-saml` or `openid-client`
+- [x] `POST /api/auth/sso/saml` callback
+- [x] `GET /api/auth/sso/metadata`
+- [x] Add SSO fields to `Organization` model
+- [x] Login flow: SSO redirect for SSO-enabled orgs
+- [x] Keep PIN login as fallback for non-SSO orgs
+- [x] iOS: `ASWebAuthenticationSession` for SAML
+- [x] Admin: SSO config UI per org
 
 ### 2.3 MFA (non-SSO users only)
 

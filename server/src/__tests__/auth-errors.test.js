@@ -1,10 +1,13 @@
-// Last updated: May 12, 2026 - 3:35pm - GitHub Copilot (GPT-5.3-Codex)
+// Last updated: May 12, 2026 - 3:52pm - GitHub Copilot (GPT-5.3-Codex)
 import Fastify from 'fastify';
 import fastifyJwt from '@fastify/jwt';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { hashPin, hashPinLegacy } from '../lib/utils.js';
 
 const prismaMock = {
+    organization: {
+        findUnique: vi.fn(),
+    },
     user: {
         findUnique: vi.fn(),
         update: vi.fn(),
@@ -32,6 +35,7 @@ beforeAll(async () => {
 
 beforeEach(async () => {
     vi.clearAllMocks();
+    prismaMock.organization.findUnique.mockResolvedValue(null);
 
     app = Fastify({ logger: false });
     await app.register(fastifyJwt, { secret: 'test-jwt-secret' });
@@ -94,6 +98,26 @@ describe('auth routes behavior', () => {
 
         expect(response.statusCode).toBe(401);
         expect(response.json()).toEqual({ error: 'Company code is required' });
+    });
+
+    it('requires SSO flow when company is SSO-enabled', async () => {
+        prismaMock.organization.findUnique.mockResolvedValueOnce({
+            companyCode: 'NEWS',
+            ssoEnabled: true,
+        });
+
+        const response = await app.inject({
+            method: 'POST',
+            url: '/api/auth/login',
+            payload: { phoneNumber: '5055551111', pin: '1234', companyCode: 'NEWS' },
+        });
+
+        expect(response.statusCode).toBe(409);
+        expect(response.json()).toEqual({
+            error: 'SSO required for this organization',
+            code: 'SSO_REQUIRED',
+            ssoStartUrl: '/api/auth/sso/start?companyCode=NEWS',
+        });
     });
 
     it('does not allow non-admin users to bypass company code by setting clientType=admin', async () => {

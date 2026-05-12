@@ -1,4 +1,4 @@
-// Last updated: May 12, 2026 - 3:35pm - GitHub Copilot (GPT-5.3-Codex)
+// Last updated: May 12, 2026 - 3:52pm - GitHub Copilot (GPT-5.3-Codex)
 import Fastify from 'fastify';
 import cookie from '@fastify/cookie';
 import formbody from '@fastify/formbody';
@@ -40,6 +40,7 @@ vi.mock('../lib/prisma.js', () => ({
 }));
 
 let authRoutes;
+let authSsoRoutes;
 let assetRoutes;
 let adminRoutes;
 let clipRoutes;
@@ -56,6 +57,7 @@ beforeAll(async () => {
     process.env.MUX_WEBHOOK_SECRET = process.env.MUX_WEBHOOK_SECRET || 'test-webhook-secret';
 
     ({ default: authRoutes } = await import('../routes/auth.js'));
+    ({ default: authSsoRoutes } = await import('../routes/auth-sso.js'));
     ({ default: assetRoutes } = await import('../routes/assets.js'));
     ({ default: adminRoutes } = await import('../routes/admin.js'));
     ({ default: clipRoutes } = await import('../routes/clips.js'));
@@ -94,6 +96,7 @@ beforeEach(async () => {
     app.decorate('adminSockets', new Set());
 
     await app.register(authRoutes);
+    await app.register(authSsoRoutes);
     await app.register(assetRoutes);
     await app.register(adminRoutes);
     await app.register(clipRoutes);
@@ -114,6 +117,16 @@ describe('Route smoke coverage', () => {
         });
 
         expect(response.statusCode).toBe(400);
+    });
+
+    it('sso metadata route is registered', async () => {
+        const response = await app.inject({
+            method: 'GET',
+            url: '/api/auth/sso/metadata',
+        });
+
+        expect(response.statusCode).toBe(200);
+        expect(response.body).toContain('EntityDescriptor');
     });
 
     it('asset routes are registered', async () => {

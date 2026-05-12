@@ -1,4 +1,4 @@
-// May 10, 2026 - 1:51pm - GitHub Copilot (GPT-5.3-Codex)
+// May 12, 2026 - 3:52pm - GitHub Copilot (GPT-5.3-Codex)
 import SwiftUI
 
 /// Login screen — phone number + PIN, matching the dark aesthetic.
@@ -10,6 +10,9 @@ struct LoginView: View {
     @State private var pin = ""
     @State private var showServerEditor = false
     @State private var serverURLDraft = ""
+    @State private var ssoEnabledForOrg = false
+    @State private var isCheckingSSO = false
+    @State private var ssoCheckTask: Task<Void, Never>?
     @FocusState private var focusedField: Field?
 
     enum Field { case companyCode, phone, pin, serverURL }
@@ -63,9 +66,11 @@ struct LoginView: View {
                                 .font(Theme.font16Medium)
                                 .onChange(of: companyCode) { _, new in
                                     let letters = new.filter { $0.isLetter }
-                                    if letters != new || new.count > 4 {
-                                        companyCode = String(letters.prefix(4))
+                                    let normalized = String(letters.prefix(4)).uppercased()
+                                    if normalized != new || new.count > 4 {
+                                        companyCode = normalized
                                     }
+                                    queueSSOCheck()
                                 }
                         }
                         .padding(.horizontal, Theme.space16)
@@ -155,6 +160,20 @@ struct LoginView: View {
                 }
                 .padding(.horizontal, Theme.space32)
 
+                if isCheckingSSO {
+                    Text("Checking SSO settings...")
+                        .font(Theme.font11Medium)
+                        .foregroundStyle(Theme.secondaryText)
+                        .padding(.top, Theme.space8)
+                }
+
+                if ssoEnabledForOrg {
+                    Text("This organization uses enterprise SSO. Use SSO sign-in below.")
+                        .font(Theme.font11Medium)
+                        .foregroundStyle(Theme.blue)
+                        .padding(.top, Theme.space8)
+                }
+
                 // Error message
                 if let error = auth.errorMessage {
                     Text(error)
@@ -184,11 +203,40 @@ struct LoginView: View {
                     .clipShape(RoundedRectangle(cornerRadius: Theme.radiusLg))
                 }
                 .disabled(
-                    auth.isLoading || companyCode.isEmpty || phoneNumber.isEmpty || pin.isEmpty
+                    auth.isLoading || ssoEnabledForOrg || companyCode.isEmpty || phoneNumber.isEmpty
+                        || pin.isEmpty
                 )
-                .opacity(companyCode.isEmpty || phoneNumber.isEmpty || pin.isEmpty ? 0.5 : 1)
+                .opacity(
+                    companyCode.isEmpty || phoneNumber.isEmpty || pin.isEmpty || ssoEnabledForOrg
+                        ? 0.5 : 1
+                )
                 .padding(.horizontal, Theme.space32)
                 .padding(.top, 28)
+
+                if ssoEnabledForOrg {
+                    Button {
+                        Task { await loginWithSSO() }
+                    } label: {
+                        HStack {
+                            if auth.isLoading {
+                                ProgressView()
+                                    .tint(Theme.white)
+                                    .scaleEffect(0.8)
+                            } else {
+                                Text("Continue with SSO")
+                                    .font(Theme.font16Semibold)
+                            }
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, Theme.space16)
+                        .background(Theme.blue)
+                        .foregroundStyle(Theme.white)
+                        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusLg))
+                    }
+                    .disabled(auth.isLoading || companyCode.isEmpty)
+                    .padding(.horizontal, Theme.space32)
+                    .padding(.top, Theme.space12)
+                }
 
                 Spacer()
 
@@ -207,13 +255,26 @@ struct LoginView: View {
         .onTapGesture {
             focusedField = nil
         }
+        .onAppear {
+            queueSSOCheck()
+        }
+        .onDisappear {
+            ssoCheckTask?.cancel()
+            ssoCheckTask = nil
+        }
         .onSubmit {
             if focusedField == .companyCode {
                 focusedField = .phone
             } else if focusedField == .phone {
                 focusedField = .pin
             } else {
-                Task { await login() }
+                Task {
+                    if ssoEnabledForOrg {
+                        await loginWithSSO()
+                    } else {
+                        await login()
+                    }
+                }
             }
         }
     }
@@ -314,6 +375,40 @@ struct LoginView: View {
             try await auth.login(phoneNumber: phoneNumber, pin: pin, companyCode: companyCode)
         } catch {
             auth.errorMessage = error.localizedDescription
+        }
+    }
+
+    private func loginWithSSO() async {
+        focusedField = nil
+        do {
+            try await auth.loginWithSSO(companyCode: companyCode)
+        } catch {
+            auth.errorMessage = error.localizedDescription
+        }
+    }
+
+    private func queueSSOCheck() {
+        ssoCheckTask?.cancel()
+
+        let code = companyCode.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard code.count >= 3 else {
+            isCheckingSSO = false
+            ssoEnabledForOrg = false
+            return
+        }
+
+        ssoCheckTask = Task {
+            isCheckingSSO = true
+            defer { isCheckingSSO = false }
+
+            do {
+                let config = try await auth.fetchSSOConfig(companyCode: code)
+                guard !Task.isCancelled else { return }
+                ssoEnabledForOrg = config.ssoEnabled
+            } catch {
+                guard !Task.isCancelled else { return }
+                ssoEnabledForOrg = false
+            }
         }
     }
 }

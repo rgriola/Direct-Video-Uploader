@@ -1,8 +1,8 @@
-May 12, 2026 - 3:35pm - GitHub Copilot (GPT-5.3-Codex)
+May 12, 2026 - 3:52pm - GitHub Copilot (GPT-5.3-Codex)
 
 # Direct Video Uploader — Project Status
 
-> **Last Updated:** May 12, 2026 · 3:35pm PT
+> **Last Updated:** May 12, 2026 · 3:52pm PT
 > **Current Phase:** Phase 4 (QA + Rollout) — iOS UI/UX refresh validation and release-readiness checks
 > **Overall Progress:** ████████████████████ 100% (Phase 2) · Phase 3 complete · Phase 4 in progress
 
@@ -17,6 +17,8 @@ We've completed the **interactive chat demo** (HTML prototype), **project specif
 Latest session (May 12): completed **Phase 1.5 rate limiting hardening** — Redis-backed `@fastify/rate-limit`, per-user keying for authenticated traffic, explicit `X-RateLimit-*` headers, WebSocket anti-spam throttling (10 messages / 10 seconds with disconnect escalation), and dedicated `POST /api/assets/:id/mux-upload` limit (10/hour per user). Server tests remain green (118/118).
 
 Latest session continuation (May 12): completed **Phase 2.1 expanded RBAC** across server, admin dashboard, and iOS role surfaces. Added `SUPER_ADMIN` / `ORG_ADMIN` / `EDITOR` / `VIEWER` role model + normalization (`ADMIN`→`SUPER_ADMIN`, `USER`→`EDITOR`), centralized `fastify.authorize(roles)` guards, org-scoped admin endpoints, role badges/editing in dashboard user rows, and iOS `User.role` model propagation. Validation is green: server tests (119/119) and admin production build. Added migration file `server/prisma/migrations/20260512153500_phase_2_1_rbac_roles/migration.sql` for enum transition.
+
+Latest session continuation (May 12): completed **Phase 2.2 SSO / OAuth2 foundation**. Added `@node-saml/passport-saml` dependency, new `server/src/routes/auth-sso.js` with `GET /api/auth/sso/metadata`, org SSO discovery + start endpoints, and `POST /api/auth/sso/saml` callback session issuance. Organization model now includes SSO config fields (`ssoEnabled`, `samlMetadataUrl`, `samlEntityId`, `samlAttributeMapping`) with migration `server/prisma/migrations/20260512155200_phase_2_2_sso_org_config/migration.sql`. Dashboard Org panel now edits SSO settings, and iOS login detects SSO orgs then launches `ASWebAuthenticationSession` flow. Validation is green: server tests (125/125), admin production build, and iOS CLI build succeeded.
 
 ---
 

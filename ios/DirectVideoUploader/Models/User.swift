@@ -1,4 +1,4 @@
-// May 12, 2026 - 3:35pm - GitHub Copilot (GPT-5.3-Codex)
+// May 12, 2026 - 3:52pm - GitHub Copilot (GPT-5.3-Codex)
 import Foundation
 
 // MARK: - User
@@ -30,4 +30,14 @@ struct LoginResponse: Codable {
 
 struct MeResponse: Codable {
     let user: User
+}
+
+struct SSOConfigResponse: Codable {
+    let companyCode: String
+    let companyName: String?
+    let ssoEnabled: Bool
+    let samlEntityId: String?
+    let samlMetadataUrl: String?
+    let samlAttributeMapping: [String: String]?
+    let startUrl: String?
 }

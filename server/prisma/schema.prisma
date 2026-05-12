@@ -1,4 +1,4 @@
-// Last updated: May 12, 2026 - 3:35pm - GitHub Copilot (GPT-5.3-Codex)
+// Last updated: May 12, 2026 - 3:52pm - GitHub Copilot (GPT-5.3-Codex)
 // Direct Video Uploader — Prisma Schema
 // PostgreSQL on Render
 
@@ -12,10 +12,14 @@ datasource db {
 
 // ─── Organizations ───────────────────────────────────────
 model Organization {
-  id          String   @id @default(uuid())
-  companyName String   @map("company_name") @db.VarChar(50)
-  companyCode String   @unique @map("company_code") @db.VarChar(4)
-  createdAt   DateTime @default(now()) @map("created_at")
+  id                   String   @id @default(uuid())
+  companyName          String   @map("company_name") @db.VarChar(50)
+  companyCode          String   @unique @map("company_code") @db.VarChar(4)
+  ssoEnabled           Boolean  @default(false) @map("sso_enabled")
+  samlMetadataUrl      String?  @map("saml_metadata_url")
+  samlEntityId         String?  @map("saml_entity_id")
+  samlAttributeMapping Json?    @map("saml_attribute_mapping")
+  createdAt            DateTime @default(now()) @map("created_at")
 
   users User[]
 

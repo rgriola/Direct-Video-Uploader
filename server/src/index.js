@@ -1,4 +1,4 @@
-// Last updated: May 12, 2026 - 3:35pm - GitHub Copilot (GPT-5.3-Codex)
+// Last updated: May 12, 2026 - 3:52pm - GitHub Copilot (GPT-5.3-Codex)
 /**
  * Fixer — Server Entry Point
  *
@@ -25,6 +25,7 @@ import crypto from 'crypto';
 import { fileURLToPath } from 'url';
 
 import authRoutes from './routes/auth.js';
+import authSsoRoutes from './routes/auth-sso.js';
 import assetRoutes from './routes/assets.js';
 import adminRoutes from './routes/admin.js';
 import clipRoutes from './routes/clips.js';
@@ -495,6 +496,7 @@ fastify.decorate('io', io);
 
 // ─── Routes ──────────────────────────────────────────────
 await fastify.register(authRoutes);
+await fastify.register(authSsoRoutes);
 await fastify.register(assetRoutes);
 await fastify.register(adminRoutes);
 
