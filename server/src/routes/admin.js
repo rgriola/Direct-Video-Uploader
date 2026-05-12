@@ -1,4 +1,4 @@
-// Last updated: May 9, 2026 - 7:34pm - GPT-5.3-Codex
+// Last updated: May 11, 2026 - 7:15pm - GitHub Copilot (GPT-5.3-Codex)
 /**
  * Admin routes — Dashboard data, user management, asset overview.
  * All data is LIVE — no simulated actions.
@@ -16,7 +16,7 @@ export default async function adminRoutes(fastify) {
      * Triad health — database, server, WebSocket, iOS clients.
      */
     fastify.get('/api/admin/status', {
-        preHandler: [fastify.authenticate],
+        preHandler: [fastify.authenticate, fastify.authorizeAdmin],
     }, async () => {
         const triad = {
             database: { status: 'unknown', message: '' },
@@ -63,7 +63,7 @@ export default async function adminRoutes(fastify) {
      * Returns aggregate stats for the dashboard — all live data.
      */
     fastify.get('/api/admin/stats', {
-        preHandler: [fastify.authenticate],
+        preHandler: [fastify.authenticate, fastify.authorizeAdmin],
     }, async () => {
         const result = await prisma.$queryRaw`
             SELECT 
@@ -109,7 +109,7 @@ export default async function adminRoutes(fastify) {
      * List all registered users with live status.
      */
     fastify.get('/api/admin/users', {
-        preHandler: [fastify.authenticate],
+        preHandler: [fastify.authenticate, fastify.authorizeAdmin],
     }, async () => {
         const users = await prisma.$queryRaw`
             SELECT u.id, u.phone_number AS "phoneNumber", u.name, u.email, u.team, u.status,
@@ -142,7 +142,7 @@ export default async function adminRoutes(fastify) {
      * List all assets with user info and form responses.
      */
     fastify.get('/api/admin/assets', {
-        preHandler: [fastify.authenticate],
+        preHandler: [fastify.authenticate, fastify.authorizeAdmin],
     }, async (request) => {
         // Role-based filtering: admins see all, non-admins see only their org's assets
         const isAdmin = request.user?.role === 'ADMIN';
@@ -190,7 +190,7 @@ export default async function adminRoutes(fastify) {
      * List all chat messages across all users (for admin dashboard).
      */
     fastify.get('/api/admin/messages', {
-        preHandler: [fastify.authenticate],
+        preHandler: [fastify.authenticate, fastify.authorizeAdmin],
     }, async () => {
         const messages = await prisma.chatMessage.findMany({
             orderBy: { createdAt: 'desc' },
@@ -208,7 +208,7 @@ export default async function adminRoutes(fastify) {
      * Delete stale UPLOADING assets that have no clips (abandoned uploads).
      */
     fastify.post('/api/admin/cleanup-assets', {
-        preHandler: [fastify.authenticate],
+        preHandler: [fastify.authenticate, fastify.authorizeAdmin],
     }, async (request) => {
         // Find UPLOADING assets with 0 clips using Prisma ORM
         const staleAssets = await prisma.asset.findMany({
@@ -480,7 +480,7 @@ export default async function adminRoutes(fastify) {
      * List all organizations.
      */
     fastify.get('/api/admin/organizations', {
-        preHandler: [fastify.authenticate],
+        preHandler: [fastify.authenticate, fastify.authorizeAdmin],
     }, async () => {
         const orgs = await prisma.organization.findMany({
             orderBy: { createdAt: 'desc' },

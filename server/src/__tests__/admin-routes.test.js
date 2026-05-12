@@ -1,4 +1,4 @@
-// Last updated: May 9, 2026 - 8:14pm - GPT-5.3-Codex
+// Last updated: May 11, 2026 - 7:15pm - GitHub Copilot (GPT-5.3-Codex)
 import Fastify from 'fastify';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -170,6 +170,41 @@ afterEach(async () => {
 });
 
 describe('admin routes deeper coverage', () => {
+    it('rejects non-admin users on admin status endpoint', async () => {
+        const nonAdminApp = Fastify({ logger: false });
+        nonAdminApp.decorate('authenticate', async (request) => {
+            request.user = {
+                id: 'user-1',
+                sub: 'user-1',
+                role: 'USER',
+                companyCode: 'NEWS',
+            };
+        });
+        nonAdminApp.decorate('authorizeAdmin', async (request, reply) => {
+            if (request.user?.role !== 'ADMIN') {
+                return reply.status(403).send({ error: 'Admin access required' });
+            }
+        });
+        nonAdminApp.decorate('io', {
+            of: () => ({ sockets: new Map() }),
+        });
+        nonAdminApp.decorate('userSockets', new Map());
+        nonAdminApp.decorate('iosSockets', new Set());
+        nonAdminApp.decorate('adminSockets', new Set());
+
+        await nonAdminApp.register(adminRoutes);
+
+        const response = await nonAdminApp.inject({
+            method: 'GET',
+            url: '/api/admin/status',
+        });
+
+        expect(response.statusCode).toBe(403);
+        expect(response.json()).toEqual({ error: 'Admin access required' });
+
+        await nonAdminApp.close();
+    });
+
     it('returns triad status with websocket counts', async () => {
         prismaMock.$queryRaw.mockResolvedValueOnce([{ ok: 1 }]);
 

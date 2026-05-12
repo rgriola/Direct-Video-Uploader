@@ -1,7 +1,10 @@
-// Last updated: May 10, 2026 - 6:46pm - GitHub Copilot (GPT-5.3-Codex)
+// Last updated: May 11, 2026 - 7:15pm - GitHub Copilot (GPT-5.3-Codex)
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const prismaMock = {
+    user: {
+        findUnique: vi.fn(),
+    },
     chatMessage: {
         create: vi.fn(),
     },
@@ -43,6 +46,14 @@ beforeAll(async () => {
 
 beforeEach(() => {
     vi.clearAllMocks();
+
+    prismaMock.user.findUnique.mockResolvedValue({
+        id: 'user-1',
+        name: 'David Burgess',
+        phoneNumber: '5055551000',
+        status: 'ACTIVE',
+        role: 'USER',
+    });
 
     prismaMock.chatMessage.create.mockResolvedValue({});
     prismaMock.asset.findMany.mockResolvedValue([]);
@@ -159,6 +170,67 @@ describe('ws handler targeted coverage', () => {
         expect(next).toHaveBeenCalledTimes(1);
         expect(next.mock.calls[0][0]).toBeInstanceOf(Error);
         expect(next.mock.calls[0][0].message).toBe('Authentication required');
+    });
+
+    it('authenticates socket via shared web-session cookie when no auth token is provided', async () => {
+        const { io, harness } = createIoHarness();
+        const fastify = createFastifyHarness();
+        fastify.jwt.verify.mockReturnValue({
+            id: 'user-1',
+            name: 'David Burgess',
+            phoneNumber: '5055551000',
+        });
+
+        setupWebSocket(io, fastify);
+
+        const socket = createSocket({ token: undefined, clientType: 'admin' });
+        socket.handshake.auth = { clientType: 'admin' };
+        socket.handshake.headers = {
+            cookie: 'fixer_clip_token=session-token',
+        };
+
+        prismaMock.user.findUnique.mockResolvedValueOnce({
+            id: 'user-1',
+            name: 'Admin User',
+            phoneNumber: '8001234567',
+            status: 'ACTIVE',
+            role: 'ADMIN',
+        });
+
+        const next = vi.fn();
+        await harness.authMiddleware(socket, next);
+
+        expect(fastify.jwt.verify).toHaveBeenCalledWith('session-token');
+        expect(next).toHaveBeenCalledWith();
+        expect(socket.userRole).toBe('ADMIN');
+    });
+
+    it('rejects admin client type for non-admin users', async () => {
+        const { io, harness } = createIoHarness();
+        const fastify = createFastifyHarness();
+        fastify.jwt.verify.mockReturnValue({
+            id: 'user-1',
+            name: 'David Burgess',
+            phoneNumber: '5055551000',
+        });
+
+        setupWebSocket(io, fastify);
+
+        const socket = createSocket({ token: 'valid-token', clientType: 'admin' });
+        prismaMock.user.findUnique.mockResolvedValueOnce({
+            id: 'user-1',
+            name: 'David Burgess',
+            phoneNumber: '5055551000',
+            status: 'ACTIVE',
+            role: 'USER',
+        });
+
+        const next = vi.fn();
+        await harness.authMiddleware(socket, next);
+
+        expect(next).toHaveBeenCalledTimes(1);
+        expect(next.mock.calls[0][0]).toBeInstanceOf(Error);
+        expect(next.mock.calls[0][0].message).toBe('Admin access required');
     });
 
     it('authenticates and registers iOS socket event handlers', async () => {

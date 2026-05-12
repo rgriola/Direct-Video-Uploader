@@ -1,4 +1,4 @@
-// Last updated: May 9, 2026 - 6:55pm - GPT-5.3-Codex
+// Last updated: May 11, 2026 - 7:15pm - GitHub Copilot (GPT-5.3-Codex)
 import Fastify from 'fastify';
 import fastifyJwt from '@fastify/jwt';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -37,7 +37,13 @@ beforeEach(async () => {
     await app.register(fastifyJwt, { secret: 'test-jwt-secret' });
 
     app.decorate('authenticate', async (request) => {
-        request.user = { id: 'user-1' };
+        request.user = { id: 'user-1', role: 'ADMIN' };
+    });
+
+    app.decorate('authorizeAdmin', async (request, reply) => {
+        if (request.user?.role !== 'ADMIN') {
+            return reply.status(403).send({ error: 'Admin access required' });
+        }
     });
 
     await app.register(authRoutes);
@@ -78,6 +84,32 @@ describe('auth routes behavior', () => {
             method: 'POST',
             url: '/api/auth/login',
             payload: { phoneNumber: '5055551111', pin: '1234' },
+        });
+
+        expect(response.statusCode).toBe(401);
+        expect(response.json()).toEqual({ error: 'Company code is required' });
+    });
+
+    it('does not allow non-admin users to bypass company code by setting clientType=admin', async () => {
+        prismaMock.user.findUnique.mockResolvedValue({
+            id: 'user-2',
+            name: 'Field User',
+            phoneNumber: '5055552222',
+            pinHash: await hashPin('1234'),
+            status: 'ACTIVE',
+            role: 'USER',
+            companyCode: 'NEWS',
+            organization: { companyName: 'News Org' },
+        });
+
+        const response = await app.inject({
+            method: 'POST',
+            url: '/api/auth/login',
+            payload: {
+                phoneNumber: '5055552222',
+                pin: '1234',
+                clientType: 'admin',
+            },
         });
 
         expect(response.statusCode).toBe(401);

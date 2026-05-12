@@ -169,7 +169,7 @@ cd ios && xcodegen generate
 
 | User          | Phone        | PIN    | Role  |
 | ------------- | ------------ | ------ | ----- |
-| Rod Griola    | `9176717330` | `3218` | ADMIN |
+| Rod Griola    | `9176717330` | `1234` | ADMIN |
 | David Burgess | `5055034455` | `1234` | USER  |
 | Carrie Smith  | `5055551234` | `1234` | USER  |
 

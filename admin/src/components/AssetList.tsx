@@ -1,3 +1,4 @@
+// Last updated: May 11, 2026 - 9:05pm - GitHub Copilot (GPT-5.3-Codex)
 /**
  * AssetList.tsx — Admin Dashboard panel showing all uploaded video assets.
  *
@@ -19,7 +20,7 @@
  */
 
 import { useState } from "react";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, Play } from "lucide-react";
 import type { Asset } from "@/lib/types";
 import { panelHeader, subTextPanelHeader } from "@/lib/types";
 
@@ -189,24 +190,16 @@ function AssetRow({ asset, isExpanded, onToggle }: AssetRowProps) {
           )}
 
           {/* Form response (slug, description, type, priority) */}
-          {asset.formResponse && <FormSection form={asset.formResponse} />}
+          {asset.formResponse && <FormSection form={asset.formResponse} clipUrl={clipUrl} />}
 
           {/* Clip details (resolution, codec, orientation, file size, duration) */}
           {clip && <ClipSection clip={clip} />}
 
-          {/* Footer: timestamp + clip viewer link */}
-          <div className="flex items-center justify-between mt-2 pt-2 border-t border-(--border-subtle)">
+          {/* Footer: timestamp */}
+          <div className="mt-2 pt-2 border-t border-(--border-subtle)">
             <span className="text-[11px] text-(--muted-foreground)">
               {asset.createdAt ? new Date(asset.createdAt).toLocaleString() : ""}
             </span>
-            <a
-              href={clipUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-[11px] font-semibold text-(--card-foreground) hover:underline no-underline"
-            >
-              Play Clip ↗
-            </a>
           </div>
         </div>
       )}
@@ -217,21 +210,43 @@ function AssetRow({ asset, isExpanded, onToggle }: AssetRowProps) {
 // ─── Expanded Panel Sections ─────────────────────────────────────────
 
 /** Form Response — user-submitted metadata from ContextFormView in iOS */
-function FormSection({ form }: { form: NonNullable<Asset["formResponse"]> }) {
+function FormSection({
+  form,
+  clipUrl,
+}: {
+  form: NonNullable<Asset["formResponse"]>;
+  clipUrl: string;
+}) {
   return (
     <div className="mb-3">
       <h4 className="text-[11px] font-semibold text-(--muted-foreground) uppercase tracking-wider mb-2">Form Response</h4>
-      <div className="grid grid-cols-2 gap-x-6 gap-y-1.5 text-xs">
+      <a
+        href={clipUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="inline-flex items-center gap-1.5 mb-2 text-[11px] font-semibold text-(--card-foreground) hover:underline no-underline"
+      >
+        <Play className="w-3 h-3" aria-hidden="true" />
+        Play Clip
+      </a>
+
+      <ul className="space-y-1.5 text-xs">
         {form.description && (
-          <div className="col-span-2 max-w-[65ch]">
+          <li className="max-w-[65ch]">
             <DetailRow label="Description" value={form.description} />
-          </div>
+          </li>
         )}
-        {form.type && <DetailRow label="Type" value={form.type} />}
+        {form.type && (
+          <li>
+            <DetailRow label="Type" value={form.type} />
+          </li>
+        )}
         {form.priority && (
-          <DetailRow label="Priority" value={form.priority} className={priorityColors[form.priority] ?? ""} />
+          <li>
+            <DetailRow label="Priority" value={form.priority} className={priorityColors[form.priority] ?? ""} />
+          </li>
         )}
-      </div>
+      </ul>
     </div>
   );
 }

@@ -1,7 +1,7 @@
-// Last updated: May 9, 2026 - 7:19pm - GPT-5.3-Codex
+// Last updated: May 11, 2026 - 8:32pm - GitHub Copilot (GPT-5.3-Codex)
 /**
  * Clip Viewer — Authenticated page to view a video clip with metadata.
- * Requires cookie-based auth (phone + PIN + company code).
+ * Requires cookie-based auth (phone + PIN + company code for non-admin users).
  * Accessible at GET /clips/:mediasourceId
  */
 import prisma from '../lib/prisma.js';
@@ -18,6 +18,17 @@ function escapeHtml(str) {
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#39;');
+}
+
+function normalizeRedirectPath(rawValue, fallback = '/') {
+    const value = Array.isArray(rawValue) ? rawValue[0] : rawValue;
+    if (typeof value !== 'string') return fallback;
+
+    const trimmed = value.trim();
+    if (!trimmed || !trimmed.startsWith('/')) return fallback;
+    if (trimmed.startsWith('//')) return fallback;
+
+    return trimmed;
 }
 
 export default async function clipRoutes(fastify) {
@@ -55,10 +66,10 @@ export default async function clipRoutes(fastify) {
     `;
     const googleFontsHead = '<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">';
 
-    // Cookie options — HttpOnly, 7-day expiry, scoped to /clips
+    // Cookie options — HttpOnly, 7-day expiry, shared across dashboard + clip viewer
     const COOKIE_NAME = 'fixer_clip_token';
     const cookieOpts = (isSecure) => ({
-        path: '/clips',
+        path: '/',
         httpOnly: true,
         secure: isSecure,
         sameSite: 'lax',
@@ -74,6 +85,7 @@ export default async function clipRoutes(fastify) {
             request.user = decoded;
             return decoded;
         } catch {
+            reply.clearCookie(COOKIE_NAME, { path: '/' });
             reply.clearCookie(COOKIE_NAME, { path: '/clips' });
             return null;
         }
@@ -96,12 +108,21 @@ export default async function clipRoutes(fastify) {
     fastify.get('/clips/login', async (request, reply) => {
         // Already logged in? Redirect to the clip they wanted
         const user = await verifyClipCookie(request, reply);
-        if (user && request.query.redirect) {
-            return reply.redirect(request.query.redirect);
+        const redirectPath = normalizeRedirectPath(request.query?.redirect, '/');
+        if (user) {
+            const token = request.cookies?.[COOKIE_NAME];
+            if (token) {
+                const isSecure = request.protocol === 'https';
+                // Legacy migration: promote any /clips-only cookie to root path
+                // so /api/auth/me receives the same session token.
+                reply.setCookie(COOKIE_NAME, token, cookieOpts(isSecure));
+                reply.clearCookie(COOKIE_NAME, { path: '/clips' });
+            }
+            return reply.redirect(redirectPath);
         }
 
         const error = request.query.error || '';
-        const redirect = escapeHtml(request.query.redirect || '');
+        const redirect = escapeHtml(redirectPath);
         const csrfToken = await reply.generateCsrf();
 
         const html = `<!DOCTYPE html>
@@ -113,14 +134,14 @@ ${googleFontsHead}
 </head><body>
 <div class="card">
     <div class="logo"><span>🎬</span></div>
-    <h1>Sign in to view this clip</h1>
+    <h1>Sign in to Fixer</h1>
     ${error ? `<div class="error">${escapeHtml(error)}</div>` : ''}
     <form method="POST" action="/clips/login">
         <input type="hidden" name="_csrf" value="${escapeHtml(csrfToken)}" />
         <input type="hidden" name="redirect" value="${redirect}" />
-        <label for="companyCode">Company Code</label>
+         <label for="companyCode">Company Code (non-admin only)</label>
         <input id="companyCode" name="companyCode" type="text" placeholder="ABC or ABCD"
-               maxlength="4" pattern="[A-Za-z]{3,4}" required autocomplete="off" />
+             maxlength="4" pattern="[A-Za-z]{3,4}" autocomplete="off" />
         <label for="phoneNumber">Phone Number</label>
         <input id="phoneNumber" name="phoneNumber" type="tel" placeholder="10-digit phone"
                maxlength="10" pattern="[0-9]{10}" required autocomplete="tel" />
@@ -147,11 +168,11 @@ ${googleFontsHead}
         },
     }, async (request, reply) => {
         const { phoneNumber, pin, companyCode, redirect } = request.body || {};
-        const redirectTo = redirect || '/clips/login';
+        const redirectTo = normalizeRedirectPath(redirect, '/');
 
         // Validate inputs
-        if (!phoneNumber || !pin || !companyCode) {
-            return reply.redirect(`/clips/login?error=${encodeURIComponent('All fields are required')}&redirect=${encodeURIComponent(redirectTo)}`);
+        if (!phoneNumber || !pin) {
+            return reply.redirect(`/clips/login?error=${encodeURIComponent('Phone number and PIN are required')}&redirect=${encodeURIComponent(redirectTo)}`);
         }
 
         // Look up user
@@ -169,9 +190,17 @@ ${googleFontsHead}
             return reply.redirect(`/clips/login?error=${encodeURIComponent('Invalid credentials')}&redirect=${encodeURIComponent(redirectTo)}`);
         }
 
-        // Verify company code
-        if (!user.companyCode || user.companyCode.toLowerCase() !== companyCode.toLowerCase()) {
-            return reply.redirect(`/clips/login?error=${encodeURIComponent('Invalid credentials')}&redirect=${encodeURIComponent(redirectTo)}`);
+        const isAdminUser = (user.role || 'USER') === 'ADMIN';
+
+        // Non-admin users must provide a matching company code.
+        if (!isAdminUser) {
+            if (!companyCode) {
+                return reply.redirect(`/clips/login?error=${encodeURIComponent('Company code is required')}&redirect=${encodeURIComponent(redirectTo)}`);
+            }
+
+            if (!user.companyCode || user.companyCode.toLowerCase() !== companyCode.toLowerCase()) {
+                return reply.redirect(`/clips/login?error=${encodeURIComponent('Invalid credentials')}&redirect=${encodeURIComponent(redirectTo)}`);
+            }
         }
 
         // Auto-migrate legacy SHA-256 hash to bcrypt
@@ -209,7 +238,7 @@ ${googleFontsHead}
         );
 
         // Redirect to the clip they wanted to view
-        return reply.redirect(redirectTo.startsWith('/clips/') ? redirectTo : '/clips/login');
+        return reply.redirect(redirectTo);
     });
 
     /**
@@ -217,6 +246,7 @@ ${googleFontsHead}
      * Clear the clip viewer cookie.
      */
     fastify.post('/clips/logout', async (request, reply) => {
+        reply.clearCookie(COOKIE_NAME, { path: '/' });
         reply.clearCookie(COOKIE_NAME, { path: '/clips' });
         return reply.redirect('/clips/login');
     });

@@ -1087,7 +1087,6 @@ Batch Queue bubble Should stay at the point of entry to the Chat UI - after Gree
 - Slack supression when no video meta to send. 
 
 
-
 resolved. 
 - Video Upload feature needs to auto select upload modes, single or multiple clips. Our Single Upload feature has regressed.  - After User selects only one video leaves the photopicker screen >  the process stops screen goes black > user never gets to edit video screen, app locks up view disappears, no nav bar just a black screen. 
 

@@ -1,4 +1,4 @@
-// Last updated: May 9, 2026 - 6:01pm
+// Last updated: May 11, 2026 - 7:15pm - GitHub Copilot (GPT-5.3-Codex)
 /**
  * Auth routes — Simple phone# + PIN login for demo.
  */
@@ -66,8 +66,12 @@ export default async function authRoutes(fastify) {
             });
         }
 
-        // iOS login requires company code
-        if (clientType !== 'admin') {
+        const isAdminClient = clientType === 'admin';
+        const isAdminUser = (user.role || 'USER') === 'ADMIN';
+
+        // Company code is required for non-admin users and non-admin clients.
+        // Only a real ADMIN using the admin client can bypass this check.
+        if (!(isAdminClient && isAdminUser)) {
             if (!companyCode) {
                 return reply.status(401).send({
                     error: 'Company code is required',
@@ -90,7 +94,7 @@ export default async function authRoutes(fastify) {
         }
 
         // Track login time (skip for admin dashboard auto-login)
-        if (clientType !== 'admin') {
+        if (!(isAdminClient && isAdminUser)) {
             await dbRetry(() => prisma.user.update({
                 where: { id: user.id },
                 data: { lastLoginAt: new Date() },
@@ -155,5 +159,15 @@ export default async function authRoutes(fastify) {
                 companyName: organization?.companyName || null,
             } : null,
         };
+    });
+
+    /**
+     * POST /api/auth/logout
+     * Clears web session cookies used by dashboard/clip viewer.
+     */
+    fastify.post('/api/auth/logout', async (_request, reply) => {
+        reply.clearCookie('fixer_clip_token', { path: '/' });
+        reply.clearCookie('fixer_clip_token', { path: '/clips' });
+        return { ok: true };
     });
 }

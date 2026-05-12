@@ -1,4 +1,4 @@
-// Last updated: May 9, 2026 - 9:07pm - GPT-5.3-Codex
+// Last updated: May 11, 2026 - 7:15pm - GitHub Copilot (GPT-5.3-Codex)
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const fastifyState = {
@@ -284,9 +284,10 @@ describe('index branch-heavy coverage', () => {
         expect(docsReply.status).not.toHaveBeenCalled();
 
         // authenticate success branch
+        fastify.jwt.verify.mockReturnValueOnce({ id: 'admin-1' });
         const authRequest = {
-            user: { id: 'admin-1' },
-            jwtVerify: vi.fn().mockResolvedValue(undefined),
+            headers: { authorization: 'Bearer good-token' },
+            cookies: {},
         };
         const authReply = makeReply();
         await fastify.authenticate(authRequest, authReply);
@@ -294,9 +295,10 @@ describe('index branch-heavy coverage', () => {
 
         // authenticate: missing user branch
         prismaMock.user.findUnique.mockResolvedValueOnce(null);
+        fastify.jwt.verify.mockReturnValueOnce({ id: 'gone' });
         const missingUserReq = {
-            user: { id: 'gone' },
-            jwtVerify: vi.fn().mockResolvedValue(undefined),
+            headers: { authorization: 'Bearer missing-user' },
+            cookies: {},
         };
         const missingUserReply = makeReply();
         await fastify.authenticate(missingUserReq, missingUserReply);
@@ -311,26 +313,33 @@ describe('index branch-heavy coverage', () => {
             name: 'User',
             phoneNumber: '5055550000',
         });
+        fastify.jwt.verify.mockReturnValueOnce({ id: 'suspended' });
         const suspendedReq = {
-            user: { id: 'suspended' },
-            jwtVerify: vi.fn().mockResolvedValue(undefined),
+            headers: { authorization: 'Bearer suspended-token' },
+            cookies: {},
         };
         const suspendedReply = makeReply();
         await fastify.authenticate(suspendedReq, suspendedReply);
         expect(suspendedReply.status).toHaveBeenCalledWith(403);
 
         // authenticate: jwt verify throws branches
+        fastify.jwt.verify.mockImplementationOnce(() => {
+            throw new Error('bad token');
+        });
         const badTokenReq = {
-            user: { id: 'bad' },
-            jwtVerify: vi.fn().mockRejectedValue(new Error('bad token')),
+            headers: { authorization: 'Bearer bad-token' },
+            cookies: {},
         };
         const badTokenReply = makeReply();
         await fastify.authenticate(badTokenReq, badTokenReply);
         expect(badTokenReply.status).toHaveBeenCalledWith(401);
 
+        fastify.jwt.verify.mockImplementationOnce(() => {
+            throw new Error('bad token');
+        });
         const alreadySentReq = {
-            user: { id: 'bad' },
-            jwtVerify: vi.fn().mockRejectedValue(new Error('bad token')),
+            headers: { authorization: 'Bearer bad-token-2' },
+            cookies: {},
         };
         const alreadySentReply = makeReply();
         alreadySentReply.sent = true;

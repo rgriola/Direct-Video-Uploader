@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+// Last updated: May 11, 2026 - 7:59pm - GitHub Copilot (GPT-5.3-Codex)
 /**
  * Triad Dev Launcher
  * Coordinates: Database (Prisma) + Server (Fastify) + Admin Dashboard (Vite)
@@ -110,6 +111,7 @@ function createServerFilter() {
     const suppress = [
         /incoming request/i, /request completed/i,
         /reqId/, /responseTime/, /statusCode/,
+        /^requestId:\s*"/i,
         /"method"/, /"url"/, /"host"/, /"remoteAddress"/,
         /"remotePort"/, /res:|req:/,
         /^\s*"/, /^\s*\{/, /^\s*\}/, // JSON fragments from pino

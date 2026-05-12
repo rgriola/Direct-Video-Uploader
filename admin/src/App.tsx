@@ -1,14 +1,13 @@
-import { useEffect, useState, useCallback } from "react";
+// Last updated: May 11, 2026 - 8:37pm - GitHub Copilot (GPT-5.3-Codex)
+import { useEffect, useState, useCallback, useRef } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster, toast } from "sonner";
 
-import { setToken, getToken, fetchHealth, fetchMe, cleanupAssets, deleteUser } from "@/lib/api";
+import { fetchHealth, fetchMe, cleanupAssets, deleteUser, logoutWebSession } from "@/lib/api";
 import { useStats, useUsers, useAssets, useRefreshDashboard, useTriadStatus, useOrganizations } from "@/hooks/use-dashboard";
 import { useSocket } from "@/hooks/use-socket";
 
 import { Header } from "@/components/Header";
-import { clearToken } from "@/lib/api";
-import { LoginForm } from "@/components/LoginForm";
 import { TriadStatusPanel } from "@/components/TriadStatus";
 import { StatsGrid } from "@/components/StatsGrid";
 import { QuickActions } from "@/components/QuickActions";
@@ -21,11 +20,46 @@ import { ErrorLog } from "@/components/ErrorLog";
 import { AdminTools } from "@/components/AdminTools";
 import { OrgPanel } from "@/components/OrgPanel";
 
-const AUTH_TOKEN_KEY = "fixer_admin_token";
-
 const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 10_000, retry: 1 } },
 });
+
+const AUTH_REQUIRED_MESSAGES = new Set(["HTTP 401", "HTTP 403", "Unauthorized", "Admin access required"]);
+
+function buildRedirectTarget() {
+  if (typeof window === "undefined") return "/";
+  return `${window.location.pathname}${window.location.search}${window.location.hash}` || "/";
+}
+
+function backendOrigin() {
+  if (typeof window === "undefined") return "http://localhost:3000";
+
+  const configured = import.meta.env.VITE_SERVER_ORIGIN?.trim();
+  if (configured) {
+    return configured.replace(/\/$/, "");
+  }
+
+  if (window.location.hostname === "localhost") {
+    return `${window.location.protocol}//127.0.0.1:3000`;
+  }
+
+  if (window.location.port === "5173") {
+    return `${window.location.protocol}//${window.location.hostname}:3000`;
+  }
+
+  return window.location.origin;
+}
+
+function buildWebLoginUrl() {
+  if (typeof window === "undefined") return "/clips/login?redirect=%2F";
+  const target = buildRedirectTarget();
+  return `/clips/login?redirect=${encodeURIComponent(target)}`;
+}
+
+function buildDirectLoginUrl() {
+  const target = buildRedirectTarget();
+  return `${backendOrigin()}/clips/login?redirect=${encodeURIComponent(target)}`;
+}
 
 export default function App() {
   return (
@@ -49,12 +83,16 @@ export default function App() {
 
 function Dashboard() {
   const [loggedIn, setLoggedIn] = useState(false);
+  const [authChecked, setAuthChecked] = useState(false);
   const [userRole, setUserRole] = useState<string | null>(null);
   const [userName, setUserName] = useState<string | null>(null);
   const [userPhone, setUserPhone] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
   const [userCompany, setUserCompany] = useState<string | null>(null);
   const [showChatHistory, setShowChatHistory] = useState(false);
+  const [loginRedirectFailed, setLoginRedirectFailed] = useState(false);
+  const [loginFallbackHref, setLoginFallbackHref] = useState<string>(buildDirectLoginUrl());
+  const loginRedirectTimerRef = useRef<number | null>(null);
 
   const { data: stats } = useStats(loggedIn);
   const { data: users, isLoading: usersLoading } = useUsers(loggedIn);
@@ -63,59 +101,92 @@ function Dashboard() {
   const { data: organizations, isLoading: orgsLoading } = useOrganizations(loggedIn);
   const refreshDashboard = useRefreshDashboard();
 
-  const { connected, socketId, logs, addLog, clearLogs, connect } = useSocket(() => {
+  const { connected, logs, addLog, clearLogs, connect } = useSocket(() => {
     refreshDashboard("upload:complete");
   });
 
-  // Restore saved token on mount (avoids re-login on page refresh)
-  useEffect(() => {
-    const saved = localStorage.getItem(AUTH_TOKEN_KEY);
-    if (!saved) return;
+  const redirectToLogin = useCallback(() => {
+    const loginUrl = buildWebLoginUrl();
+    setLoginRedirectFailed(false);
+    setLoginFallbackHref(buildDirectLoginUrl());
 
-    async function restoreSession(token: string) {
+    if (loginRedirectTimerRef.current) {
+      window.clearTimeout(loginRedirectTimerRef.current);
+    }
+
+    window.location.assign(loginUrl);
+
+    // If navigation fails (for example backend/proxy is down), stay on page and show a manual link.
+    loginRedirectTimerRef.current = window.setTimeout(() => {
+      setLoginRedirectFailed(true);
+    }, 1500);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (loginRedirectTimerRef.current) {
+        window.clearTimeout(loginRedirectTimerRef.current);
+      }
+    };
+  }, []);
+
+  // Restore web session from HttpOnly cookie (shared clip viewer + dashboard login).
+  useEffect(() => {
+    let active = true;
+
+    async function restoreSession() {
       try {
-        setToken(token);
         const { user } = await fetchMe();
-        if (user) {
-          setLoggedIn(true);
-          setUserRole(user.role ?? null);
-          setUserName(user.name ?? null);
-          setUserId(user.id ?? null);
-          setUserPhone(user.phoneNumber ?? null);
-          setUserCompany(user.companyName ?? null);
-          addLog("auth", `Session restored: ${user.name}`);
-          connect();
+        if (!user) {
+          throw new Error("Unauthorized");
         }
+
+        if ((user.role ?? "USER") !== "ADMIN") {
+          await logoutWebSession().catch(() => undefined);
+          if (active) {
+            redirectToLogin();
+          }
+          return;
+        }
+
+        if (!active) return;
+
+        setLoggedIn(true);
+        setUserRole(user.role ?? null);
+        setUserName(user.name ?? null);
+        setUserId(user.id ?? null);
+        setUserPhone(user.phoneNumber ?? null);
+        setUserCompany(user.companyName ?? null);
+        addLog("auth", `Session restored: ${user.name}`);
+        connect();
       } catch (err) {
+        if (!active) return;
+
         const msg = err instanceof Error ? err.message : "";
-        // Only clear the saved token on definitive auth rejections (401/403),
-        // not on transient network errors — so the session persists through
-        // server restarts or brief connectivity issues.
-        if (msg === "HTTP 401" || msg === "HTTP 403" || msg === "Unauthorized" || msg === "Admin access required") {
-          localStorage.removeItem(AUTH_TOKEN_KEY);
+        if (AUTH_REQUIRED_MESSAGES.has(msg)) {
+          await logoutWebSession().catch(() => undefined);
+          if (active) {
+            redirectToLogin();
+          }
+          return;
+        }
+
+        toast.error("Dashboard session check failed", {
+          description: msg || "Unable to verify login session",
+        });
+      } finally {
+        if (active) {
+          setAuthChecked(true);
         }
       }
     }
 
-    void restoreSession(saved);
-  }, [addLog, connect]);
+    void restoreSession();
 
-  const handleLoginSuccess = useCallback((userName: string, role?: string, phone?: string) => {
-    // Token is already set in api.ts by the LoginForm; mirror it to localStorage
-    const token = getToken();
-    if (token) localStorage.setItem(AUTH_TOKEN_KEY, token);
-    setLoggedIn(true);
-    setUserRole(role ?? null);
-    setUserName(userName);
-    setUserPhone(phone ?? null);
-    // userId is set after fetchMe on session restore; for fresh login, fetch it now
-    fetchMe().then(({ user }) => {
-      setUserId(user?.id ?? null);
-      setUserCompany(user?.companyName ?? null);
-    }).catch(() => {});
-    addLog("auth", `Dashboard auth: ${userName}`);
-    connect();
-  }, [addLog, connect, setLoggedIn]);
+    return () => {
+      active = false;
+    };
+  }, [addLog, connect, redirectToLogin]);
 
   const handleAction = useCallback(
     async (action: string) => {
@@ -181,19 +252,43 @@ function Dashboard() {
   );
 
   if (!loggedIn) {
-    return <LoginForm onSuccess={handleLoginSuccess} />;
+    return (
+      <div className="min-h-screen flex items-center justify-center p-6">
+        <div className="bg-(--card) border border-(--border-subtle) rounded-(--radius) px-6 py-5 text-center max-w-md w-full">
+          <p className="text-sm text-(--foreground)">
+            {authChecked ? "Redirecting to login..." : "Restoring session..."}
+          </p>
+
+          {authChecked && loginRedirectFailed && (
+            <div className="mt-4 border border-red-400/35 bg-red-500/10 rounded-lg p-3 text-left">
+              <p className="text-xs text-red-200 mb-2">
+                Unable to reach login page. Make sure the server is running on localhost:3000.
+              </p>
+              <a
+                href={loginFallbackHref}
+                className="text-xs text-blue-300 hover:text-blue-200 underline"
+              >
+                Open login directly
+              </a>
+            </div>
+          )}
+        </div>
+      </div>
+    );
   }
 
   return (
     <div className="max-w-330 mx-auto px-4 sm:px-6 pt-5 sm:pt-8 pb-12 sm:pb-16">
       <Header
         onLogout={() => {
-          clearToken();
-          localStorage.removeItem(AUTH_TOKEN_KEY);
-          setLoggedIn(false);
-          setUserName(null);
-          setUserPhone(null);
-          setUserCompany(null);
+          void logoutWebSession().catch(() => undefined).finally(() => {
+            setLoggedIn(false);
+            setUserRole(null);
+            setUserName(null);
+            setUserPhone(null);
+            setUserCompany(null);
+            redirectToLogin();
+          });
         }}
         userName={userName}
         userPhone={userPhone}

@@ -1,4 +1,4 @@
-// Last updated: May 9, 2026 - 8:22pm - GPT-5.3-Codex
+// Last updated: May 11, 2026 - 7:15pm - GitHub Copilot (GPT-5.3-Codex)
 import Fastify from 'fastify';
 import cookie from '@fastify/cookie';
 import fastifyJwt from '@fastify/jwt';
@@ -76,12 +76,38 @@ describe('clip routes deeper coverage', () => {
             url: '/clips/login',
             payload: {
                 phoneNumber: '5055551234',
-                pin: '1234',
             },
         });
 
         expect(response.statusCode).toBe(302);
-        expect(response.headers.location).toContain('/clips/login?error=All%20fields%20are%20required');
+        expect(response.headers.location).toContain('/clips/login?error=Phone%20number%20and%20PIN%20are%20required');
+    });
+
+    it('allows admin login without company code for unified dashboard/clip auth', async () => {
+        prismaMock.user.findUnique.mockResolvedValue({
+            id: 'admin-1',
+            name: 'Admin User',
+            phoneNumber: '8001234567',
+            pinHash: await hashPin('0000'),
+            status: 'ACTIVE',
+            role: 'ADMIN',
+            companyCode: null,
+            organization: null,
+        });
+
+        const response = await app.inject({
+            method: 'POST',
+            url: '/clips/login',
+            payload: {
+                phoneNumber: '8001234567',
+                pin: '0000',
+                redirect: '/',
+            },
+        });
+
+        expect(response.statusCode).toBe(302);
+        expect(response.headers.location).toBe('/');
+        expect(response.headers['set-cookie']).toContain('fixer_clip_token=');
     });
 
     it('rejects login when company code does not match', async () => {

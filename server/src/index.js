@@ -1,4 +1,4 @@
-// Last updated: May 10, 2026 - 3:19pm - GPT-5.3-Codex
+// Last updated: May 11, 2026 - 8:17pm - GitHub Copilot (GPT-5.3-Codex)
 /**
  * Fixer — Server Entry Point
  *
@@ -49,11 +49,26 @@ process.on('uncaughtException', (err) => {
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = parseInt(process.env.PORT || '3000', 10);
-const HOST = process.env.HOST || '0.0.0.0';
 const isProduction = process.env.NODE_ENV === 'production';
+const HOST = process.env.HOST || (isProduction ? '0.0.0.0' : '::');
 const LOG_LEVEL = process.env.LOG_LEVEL?.trim() || (isProduction ? 'info' : 'debug');
 const MAX_NON_MULTIPART_BODY_BYTES = 2 * 1024 * 1024;
 const SOCKET_IO_PATH = '/socket.io';
+const WEB_SESSION_COOKIE_NAME = 'fixer_clip_token';
+
+const DEFAULT_GLOBAL_RATE_LIMIT_MAX = isProduction ? 100 : 2000;
+const parsedGlobalRateLimitMax = Number.parseInt(process.env.GLOBAL_RATE_LIMIT_MAX || '', 10);
+const GLOBAL_RATE_LIMIT_MAX = Number.isFinite(parsedGlobalRateLimitMax) && parsedGlobalRateLimitMax > 0
+    ? parsedGlobalRateLimitMax
+    : DEFAULT_GLOBAL_RATE_LIMIT_MAX;
+
+function shouldBypassGlobalRateLimit(request) {
+    if (isProduction) return false;
+    const url = request.raw?.url || request.url || '';
+
+    // In dev, static/HMR/browser probes can flood non-API paths and create noisy false positives.
+    return !url.startsWith('/api/');
+}
 
 const REQUIRED_PROD_ENV = ['DATABASE_URL', 'JWT_SECRET'];
 const REQUIRED_MUX_ENV = ['MUX_TOKEN_ID', 'MUX_TOKEN_SECRET', 'MUX_ENV_KEY', 'MUX_WEBHOOK_SECRET'];
@@ -68,6 +83,23 @@ function normalizeRequestId(rawValue) {
     const trimmed = value.trim();
     if (!trimmed) return null;
     return trimmed.slice(0, 128);
+}
+
+function getBearerToken(rawHeader) {
+    const header = Array.isArray(rawHeader) ? rawHeader[0] : rawHeader;
+    if (typeof header !== 'string') return null;
+    if (!header.startsWith('Bearer ')) return null;
+
+    const token = header.slice(7).trim();
+    return token || null;
+}
+
+function getWebSessionToken(cookies) {
+    const token = cookies?.[WEB_SESSION_COOKIE_NAME];
+    if (typeof token !== 'string') return null;
+
+    const trimmed = token.trim();
+    return trimmed || null;
 }
 
 function validateEnvironment() {
@@ -194,8 +226,10 @@ fastify.addHook('onSend', async (request, reply, payload) => {
 // B7: Global rate limiting — sensible defaults, per-route overrides below
 await fastify.register(rateLimit, {
     global: true,
-    max: 100,               // 100 requests per window per IP
+    // Keep production strict, but avoid noisy local throttling during dev/HMR.
+    max: GLOBAL_RATE_LIMIT_MAX,
     timeWindow: '1 minute',
+    allowList: (request) => shouldBypassGlobalRateLimit(request),
 });
 
 await fastify.register(multipart, {
@@ -218,8 +252,9 @@ await fastify.register(fastifyJwt, {
 const docsGuard = async (request, reply) => {
     if (!isProduction) return;
 
-    const authHeader = request.headers.authorization || '';
-    const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : null;
+    const token =
+        getBearerToken(request.headers.authorization)
+        || getWebSessionToken(request.cookies);
 
     if (!token) {
         return reply.status(401).send({ error: 'Unauthorized' });
@@ -281,7 +316,16 @@ await fastify.register(fastifyStatic, {
 // ─── Auth Decorator ──────────────────────────────────────
 fastify.decorate('authenticate', async function (request, reply) {
     try {
-        await request.jwtVerify();
+        const token =
+            getBearerToken(request.headers.authorization)
+            || getWebSessionToken(request.cookies);
+
+        if (!token) {
+            return reply.status(401).send({ error: 'Unauthorized' });
+        }
+
+        const decoded = fastify.jwt.verify(token);
+        request.user = decoded;
 
         const user = await prisma.user.findUnique({
             where: { id: request.user.id },
@@ -356,7 +400,7 @@ fastify.decorate('authorizeAdmin', async function (request, reply) {
 
 // Clip viewer cookie-based auth (reads JWT from HttpOnly cookie)
 fastify.decorate('clipAuthenticate', async function (request, reply) {
-    const token = request.cookies?.fixer_clip_token;
+    const token = getWebSessionToken(request.cookies);
     if (!token) return null; // No cookie → caller decides what to do
     try {
         const decoded = fastify.jwt.verify(token);
@@ -364,7 +408,8 @@ fastify.decorate('clipAuthenticate', async function (request, reply) {
         return decoded;
     } catch {
         // Expired/invalid cookie — clear it
-        reply.clearCookie('fixer_clip_token', { path: '/clips' });
+        reply.clearCookie(WEB_SESSION_COOKIE_NAME, { path: '/' });
+        reply.clearCookie(WEB_SESSION_COOKIE_NAME, { path: '/clips' });
         return null;
     }
 });
@@ -393,6 +438,22 @@ await fastify.register(adminRoutes);
 await fastify.register(clipRoutes);
 await fastify.register(errorRoutes);
 await fastify.register(muxWebhookRoutes);
+
+// Chrome probes this path repeatedly when DevTools are open.
+// Return 204 to avoid noisy 404 logs and request storms.
+fastify.get('/.well-known/appspecific/com.chrome.devtools.json', async (_request, reply) => {
+    reply.code(204).type('application/json').send('');
+});
+
+// Browsers routinely request favicon even when the app does not define one.
+fastify.get('/favicon.ico', async (_request, reply) => {
+    reply.code(204).send();
+});
+
+// Legacy URL compatibility so old bookmarks/deep-links do not dead-end in dev/prod.
+fastify.get('/login', async (_request, reply) => reply.redirect('/clips/login?redirect=%2F'));
+fastify.get('/dashboard', async (_request, reply) => reply.redirect('/'));
+fastify.get('/dashboard/*', async (_request, reply) => reply.redirect('/'));
 
 // Health check
 fastify.get('/api/health', async () => ({

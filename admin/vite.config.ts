@@ -1,7 +1,10 @@
+// Last updated: May 11, 2026 - 8:17pm - GitHub Copilot (GPT-5.3-Codex)
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import path from 'path';
+
+const DEV_SERVER_ORIGIN = 'http://127.0.0.1:3000';
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
@@ -24,9 +27,10 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      '/api': 'http://localhost:3000',
+      '/api': DEV_SERVER_ORIGIN,
+      '/clips': DEV_SERVER_ORIGIN,
       '/socket.io': {
-        target: 'http://localhost:3000',
+        target: DEV_SERVER_ORIGIN,
         ws: true,
       },
     },

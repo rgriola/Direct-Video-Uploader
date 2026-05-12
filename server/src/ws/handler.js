@@ -1,4 +1,4 @@
-// Last updated: May 10, 2026 - 6:46pm - GitHub Copilot (GPT-5.3-Codex)
+// Last updated: May 11, 2026 - 7:15pm - GitHub Copilot (GPT-5.3-Codex)
 /**
  * WebSocket handler — Socket.IO event management.
  * Handles real-time communication between the iOS app and server.
@@ -76,6 +76,7 @@ function getTip() {
 }
 
 const MESSAGE_SCHEMA_VERSION = 1;
+const WEB_SESSION_COOKIE_NAME = 'fixer_clip_token';
 
 function stringifyParams(params = {}) {
     return Object.fromEntries(
@@ -98,6 +99,29 @@ function buildContent({ code, params = {}, fallbackText, text, ...extra }) {
         schemaVersion: MESSAGE_SCHEMA_VERSION,
         ...extra,
     };
+}
+
+function readCookieValue(rawCookieHeader, cookieName) {
+    if (typeof rawCookieHeader !== 'string' || !rawCookieHeader) return null;
+
+    for (const segment of rawCookieHeader.split(';')) {
+        const [rawKey, ...rawValueParts] = segment.split('=');
+        if (!rawKey) continue;
+
+        const key = rawKey.trim();
+        if (key !== cookieName) continue;
+
+        const value = rawValueParts.join('=').trim();
+        if (!value) return null;
+
+        try {
+            return decodeURIComponent(value);
+        } catch {
+            return value;
+        }
+    }
+
+    return null;
 }
 
 /**
@@ -408,8 +432,13 @@ export function setupWebSocket(io, fastify) {
 
     io.use(async (socket, next) => {
         try {
-            const token = socket.handshake.auth?.token
-                || socket.handshake.headers?.authorization?.replace('Bearer ', '');
+            const rawAuthHeader = socket.handshake.headers?.authorization;
+            const headerToken =
+                typeof rawAuthHeader === 'string' && rawAuthHeader.startsWith('Bearer ')
+                    ? rawAuthHeader.slice(7).trim()
+                    : null;
+            const cookieToken = readCookieValue(socket.handshake.headers?.cookie, WEB_SESSION_COOKIE_NAME);
+            const token = socket.handshake.auth?.token || headerToken || cookieToken;
 
             if (!token) {
                 log.warn({ socketId: socket.id }, 'WS auth rejected: no token provided');
@@ -418,9 +447,34 @@ export function setupWebSocket(io, fastify) {
 
             // Verify JWT
             const decoded = fastify.jwt.verify(token);
-            socket.userId = decoded.id;
-            socket.userName = decoded.name;
-            socket.phoneNumber = decoded.phoneNumber;
+
+            // Hydrate and enforce user status/role from DB, not token claims alone.
+            const user = await prisma.user.findUnique({
+                where: { id: decoded.id },
+                select: {
+                    id: true,
+                    name: true,
+                    phoneNumber: true,
+                    status: true,
+                    role: true,
+                },
+            });
+
+            if (!user || user.status !== 'ACTIVE') {
+                log.warn({ socketId: socket.id, userId: decoded.id || null }, 'WS auth rejected: inactive or missing user');
+                return next(new Error('Unauthorized'));
+            }
+
+            const requestedClientType = socket.handshake.auth?.clientType || 'unknown';
+            if (requestedClientType === 'admin' && user.role !== 'ADMIN') {
+                log.warn({ socketId: socket.id, userId: user.id }, 'WS auth rejected: admin client requires admin role');
+                return next(new Error('Admin access required'));
+            }
+
+            socket.userId = user.id;
+            socket.userName = user.name;
+            socket.phoneNumber = user.phoneNumber;
+            socket.userRole = user.role || 'USER';
 
             // Device tracking — sent from iOS in the Socket.IO CONNECT auth payload
             socket.deviceId = socket.handshake.auth?.deviceId || null;

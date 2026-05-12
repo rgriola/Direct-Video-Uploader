@@ -1,3 +1,4 @@
+// Last updated: May 11, 2026 - 7:15pm - GitHub Copilot (GPT-5.3-Codex)
 /* ─── API Client ─── */
 
 let authToken: string | null = null;
@@ -18,7 +19,7 @@ async function api<T>(method: string, path: string, body?: unknown): Promise<T> 
   const headers: Record<string, string> = {};
   if (authToken) headers["Authorization"] = `Bearer ${authToken}`;
 
-  const opts: RequestInit = { method, headers };
+  const opts: RequestInit = { method, headers, credentials: "include" };
   if (body && (method === "POST" || method === "PUT" || method === "PATCH")) {
     headers["Content-Type"] = "application/json";
     opts.body = JSON.stringify(body);
@@ -55,6 +56,10 @@ export async function login(phoneNumber: string, pin: string) {
 
 export async function fetchMe() {
   return api<{ user: User }>("GET", "/api/auth/me");
+}
+
+export async function logoutWebSession() {
+  return api<{ ok: boolean }>("POST", "/api/auth/logout");
 }
 
 export async function fetchStats() {
