@@ -1,4 +1,5 @@
 {
+  "lastUpdated": "May 12, 2026 - 1:25pm - GitHub Copilot (GPT-5.3-Codex)",
   "name": "direct-video-uploader",
   "private": true,
   "type": "module",
@@ -7,7 +8,7 @@
     "dev:server": "cd server && npm run dev",
     "dev:admin": "cd admin && npm run dev",
     "build:admin": "cd admin && npm run build",
-    "setup": "cd server && npm install && cd ../admin && npm install",
+    "setup": "cd server && npm install && npm run db:deploy && npm run db:generate && npm run seed && cd ../admin && npm install",
     "render:build": "./scripts/render-build.sh",
     "start": "cd server && node src/index.js",
     "studio": "cd server && npx prisma studio",

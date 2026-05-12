@@ -1,3 +1,5 @@
+May 12, 2026 - 1:25pm - GitHub Copilot (GPT-5.3-Codex)
+
 # Agent Guide — Fixer (formerly Direct Video Uploader)
 
 > **App Name:** Fixer — use this name in all user-facing UI (titles, headers, alerts, about screens).
@@ -163,8 +165,8 @@ const result = await prisma.$queryRawUnsafe(
 
 - **Vercel** → Web UI / Clip Viewer
 - **Render** → Server + PostgreSQL + WebSocket
-- **Render buildCommand** must include `npx prisma db push --accept-data-loss` to sync schema changes to production DB. Without it, new columns exist in Prisma Client but not PostgreSQL → P2022 errors.
-- **Render `render.yaml`** buildCommand: `npm ci --include=dev && cd ../admin && npm ci --include=dev && npm run build && cd ../server && npx prisma generate && npx prisma db push --accept-data-loss && node src/seed.js`
+- **Render buildCommand** must use versioned migrations (`npx prisma migrate deploy`) so schema changes are tracked and repeatable.
+- **Render `render.yaml`** buildCommand: `npm ci --include=dev && cd ../admin && npm ci --include=dev && npm run build && cd ../server && npx prisma generate && npx prisma migrate deploy && node src/seed.js`
 
 ---
 

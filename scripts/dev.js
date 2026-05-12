@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Last updated: May 11, 2026 - 7:59pm - GitHub Copilot (GPT-5.3-Codex)
+// Last updated: May 12, 2026 - 1:25pm - GitHub Copilot (GPT-5.3-Codex)
 /**
  * Triad Dev Launcher
  * Coordinates: Database (Prisma) + Server (Fastify) + Admin Dashboard (Vite)
@@ -7,6 +7,7 @@
  * Usage: node scripts/dev.js   (or `npm run dev` from project root)
  */
 import { spawn, execSync } from 'child_process';
+import { readdirSync } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -228,7 +229,7 @@ async function main() {
     if (!killed) logTri('No stale processes found');
     await sleep(killed ? 2000 : 500);
 
-    // ─ Step 2: Start PostgreSQL via Prisma ────────────────
+    // ─ Step 2: Validate PostgreSQL availability ───────────
     logDB('Checking Homebrew PostgreSQL...');
     // Use brew --prefix to find pg_isready regardless of PG version
     const pgBin = runSync('brew --prefix postgresql@16', ROOT);
@@ -242,18 +243,28 @@ async function main() {
         process.exit(1);
     }
 
-    // ─ Step 3: Push schema ────────────────────────────────
+    // ─ Step 3: Apply migrations ───────────────────────────
     // Use local binary directly — avoids npx resolution overhead (~5-10s)
     const prismaBin = path.join(SERVER_DIR, 'node_modules', '.bin', 'prisma');
-    logDB('Syncing schema (prisma db push)...');
-    const pushResult = runSync(`${prismaBin} db push 2>&1`, SERVER_DIR);
-    if (pushResult.ok) {
-        logDB('Schema synced ✅');
-    } else if (pushResult.output.includes('already in sync')) {
-        logDB('Schema already in sync ✅');
+    logDB('Applying migrations (prisma migrate deploy)...');
+    const migrateResult = runSync(`${prismaBin} migrate deploy 2>&1`, SERVER_DIR);
+    if (migrateResult.ok) {
+        logDB('Migrations applied ✅');
+    } else if (migrateResult.output.includes('No pending migrations')) {
+        logDB('No pending migrations ✅');
     } else {
-        logErr('Schema push had issues (may be OK if no changes)');
-        // Don't exit — often just "already in sync"
+        logErr('Migration deploy failed');
+        if (migrateResult.output.includes('Error: P3005')) {
+            const baselineMigrationName = readdirSync(path.join(SERVER_DIR, 'prisma', 'migrations'), { withFileTypes: true })
+                .filter((entry) => entry.isDirectory())
+                .map((entry) => entry.name)
+                .sort()[0] || '<baseline_migration_name>';
+            logErr('Database is non-empty with no migration history. Run once:');
+            logErr(`cd server && npx prisma migrate resolve --applied ${baselineMigrationName}`);
+        } else {
+            logErr(migrateResult.output.trim());
+        }
+        process.exit(1);
     }
 
     // ─ Step 4: Generate Prisma client (only if schema changed) ───────────
@@ -342,7 +353,7 @@ async function main() {
 ${C.bold}${C.green}╔══════════════════════════════════════════════════╗
 ║              T R I A D   S T A T U S             ║
 ╠══════════════════════════════════════════════════╣
-║  ${dot(dbOk)} Database     ${st(dbOk, 'Running ', 'Failed  ')}  PostgreSQL (prisma dev)   ║
+║  ${dot(dbOk)} Database     ${st(dbOk, 'Running ', 'Failed  ')}  PostgreSQL (migrations)  ║
 ║  ${dot(sOk)} Server       ${st(sOk, 'Running ', 'Failed  ')}  http://localhost:3000      ║
 ║  ${dot(aOk)} Dashboard    ${st(aOk, 'Running ', 'Starting')}  http://localhost:5173      ║
 ║  ⚪ iOS App      Waiting   No client connected yet  ║

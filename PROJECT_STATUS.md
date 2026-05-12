@@ -1,8 +1,8 @@
-May 11, 2026 - 9:32pm - GitHub Copilot (GPT-5.3-Codex)
+May 12, 2026 - 1:25pm - GitHub Copilot (GPT-5.3-Codex)
 
 # Direct Video Uploader — Project Status
 
-> **Last Updated:** May 11, 2026 · 9:32pm PT
+> **Last Updated:** May 12, 2026 · 1:25pm PT
 > **Current Phase:** Phase 4 (QA + Rollout) — iOS UI/UX refresh validation and release-readiness checks
 > **Overall Progress:** ████████████████████ 100% (Phase 2) · Phase 3 complete · Phase 4 in progress
 
@@ -31,7 +31,7 @@ npm run dev
 # What the triad does automatically:
 #   1. Kills any existing processes on :3000 and :5173
 #   2. Starts PostgreSQL via `prisma dev --detach`
-#   3. Pushes schema changes (`prisma db push`)
+#   3. Applies versioned migrations (`prisma migrate deploy`)
 #   4. Regenerates Prisma client (`prisma generate`)
 #   5. Seeds demo users if database is empty
 #   6. Starts Fastify server on :3000 (API + WebSocket)
@@ -50,7 +50,7 @@ cd ios && xcodegen generate && xcodebuild -project DirectVideoUploader.xcodeproj
 | `npm run dev:admin`   | Starts Vite dev server only on `:5173` (proxies API to `:3000`)        |
 | `npm run build:admin` | Production build of React admin → `server/public/`                     |
 | `npm run server`      | Starts Fastify server only (no DB, no admin)                           |
-| `npm run setup`       | Fresh setup: install deps, push schema, generate client, seed          |
+| `npm run setup`       | Fresh setup: install deps, apply migrations, generate client, seed     |
 
 ---
 
@@ -483,7 +483,7 @@ Render is the preview environment (stand-in for eventual company production syst
 | Form auto-focus          | ✅ Done          | @FocusState on slug field with 0.5s delay after sheet animation.                                                                            |
 | Admin tools (nuclear)    | ✅ Done          | Nuclear reset wipes all data + Mux assets, preserves users, resets mediasource sequence. Admin create user.                                 |
 | Transcription (Speech)   | ✅ Done          | On-device Apple Speech transcription. Opt-in toggle, dual-attempt (server + on-device), punctuation, domain vocabulary.                     |
-| Render schema sync       | ✅ Done          | `render.yaml` buildCommand now includes `prisma db push --accept-data-loss` + `seed.js`. Previously only ran `prisma generate`.             |
+| Render schema sync       | ✅ Done          | `render.yaml` buildCommand now includes `prisma migrate deploy` + `seed.js`. Previously only ran `prisma generate`.                          |
 | Real metadata extraction | ✅ Done          | iOS AVAsset extracts real metadata (not ffprobe — native iOS)                                                                               |
 | Parallel form + upload   | 🔲 Not started   | Show form at upload start (not after); wait for both to finalize asset. Needed when real transcoding adds latency.                          |
 | Ephemeral chat cleanup   | ✅ Done          | Option B: greeting, auto-reply, form-request, confirmation no longer persisted to DB — sent via WS only.                                    |

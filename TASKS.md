@@ -1,6 +1,8 @@
+May 12, 2026 - 1:25pm - GitHub Copilot (GPT-5.3-Codex)
+
 # Fixer — Enterprise Readiness Tasks
 
-> Last audit sync: May 9, 2026 - 8:49pm - GPT-5.3-Codex
+> Last audit sync: May 12, 2026 - 1:25pm - GitHub Copilot (GPT-5.3-Codex)
 
 > Companion to [ENTERPRISE_READINESS_PLAN.md](ENTERPRISE_READINESS_PLAN.md).
 > Check items off as you complete them. Each task should be a single PR.
@@ -17,7 +19,7 @@
 - [x] Create `.env.example` with all required vars documented
 - [x] Add `User.status` check inside `fastify.authenticate` decorator
 - [x] Add `bodyLimit` to non-multipart routes
-- [x] Drop `--accept-data-loss` flag from `prisma db push` in [render.yaml](render.yaml)
+- [x] Adopt `prisma migrate deploy` in [render.yaml](render.yaml) build command
 - [x] Add `SECURITY.md` + `/.well-known/security.txt`
 - [x] Enable Dependabot (one PR adds `.github/dependabot.yml`)
 
@@ -58,12 +60,12 @@
 
 ### 0.5 Versioned Migrations (CRITICAL)
 
-- [ ] Switch local dev to `prisma migrate dev` (PARTIAL: `db:migrate` script exists)
-- [ ] Generate baseline migration from current production schema
+- [x] Switch local dev to `prisma migrate dev` (`server/package.json` + triad migration-first flow)
+- [x] Generate baseline migration from current schema (`20260512132446_baseline`)
 - [x] Replace `db push` with `migrate deploy` in [render.yaml](render.yaml)
-- [ ] Commit `server/prisma/migrations/` directory
-- [ ] Add migration review to PR checklist
-- [ ] Document rollback procedure
+- [x] Commit `server/prisma/migrations/` directory
+- [x] Add migration review to PR checklist (`.github/pull_request_template.md`)
+- [x] Document rollback procedure (`server/prisma/MIGRATIONS.md`)
 
 ### 0.6 Staging Environment
 

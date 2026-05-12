@@ -1,7 +1,10 @@
+Last updated: May 12, 2026 - 1:25pm - GitHub Copilot (GPT-5.3-Codex)
+
 # Enterprise Readiness Plan — Fixer
 
-> Last updated: April 27, 2026
-> Status: Planning phase. Nothing implemented yet.
+> Last updated: May 12, 2026
+> Status: Execution in progress. Core foundation and security quick wins are partially implemented.
+> Progress sync: Items checked below were verified in code/config as implemented. Unchecked items are pending or partially complete.
 
 This document is a phased roadmap to bring Fixer to enterprise-grade quality.
 Each phase is designed to be independently shippable. Phases are ordered by risk/impact.
@@ -51,14 +54,14 @@ These are prerequisites that every subsequent phase depends on.
 
 **Why first:** You can't refactor auth, RBAC, or validation safely without a test harness.
 
-- [ ] Add Vitest (or Jest) to `server/package.json`
-- [ ] Create `server/src/__tests__/` directory structure mirroring `routes/`, `lib/`, `jobs/`
-- [ ] Write smoke tests for every existing route (status codes only — no logic yet)
-- [ ] Add GitHub Actions workflow: `.github/workflows/ci.yml`
+- [x] Add Vitest (or Jest) to `server/package.json`
+- [x] Create `server/src/__tests__/` directory structure mirroring `routes/`, `lib/`, `jobs/`
+- [x] Write smoke tests for every existing route (status codes only — no logic yet)
+- [x] Add GitHub Actions workflow: `.github/workflows/ci.yml`
   - Runs on every push and PR to `main`
   - Steps: `npm ci` → `npx prisma generate` → `vitest run`
-- [ ] Add test coverage reporting (Istanbul/c8)
-- [ ] Set minimum coverage gate at 60% to start; raise to 80% by Phase 3
+- [x] Add test coverage reporting (Istanbul/c8)
+- [x] Set minimum coverage gate at 60% to start; raise to 80% by Phase 3
 
 **Files to create:**
 
@@ -78,11 +81,11 @@ server/src/__tests__/
 
 **Why first:** Every log, error, and audit entry needs a trace ID.
 
-- [ ] Add `@fastify/request-context` or a UUID middleware
-- [ ] Generate `X-Request-ID` on every incoming request (use header if provided, else generate)
-- [ ] Attach `requestId` to Pino logger child instance for each request
-- [ ] Return `X-Request-ID` in every response header
-- [ ] Thread `requestId` through to Slack alerts and error logs
+- [x] Add `@fastify/request-context` or a UUID middleware
+- [x] Generate `X-Request-ID` on every incoming request (use header if provided, else generate)
+- [x] Attach `requestId` to Pino logger child instance for each request
+- [x] Return `X-Request-ID` in every response header
+- [x] Thread `requestId` through to Slack alerts and error logs
 
 **Files to modify:**
 
@@ -95,8 +98,8 @@ server/src/__tests__/
 
 **Why first:** All future endpoints should be documented as they're written.
 
-- [ ] Install `@fastify/swagger` and `@fastify/swagger-ui`
-- [ ] Enable `/api/docs` endpoint (admin-authenticated in production)
+- [x] Install `@fastify/swagger` and `@fastify/swagger-ui`
+- [x] Enable `/api/docs` endpoint (admin-authenticated in production)
 - [ ] Add JSON Schema to every existing route's Fastify schema (body, params, querystring, response)
 - [ ] Auto-generate from schemas — no hand-written YAML
 
@@ -123,14 +126,14 @@ server/src/__tests__/
 
 ### 0.5 Versioned Migrations (Stop `db push` in Production)
 
-**Why first / CRITICAL:** `render.yaml` currently runs `npx prisma db push --accept-data-loss` on every deploy. This silently drops columns and bypasses migration history. No serious enterprise client will accept this.
+**Why first / CRITICAL:** `render.yaml` historically ran `npx prisma db push --accept-data-loss` on deploy. This silently drops columns and bypasses migration history. No serious enterprise client will accept this.
 
-- [ ] Switch local dev to `npx prisma migrate dev`
-- [ ] Generate baseline migration from current production schema (`prisma migrate diff` → SQL)
-- [ ] Replace `prisma db push --accept-data-loss` with `prisma migrate deploy` in `render.yaml`
-- [ ] Commit `server/prisma/migrations/` directory
-- [ ] Add migration review to PR checklist (any schema change requires a migration file in the diff)
-- [ ] Document rollback procedure (Render rollback + `prisma migrate resolve --rolled-back`)
+- [x] Switch local dev to `npx prisma migrate dev`
+- [x] Generate baseline migration from current production schema (`prisma migrate diff` → SQL)
+- [x] Replace `prisma db push --accept-data-loss` with `prisma migrate deploy` in `render.yaml`
+- [x] Commit `server/prisma/migrations/` directory
+- [x] Add migration review to PR checklist (any schema change requires a migration file in the diff)
+- [x] Document rollback procedure (Render rollback + `prisma migrate resolve --rolled-back`)
 
 ---
 
@@ -149,11 +152,11 @@ server/src/__tests__/
 
 ### 0.7 Supply Chain & Dependency Security
 
-- [ ] Enable Dependabot for `server/`, `admin/`, root `package.json` (weekly cadence)
-- [ ] Add `npm audit --audit-level=high` step to CI; fail build on high/critical
+- [x] Enable Dependabot for `server/`, `admin/`, root `package.json` (weekly cadence)
+- [x] Add `npm audit --audit-level=high` step to CI; fail build on high/critical
 - [ ] Add `npm-audit-resolver` or Snyk for tracked exceptions
-- [ ] Pin lockfile (`package-lock.json`) — already present, but add `npm ci --frozen-lockfile` to CI
-- [ ] Add CodeQL workflow for static analysis (free for public repos; ~$X/mo for private)
+- [x] Pin lockfile (`package-lock.json`) — already present, but add `npm ci --frozen-lockfile` to CI
+- [x] Add CodeQL workflow for static analysis (free for public repos; ~$X/mo for private)
 - [ ] Document policy: no new dependency without license check (no GPL/AGPL in app code)
 
 ---
@@ -195,10 +198,10 @@ server/src/__tests__/
   - `PATCH /api/assets/:id` — partial update schema
   - `POST /api/admin/users` — phoneNumber format, role enum, companyCode
   - `POST /api/admin/messages` — maxLength on content
-- [ ] Add `ajv-formats` for email and date-time format validation
-- [ ] Fix raw SQL in `server/src/routes/admin.js` — parameterize `companyCode` query
-- [ ] Add file MIME type check before creating Mux upload (reject non-video)
-- [ ] Global error handler for Fastify validation errors → consistent 422 response format
+- [x] Add `ajv-formats` for email and date-time format validation
+- [x] Fix raw SQL in `server/src/routes/admin.js` — parameterize `companyCode` query
+- [x] Add file MIME type check before creating Mux upload (reject non-video)
+- [x] Global error handler for Fastify validation errors → consistent 422 response format
 
 **Files to modify:**
 
@@ -212,10 +215,10 @@ server/src/__tests__/
 
 **Problem:** Phone numbers and company codes logged in plaintext.
 
-- [ ] Create `server/src/lib/redact.js` — utility to mask PII (`555****4455`)
-- [ ] Add Pino `redact` config to mask `phoneNumber`, `companyCode`, `token` fields
+- [x] Create `server/src/lib/redact.js` — utility to mask PII (`555****4455`)
+- [x] Add Pino `redact` config to mask `phoneNumber`, `companyCode`, `token` fields
 - [ ] Audit all `console.log` / `fastify.log` calls — replace direct phone/PIN logging
-- [ ] Add redaction to Slack alert messages (partial masking for context)
+- [x] Add redaction to Slack alert messages (partial masking for context)
 
 **Files to modify:**
 
@@ -228,14 +231,14 @@ server/src/__tests__/
 
 ### 1.4 Security Headers & CSRF
 
-- [ ] Audit current Helmet config — add missing headers:
+- [x] Audit current Helmet config — add missing headers:
   - `Permissions-Policy: camera=(), microphone=(), geolocation=()`
   - `Cache-Control: no-store` on auth endpoints
-- [ ] Add CSRF protection ONLY to cookie-authenticated endpoints (the clip viewer login form / `/clips/login`). All `/api/*` routes use `Authorization: Bearer` JWT and are CSRF-immune by design — do NOT add CSRF tokens there.
+- [x] Add CSRF protection ONLY to cookie-authenticated endpoints (the clip viewer login form / `/clips/login`). All `/api/*` routes use `Authorization: Bearer` JWT and are CSRF-immune by design — do NOT add CSRF tokens there.
   - Use `@fastify/csrf-protection` with synchronizer token pattern on the clip viewer form
-- [ ] Remove stack traces from production error responses
+- [x] Remove stack traces from production error responses
   - Fastify error handler should return only `{ error, code, requestId }` in production
-- [ ] Enable Mux webhook signature verification unconditionally
+- [x] Enable Mux webhook signature verification unconditionally
   - Remove `if (process.env.NODE_ENV !== 'production')` bypass in `mux-webhooks.js`
 
 **Files to modify:**
@@ -290,7 +293,7 @@ VIEWER       → read-only clip access within their org
   ```
 - [ ] Replace all `fastify.authorizeAdmin` calls with `fastify.authorize(['SUPER_ADMIN'])`
 - [ ] Add `ORG_ADMIN` guards to org-level management endpoints
-- [ ] Update JWT payload to include role
+- [x] Update JWT payload to include role
 - [ ] Update iOS `AuthService.swift` to read and store role from JWT
 - [ ] Update admin dashboard — show role badge per user; allow role changes by SUPER_ADMIN
 
@@ -464,7 +467,7 @@ VIEWER       → read-only clip access within their org
 
 ### 4.2 Structured Logging — Production Grade
 
-- [ ] Configure Pino with:
+- [x] Configure Pino with:
   - `level: process.env.LOG_LEVEL || 'info'` (env-configurable)
   - `redact` array for PII fields
   - JSON serializers for `req` and `res`
@@ -483,12 +486,12 @@ VIEWER       → read-only clip access within their org
 
 Current `/api/health` only checks if server is up. Expand to:
 
-- [ ] `GET /api/health/live` — is the process alive? (always 200 if running)
+- [x] `GET /api/health/live` — is the process alive? (always 200 if running)
 - [ ] `GET /api/health/ready` — are dependencies ready?
   - Checks: DB query (SELECT 1), Redis ping, Mux API reachable
   - Returns: `{ status, db, redis, mux, uptime, version }`
-- [ ] Add Render health check pointing to `/api/health/ready`
-- [ ] Add `GET /api/metrics` (admin-authenticated) — basic runtime stats:
+- [x] Add Render health check pointing to `/api/health/ready`
+- [x] Add `GET /api/metrics` (admin-authenticated) — basic runtime stats:
   - Memory usage, uptime, active WS connections, job status, DB pool stats
 
 ---
@@ -572,13 +575,13 @@ Currently, the admin dashboard shows everything to all ADMINs.
 - [ ] Audit all secrets — current env vars in Render:
   - `JWT_SECRET`, `DATABASE_URL`, `MUX_TOKEN_ID`, `MUX_TOKEN_SECRET`, `MUX_WEBHOOK_SECRET`, `SLACK_BOT_TOKEN`
 - [ ] Rotate all secrets as part of this phase
-- [ ] Add secret validation at startup: fail fast if required secrets are missing
+- [x] Add secret validation at startup: fail fast if required secrets are missing
   ```js
   const required = ['JWT_SECRET', 'DATABASE_URL', 'MUX_TOKEN_ID', ...];
   required.forEach(key => { if (!process.env[key]) throw new Error(`Missing: ${key}`); });
   ```
-- [ ] Pin Node.js version in `render.yaml`: `nodeVersion: '22.x'`
-- [ ] Add `.env.example` with all required vars documented (no values)
+- [x] Pin Node.js version in `render.yaml`: `nodeVersion: '22.x'`
+- [x] Add `.env.example` with all required vars documented (no values)
 - [ ] Document secret rotation runbook (rotation cadence: JWT_SECRET annually, MUX/SLACK on personnel changes)
 
 ---
@@ -604,9 +607,9 @@ Currently, the admin dashboard shows everything to all ADMINs.
 
 ### 6.3 Zero-Downtime Deployments
 
-- [ ] Enable Render health check so new deploy only goes live after `/api/health/ready` passes
+- [x] Enable Render health check so new deploy only goes live after `/api/health/ready` passes
 - [ ] Add `startPeriod` grace period to health check (30s for cold start)
-- [ ] Ensure all background jobs (`mux-sync`, `upload-cleanup`) handle SIGTERM cleanly (they mostly do — verify)
+- [x] Ensure all background jobs (`mux-sync`, `upload-cleanup`) handle SIGTERM cleanly (they mostly do — verify)
 - [ ] Add graceful WebSocket drain: on SIGTERM, stop accepting new connections, finish in-flight uploads
 
 ---
@@ -768,8 +771,8 @@ With the foundation from Phase 0, complete coverage:
 
 ### 10.4 Responsible Disclosure
 
-- [ ] Add `https://ms-fixer.com/.well-known/security.txt` (RFC 9116)
-- [ ] Create `SECURITY.md` in repo: how to report vulnerabilities, response SLA, scope
+- [x] Add `https://ms-fixer.com/.well-known/security.txt` (RFC 9116)
+- [x] Create `SECURITY.md` in repo: how to report vulnerabilities, response SLA, scope
 - [ ] Set up `security@ms-fixer.com` mailbox + alias
 - [ ] Defer formal bug bounty until after Phase 8 pen test
 
@@ -833,14 +836,14 @@ All estimates assume **1 full-time engineer** with existing project context.
 
 These don't require a full phase — do them immediately:
 
-1. **Fix SQL injection risk** — parameterize `companyCode` in `server/src/routes/admin.js`
-2. **Enable Mux webhook signature verification** — remove dev bypass in `mux-webhooks.js`
-3. **Add startup secret validation** — fail fast if required env vars missing
-4. **Remove stack traces from prod error responses** — one-line Fastify error handler fix
-5. **Pin Node.js version** — add `nodeVersion: '22.x'` to `render.yaml`
-6. **Add `.env.example`** — document all required vars with descriptions
-7. **Add `User.status` check inside `fastify.authenticate`** — suspended users still pass auth currently (no token-refresh endpoint exists, so check belongs in the existing decorator)
-8. **Add body size limit** — add `bodyLimit` to non-multipart routes (currently uncapped)
-9. **Stop running `prisma db push --accept-data-loss` in prod** — at minimum, drop `--accept-data-loss` immediately while versioned migrations (Phase 0.5) are being set up
-10. **Add `SECURITY.md` + `security.txt`** — boilerplate from Phase 10.4; takes 30 minutes
-11. **Enable Dependabot** — one PR; gets you weekly dependency PRs
+1. [x] **Fix SQL injection risk** — parameterize `companyCode` in `server/src/routes/admin.js`
+2. [x] **Enable Mux webhook signature verification** — remove dev bypass in `mux-webhooks.js`
+3. [x] **Add startup secret validation** — fail fast if required env vars missing
+4. [x] **Remove stack traces from prod error responses** — one-line Fastify error handler fix
+5. [x] **Pin Node.js version** — add `nodeVersion: '22.x'` to `render.yaml`
+6. [x] **Add `.env.example`** — document all required vars with descriptions
+7. [x] **Add `User.status` check inside `fastify.authenticate`** — suspended users still pass auth currently (no token-refresh endpoint exists, so check belongs in the existing decorator)
+8. [x] **Add body size limit** — add `bodyLimit` to non-multipart routes (currently uncapped)
+9. [x] **Stop running `prisma db push --accept-data-loss` in prod** — at minimum, drop `--accept-data-loss` immediately while versioned migrations (Phase 0.5) are being set up
+10. [x] **Add `SECURITY.md` + `security.txt`** — boilerplate from Phase 10.4; takes 30 minutes
+11. [x] **Enable Dependabot** — one PR; gets you weekly dependency PRs

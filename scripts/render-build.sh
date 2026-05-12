@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
+# Last updated: May 12, 2026 - 1:25pm - GitHub Copilot (GPT-5.3-Codex)
 # Render Build Script — Direct Video Uploader
-# Runs during each deploy: installs deps, builds admin, generates Prisma, pushes schema, seeds DB.
+# Runs during each deploy: installs deps, builds admin, generates Prisma, applies migrations, seeds DB.
 set -euo pipefail
 
 echo "══════════════════════════════════════════"
@@ -27,9 +28,9 @@ cd ..
 echo "🔧 Generating Prisma client..."
 cd server && npx prisma generate
 
-# 4. Push schema to database (creates tables if missing)
-echo "🗄️  Pushing schema to database..."
-npx prisma db push --accept-data-loss
+# 4. Apply versioned migrations
+echo "🗄️  Applying migrations..."
+npx prisma migrate deploy
 
 # 5. Seed demo users (idempotent — skips existing)
 echo "🌱 Seeding demo users..."

@@ -1,4 +1,4 @@
-May 11, 2026 - 9:32pm - GitHub Copilot (GPT-5.3-Codex)
+May 12, 2026 - 1:25pm - GitHub Copilot (GPT-5.3-Codex)
 
 # Direct Video Uploader (DVU) — Mediasource Fixer
 
@@ -85,11 +85,11 @@ Direct-Video-Uploader/
 npm run setup
 ```
 
-Installs dependencies for `server/` and `admin/`, pushes Prisma schema, generates client, seeds demo users.
+Installs dependencies for `server/` and `admin/`, applies versioned Prisma migrations, generates client, and seeds demo users.
 
 ### 2. Run Everything
 
-```bash run from root 
+```bash
 npm run dev
 ```
 
@@ -125,7 +125,7 @@ cd ios && xcodegen generate
 | `npm run dev:admin`   | Starts Vite dev server only on `:5173`                                 |
 | `npm run build:admin` | Production build of React admin → `server/public/` (Vite only, fast)   |
 | `npm run server`      | Starts Fastify server only                                             |
-| `npm run setup`       | Fresh setup: install deps, push schema, generate client, seed          |
+| `npm run setup`       | Fresh setup: install deps, apply migrations, generate client, seed     |
 
 ### Dev Troubleshooting
 
@@ -212,11 +212,26 @@ The repo includes `render.yaml` for Render Blueprint deploys:
 
 ```bash
 # Render auto-deploys from main branch
-# Build: npm ci → build admin → prisma generate → prisma db push → seed
+# Build: npm ci → build admin → prisma generate → prisma migrate deploy → seed
 # Start: cd server && node src/index.js
 ```
 
 Custom domain: `ms-fixer.com` · Managed PostgreSQL · No cold starts (paid tier).
+
+## Prisma Migrations (Phase 0.5)
+
+- Baseline migration: `server/prisma/migrations/20260512132446_baseline/`
+- Standard schema-change flow:
+  - `cd server && npm run db:migrate -- --name <change_name>`
+  - Commit both `schema.prisma` and new migration folder
+- Deploy/fresh DB flow:
+  - `cd server && npm run db:deploy`
+- Existing non-empty DB one-time baseline:
+  - `cd server && npm run db:resolve -- --applied 20260512132446_baseline`
+
+Rollback reference:
+
+- `server/prisma/MIGRATIONS.md`
 
 ---
 
