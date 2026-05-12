@@ -1,4 +1,4 @@
-// Last updated: May 12, 2026 - 3:52pm - GitHub Copilot (GPT-5.3-Codex)
+// Last updated: May 12, 2026 - 4:28pm - GitHub Copilot (GPT-5.3-Codex)
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const fastifyState = {
@@ -25,6 +25,7 @@ const startMuxSyncMock = vi.fn();
 const stopMuxSyncMock = vi.fn();
 const startUploadCleanupMock = vi.fn();
 const stopUploadCleanupMock = vi.fn();
+const listMuxAssetsMock = vi.fn();
 
 function registerRoute(routeMap, url, optsOrHandler, maybeHandler) {
     const hasOptions = typeof optsOrHandler !== 'function';
@@ -79,6 +80,8 @@ const fastifyCtorMock = vi.fn((opts) => {
         iosSockets: new Set(['sid-1']),
         adminSockets: new Set(['sid-2']),
         log: {
+            info: vi.fn(),
+            warn: vi.fn(),
             error: vi.fn(),
         },
     };
@@ -146,6 +149,10 @@ vi.mock('../lib/config.js', () => ({
 
 vi.mock('../lib/prisma.js', () => ({
     default: prismaMock,
+}));
+
+vi.mock('../lib/mux.js', () => ({
+    listMuxAssets: listMuxAssetsMock,
 }));
 
 vi.mock('../lib/session-store.js', () => ({
@@ -239,6 +246,8 @@ beforeEach(() => {
     stopMuxSyncMock.mockReset();
     startUploadCleanupMock.mockReset();
     stopUploadCleanupMock.mockReset();
+    listMuxAssetsMock.mockReset();
+    listMuxAssetsMock.mockResolvedValue([]);
 
     consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
@@ -281,6 +290,29 @@ describe('index branch-heavy coverage', () => {
         expect(reply.header).toHaveBeenCalledWith('X-Request-ID', 'request-1');
         expect(reply.header).toHaveBeenCalledWith('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
         expect(sentPayload).toBe(payload);
+
+        // onResponse hook branch
+        const onResponse = fastify.__hooks.onResponse;
+        const accessRequest = {
+            method: 'GET',
+            url: '/api/health',
+            raw: { url: '/api/health' },
+            id: 'request-2',
+            user: { id: 'user-1' },
+            log: { info: vi.fn() },
+            requestStartTimeMs: Date.now() - 25,
+        };
+        await onResponse(accessRequest, { statusCode: 200 });
+        expect(accessRequest.log.info).toHaveBeenCalledWith(
+            expect.objectContaining({
+                method: 'GET',
+                url: '/api/health',
+                statusCode: 200,
+                requestId: 'request-2',
+                userId: 'user-1',
+            }),
+            'HTTP access'
+        );
 
         // docs guard in non-production should allow without auth
         const docsGuard = getDocsGuard(fastify);
@@ -389,6 +421,12 @@ describe('index branch-heavy coverage', () => {
         prismaMock.$queryRaw.mockResolvedValueOnce([{ ok: 1 }]);
         const okResult = await readyHandler({}, okReply);
         expect(okResult.status).toBe('ok');
+        expect(okResult.version).toBeDefined();
+        expect(okResult.uptime).toEqual(expect.any(Number));
+        expect(okResult.uptimeSeconds).toEqual(expect.any(Number));
+        expect(okResult.db).toBe('ok');
+        expect(okResult.redis).toBe('ok');
+        expect(okResult.mux).toBe('ok');
 
         prismaMock.$queryRaw.mockRejectedValueOnce(new Error('db down'));
         const dbFailReply = makeReply();
@@ -407,6 +445,18 @@ describe('index branch-heavy coverage', () => {
         const muxFailResult = await readyHandler({}, muxFailReply);
         expect(muxFailReply.status).toHaveBeenCalledWith(503);
         expect(muxFailResult.checks.mux.status).toBe('error');
+
+        process.env.MUX_TOKEN_ID = 'tid';
+        process.env.MUX_TOKEN_SECRET = 'tsec';
+        process.env.MUX_ENV_KEY = 'env';
+        process.env.MUX_WEBHOOK_SECRET = 'web';
+        listMuxAssetsMock.mockResolvedValueOnce(null);
+
+        prismaMock.$queryRaw.mockResolvedValueOnce([{ ok: 1 }]);
+        const muxApiFailReply = makeReply();
+        const muxApiFailResult = await readyHandler({}, muxApiFailReply);
+        expect(muxApiFailReply.status).toHaveBeenCalledWith(503);
+        expect(muxApiFailResult.checks.mux.message).toBe('Mux API unreachable');
 
         // metrics route branch defaults
         const metricsHandler = getRouteHandler(fastify, 'GET', '/api/metrics');
@@ -476,7 +526,10 @@ describe('index branch-heavy coverage', () => {
         await importIndexModule();
 
         expect(processExitSpy).toHaveBeenCalledWith(1);
-        expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('Missing required environment variables'));
+        expect(consoleErrorSpy).toHaveBeenCalledWith(expect.objectContaining({
+            event: 'env.missingRequired',
+            missing: expect.arrayContaining(['DATABASE_URL', 'JWT_SECRET']),
+        }));
 
         // Partial Mux config warning in non-production
         process.env.NODE_ENV = 'test';
@@ -488,7 +541,10 @@ describe('index branch-heavy coverage', () => {
         delete process.env.MUX_WEBHOOK_SECRET;
 
         await importIndexModule();
-        expect(consoleWarnSpy).toHaveBeenCalledWith(expect.stringContaining('Partial Mux configuration detected'));
+        expect(consoleWarnSpy).toHaveBeenCalledWith(expect.objectContaining({
+            event: 'env.partialMuxConfig',
+            missing: expect.arrayContaining(['MUX_TOKEN_SECRET', 'MUX_ENV_KEY', 'MUX_WEBHOOK_SECRET']),
+        }));
 
         const fastify = fastifyState.instances.at(-1);
         const io = socketState.instances.at(-1);
@@ -499,16 +555,26 @@ describe('index branch-heavy coverage', () => {
         expect(stopMuxSyncMock).toHaveBeenCalled();
         expect(stopUploadCleanupMock).toHaveBeenCalled();
         expect(io.close).toHaveBeenCalled();
-        expect(consoleErrorSpy).toHaveBeenCalledWith('Shutdown error:', 'close failed');
+        expect(fastify.log.error).toHaveBeenCalledWith(expect.objectContaining({
+            event: 'server.shutdown.error',
+            signal: 'SIGINT',
+            message: 'close failed',
+        }), 'Shutdown error');
         expect(processExitSpy).toHaveBeenCalledWith(0);
 
         // Process-level crash handlers
         processHandlers.unhandledRejection('reason-text');
-        expect(consoleErrorSpy).toHaveBeenCalledWith('⚠️ Unhandled Rejection:', 'reason-text');
+        expect(consoleErrorSpy).toHaveBeenCalledWith(expect.objectContaining({
+            event: 'process.unhandledRejection',
+            reason: 'reason-text',
+        }));
 
         vi.useFakeTimers();
         processHandlers.uncaughtException(new Error('fatal'));
-        expect(consoleErrorSpy).toHaveBeenCalledWith('🔥 Uncaught Exception:', expect.any(Error));
+        expect(consoleErrorSpy).toHaveBeenCalledWith(expect.objectContaining({
+            event: 'process.uncaughtException',
+            message: 'fatal',
+        }));
         vi.runAllTimers();
         expect(processExitSpy).toHaveBeenCalledWith(1);
     });

@@ -1,3 +1,4 @@
+// Last updated: May 12, 2026 - 4:28pm - GitHub Copilot (GPT-5.3-Codex)
 import 'dotenv/config';
 import pg from 'pg';
 import { PrismaPg } from '@prisma/adapter-pg';
@@ -18,13 +19,13 @@ const pool = new pg.Pool({
 // Evict dead connections — test each connection before use
 pool.on('connect', (client) => {
     client.on('error', (err) => {
-        console.error('🛢️ PG client error:', err.message);
+        console.error({ event: 'db.pgClient.error', message: err.message });
     });
 });
 
 // Handle pool errors so they don't crash the process
 pool.on('error', (err) => {
-    console.error('🛢️ PG pool error:', err.message);
+    console.error({ event: 'db.pool.error', message: err.message });
 });
 
 // Warm up the pool — flush any stale connections from a previous run
@@ -32,9 +33,9 @@ try {
     const client = await pool.connect();
     await client.query('SELECT 1');
     client.release();
-    console.log('🛢️ Database pool connected successfully');
+    console.log({ event: 'db.pool.warmup.ok' });
 } catch (err) {
-    console.error('🛢️ Database pool warmup failed:', err.message);
+    console.error({ event: 'db.pool.warmup.failed', message: err.message });
     // Pool will recover on its own — this just speeds it up
 }
 

@@ -1,4 +1,4 @@
-// Last updated: May 9, 2026 - 8:47pm - GPT-5.3-Codex
+// Last updated: May 12, 2026 - 4:28pm - GitHub Copilot (GPT-5.3-Codex)
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const poolState = {
@@ -135,10 +135,16 @@ describe('prisma lib coverage', () => {
 
         const pgClientErrorHandler = fakePgClient.on.mock.calls[0][1];
         pgClientErrorHandler(new Error('client dropped'));
-        expect(console.error).toHaveBeenCalledWith('🛢️ PG client error:', 'client dropped');
+        expect(console.error).toHaveBeenCalledWith(expect.objectContaining({
+            event: 'db.pgClient.error',
+            message: 'client dropped',
+        }));
 
         poolState.handlers.error(new Error('pool down'));
-        expect(console.error).toHaveBeenCalledWith('🛢️ PG pool error:', 'pool down');
+        expect(console.error).toHaveBeenCalledWith(expect.objectContaining({
+            event: 'db.pool.error',
+            message: 'pool down',
+        }));
     });
 
     it('uses production pool settings and logs warmup failure without crashing', async () => {
@@ -160,7 +166,10 @@ describe('prisma lib coverage', () => {
             ssl: { rejectUnauthorized: false },
         }));
 
-        expect(console.error).toHaveBeenCalledWith('🛢️ Database pool warmup failed:', 'warmup failed');
+        expect(console.error).toHaveBeenCalledWith(expect.objectContaining({
+            event: 'db.pool.warmup.failed',
+            message: 'warmup failed',
+        }));
         expect(prismaState.adapterArgs).toHaveLength(1);
         expect(prismaState.clientArgs).toHaveLength(1);
         expect(module.default).toEqual(expect.objectContaining({ __opts: expect.any(Object) }));

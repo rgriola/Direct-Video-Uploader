@@ -1,4 +1,4 @@
-// Last updated: May 12, 2026 - 3:52pm - GitHub Copilot (GPT-5.3-Codex)
+// Last updated: May 12, 2026 - 4:28pm - GitHub Copilot (GPT-5.3-Codex)
 /**
  * Fixer — Server Entry Point
  *
@@ -37,16 +37,23 @@ import { startUploadCleanup, stopUploadCleanup } from './jobs/upload-cleanup.js'
 import { CORS_ORIGINS, WS_CORS_ORIGINS } from './lib/config.js';
 import prisma from './lib/prisma.js';
 import redis, { closeRedis, isRedisConfigured, redisMode } from './lib/redis.js';
+import { listMuxAssets } from './lib/mux.js';
 import { hasSession } from './lib/session-store.js';
 import { Role, normalizeRole, isSuperAdmin } from './lib/rbac.js';
 
 // ─── Global Crash Protection ─────────────────────────────
 // Prevent the process from dying on unhandled errors (Render shows 502 when this happens)
-process.on('unhandledRejection', (reason, promise) => {
-    console.error('⚠️ Unhandled Rejection:', reason);
+process.on('unhandledRejection', (reason) => {
+    console.error({
+        event: 'process.unhandledRejection',
+        reason: reason instanceof Error ? reason.message : reason,
+    });
 });
 process.on('uncaughtException', (err) => {
-    console.error('🔥 Uncaught Exception:', err);
+    console.error({
+        event: 'process.uncaughtException',
+        message: err?.message || 'Unknown uncaught exception',
+    });
     // Give the logger time to flush, then exit so Render restarts us
     setTimeout(() => process.exit(1), 1000);
 });
@@ -56,9 +63,11 @@ const PORT = parseInt(process.env.PORT || '3000', 10);
 const isProduction = process.env.NODE_ENV === 'production';
 const HOST = process.env.HOST || (isProduction ? '0.0.0.0' : '::');
 const LOG_LEVEL = process.env.LOG_LEVEL?.trim() || (isProduction ? 'info' : 'debug');
+const APP_VERSION = process.env.npm_package_version || '1.0.0';
 const MAX_NON_MULTIPART_BODY_BYTES = 2 * 1024 * 1024;
 const SOCKET_IO_PATH = '/socket.io';
 const WEB_SESSION_COOKIE_NAME = 'fixer_clip_token';
+const REQUEST_START_TIME_KEY = Symbol('requestStartTimeMs');
 
 const DEFAULT_GLOBAL_RATE_LIMIT_MAX = isProduction ? 100 : 2000;
 const parsedGlobalRateLimitMax = Number.parseInt(process.env.GLOBAL_RATE_LIMIT_MAX || '', 10);
@@ -114,7 +123,10 @@ function validateEnvironment() {
     if (isProduction) {
         const missing = [...missingCore, ...missingMux];
         if (missing.length > 0) {
-            console.error(`\n🛑 Missing required environment variables: ${missing.join(', ')}\n`);
+            console.error({
+                event: 'env.missingRequired',
+                missing,
+            });
             process.exit(1);
         }
         return;
@@ -122,7 +134,10 @@ function validateEnvironment() {
 
     // In dev, Mux can be disabled, but partial config usually means a typo.
     if (hasAnyMux && missingMux.length > 0) {
-        console.warn(`\n⚠️  Partial Mux configuration detected. Missing: ${missingMux.join(', ')}\n`);
+        console.warn({
+            event: 'env.partialMuxConfig',
+            missing: missingMux,
+        });
     }
 }
 
@@ -223,11 +238,33 @@ await fastify.register(csrfProtection);
 // Form body parsing for clip viewer login form (application/x-www-form-urlencoded)
 await fastify.register(formbody);
 
+// Track request start for precise access logging without external middleware.
+fastify.addHook('onRequest', async (request) => {
+    request[REQUEST_START_TIME_KEY] = Date.now();
+});
+
 // Security policy: explicitly disable sensitive browser features.
 fastify.addHook('onSend', async (request, reply, payload) => {
     reply.header('X-Request-ID', request.id);
     reply.header('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
     return payload;
+});
+
+// Phase 4.2: production-grade HTTP access logs with latency + request correlation IDs.
+fastify.addHook('onResponse', async (request, reply) => {
+    const startedAt = request[REQUEST_START_TIME_KEY];
+    const responseTimeMs = typeof startedAt === 'number'
+        ? Math.max(Date.now() - startedAt, 0)
+        : null;
+
+    request.log.info({
+        method: request.method,
+        url: request.raw?.url || request.url,
+        statusCode: reply.statusCode,
+        responseTimeMs,
+        requestId: request.id,
+        userId: request.user?.id || null,
+    }, 'HTTP access');
 });
 
 // B7: Global rate limiting — sensible defaults, per-route overrides below
@@ -240,7 +277,9 @@ await fastify.register(multipart, {
 // JWT secret — required in production, random fallback in dev (A7)
 const jwtSecret = process.env.JWT_SECRET || (() => {
     const generated = crypto.randomBytes(64).toString('hex');
-    console.warn('\n⚠️  JWT_SECRET not set — using random secret. Sessions will reset on restart.\n');
+    fastify.log.warn({
+        event: 'auth.jwtSecret.generated',
+    }, 'JWT_SECRET not set; using random secret. Sessions will reset on restart.');
     return generated;
 })();
 
@@ -525,7 +564,7 @@ fastify.get('/api/health', async () => ({
     status: 'ok',
     timestamp: new Date().toISOString(),
     service: 'Fixer',
-    version: '1.0.0',
+    version: APP_VERSION,
     env: isProduction ? 'production' : 'development',
 }));
 
@@ -533,7 +572,7 @@ fastify.get('/api/health/live', async () => ({
     status: 'ok',
     timestamp: new Date().toISOString(),
     service: 'Fixer',
-    version: '1.0.0',
+    version: APP_VERSION,
     env: isProduction ? 'production' : 'development',
 }));
 
@@ -572,25 +611,36 @@ fastify.get('/api/health/ready', async (request, reply) => {
 
     if (!muxConfigured) {
         checks.mux = { status: 'error', message: 'Mux env vars missing' };
+    } else {
+        const muxAssets = await listMuxAssets();
+        if (!Array.isArray(muxAssets)) {
+            checks.mux = { status: 'error', message: 'Mux API unreachable' };
+        } else {
+            checks.mux = { status: 'ok', message: 'Reachable' };
+        }
     }
 
     const isReady = checks.database.status === 'ok'
         && checks.redis.status === 'ok'
         && checks.mux.status === 'ok';
 
-    if (!isReady) {
-        return reply.status(503).send({
-            status: 'degraded',
-            timestamp: new Date().toISOString(),
-            checks,
-        });
-    }
-
-    return {
-        status: 'ok',
+    const responsePayload = {
+        status: isReady ? 'ok' : 'degraded',
         timestamp: new Date().toISOString(),
+        version: APP_VERSION,
+        uptime: Math.floor(process.uptime()),
+        uptimeSeconds: Math.floor(process.uptime()),
+        db: checks.database.status,
+        redis: checks.redis.status,
+        mux: checks.mux.status,
         checks,
     };
+
+    if (!isReady) {
+        return reply.status(503).send(responsePayload);
+    }
+
+    return responsePayload;
 });
 
 // Lightweight admin metrics endpoint for dashboards and ops visibility.
@@ -652,22 +702,22 @@ const start = async () => {
             ? `https://${process.env.RENDER_EXTERNAL_HOSTNAME || 'your-app.onrender.com'}`
             : `http://localhost:${PORT}`;
 
-        console.log(`
-╔════════════════════════════════════════════╗
-║  🎬 Fixer Server                           ║
-║                                            ║
-║  URL:    ${baseUrl.padEnd(33)}║
-║  Env:    ${(isProduction ? 'production' : 'development').padEnd(33)}║
-║                                            ║
-║  Status: Running ✅                         ║
-╚══════════════════════════════════════════  ╝
-    `);
+        fastify.log.info({
+            event: 'server.started',
+            baseUrl,
+            env: isProduction ? 'production' : 'development',
+            host: HOST,
+            port: PORT,
+        }, 'Fixer server started');
 
         // Start background jobs
         startMuxSync(fastify);
         startUploadCleanup(fastify);
     } catch (err) {
-        fastify.log.error(err);
+        fastify.log.error({
+            event: 'server.start.error',
+            err,
+        }, 'Server startup failed');
         process.exit(1);
     }
 };
@@ -675,16 +725,20 @@ const start = async () => {
 // ─── Graceful Shutdown ───────────────────────────────────
 // Clean up connections when Render sends SIGTERM during deploys
 const shutdown = async (signal) => {
-    console.log(`\n🛑 ${signal} received — shutting down gracefully...`);
+    fastify.log.info({ event: 'server.shutdown.start', signal }, 'Shutdown signal received');
     try {
         stopMuxSync();          // Stop background jobs
         stopUploadCleanup();
         io.close();       // Close WebSocket connections
         await fastify.close(); // Stop accepting HTTP, finish in-flight requests
         await closeRedis();
-        console.log('👋 Server stopped cleanly');
+        fastify.log.info({ event: 'server.shutdown.complete', signal }, 'Server stopped cleanly');
     } catch (err) {
-        console.error('Shutdown error:', err.message);
+        fastify.log.error({
+            event: 'server.shutdown.error',
+            signal,
+            message: err.message,
+        }, 'Shutdown error');
     }
     process.exit(0);
 };

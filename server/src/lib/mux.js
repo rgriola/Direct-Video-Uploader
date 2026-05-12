@@ -1,4 +1,4 @@
-// Last updated: May 11, 2026 - 6:47pm - GitHub Copilot (GPT-5.3-Codex)
+// Last updated: May 12, 2026 - 4:39pm - GitHub Copilot (GPT-5.3-Codex)
 /**
  * Mux Video Integration
  *
@@ -79,15 +79,20 @@ function stringifyMuxPassthrough(opts = {}) {
 }
 
 let muxClient = null;
+const shouldLogMuxStartup = process.env.NODE_ENV !== 'test';
 
 if (isMuxEnabled) {
     muxClient = new Mux({
         tokenId: MUX_TOKEN_ID,
         tokenSecret: MUX_TOKEN_SECRET,
     });
-    console.log('🎬 Mux Video integration enabled');
+    if (shouldLogMuxStartup) {
+        console.log({ event: 'mux.integration.enabled' });
+    }
 } else {
-    console.log('⏭️  Mux Video not configured — videos will be served locally');
+    if (shouldLogMuxStartup) {
+        console.log({ event: 'mux.integration.disabled' });
+    }
 }
 
 /**
@@ -166,18 +171,25 @@ export async function ingestVideo(filePath, opts = {}) {
         });
 
         if (!response.ok) {
-            console.error('🎬 Mux upload failed:', response.status, await response.text());
+            console.error({
+                event: 'mux.upload.failed',
+                statusCode: response.status,
+                responseBody: await response.text(),
+            });
             return null;
         }
 
-        console.log(`🎬 Mux upload started: uploadId=${upload.id}`);
+        console.log({
+            event: 'mux.upload.started',
+            muxUploadId: upload.id,
+        });
 
         return {
             muxUploadId: upload.id,
             muxAssetId: null, // Asset ID comes when Mux processes the upload
         };
     } catch (err) {
-        console.error('🎬 Mux ingest error:', err.message);
+        console.error({ event: 'mux.ingest.error', message: err.message });
         return null;
     }
 }
@@ -191,7 +203,7 @@ export async function getMuxAsset(muxAssetId) {
     try {
         return await muxClient.video.assets.retrieve(muxAssetId);
     } catch (err) {
-        console.error('🎬 Mux asset fetch error:', err.message);
+        console.error({ event: 'mux.asset.fetch.error', message: err.message, muxAssetId });
         return null;
     }
 }
@@ -205,7 +217,7 @@ export async function getMuxUpload(muxUploadId) {
     try {
         return await muxClient.video.uploads.retrieve(muxUploadId);
     } catch (err) {
-        console.error('🎬 Mux upload fetch error:', err.message);
+        console.error({ event: 'mux.upload.fetch.error', message: err.message, muxUploadId });
         return null;
     }
 }
@@ -223,7 +235,7 @@ export async function deleteMuxAsset(muxAssetId) {
     } catch (err) {
         // 404 = already gone, treat as success
         if (err.status === 404) return true;
-        console.error('🎬 Mux asset delete error:', err.message);
+        console.error({ event: 'mux.asset.delete.error', message: err.message, muxAssetId });
         return false;
     }
 }
@@ -239,7 +251,7 @@ export async function listMuxAssets() {
         const page = await muxClient.video.assets.list({ limit: 100 });
         return page.data || [];
     } catch (err) {
-        console.error('🎬 Mux list assets error:', err.message);
+        console.error({ event: 'mux.assets.list.error', message: err.message });
         return null;
     }
 }

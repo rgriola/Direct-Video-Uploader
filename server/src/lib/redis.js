@@ -1,4 +1,4 @@
-// Last updated: May 12, 2026 - 3:05pm - GitHub Copilot (GPT-5.3-Codex)
+// Last updated: May 12, 2026 - 4:39pm - GitHub Copilot (GPT-5.3-Codex)
 import Redis from 'ioredis';
 
 const REDIS_URL = process.env.REDIS_URL?.trim() || '';
@@ -164,7 +164,10 @@ export const redis = isRedisConfigured
 
 if (isRedisConfigured) {
     redis.on('error', (err) => {
-        console.error(`Redis error: ${err.message}`);
+        console.error({
+            event: 'redis.client.error',
+            message: err.message,
+        });
     });
 }
 

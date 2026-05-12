@@ -1,4 +1,4 @@
-// Last updated: May 12, 2026 - 3:35pm - GitHub Copilot (GPT-5.3-Codex)
+// Last updated: May 12, 2026 - 4:28pm - GitHub Copilot (GPT-5.3-Codex)
 /**
  * Seed script — Creates demo users for testing.
  * Run: node src/seed.js
@@ -41,7 +41,7 @@ const DEMO_USERS = [
 ];
 
 async function seed() {
-    console.log('🌱 Seeding demo users...\n');
+    console.log({ event: 'seed.start', totalUsers: DEMO_USERS.length });
 
     for (const user of DEMO_USERS) {
         const existing = await prisma.user.findUnique({
@@ -55,9 +55,16 @@ async function seed() {
                     where: { phoneNumber: user.phoneNumber },
                     data: { role: user.role },
                 });
-                console.log(`  🔄 ${redactPhoneNumber(user.phoneNumber)} — role updated to ${user.role}`);
+                console.log({
+                    event: 'seed.user.roleUpdated',
+                    phoneNumber: redactPhoneNumber(user.phoneNumber),
+                    role: user.role,
+                });
             } else {
-                console.log(`  ⏭️  ${redactPhoneNumber(user.phoneNumber)} — already exists`);
+                console.log({
+                    event: 'seed.user.exists',
+                    phoneNumber: redactPhoneNumber(user.phoneNumber),
+                });
             }
             continue;
         }
@@ -73,15 +80,19 @@ async function seed() {
             },
         });
 
-        console.log(`  ✅ ${redactPhoneNumber(user.phoneNumber)} — created${user.role ? ` (${user.role})` : ''}`);
+        console.log({
+            event: 'seed.user.created',
+            phoneNumber: redactPhoneNumber(user.phoneNumber),
+            role: user.role || null,
+        });
     }
 
-    console.log('\n🎉 Seed complete!\n');
-    console.log('Demo users seeded. Credentials are intentionally not printed to logs.');
+    console.log({ event: 'seed.complete', totalUsers: DEMO_USERS.length });
+    console.log({ event: 'seed.credentials.redacted' });
 }
 
 seed()
     .catch((err) => {
-        console.error('Seed failed:', err.message);
+        console.error({ event: 'seed.failed', message: err.message });
     })
     .finally(() => prisma.$disconnect());

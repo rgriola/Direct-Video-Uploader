@@ -1,4 +1,4 @@
-// Last updated: May 10, 2026 - 6:46pm - GitHub Copilot (GPT-5.3-Codex)
+// Last updated: May 12, 2026 - 4:39pm - GitHub Copilot (GPT-5.3-Codex)
 /**
  * Slack integration — posts messages to channels and DMs via Slack Web API.
  *
@@ -21,10 +21,6 @@ export function isConfigured() {
     return !!slack;
 }
 
-function requestTag(context) {
-    return context?.requestId ? ` [requestId=${context.requestId}]` : '';
-}
-
 /**
  * Post a message to a Slack channel by name.
  * @param {string} channelName — channel name without # (e.g. "storms")
@@ -45,8 +41,14 @@ export async function postToChannel(channelName, text, blocks, context = {}) {
         });
         return { ok: result.ok, ts: result.ts };
     } catch (err) {
-        console.error(`Slack postToChannel #${channelName} failed${requestTag(context)}:`, err.data?.error || err.message);
-        return { ok: false, error: err.data?.error || err.message };
+        const error = err.data?.error || err.message;
+        console.error({
+            event: 'slack.postToChannel.error',
+            channelName,
+            requestId: context?.requestId || null,
+            error,
+        });
+        return { ok: false, error };
     }
 }
 
@@ -82,8 +84,14 @@ export async function postDM(displayName, text, blocks, context = {}) {
         });
         return { ok: result.ok, ts: result.ts };
     } catch (err) {
-        console.error(`Slack postDM @${displayName} failed${requestTag(context)}:`, err.data?.error || err.message);
-        return { ok: false, error: err.data?.error || err.message };
+        const error = err.data?.error || err.message;
+        console.error({
+            event: 'slack.postDM.error',
+            displayName,
+            requestId: context?.requestId || null,
+            error,
+        });
+        return { ok: false, error };
     }
 }
 
@@ -118,7 +126,11 @@ async function resolveUserId(displayName) {
 
         return userIdCache.get(key) || null;
     } catch (err) {
-        console.error('Slack resolveUserId failed:', err.message);
+        console.error({
+            event: 'slack.resolveUserId.error',
+            displayName,
+            message: err.message,
+        });
         return null;
     }
 }

@@ -1,4 +1,4 @@
-Last updated: May 12, 2026 - 3:52pm - GitHub Copilot (GPT-5.3-Codex)
+Last updated: May 12, 2026 - 4:40pm - GitHub Copilot (GPT-5.3-Codex)
 
 # Enterprise Readiness Plan — Fixer
 
@@ -447,6 +447,8 @@ VIEWER       → read-only clip access within their org
 
 ### 4.1 Sentry Integration
 
+> Deferred for now: no active Sentry account is available yet. Resume this phase once a Sentry account and DSN are provisioned.
+
 - [ ] Install `@sentry/node` on server, `@sentry/react` + `@sentry/vite-plugin` on admin (admin is React + Vite, NOT SvelteKit)
 - [ ] Initialize Sentry in `server/src/index.js` with:
   - DSN from env var `SENTRY_DSN`
@@ -467,8 +469,9 @@ VIEWER       → read-only clip access within their org
   - `level: process.env.LOG_LEVEL || 'info'` (env-configurable)
   - `redact` array for PII fields
   - JSON serializers for `req` and `res`
-- [ ] Add HTTP access log middleware: every request logs `method`, `url`, `statusCode`, `responseTime`, `requestId`, `userId`
-- [ ] Replace all emoji `console.log` calls with `fastify.log.info()` calls using structured objects
+- [x] Add HTTP access log middleware: every request logs `method`, `url`, `statusCode`, `responseTime`, `requestId`, `userId`
+- [x] Replace emoji console logs with structured logging objects (Fastify logger where available)
+- [x] Convert remaining non-emoji server console errors (Slack/Redis paths) to structured logging objects; suppress Mux startup info logs during tests to keep CI output clean
 - [ ] Add Prisma query logging in development (`log: ['query', 'warn', 'error']`)
 - [ ] Add performance timing logs for:
   - Mux API calls
@@ -483,7 +486,7 @@ VIEWER       → read-only clip access within their org
 Current `/api/health` only checks if server is up. Expand to:
 
 - [x] `GET /api/health/live` — is the process alive? (always 200 if running)
-- [ ] `GET /api/health/ready` — are dependencies ready?
+- [x] `GET /api/health/ready` — are dependencies ready?
   - Checks: DB query (SELECT 1), Redis ping, Mux API reachable
   - Returns: `{ status, db, redis, mux, uptime, version }`
 - [x] Add Render health check pointing to `/api/health/ready`

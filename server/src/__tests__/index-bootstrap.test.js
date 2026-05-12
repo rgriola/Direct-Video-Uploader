@@ -1,4 +1,4 @@
-// Last updated: May 12, 2026 - 3:52pm - GPT-5.3-Codex
+// Last updated: May 12, 2026 - 4:28pm - GitHub Copilot (GPT-5.3-Codex)
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const fastifyState = {
@@ -35,6 +35,8 @@ const fastifyCtorMock = vi.fn((opts) => {
         }),
         close: vi.fn(async () => {}),
         log: {
+            info: vi.fn(),
+            warn: vi.fn(),
             error: vi.fn(),
         },
     };
@@ -195,7 +197,10 @@ describe('server index bootstrap coverage', () => {
         await importIndexModule();
 
         const fastify = fastifyState.instances[0];
-        expect(fastify.log.error).toHaveBeenCalledWith(expect.any(Error));
+        expect(fastify.log.error).toHaveBeenCalledWith(expect.objectContaining({
+            event: 'server.start.error',
+            err: expect.any(Error),
+        }), 'Server startup failed');
         expect(processExitSpy).toHaveBeenCalledWith(1);
     });
 });

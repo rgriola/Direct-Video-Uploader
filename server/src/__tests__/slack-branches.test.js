@@ -1,4 +1,4 @@
-// Last updated: May 9, 2026 - 9:07pm - GPT-5.3-Codex
+// Last updated: May 12, 2026 - 4:39pm - GitHub Copilot (GPT-5.3-Codex)
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const webClientState = {
@@ -88,10 +88,12 @@ describe('slack lib branch coverage', () => {
         const result = await mod.postToChannel('missing', 'msg', null, { requestId: 'rq-2' });
 
         expect(result).toEqual({ ok: false, error: 'channel_not_found' });
-        expect(console.error).toHaveBeenCalledWith(
-            expect.stringContaining('Slack postToChannel #missing failed [requestId=rq-2]:'),
-            'channel_not_found'
-        );
+        expect(console.error).toHaveBeenCalledWith(expect.objectContaining({
+            event: 'slack.postToChannel.error',
+            channelName: 'missing',
+            requestId: 'rq-2',
+            error: 'channel_not_found',
+        }));
     });
 
     it('returns not found when DM user cannot be resolved', async () => {
@@ -215,10 +217,12 @@ describe('slack lib branch coverage', () => {
         const result = await mod.postDM('editor', 'hello', null, { requestId: 'rq-4' });
 
         expect(result).toEqual({ ok: false, error: 'cannot_dm' });
-        expect(console.error).toHaveBeenCalledWith(
-            expect.stringContaining('Slack postDM @editor failed [requestId=rq-4]:'),
-            'cannot_dm'
-        );
+        expect(console.error).toHaveBeenCalledWith(expect.objectContaining({
+            event: 'slack.postDM.error',
+            displayName: 'editor',
+            requestId: 'rq-4',
+            error: 'cannot_dm',
+        }));
     });
 
     it('returns user-not-found when resolveUserId throws internally', async () => {
@@ -228,6 +232,10 @@ describe('slack lib branch coverage', () => {
         const result = await mod.postDM('missing', 'hello');
 
         expect(result).toEqual({ ok: false, error: 'User "missing" not found in Slack workspace' });
-        expect(console.error).toHaveBeenCalledWith('Slack resolveUserId failed:', 'slack users.list timeout');
+        expect(console.error).toHaveBeenCalledWith(expect.objectContaining({
+            event: 'slack.resolveUserId.error',
+            displayName: 'missing',
+            message: 'slack users.list timeout',
+        }));
     });
 });
