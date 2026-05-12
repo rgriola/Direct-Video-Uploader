@@ -1,9 +1,11 @@
+// Last updated: May 12, 2026 - 3:19pm - GitHub Copilot (GPT-5.3-Codex)
 /**
  * Seed script — Creates demo users for testing.
  * Run: node src/seed.js
  */
 import prisma from './lib/prisma.js';
 import { hashPin } from './lib/utils.js';
+import { redactPhoneNumber } from './lib/redact.js';
 
 const DEMO_USERS = [
     {
@@ -53,9 +55,9 @@ async function seed() {
                     where: { phoneNumber: user.phoneNumber },
                     data: { role: user.role },
                 });
-                console.log(`  🔄 ${user.name} (${user.phoneNumber}) — role updated to ${user.role}`);
+                console.log(`  🔄 ${redactPhoneNumber(user.phoneNumber)} — role updated to ${user.role}`);
             } else {
-                console.log(`  ⏭️  ${user.name} (${user.phoneNumber}) — already exists`);
+                console.log(`  ⏭️  ${redactPhoneNumber(user.phoneNumber)} — already exists`);
             }
             continue;
         }
@@ -71,17 +73,15 @@ async function seed() {
             },
         });
 
-        console.log(`  ✅ ${user.name} (${user.phoneNumber}) — created (PIN: ${user.pin})`);
+        console.log(`  ✅ ${redactPhoneNumber(user.phoneNumber)} — created${user.role ? ` (${user.role})` : ''}`);
     }
 
     console.log('\n🎉 Seed complete!\n');
-    console.log('Demo login credentials:');
-    console.log('  David Burgess  →  Phone: 5055034455  PIN: 1234');
-    console.log('  Carrie Smith   →  Phone: 5055551234  PIN: 1234');
-    console.log('  Admin User     →  Phone: 8001234567  PIN: 0000');
-    console.log('  Rod Griola     →  Phone: 9176717330  PIN: 3218  (ADMIN)');
+    console.log('Demo users seeded. Credentials are intentionally not printed to logs.');
 }
 
 seed()
-    .catch(console.error)
+    .catch((err) => {
+        console.error('Seed failed:', err.message);
+    })
     .finally(() => prisma.$disconnect());
