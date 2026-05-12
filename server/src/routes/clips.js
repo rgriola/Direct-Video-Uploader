@@ -1,4 +1,4 @@
-// Last updated: May 12, 2026 - 3:12pm - GitHub Copilot (GPT-5.3-Codex)
+// Last updated: May 12, 2026 - 3:14pm - GitHub Copilot (GPT-5.3-Codex)
 /**
  * Clip Viewer — Authenticated page to view a video clip with metadata.
  * Requires cookie-based auth (phone + PIN + company code for non-admin users).
@@ -257,7 +257,16 @@ ${googleFontsHead}
      * POST /clips/logout
      * Clear the clip viewer cookie.
      */
-    fastify.post('/clips/logout', async (request, reply) => {
+    fastify.post('/clips/logout', {
+        schema: {
+            headers: {
+                type: 'object',
+                properties: {
+                    cookie: { type: 'string' },
+                },
+            },
+        },
+    }, async (request, reply) => {
         reply.clearCookie(COOKIE_NAME, { path: '/' });
         reply.clearCookie(COOKIE_NAME, { path: '/clips' });
         return reply.redirect('/clips/login');

@@ -1,4 +1,4 @@
-Last updated: May 12, 2026 - 3:09pm - GitHub Copilot (GPT-5.3-Codex)
+Last updated: May 12, 2026 - 3:14pm - GitHub Copilot (GPT-5.3-Codex)
 
 # Enterprise Readiness Plan — Fixer
 
@@ -193,12 +193,7 @@ server/src/__tests__/
 
 **Problem:** Several POST endpoints accept unvalidated input.
 
-- [ ] Add Fastify JSON Schema to every route that currently lacks it:
-  - `POST /api/assets/:id/form` — slug (maxLength 50, pattern), description (maxLength 500)
-  - `POST /api/assets` — fileName, duration, fileSize, codec
-  - `PATCH /api/assets/:id` — partial update schema
-  - `POST /api/admin/users` — phoneNumber format, role enum, companyCode
-  - `POST /api/admin/messages` — maxLength on content
+- [x] Add Fastify JSON Schema to all current POST/PATCH routes that previously lacked route-level schema blocks
 - [x] Add `ajv-formats` for email and date-time format validation
 - [x] Fix raw SQL in `server/src/routes/admin.js` — parameterize `companyCode` query
 - [x] Add file MIME type check before creating Mux upload (reject non-video)

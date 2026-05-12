@@ -1,4 +1,4 @@
-// Last updated: May 11, 2026 - 6:47pm - GitHub Copilot (GPT-5.3-Codex)
+// Last updated: May 12, 2026 - 3:14pm - GitHub Copilot (GPT-5.3-Codex)
 /**
  * Mux Webhook Routes
  *
@@ -69,6 +69,14 @@ export default async function muxWebhookRoutes(fastify) {
      * Receives Mux webhook events (video.asset.ready, video.upload.asset_created, etc.)
      */
     fastify.post('/api/webhooks/mux', {
+        schema: {
+            headers: {
+                type: 'object',
+                properties: {
+                    'mux-signature': { type: 'string' },
+                },
+            },
+        },
         config: {
             // Don't parse body as JSON — we need the raw body for signature verification
             rawBody: true,

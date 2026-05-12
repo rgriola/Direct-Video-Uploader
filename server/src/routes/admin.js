@@ -1,4 +1,4 @@
-// Last updated: May 12, 2026 - 3:12pm - GitHub Copilot (GPT-5.3-Codex)
+// Last updated: May 12, 2026 - 3:14pm - GitHub Copilot (GPT-5.3-Codex)
 /**
  * Admin routes — Dashboard data, user management, asset overview.
  * All data is LIVE — no simulated actions.
@@ -210,6 +210,14 @@ export default async function adminRoutes(fastify) {
      */
     fastify.post('/api/admin/cleanup-assets', {
         preHandler: [fastify.authenticate, fastify.authorizeAdmin],
+        schema: {
+            headers: {
+                type: 'object',
+                properties: {
+                    authorization: { type: 'string' },
+                },
+            },
+        },
     }, async (request) => {
         // Find UPLOADING assets with 0 clips using Prisma ORM
         const staleAssets = await prisma.asset.findMany({
@@ -391,6 +399,14 @@ export default async function adminRoutes(fastify) {
      */
     fastify.post('/api/admin/nuclear-reset', {
         preHandler: [fastify.authenticate, fastify.authorizeAdmin],
+        schema: {
+            headers: {
+                type: 'object',
+                properties: {
+                    authorization: { type: 'string' },
+                },
+            },
+        },
     }, async () => {
         const results = { muxDeleted: 0, muxFailed: 0, muxSkipped: false };
 
