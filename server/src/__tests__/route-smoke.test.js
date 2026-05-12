@@ -1,4 +1,4 @@
-// Last updated: May 9, 2026 - 6:14pm
+// Last updated: May 12, 2026 - 3:35pm - GitHub Copilot (GPT-5.3-Codex)
 import Fastify from 'fastify';
 import cookie from '@fastify/cookie';
 import formbody from '@fastify/formbody';
@@ -76,6 +76,10 @@ beforeEach(async () => {
     });
 
     app.decorate('authorizeAdmin', async (request, reply) => {
+        return reply.status(403).send({ error: 'Admin access required' });
+    });
+
+    app.decorate('authorizeOrgAdmin', async (request, reply) => {
         return reply.status(403).send({ error: 'Admin access required' });
     });
 

@@ -1,4 +1,4 @@
-// Last updated: May 12, 2026 - 3:19pm - GitHub Copilot (GPT-5.3-Codex)
+// Last updated: May 12, 2026 - 3:35pm - GitHub Copilot (GPT-5.3-Codex)
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const prismaMock = {
@@ -56,7 +56,7 @@ beforeEach(() => {
         name: 'David Burgess',
         phoneNumber: '5055551000',
         status: 'ACTIVE',
-        role: 'USER',
+        role: 'EDITOR',
     });
 
     prismaMock.chatMessage.create.mockResolvedValue({});
@@ -200,7 +200,7 @@ describe('ws handler targeted coverage', () => {
             name: 'Admin User',
             phoneNumber: '8001234567',
             status: 'ACTIVE',
-            role: 'ADMIN',
+            role: 'SUPER_ADMIN',
         });
 
         const next = vi.fn();
@@ -208,7 +208,7 @@ describe('ws handler targeted coverage', () => {
 
         expect(fastify.jwt.verify).toHaveBeenCalledWith('session-token');
         expect(next).toHaveBeenCalledWith();
-        expect(socket.userRole).toBe('ADMIN');
+        expect(socket.userRole).toBe('SUPER_ADMIN');
     });
 
     it('rejects admin client type for non-admin users', async () => {
@@ -229,7 +229,7 @@ describe('ws handler targeted coverage', () => {
             name: 'David Burgess',
             phoneNumber: '5055551000',
             status: 'ACTIVE',
-            role: 'USER',
+            role: 'EDITOR',
         });
 
         const next = vi.fn();

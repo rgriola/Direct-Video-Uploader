@@ -1,8 +1,8 @@
-May 12, 2026 - 3:30pm - GitHub Copilot (GPT-5.3-Codex)
+May 12, 2026 - 3:35pm - GitHub Copilot (GPT-5.3-Codex)
 
 # Fixer — Enterprise Readiness Tasks
 
-> Last audit sync: May 12, 2026 - 3:30pm - GitHub Copilot (GPT-5.3-Codex)
+> Last audit sync: May 12, 2026 - 3:35pm - GitHub Copilot (GPT-5.3-Codex)
 
 > Companion to [ENTERPRISE_READINESS_PLAN.md](ENTERPRISE_READINESS_PLAN.md).
 > Check items off as you complete them. Each task should be a single PR.
@@ -137,14 +137,14 @@ May 12, 2026 - 3:30pm - GitHub Copilot (GPT-5.3-Codex)
 
 ### 2.1 Expanded RBAC
 
-- [ ] Add roles: `SUPER_ADMIN`, `ORG_ADMIN`, `EDITOR`, `VIEWER`
-- [ ] Migrate existing users (`ADMIN`→`SUPER_ADMIN`, `USER`→`EDITOR`)
-- [ ] Create `fastify.authorize(roles)` decorator factory
-- [ ] Replace all `authorizeAdmin` calls
-- [ ] Add ORG_ADMIN guards on org-level endpoints
+- [x] Add roles: `SUPER_ADMIN`, `ORG_ADMIN`, `EDITOR`, `VIEWER`
+- [x] Migrate existing users (`ADMIN`→`SUPER_ADMIN`, `USER`→`EDITOR`)
+- [x] Create `fastify.authorize(roles)` decorator factory
+- [x] Replace all `authorizeAdmin` calls
+- [x] Add ORG_ADMIN guards on org-level endpoints
 - [x] Add role to JWT payload
-- [ ] iOS: read/store role from JWT
-- [ ] Admin dashboard: role badges + role change UI
+- [x] iOS: read/store role from JWT
+- [x] Admin dashboard: role badges + role change UI
 
 ### 2.2 SSO / OAuth2
 

@@ -1,4 +1,4 @@
-// Last updated: May 12, 2026 - 3:19pm - GitHub Copilot (GPT-5.3-Codex)
+// Last updated: May 12, 2026 - 3:35pm - GitHub Copilot (GPT-5.3-Codex)
 /**
  * Seed script — Creates demo users for testing.
  * Run: node src/seed.js
@@ -28,7 +28,7 @@ const DEMO_USERS = [
         email: 'admin@example.com',
         team: 'Engineering',
         pin: '0000',
-        role: 'ADMIN',
+        role: 'SUPER_ADMIN',
     },
     {
         phoneNumber: '9176717330',
@@ -36,7 +36,7 @@ const DEMO_USERS = [
         email: 'rodczaro@gmail.com',
         team: 'Engineering',
         pin: '3218',
-        role: 'ADMIN',
+        role: 'SUPER_ADMIN',
     },
 ];
 
@@ -49,7 +49,7 @@ async function seed() {
         });
 
         if (existing) {
-            // Update role if it differs (fixes pre-existing users missing ADMIN role)
+            // Update role if it differs (fixes pre-existing users missing privileged role)
             if (user.role && existing.role !== user.role) {
                 await prisma.user.update({
                     where: { phoneNumber: user.phoneNumber },

@@ -1,4 +1,4 @@
-// Last updated: May 11, 2026 - 7:15pm - GitHub Copilot (GPT-5.3-Codex)
+// Last updated: May 12, 2026 - 3:35pm - GitHub Copilot (GPT-5.3-Codex)
 import Fastify from 'fastify';
 import fastifyJwt from '@fastify/jwt';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -37,11 +37,17 @@ beforeEach(async () => {
     await app.register(fastifyJwt, { secret: 'test-jwt-secret' });
 
     app.decorate('authenticate', async (request) => {
-        request.user = { id: 'user-1', role: 'ADMIN' };
+        request.user = { id: 'user-1', role: 'SUPER_ADMIN', companyCode: 'NEWS' };
     });
 
     app.decorate('authorizeAdmin', async (request, reply) => {
-        if (request.user?.role !== 'ADMIN') {
+        if (request.user?.role !== 'SUPER_ADMIN') {
+            return reply.status(403).send({ error: 'Admin access required' });
+        }
+    });
+
+    app.decorate('authorizeOrgAdmin', async (request, reply) => {
+        if (!['SUPER_ADMIN', 'ORG_ADMIN'].includes(request.user?.role || '')) {
             return reply.status(403).send({ error: 'Admin access required' });
         }
     });
@@ -75,7 +81,7 @@ describe('auth routes behavior', () => {
             phoneNumber: '5055551111',
             pinHash: await hashPin('1234'),
             status: 'ACTIVE',
-            role: 'USER',
+            role: 'EDITOR',
             companyCode: 'NEWS',
             organization: { companyName: 'News Org' },
         });
@@ -97,7 +103,7 @@ describe('auth routes behavior', () => {
             phoneNumber: '5055552222',
             pinHash: await hashPin('1234'),
             status: 'ACTIVE',
-            role: 'USER',
+            role: 'EDITOR',
             companyCode: 'NEWS',
             organization: { companyName: 'News Org' },
         });
@@ -123,7 +129,7 @@ describe('auth routes behavior', () => {
             phoneNumber: '8001234567',
             pinHash: await hashPin('0000'),
             status: 'ACTIVE',
-            role: 'ADMIN',
+            role: 'SUPER_ADMIN',
             companyCode: null,
             team: 'Ops',
             organization: null,
@@ -144,7 +150,7 @@ describe('auth routes behavior', () => {
 
         const body = response.json();
         const decoded = app.jwt.verify(body.token);
-        expect(decoded.role).toBe('ADMIN');
+        expect(decoded.role).toBe('SUPER_ADMIN');
         expect(body.user.companyName).toBeNull();
     });
 
@@ -155,7 +161,7 @@ describe('auth routes behavior', () => {
             phoneNumber: '5051112222',
             pinHash: hashPinLegacy('1234'),
             status: 'ACTIVE',
-            role: 'USER',
+            role: 'EDITOR',
             companyCode: 'NEWS',
             team: 'Field',
             organization: { companyName: 'News Org' },
@@ -194,7 +200,7 @@ describe('auth routes behavior', () => {
             phoneNumber: '5055551111',
             email: 'david@example.com',
             team: 'Field',
-            role: 'USER',
+            role: 'EDITOR',
             status: 'ACTIVE',
             companyCode: 'NEWS',
             createdAt: new Date('2026-05-09T00:00:00.000Z'),
@@ -214,7 +220,7 @@ describe('auth routes behavior', () => {
                 phoneNumber: '5055551111',
                 email: 'david@example.com',
                 team: 'Field',
-                role: 'USER',
+                role: 'EDITOR',
                 status: 'ACTIVE',
                 companyCode: 'NEWS',
                 createdAt: '2026-05-09T00:00:00.000Z',
@@ -286,6 +292,7 @@ describe('error routes behavior', () => {
         expect(response.statusCode).toBe(200);
         expect(response.json()).toEqual({ errors: [{ id: 'err-1' }, { id: 'err-2' }] });
         expect(prismaMock.errorLog.findMany).toHaveBeenCalledWith({
+            where: {},
             orderBy: { createdAt: 'desc' },
             take: 50,
         });

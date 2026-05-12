@@ -1,13 +1,16 @@
+// May 12, 2026 - 3:35pm - GitHub Copilot (GPT-5.3-Codex)
 import { LogOut } from "lucide-react";
+import type { UserRole } from "@/lib/types";
 
 interface HeaderProps {
   onLogout: () => void;
   userName?: string | null;
   userPhone?: string | null;
   userCompany?: string | null;
+  userRole?: UserRole | null;
 }
 
-export function Header({ onLogout, userName, userPhone, userCompany }: HeaderProps) {
+export function Header({ onLogout, userName, userPhone, userCompany, userRole }: HeaderProps) {
   return (
     <header className="flex items-center justify-between gap-2 mb-6 pb-5 border-b border-(--border-subtle) sm:mb-8 sm:pb-6 sm:gap-4">
       <div className="flex items-center gap-2 sm:gap-3 shrink-0">
@@ -27,6 +30,7 @@ export function Header({ onLogout, userName, userPhone, userCompany }: HeaderPro
             <span className="text-sm sm:text-base font-semibold text-(--foreground) whitespace-nowrap">{userName}</span>
             {userPhone && <span className="text-xs text-(--muted-foreground) mt-0.5 hidden sm:block">{userPhone}</span>}
             {userCompany && <span className="text-[10px] text-(--accent-purple) font-semibold hidden sm:block">{userCompany}</span>}
+            {userRole && <span className="text-[10px] text-(--accent-blue) font-semibold hidden sm:block">{userRole}</span>}
           </div>
         )}
 

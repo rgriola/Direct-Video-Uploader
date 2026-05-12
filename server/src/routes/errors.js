@@ -1,9 +1,10 @@
-// Last updated: May 12, 2026 - 3:12pm - GitHub Copilot (GPT-5.3-Codex)
+// Last updated: May 12, 2026 - 3:35pm - GitHub Copilot (GPT-5.3-Codex)
 /**
  * Error logging routes — Persist errors from iOS, server, dashboard.
  * Future: trigger text/email notifications for CRITICAL errors.
  */
 import prisma from '../lib/prisma.js';
+import { isSuperAdmin, normalizeRole, Role } from '../lib/rbac.js';
 
 export default async function errorRoutes(fastify) {
     /**
@@ -87,9 +88,15 @@ export default async function errorRoutes(fastify) {
      * Retrieve recent errors for dashboard.
      */
     fastify.get('/api/admin/errors', {
-        preHandler: [fastify.authenticate, fastify.authorizeAdmin],
+        preHandler: [fastify.authenticate, fastify.authorizeOrgAdmin],
     }, async (request) => {
+        const role = normalizeRole(request.user?.role) || Role.EDITOR;
+        const where = isSuperAdmin(role)
+            ? {}
+            : { user: { companyCode: request.user?.companyCode || null } };
+
         const errors = await prisma.errorLog.findMany({
+            where,
             orderBy: { createdAt: 'desc' },
             take: 50,
         });

@@ -1,4 +1,4 @@
-// May 12, 2026 - 3:05pm - GitHub Copilot (GPT-5.3-Codex)
+// May 12, 2026 - 3:35pm - GitHub Copilot (GPT-5.3-Codex)
 import SwiftUI
 
 /// Profile screen — user info, permission toggles, app info, and logout.
@@ -91,6 +91,12 @@ struct ProfileView: View {
                 Text(user.phoneNumber)
                     .font(Theme.mono13Medium)
                     .foregroundStyle(Theme.secondaryText)
+
+                if let role = user.role {
+                    Text(role)
+                        .font(Theme.font13Semibold)
+                        .foregroundStyle(Theme.blue.opacity(0.9))
+                }
 
                 if let companyName = user.companyName {
                     Text(companyName)

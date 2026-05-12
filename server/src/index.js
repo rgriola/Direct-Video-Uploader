@@ -1,4 +1,4 @@
-// Last updated: May 12, 2026 - 3:19pm - GitHub Copilot (GPT-5.3-Codex)
+// Last updated: May 12, 2026 - 3:35pm - GitHub Copilot (GPT-5.3-Codex)
 /**
  * Fixer — Server Entry Point
  *
@@ -37,6 +37,7 @@ import { CORS_ORIGINS, WS_CORS_ORIGINS } from './lib/config.js';
 import prisma from './lib/prisma.js';
 import redis, { closeRedis, isRedisConfigured, redisMode } from './lib/redis.js';
 import { hasSession } from './lib/session-store.js';
+import { Role, normalizeRole, isSuperAdmin } from './lib/rbac.js';
 
 // ─── Global Crash Protection ─────────────────────────────
 // Prevent the process from dying on unhandled errors (Render shows 502 when this happens)
@@ -317,7 +318,7 @@ const docsGuard = async (request, reply) => {
         select: { role: true, status: true },
     });
 
-    if (!user || user.status !== 'ACTIVE' || user.role !== 'ADMIN') {
+    if (!user || user.status !== 'ACTIVE' || !isSuperAdmin(user.role)) {
         return reply.status(403).send({ error: 'Admin access required' });
     }
 };
@@ -402,7 +403,7 @@ fastify.decorate('authenticate', async function (request, reply) {
             id: user.id,
             name: user.name,
             phoneNumber: user.phoneNumber,
-            role: user.role || 'USER',
+            role: normalizeRole(user.role) || Role.EDITOR,
             status: user.status,
             companyCode: user.companyCode || null,
         };
@@ -441,12 +442,24 @@ fastify.setErrorHandler((err, request, reply) => {
     return reply.status(statusCode).send({ error: err.message || 'Request failed' });
 });
 
-// Admin authorization — requires authenticate to run first (A5)
-fastify.decorate('authorizeAdmin', async function (request, reply) {
-    if (request.user?.role !== 'ADMIN') {
-        reply.status(403).send({ error: 'Admin access required' });
-    }
+// Role authorization helpers — requires authenticate to run first.
+fastify.decorate('authorize', function (allowedRoles = [], errorMessage = 'Forbidden') {
+    const allowed = new Set(
+        allowedRoles
+            .map((role) => normalizeRole(role))
+            .filter(Boolean)
+    );
+
+    return async function (request, reply) {
+        const role = normalizeRole(request.user?.role);
+        if (!role || !allowed.has(role)) {
+            return reply.status(403).send({ error: errorMessage });
+        }
+    };
 });
+
+fastify.decorate('authorizeAdmin', fastify.authorize([Role.SUPER_ADMIN], 'Admin access required'));
+fastify.decorate('authorizeOrgAdmin', fastify.authorize([Role.SUPER_ADMIN, Role.ORG_ADMIN], 'Admin access required'));
 
 // Clip viewer cookie-based auth (reads JWT from HttpOnly cookie)
 fastify.decorate('clipAuthenticate', async function (request, reply) {

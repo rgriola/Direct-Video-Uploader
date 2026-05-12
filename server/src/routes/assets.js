@@ -1,4 +1,4 @@
-// Last updated: May 12, 2026 - 3:19pm - GitHub Copilot (GPT-5.3-Codex)
+// Last updated: May 12, 2026 - 3:35pm - GitHub Copilot (GPT-5.3-Codex)
 /**
  * Asset routes — Create, upload, retrieve, submit form.
  */
@@ -6,6 +6,7 @@ import { randomUUID } from 'crypto';
 import prisma from '../lib/prisma.js';
 import { generateMediasourceId, dbRetry, parseClientMetadata, serializeClip, notifyUserSockets } from '../lib/utils.js';
 import { isMuxEnabled, createDirectUpload } from '../lib/mux.js';
+import { Role, normalizeRole, isSuperAdmin, isOrgAdmin } from '../lib/rbac.js';
 
 // Allowed video MIME types — kept for reference if local upload is re-enabled
 const ALLOWED_VIDEO_MIMES = new Set([
@@ -344,7 +345,7 @@ export default async function assetRoutes(fastify) {
                 clips: true,
                 formResponse: true,
                 user: {
-                    select: { id: true, name: true, phoneNumber: true, team: true },
+                    select: { id: true, name: true, phoneNumber: true, team: true, companyCode: true },
                 },
             },
         });
@@ -353,8 +354,18 @@ export default async function assetRoutes(fastify) {
             return reply.status(404).send({ error: 'Asset not found' });
         }
 
-        // Ownership check — only asset owner or admin can view details (A6)
-        if (asset.userId !== request.user.id && request.user.role !== 'ADMIN') {
+        // Ownership check — owner, super admin, or org admin in same org can view.
+        const requesterRole = normalizeRole(request.user.role) || Role.EDITOR;
+        const sameOrg = !!(
+            request.user.companyCode
+            && asset.user?.companyCode
+            && request.user.companyCode.toLowerCase() === asset.user.companyCode.toLowerCase()
+        );
+        const canView = asset.userId === request.user.id
+            || isSuperAdmin(requesterRole)
+            || (isOrgAdmin(requesterRole) && sameOrg);
+
+        if (!canView) {
             return reply.status(403).send({ error: 'Access denied' });
         }
 

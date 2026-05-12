@@ -1,4 +1,4 @@
-// Last updated: May 11, 2026 - 8:37pm - GitHub Copilot (GPT-5.3-Codex)
+// Last updated: May 12, 2026 - 3:35pm - GitHub Copilot (GPT-5.3-Codex)
 import { useEffect, useState, useCallback, useRef } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster, toast } from "sonner";
@@ -19,12 +19,14 @@ import { ChatHistory } from "@/components/ChatHistory";
 import { ErrorLog } from "@/components/ErrorLog";
 import { AdminTools } from "@/components/AdminTools";
 import { OrgPanel } from "@/components/OrgPanel";
+import type { UserRole } from "@/lib/types";
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 10_000, retry: 1 } },
 });
 
 const AUTH_REQUIRED_MESSAGES = new Set(["HTTP 401", "HTTP 403", "Unauthorized", "Admin access required"]);
+const DASHBOARD_ROLES = new Set<UserRole>(["SUPER_ADMIN", "ORG_ADMIN"]);
 
 function buildRedirectTarget() {
   if (typeof window === "undefined") return "/";
@@ -84,7 +86,7 @@ export default function App() {
 function Dashboard() {
   const [loggedIn, setLoggedIn] = useState(false);
   const [authChecked, setAuthChecked] = useState(false);
-  const [userRole, setUserRole] = useState<string | null>(null);
+  const [userRole, setUserRole] = useState<UserRole | null>(null);
   const [userName, setUserName] = useState<string | null>(null);
   const [userPhone, setUserPhone] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
@@ -141,7 +143,8 @@ function Dashboard() {
           throw new Error("Unauthorized");
         }
 
-        if ((user.role ?? "USER") !== "ADMIN") {
+        const role = (user.role ?? "EDITOR") as UserRole;
+        if (!DASHBOARD_ROLES.has(role)) {
           await logoutWebSession().catch(() => undefined);
           if (active) {
             redirectToLogin();
@@ -152,7 +155,7 @@ function Dashboard() {
         if (!active) return;
 
         setLoggedIn(true);
-        setUserRole(user.role ?? null);
+          setUserRole(role);
         setUserName(user.name ?? null);
         setUserId(user.id ?? null);
         setUserPhone(user.phoneNumber ?? null);
@@ -293,6 +296,7 @@ function Dashboard() {
         userName={userName}
         userPhone={userPhone}
         userCompany={userCompany}
+        userRole={userRole}
       />
 
       <TriadStatusPanel
@@ -310,8 +314,9 @@ function Dashboard() {
         <UserList
           users={users}
           isLoading={usersLoading}
-          onDeleteUser={userRole === "ADMIN" ? handleDeleteUser : undefined}
+          onDeleteUser={userRole === "SUPER_ADMIN" ? handleDeleteUser : undefined}
           currentUserId={userId ?? undefined}
+          currentUserRole={userRole ?? undefined}
           organizations={organizations}
           onRefresh={() => refreshDashboard()}
         />
@@ -319,7 +324,7 @@ function Dashboard() {
       </div>
 
       {/* Organizations panel — admin only */}
-      {userRole === "ADMIN" && (
+      {userRole === "SUPER_ADMIN" && (
         <div className="mb-8">
           <OrgPanel
             organizations={organizations ?? []}
@@ -338,7 +343,7 @@ function Dashboard() {
 
       <EndpointTable />
 
-      {userRole === "ADMIN" && (
+      {userRole === "SUPER_ADMIN" && (
         <div className="mt-8">
           <AdminTools onReset={() => { refreshDashboard(); addLog("http", "Nuclear reset executed"); }} />
         </div>

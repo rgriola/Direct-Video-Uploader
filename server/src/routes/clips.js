@@ -1,4 +1,4 @@
-// Last updated: May 12, 2026 - 3:14pm - GitHub Copilot (GPT-5.3-Codex)
+// Last updated: May 12, 2026 - 3:35pm - GitHub Copilot (GPT-5.3-Codex)
 /**
  * Clip Viewer — Authenticated page to view a video clip with metadata.
  * Requires cookie-based auth (phone + PIN + company code for non-admin users).
@@ -8,6 +8,7 @@ import prisma from '../lib/prisma.js';
 import { MUX_ENV_KEY } from '../lib/mux.js';
 import { verifyPin, hashPin, dbRetry } from '../lib/utils.js';
 import { redactCompanyCode, redactPersonName, redactPhoneNumber } from '../lib/redact.js';
+import { Role, normalizeRole, isSuperAdmin, isDashboardAdmin } from '../lib/rbac.js';
 
 /** Escape HTML special characters to prevent XSS (#5). */
 function escapeHtml(str) {
@@ -95,7 +96,7 @@ export default async function clipRoutes(fastify) {
     // Admins see everything; regular users only see clips from their org
     function canAccessClip(viewer, clipUploaderCompanyCode) {
         if (!viewer) return false;
-        if (viewer.role === 'ADMIN') return true;
+        if (isSuperAdmin(viewer.role)) return true;
         if (!viewer.companyCode) return false;
         if (!clipUploaderCompanyCode) return false;
         return viewer.companyCode.toLowerCase() === clipUploaderCompanyCode.toLowerCase();
@@ -202,7 +203,8 @@ ${googleFontsHead}
             return reply.redirect(`/clips/login?error=${encodeURIComponent('Invalid credentials')}&redirect=${encodeURIComponent(redirectTo)}`);
         }
 
-        const isAdminUser = (user.role || 'USER') === 'ADMIN';
+        const normalizedRole = normalizeRole(user.role) || Role.EDITOR;
+        const isAdminUser = isDashboardAdmin(normalizedRole);
 
         // Non-admin users must provide a matching company code.
         if (!isAdminUser) {
@@ -230,7 +232,7 @@ ${googleFontsHead}
                 id: user.id,
                 phoneNumber: user.phoneNumber,
                 name: user.name,
-                role: user.role || 'USER',
+                role: normalizedRole,
                 companyCode: user.companyCode || null,
             },
             { expiresIn: '7d' }

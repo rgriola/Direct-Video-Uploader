@@ -1,4 +1,4 @@
-// Last updated: May 12, 2026 - 3:12pm - GitHub Copilot (GPT-5.3-Codex)
+// Last updated: May 12, 2026 - 3:35pm - GitHub Copilot (GPT-5.3-Codex)
 /**
  * Auth routes — Simple phone# + PIN login for demo.
  */
@@ -6,6 +6,7 @@ import crypto from 'node:crypto';
 import prisma from '../lib/prisma.js';
 import { verifyPin, hashPin, dbRetry } from '../lib/utils.js';
 import { createSession, deleteSession } from '../lib/session-store.js';
+import { Role, normalizeRole, isDashboardAdmin } from '../lib/rbac.js';
 
 function getBearerToken(rawHeader) {
     if (typeof rawHeader !== 'string') return null;
@@ -75,8 +76,9 @@ export default async function authRoutes(fastify) {
             });
         }
 
+        const normalizedRole = normalizeRole(user.role) || Role.EDITOR;
         const isAdminClient = clientType === 'admin';
-        const isAdminUser = (user.role || 'USER') === 'ADMIN';
+        const isAdminUser = isDashboardAdmin(normalizedRole);
 
         // Company code is required for non-admin users and non-admin clients.
         // Only a real ADMIN using the admin client can bypass this check.
@@ -118,7 +120,7 @@ export default async function authRoutes(fastify) {
                 id: user.id,
                 phoneNumber: user.phoneNumber,
                 name: user.name,
-                role: user.role || 'USER',
+                role: normalizedRole,
                 companyCode: user.companyCode || null,
                 jti,
             },
@@ -142,7 +144,7 @@ export default async function authRoutes(fastify) {
                 name: user.name,
                 phoneNumber: user.phoneNumber,
                 team: user.team,
-                role: user.role,
+                role: normalizedRole,
                 companyCode: user.companyCode || null,
                 companyName: user.organization?.companyName || null,
             },
@@ -175,9 +177,11 @@ export default async function authRoutes(fastify) {
 
         // Flatten the organization join for the response
         const { organization, ...rest } = user || {};
+        const normalizedRole = normalizeRole(rest?.role) || Role.EDITOR;
         return {
             user: user ? {
                 ...rest,
+                role: normalizedRole,
                 companyName: organization?.companyName || null,
             } : null,
         };

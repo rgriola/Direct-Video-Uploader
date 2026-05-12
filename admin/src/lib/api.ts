@@ -1,4 +1,4 @@
-// Last updated: May 11, 2026 - 7:15pm - GitHub Copilot (GPT-5.3-Codex)
+// Last updated: May 12, 2026 - 3:35pm - GitHub Copilot (GPT-5.3-Codex)
 /* ─── API Client ─── */
 
 let authToken: string | null = null;
@@ -39,7 +39,7 @@ async function api<T>(method: string, path: string, body?: unknown): Promise<T> 
 
 /* ─── Typed API calls ─── */
 
-import type { Stats, User, Asset, TriadStatus, Organization } from "./types";
+import type { Stats, User, Asset, TriadStatus, Organization, UserRole } from "./types";
 
 export async function fetchHealth() {
   return api<{ status: string; service: string; version: string }>("GET", "/api/health");
@@ -98,7 +98,7 @@ export async function nuclearReset() {
   }>("POST", "/api/admin/nuclear-reset");
 }
 
-export async function createUser(data: { name: string; phoneNumber: string; email?: string; team?: string; companyCode?: string }) {
+export async function createUser(data: { name: string; phoneNumber: string; email?: string; team?: string; companyCode?: string; role?: UserRole }) {
   return api<{ user: { id: string; name: string; phoneNumber: string }; message: string }>("POST", "/api/admin/users", data);
 }
 
@@ -109,7 +109,7 @@ export async function deleteUser(userId: string) {
   }>("DELETE", `/api/admin/users/${userId}`);
 }
 
-export async function updateUser(userId: string, data: { companyCode?: string | null; name?: string; team?: string; email?: string }) {
+export async function updateUser(userId: string, data: { companyCode?: string | null; name?: string; team?: string; email?: string; role?: UserRole }) {
   return api<{ user: User; message: string }>("PATCH", `/api/admin/users/${userId}`, data);
 }
 

@@ -1,4 +1,4 @@
-// Last updated: May 11, 2026 - 7:15pm - GitHub Copilot (GPT-5.3-Codex)
+// Last updated: May 12, 2026 - 3:35pm - GitHub Copilot (GPT-5.3-Codex)
 import Fastify from 'fastify';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -103,7 +103,7 @@ beforeEach(async () => {
         phoneNumber: '5055551234',
         email: null,
         team: null,
-        role: 'USER',
+        role: 'EDITOR',
         companyCode: null,
     });
     prismaMock.user.findMany.mockResolvedValue([]);
@@ -144,13 +144,19 @@ beforeEach(async () => {
         request.user = {
             id: 'admin-1',
             sub: 'admin-1',
-            role: 'ADMIN',
+            role: 'SUPER_ADMIN',
             companyCode: 'NEWS',
         };
     });
 
     app.decorate('authorizeAdmin', async (request, reply) => {
-        if (request.user?.role !== 'ADMIN') {
+        if (request.user?.role !== 'SUPER_ADMIN') {
+            return reply.status(403).send({ error: 'Admin access required' });
+        }
+    });
+
+    app.decorate('authorizeOrgAdmin', async (request, reply) => {
+        if (!['SUPER_ADMIN', 'ORG_ADMIN'].includes(request.user?.role || '')) {
             return reply.status(403).send({ error: 'Admin access required' });
         }
     });
@@ -176,12 +182,17 @@ describe('admin routes deeper coverage', () => {
             request.user = {
                 id: 'user-1',
                 sub: 'user-1',
-                role: 'USER',
+                role: 'EDITOR',
                 companyCode: 'NEWS',
             };
         });
         nonAdminApp.decorate('authorizeAdmin', async (request, reply) => {
-            if (request.user?.role !== 'ADMIN') {
+            if (request.user?.role !== 'SUPER_ADMIN') {
+                return reply.status(403).send({ error: 'Admin access required' });
+            }
+        });
+        nonAdminApp.decorate('authorizeOrgAdmin', async (request, reply) => {
+            if (!['SUPER_ADMIN', 'ORG_ADMIN'].includes(request.user?.role || '')) {
                 return reply.status(403).send({ error: 'Admin access required' });
             }
         });
@@ -310,7 +321,7 @@ describe('admin routes deeper coverage', () => {
             data: expect.objectContaining({
                 name: 'Field Producer',
                 phoneNumber: '5055550001',
-                role: 'USER',
+                role: 'EDITOR',
                 companyCode: 'NEWS',
             }),
         });

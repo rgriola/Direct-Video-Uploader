@@ -1,8 +1,8 @@
-May 12, 2026 - 3:30pm - GitHub Copilot (GPT-5.3-Codex)
+May 12, 2026 - 3:35pm - GitHub Copilot (GPT-5.3-Codex)
 
 # Direct Video Uploader — Project Status
 
-> **Last Updated:** May 12, 2026 · 3:30pm PT
+> **Last Updated:** May 12, 2026 · 3:35pm PT
 > **Current Phase:** Phase 4 (QA + Rollout) — iOS UI/UX refresh validation and release-readiness checks
 > **Overall Progress:** ████████████████████ 100% (Phase 2) · Phase 3 complete · Phase 4 in progress
 
@@ -15,6 +15,8 @@ The **Direct Video Uploader** is a mobile-first video upload platform disguised 
 We've completed the **interactive chat demo** (HTML prototype), **project specification** (v4), the **Phase 1 server foundation** (Node.js API, WebSocket, PostgreSQL, auth, admin dashboard), the **Phase 2 - iOS Demo App** core flow (login -> chat -> video upload -> form -> confirmation -> archive), and the **Web Clip Viewer** (server-rendered at `/clips/:slug`). Latest session (May 11): implemented **Obs.10 upload telemetry + correlation** end-to-end: iOS captures URLSession task metrics, uploader sends correlation headers, server echoes telemetry from `/api/assets/:id/mux-upload`, webhooks compute `asset_created`/`ready` deltas, and `mux:ready` now includes `uploadTelemetry`. Follow-up session (May 11 evening): finalized dashboard web-session self-heal, updated asset accordion layout (Play Clip moved to top of Form Response with icon treatment), and documented local dev serving behavior (`:5173` live Vite vs `:3000` static build). Validation is green: iOS `xcodebuild` succeeded, admin build check passed, and server test suite passed (118/118).
 
 Latest session (May 12): completed **Phase 1.5 rate limiting hardening** — Redis-backed `@fastify/rate-limit`, per-user keying for authenticated traffic, explicit `X-RateLimit-*` headers, WebSocket anti-spam throttling (10 messages / 10 seconds with disconnect escalation), and dedicated `POST /api/assets/:id/mux-upload` limit (10/hour per user). Server tests remain green (118/118).
+
+Latest session continuation (May 12): completed **Phase 2.1 expanded RBAC** across server, admin dashboard, and iOS role surfaces. Added `SUPER_ADMIN` / `ORG_ADMIN` / `EDITOR` / `VIEWER` role model + normalization (`ADMIN`→`SUPER_ADMIN`, `USER`→`EDITOR`), centralized `fastify.authorize(roles)` guards, org-scoped admin endpoints, role badges/editing in dashboard user rows, and iOS `User.role` model propagation. Validation is green: server tests (119/119) and admin production build. Added migration file `server/prisma/migrations/20260512153500_phase_2_1_rbac_roles/migration.sql` for enum transition.
 
 ---
 
@@ -131,7 +133,7 @@ cd ios && xcodegen generate && xcodebuild -project DirectVideoUploader.xcodeproj
 | Admin API (stats, users, assets) | ✅ Working   | `server/src/routes/admin.js`                                |
 | Admin triad status endpoint      | ✅ Working   | `GET /api/admin/status` — DB, Server, iOS, Admin            |
 | Admin dashboard (React)          | ✅ Working   | React 19 + Vite 6 + TypeScript + Tailwind v4                |
-| Demo users seeded (4)            | ✅ Seeded    | David Burgess, Carrie Smith, Admin User, Rod Griola (ADMIN) |
+| Demo users seeded (4)            | ✅ Seeded    | David Burgess, Carrie Smith, Admin User, Rod Griola (SUPER_ADMIN) |
 | Local dev database               | ✅ Running   | `prisma dev` (PostgreSQL on port 51214)                     |
 
 **Server Endpoints Verified:**

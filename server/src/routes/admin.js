@@ -1,4 +1,4 @@
-// Last updated: May 12, 2026 - 3:14pm - GitHub Copilot (GPT-5.3-Codex)
+// Last updated: May 12, 2026 - 3:35pm - GitHub Copilot (GPT-5.3-Codex)
 /**
  * Admin routes — Dashboard data, user management, asset overview.
  * All data is LIVE — no simulated actions.
@@ -9,15 +9,41 @@ import { hashPin } from '../lib/utils.js';
 import { deleteMuxAsset, isMuxEnabled } from '../lib/mux.js';
 import { redactCompanyCode, redactPersonName, redactPhoneNumber } from '../lib/redact.js';
 import { revokeUserSessions } from '../lib/session-store.js';
+import { Role, ROLE_VALUES, normalizeRole, isSuperAdmin, isOrgAdmin } from '../lib/rbac.js';
+
+function sameCompanyCode(a, b) {
+    if (!a || !b) return false;
+    return String(a).toLowerCase() === String(b).toLowerCase();
+}
 
 export default async function adminRoutes(fastify) {
+
+    function actorRole(request) {
+        return normalizeRole(request.user?.role) || Role.EDITOR;
+    }
+
+    function actorCompanyCode(request) {
+        return request.user?.companyCode || null;
+    }
+
+    function ensureSameOrgOrSuperAdmin(request, reply, targetCompanyCode) {
+        const role = actorRole(request);
+        if (isSuperAdmin(role)) return true;
+
+        if (!isOrgAdmin(role) || !sameCompanyCode(actorCompanyCode(request), targetCompanyCode)) {
+            reply.status(403).send({ error: 'Org admin access denied' });
+            return false;
+        }
+
+        return true;
+    }
 
     /**
      * GET /api/admin/status
      * Triad health — database, server, WebSocket, iOS clients.
      */
     fastify.get('/api/admin/status', {
-        preHandler: [fastify.authenticate, fastify.authorizeAdmin],
+        preHandler: [fastify.authenticate, fastify.authorizeOrgAdmin],
     }, async () => {
         const triad = {
             database: { status: 'unknown', message: '' },
@@ -64,42 +90,83 @@ export default async function adminRoutes(fastify) {
      * Returns aggregate stats for the dashboard — all live data.
      */
     fastify.get('/api/admin/stats', {
-        preHandler: [fastify.authenticate, fastify.authorizeAdmin],
-    }, async () => {
-        const result = await prisma.$queryRaw`
-            SELECT 
-                (SELECT COUNT(*)::int FROM users) as users,
-                (SELECT COUNT(*)::int FROM users WHERE status = 'ACTIVE') as "activeUsers",
-                (SELECT COUNT(*)::int FROM users WHERE last_login_at IS NOT NULL) as "loggedInUsers",
-                (SELECT COUNT(*)::int FROM assets) as assets,
-                (SELECT COUNT(*)::int FROM assets WHERE status = 'READY') as "readyAssets",
-                (SELECT COUNT(*)::int FROM assets WHERE status = 'UPLOADING') as "uploadingAssets",
-                (SELECT COUNT(*)::int FROM chat_messages) as messages,
-                (SELECT COUNT(*)::int FROM clips WHERE status = 'READY') as clips
-        `;
+        preHandler: [fastify.authenticate, fastify.authorizeOrgAdmin],
+    }, async (request) => {
+        const role = actorRole(request);
+        const scopeCompanyCode = actorCompanyCode(request);
 
-        const stats = result[0] || {};
+        if (!isSuperAdmin(role) && !scopeCompanyCode) {
+            return {
+                users: 0,
+                activeUsers: 0,
+                loggedInUsers: 0,
+                onlineUsers: 0,
+                assets: 0,
+                readyAssets: 0,
+                uploadingAssets: 0,
+                messages: 0,
+                clips: 0,
+                iosClients: fastify.iosSockets?.size || 0,
+                wsConnections: fastify.io?.of('/')?.sockets?.size || 0,
+            };
+        }
+
+        const userScope = isSuperAdmin(role) ? {} : { companyCode: scopeCompanyCode };
+        const assetScope = isSuperAdmin(role) ? {} : { user: { companyCode: scopeCompanyCode } };
+        const clipScope = isSuperAdmin(role) ? {} : { asset: { user: { companyCode: scopeCompanyCode } } };
+        const messageScope = isSuperAdmin(role) ? {} : { user: { companyCode: scopeCompanyCode } };
+
+        const [
+            users,
+            activeUsers,
+            loggedInUsers,
+            assets,
+            readyAssets,
+            uploadingAssets,
+            messages,
+            clips,
+        ] = await Promise.all([
+            prisma.user.count({ where: userScope }),
+            prisma.user.count({ where: { ...userScope, status: 'ACTIVE' } }),
+            prisma.user.count({ where: { ...userScope, lastLoginAt: { not: null } } }),
+            prisma.asset.count({ where: assetScope }),
+            prisma.asset.count({ where: { ...assetScope, status: 'READY' } }),
+            prisma.asset.count({ where: { ...assetScope, status: 'UPLOADING' } }),
+            prisma.chatMessage.count({ where: messageScope }),
+            prisma.clip.count({ where: { ...clipScope, status: 'READY' } }),
+        ]);
+
         const userSockets = fastify.userSockets || new Map();
         const iosSockets = fastify.iosSockets || new Set();
         const adminSockets = fastify.adminSockets || new Set();
 
+        let onlineUserIds = [...userSockets.keys()];
+        if (!isSuperAdmin(role) && onlineUserIds.length > 0) {
+            const scopedOnlineUsers = await prisma.user.findMany({
+                where: { id: { in: onlineUserIds }, companyCode: scopeCompanyCode },
+                select: { id: true },
+            });
+            onlineUserIds = scopedOnlineUsers.map((user) => user.id);
+        }
+
         // Count online users excluding admin-only connections
         let onlineUsers = 0;
-        for (const [, sids] of userSockets) {
+        for (const [userId, sids] of userSockets) {
+            if (!onlineUserIds.includes(userId)) continue;
             const hasNonAdmin = [...sids].some(sid => !adminSockets.has(sid));
             if (hasNonAdmin) onlineUsers++;
         }
 
         return {
-            users: stats.users || 0,
-            activeUsers: stats.activeUsers || 0,
-            loggedInUsers: stats.loggedInUsers || 0,
+            users,
+            activeUsers,
+            loggedInUsers,
             onlineUsers,
-            assets: stats.assets || 0,
-            readyAssets: stats.readyAssets || 0,
-            uploadingAssets: stats.uploadingAssets || 0,
-            messages: stats.messages || 0,
-            clips: stats.clips || 0,
+            assets,
+            readyAssets,
+            uploadingAssets,
+            messages,
+            clips,
             iosClients: iosSockets.size,
             wsConnections: fastify.io?.of('/')?.sockets?.size || 0,
         };
@@ -110,10 +177,21 @@ export default async function adminRoutes(fastify) {
      * List all registered users with live status.
      */
     fastify.get('/api/admin/users', {
-        preHandler: [fastify.authenticate, fastify.authorizeAdmin],
-    }, async () => {
+        preHandler: [fastify.authenticate, fastify.authorizeOrgAdmin],
+    }, async (request, reply) => {
+        const role = actorRole(request);
+        const scopeCompanyCode = actorCompanyCode(request);
+
+        if (!isSuperAdmin(role) && !scopeCompanyCode) {
+            return reply.status(403).send({ error: 'Org admin requires company assignment' });
+        }
+
+        const companyFilter = isSuperAdmin(role)
+            ? Prisma.empty
+            : Prisma.sql`WHERE u.company_code = ${scopeCompanyCode}`;
+
         const users = await prisma.$queryRaw`
-            SELECT u.id, u.phone_number AS "phoneNumber", u.name, u.email, u.team, u.status,
+            SELECT u.id, u.phone_number AS "phoneNumber", u.name, u.email, u.team, u.status, u.role,
                    u.company_code AS "companyCode",
                    o.company_name AS "companyName",
                    u.created_at AS "createdAt",
@@ -121,6 +199,7 @@ export default async function adminRoutes(fastify) {
                    (SELECT COUNT(*)::int FROM assets a WHERE a.user_id = u.id) AS "assetCount"
             FROM users u
             LEFT JOIN organizations o ON o.company_code = u.company_code
+            ${companyFilter}
             ORDER BY u.created_at ASC
         `;
 
@@ -143,14 +222,19 @@ export default async function adminRoutes(fastify) {
      * List all assets with user info and form responses.
      */
     fastify.get('/api/admin/assets', {
-        preHandler: [fastify.authenticate, fastify.authorizeAdmin],
-    }, async (request) => {
-        // Role-based filtering: admins see all, non-admins see only their org's assets
-        const isAdmin = request.user?.role === 'ADMIN';
+        preHandler: [fastify.authenticate, fastify.authorizeOrgAdmin],
+    }, async (request, reply) => {
+        // Role-based filtering: super admins see all, org admins see only their org's assets.
+        const role = actorRole(request);
+        const isActorSuperAdmin = isSuperAdmin(role);
         const userCompanyCode = request.user?.companyCode || null;
 
+        if (!isActorSuperAdmin && !userCompanyCode) {
+            return reply.status(403).send({ error: 'Org admin requires company assignment' });
+        }
+
         // Build WHERE clause for company filtering
-        const companyFilter = (!isAdmin && userCompanyCode)
+        const companyFilter = (!isActorSuperAdmin && userCompanyCode)
             ? Prisma.sql`WHERE u.company_code = ${userCompanyCode}`
             : Prisma.empty;
 
@@ -191,9 +275,21 @@ export default async function adminRoutes(fastify) {
      * List all chat messages across all users (for admin dashboard).
      */
     fastify.get('/api/admin/messages', {
-        preHandler: [fastify.authenticate, fastify.authorizeAdmin],
-    }, async () => {
+        preHandler: [fastify.authenticate, fastify.authorizeOrgAdmin],
+    }, async (request) => {
+        const role = actorRole(request);
+        const scopeCompanyCode = actorCompanyCode(request);
+
+        if (!isSuperAdmin(role) && !scopeCompanyCode) {
+            return { messages: [] };
+        }
+
+        const where = isSuperAdmin(role)
+            ? {}
+            : { user: { companyCode: scopeCompanyCode } };
+
         const messages = await prisma.chatMessage.findMany({
+            where,
             orderBy: { createdAt: 'desc' },
             take: 200,
             include: {
@@ -209,7 +305,7 @@ export default async function adminRoutes(fastify) {
      * Delete stale UPLOADING assets that have no clips (abandoned uploads).
      */
     fastify.post('/api/admin/cleanup-assets', {
-        preHandler: [fastify.authenticate, fastify.authorizeAdmin],
+        preHandler: [fastify.authenticate, fastify.authorizeOrgAdmin],
         schema: {
             headers: {
                 type: 'object',
@@ -219,12 +315,22 @@ export default async function adminRoutes(fastify) {
             },
         },
     }, async (request) => {
+        const role = actorRole(request);
+        const scopeCompanyCode = actorCompanyCode(request);
+
+        if (!isSuperAdmin(role) && !scopeCompanyCode) {
+            return { cleaned: 0, message: 'Org admin requires company assignment' };
+        }
+
+        const where = {
+            status: 'UPLOADING',
+            clips: { none: {} },
+            ...(isSuperAdmin(role) ? {} : { user: { companyCode: scopeCompanyCode } }),
+        };
+
         // Find UPLOADING assets with 0 clips using Prisma ORM
         const staleAssets = await prisma.asset.findMany({
-            where: {
-                status: 'UPLOADING',
-                clips: { none: {} },
-            },
+            where,
             select: { id: true },
         });
 
@@ -258,10 +364,10 @@ export default async function adminRoutes(fastify) {
 
     /**
      * POST /api/admin/users
-     * Create a new demo user. Defaults: PIN 0000, role USER.
+     * Create a new demo user. Defaults: PIN 0000, role EDITOR.
      */
     fastify.post('/api/admin/users', {
-        preHandler: [fastify.authenticate, fastify.authorizeAdmin],
+        preHandler: [fastify.authenticate, fastify.authorizeOrgAdmin],
         schema: {
             body: {
                 type: 'object',
@@ -271,21 +377,48 @@ export default async function adminRoutes(fastify) {
                     email: { type: 'string' },
                     team: { type: 'string' },
                     companyCode: { type: 'string' },
+                    role: { type: 'string', enum: [...ROLE_VALUES, 'ADMIN', 'USER'] },
                 },
             },
         },
     }, async (request, reply) => {
-        const { name, phoneNumber, email, team, companyCode } = request.body || {};
+        const { name, phoneNumber, email, team, companyCode, role } = request.body || {};
+        const actor = actorRole(request);
+        const actorCompany = actorCompanyCode(request);
+        const normalizedRequestedRole = role === undefined
+            ? Role.EDITOR
+            : normalizeRole(role);
 
         if (!name || !phoneNumber) {
             return reply.status(400).send({ error: 'name and phoneNumber are required' });
         }
 
+        if (role !== undefined && !normalizedRequestedRole) {
+            return reply.status(400).send({ error: 'Invalid role value' });
+        }
+
+        let finalCompanyCode = companyCode || null;
+        if (isOrgAdmin(actor)) {
+            if (!actorCompany) {
+                return reply.status(403).send({ error: 'Org admin requires company assignment' });
+            }
+
+            if (finalCompanyCode && !sameCompanyCode(finalCompanyCode, actorCompany)) {
+                return reply.status(403).send({ error: 'Org admin cannot create users outside their company' });
+            }
+
+            if (![Role.EDITOR, Role.VIEWER].includes(normalizedRequestedRole)) {
+                return reply.status(403).send({ error: 'Org admin can only create EDITOR or VIEWER users' });
+            }
+
+            finalCompanyCode = actorCompany;
+        }
+
         // Validate company code if provided
-        if (companyCode) {
-            const org = await prisma.organization.findUnique({ where: { companyCode } });
+        if (finalCompanyCode) {
+            const org = await prisma.organization.findUnique({ where: { companyCode: finalCompanyCode } });
             if (!org) {
-                return reply.status(400).send({ error: `Organization with code '${companyCode}' not found` });
+                return reply.status(400).send({ error: `Organization with code '${finalCompanyCode}' not found` });
             }
         }
 
@@ -303,9 +436,9 @@ export default async function adminRoutes(fastify) {
                 name,
                 email: email || null,
                 team: team || null,
-                companyCode: companyCode || null,
+                companyCode: finalCompanyCode,
                 pinHash: await hashPin('0000'),
-                role: 'USER',
+                role: normalizedRequestedRole,
             },
         });
 
@@ -313,7 +446,8 @@ export default async function adminRoutes(fastify) {
             {
                 userName: redactPersonName(name),
                 phoneNumber: redactPhoneNumber(phoneNumber),
-                companyCode: redactCompanyCode(companyCode),
+                companyCode: redactCompanyCode(finalCompanyCode),
+                role: normalizedRequestedRole,
             },
             'Admin created user'
         );
@@ -328,7 +462,7 @@ export default async function adminRoutes(fastify) {
                 role: user.role,
                 companyCode: user.companyCode,
             },
-            message: `Created user ${name} (PIN: 0000)`,
+            message: `Created user ${name} (PIN: 0000, role: ${normalizedRequestedRole})`,
         };
     });
 
@@ -337,7 +471,7 @@ export default async function adminRoutes(fastify) {
      * Revoke all active JWT sessions for a user and disconnect active sockets.
      */
     fastify.post('/api/admin/users/:id/revoke-sessions', {
-        preHandler: [fastify.authenticate, fastify.authorizeAdmin],
+        preHandler: [fastify.authenticate, fastify.authorizeOrgAdmin],
         schema: {
             params: {
                 type: 'object',
@@ -356,11 +490,17 @@ export default async function adminRoutes(fastify) {
                 id: true,
                 name: true,
                 phoneNumber: true,
+                companyCode: true,
+                role: true,
             },
         });
 
         if (!target) {
             return reply.status(404).send({ error: 'User not found' });
+        }
+
+        if (!ensureSameOrgOrSuperAdmin(request, reply, target.companyCode)) {
+            return;
         }
 
         const revokedSessions = await revokeUserSessions(id);
@@ -771,7 +911,7 @@ export default async function adminRoutes(fastify) {
      * Edit user profile fields (companyCode, name, team, email).
      */
     fastify.patch('/api/admin/users/:id', {
-        preHandler: [fastify.authenticate, fastify.authorizeAdmin],
+        preHandler: [fastify.authenticate, fastify.authorizeOrgAdmin],
         schema: {
             params: {
                 type: 'object',
@@ -802,30 +942,62 @@ export default async function adminRoutes(fastify) {
                             { type: 'null' },
                         ],
                     },
+                    role: { type: 'string', enum: [...ROLE_VALUES, 'ADMIN', 'USER'] },
                 },
             },
         },
     }, async (request, reply) => {
         const { id } = request.params;
-        const { companyCode, name, team, email } = request.body || {};
+        const { companyCode, name, team, email, role } = request.body || {};
+        const actor = actorRole(request);
+        const actorCompany = actorCompanyCode(request);
+        const normalizedRequestedRole = role === undefined ? undefined : normalizeRole(role);
+
+        if (role !== undefined && !normalizedRequestedRole) {
+            return reply.status(400).send({ error: 'Invalid role value' });
+        }
 
         const user = await prisma.user.findUnique({ where: { id } });
         if (!user) {
             return reply.status(404).send({ error: 'User not found' });
         }
 
+        if (!ensureSameOrgOrSuperAdmin(request, reply, user.companyCode)) {
+            return;
+        }
+
         const data = {};
+
+        if (normalizedRequestedRole !== undefined) {
+            if (!isSuperAdmin(actor)) {
+                return reply.status(403).send({ error: 'Only super admins can change roles' });
+            }
+            data.role = normalizedRequestedRole;
+        }
 
         // Handle companyCode — null removes assignment
         if (companyCode !== undefined) {
-            if (companyCode === null || companyCode === '') {
-                data.companyCode = null;
-            } else {
-                const org = await prisma.organization.findUnique({ where: { companyCode } });
-                if (!org) {
-                    return reply.status(400).send({ error: `Organization '${companyCode}' not found` });
+            if (isOrgAdmin(actor)) {
+                if (!actorCompany) {
+                    return reply.status(403).send({ error: 'Org admin requires company assignment' });
                 }
-                data.companyCode = companyCode;
+                if (companyCode === null || companyCode === '') {
+                    return reply.status(403).send({ error: 'Org admin cannot remove company assignment' });
+                }
+                if (!sameCompanyCode(companyCode, actorCompany)) {
+                    return reply.status(403).send({ error: 'Org admin cannot move users outside their company' });
+                }
+                data.companyCode = actorCompany;
+            } else {
+                if (companyCode === null || companyCode === '') {
+                    data.companyCode = null;
+                } else {
+                    const org = await prisma.organization.findUnique({ where: { companyCode } });
+                    if (!org) {
+                        return reply.status(400).send({ error: `Organization '${companyCode}' not found` });
+                    }
+                    data.companyCode = companyCode;
+                }
             }
         }
 
@@ -859,6 +1031,7 @@ export default async function adminRoutes(fastify) {
                 phoneNumber: updated.phoneNumber,
                 email: updated.email,
                 team: updated.team,
+                role: updated.role,
                 companyCode: updated.companyCode,
                 companyName: updated.organization?.companyName || null,
             },

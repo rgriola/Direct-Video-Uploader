@@ -1,4 +1,4 @@
-May 11, 2026 - 5:35pm - GitHub Copilot (GPT-5.3-Codex)
+May 12, 2026 - 3:35pm - GitHub Copilot (GPT-5.3-Codex)
 
 # Direct Video Uploader — Project Specification (v4)
 
@@ -22,6 +22,7 @@ May 11, 2026 - 5:35pm - GitHub Copilot (GPT-5.3-Codex)
 - **Admin UI:** Planned for Phase 2 to manage users, devices, and app backend.
 - **Simple Auth for Demo:** Token-based auth (no full JWT/device enrollment for demo).
 - **Upload Observability (May 11):** Added upload correlation IDs and timestamp telemetry across iOS uploader, `/api/assets/:id/mux-upload`, and Mux webhooks (`video.upload.asset_created`, `video.asset.ready`).
+- **Expanded RBAC (May 12):** Introduced dashboard/org role model (`SUPER_ADMIN`, `ORG_ADMIN`, `EDITOR`, `VIEWER`) with legacy-role normalization (`ADMIN`/`USER`) and org-scoped admin access controls.
 
 ---
 

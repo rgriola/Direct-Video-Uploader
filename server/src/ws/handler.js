@@ -1,4 +1,4 @@
-// Last updated: May 12, 2026 - 3:19pm - GitHub Copilot (GPT-5.3-Codex)
+// Last updated: May 12, 2026 - 3:35pm - GitHub Copilot (GPT-5.3-Codex)
 /**
  * WebSocket handler — Socket.IO event management.
  * Handles real-time communication between the iOS app and server.
@@ -9,6 +9,7 @@ import * as slack from '../lib/slack.js';
 import { PUBLIC_URL } from '../lib/config.js';
 import { redactPersonName } from '../lib/redact.js';
 import { hasSession } from '../lib/session-store.js';
+import { Role, normalizeRole, isDashboardAdmin } from '../lib/rbac.js';
 
 /** Greeting templates — `{time}` is replaced with time-of-day, `{name}` with first name. */
 const GREETINGS = [
@@ -470,13 +471,15 @@ export function setupWebSocket(io, fastify) {
                 },
             });
 
+            const normalizedRole = normalizeRole(user?.role) || Role.EDITOR;
+
             if (!user || user.status !== 'ACTIVE') {
                 log.warn({ socketId: socket.id, userId: decoded.id || null }, 'WS auth rejected: inactive or missing user');
                 return next(new Error('Unauthorized'));
             }
 
             const requestedClientType = socket.handshake.auth?.clientType || 'unknown';
-            if (requestedClientType === 'admin' && user.role !== 'ADMIN') {
+            if (requestedClientType === 'admin' && !isDashboardAdmin(normalizedRole)) {
                 log.warn({ socketId: socket.id, userId: user.id }, 'WS auth rejected: admin client requires admin role');
                 return next(new Error('Admin access required'));
             }
@@ -484,7 +487,7 @@ export function setupWebSocket(io, fastify) {
             socket.userId = user.id;
             socket.userName = user.name;
             socket.phoneNumber = user.phoneNumber;
-            socket.userRole = user.role || 'USER';
+            socket.userRole = normalizedRole;
 
             // Device tracking — sent from iOS in the Socket.IO CONNECT auth payload
             socket.deviceId = socket.handshake.auth?.deviceId || null;

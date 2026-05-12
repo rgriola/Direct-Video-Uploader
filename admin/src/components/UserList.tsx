@@ -1,3 +1,4 @@
+// May 12, 2026 - 3:35pm - GitHub Copilot (GPT-5.3-Codex)
 /**
  * UserList.tsx — Admin Dashboard panel showing all registered users.
  *
@@ -20,7 +21,7 @@ import { useState } from "react";
 import { ChevronDown, Trash2, Building2 } from "lucide-react";
 import { updateUser } from "@/lib/api";
 import { toast } from "sonner";
-import type { User, Organization } from "@/lib/types";
+import type { User, Organization, UserRole } from "@/lib/types";
 import { panelHeader, subTextPanelHeader } from "@/lib/types";
 
 // ─── Avatar Configuration ────────────────────────────────────────────
@@ -56,6 +57,20 @@ function formatLoginAge(dateStr: string): string {
 
 // Shared Tailwind class string for status pill badges (ONLINE / OFFLINE / NEVER SEEN)
 const pillBase = "shrink-0 inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold" as const;
+const roleOptions: UserRole[] = ["SUPER_ADMIN", "ORG_ADMIN", "EDITOR", "VIEWER"];
+
+function roleBadgeClass(role?: UserRole) {
+  switch (role) {
+    case "SUPER_ADMIN":
+      return `${pillBase} bg-(--accent-red)/20 text-(--accent-red) border border-(--accent-red)/35`;
+    case "ORG_ADMIN":
+      return `${pillBase} bg-(--accent-blue-glow) text-(--accent-blue) border border-(--border-blue)`;
+    case "VIEWER":
+      return `${pillBase} bg-(--accent-amber)/20 text-(--accent-amber) border border-(--accent-amber)/35`;
+    default:
+      return `${pillBase} bg-(--base) text-(--secondary-foreground) border border(--border-subtle)`;
+  }
+}
 
 // ─── Main Component ──────────────────────────────────────────────────
 
@@ -64,11 +79,12 @@ interface UserListProps {
   isLoading: boolean;
   onDeleteUser?: (userId: string, userName: string) => Promise<void>;
   currentUserId?: string;
+  currentUserRole?: UserRole;
   organizations?: Organization[];
   onRefresh?: () => void;
 }
 
-export function UserList({ users, isLoading, onDeleteUser, currentUserId, organizations, onRefresh }: UserListProps) {
+export function UserList({ users, isLoading, onDeleteUser, currentUserId, currentUserRole, organizations, onRefresh }: UserListProps) {
   /* Multi-expand: multiple users can be open at once (Set of user IDs) */
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
@@ -115,6 +131,7 @@ export function UserList({ users, isLoading, onDeleteUser, currentUserId, organi
               onToggle={() => toggle(user.id)}
               onDeleteUser={onDeleteUser}
               isSelf={user.id === currentUserId}
+              currentUserRole={currentUserRole}
               organizations={organizations}
               onRefresh={onRefresh}
             />
@@ -138,11 +155,12 @@ interface UserRowProps {
   onToggle: () => void;
   onDeleteUser?: (userId: string, userName: string) => Promise<void>;
   isSelf: boolean;
+  currentUserRole?: UserRole;
   organizations?: Organization[];
   onRefresh?: () => void;
 }
 
-function UserRow({ user, color, isOpen, onToggle, onDeleteUser, isSelf, organizations, onRefresh }: UserRowProps) {
+function UserRow({ user, color, isOpen, onToggle, onDeleteUser, isSelf, currentUserRole, organizations, onRefresh }: UserRowProps) {
   const s = avatarStyle(color);
   const initials = user.name.split(" ").map((w) => w[0]).join("");
 
@@ -171,6 +189,10 @@ function UserRow({ user, color, isOpen, onToggle, onDeleteUser, isSelf, organiza
           {user.name}
         </span>
 
+        <span className={roleBadgeClass(user.role)}>
+          {user.role ?? "EDITOR"}
+        </span>
+
         {/* Team pill */}
         <span className={`${pillBase} bg-(--base) text-(--secondary-foreground) border border(--border-subtle)`}>
           {user.team ?? "—"}
@@ -193,7 +215,7 @@ function UserRow({ user, color, isOpen, onToggle, onDeleteUser, isSelf, organiza
       </button>
 
       {/* ── Expanded detail panel ── */}
-      {isOpen && <UserDetails user={user} onDeleteUser={onDeleteUser} isSelf={isSelf} organizations={organizations} onRefresh={onRefresh} />}
+      {isOpen && <UserDetails user={user} onDeleteUser={onDeleteUser} isSelf={isSelf} currentUserRole={currentUserRole} organizations={organizations} onRefresh={onRefresh} />}
     </div>
   );
 }
@@ -229,17 +251,23 @@ interface UserDetailsProps {
   user: User;
   onDeleteUser?: (userId: string, userName: string) => Promise<void>;
   isSelf: boolean;
+  currentUserRole?: UserRole;
   organizations?: Organization[];
   onRefresh?: () => void;
 }
 
 /** Expanded panel showing phone, asset count, last login, team (mobile), iOS status, company, delete button */
-function UserDetails({ user, onDeleteUser, isSelf, organizations, onRefresh }: UserDetailsProps) {
+function UserDetails({ user, onDeleteUser, isSelf, currentUserRole, organizations, onRefresh }: UserDetailsProps) {
   const [confirming, setConfirming] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [editingCompany, setEditingCompany] = useState(false);
   const [selectedCode, setSelectedCode] = useState(user.companyCode ?? "");
   const [savingCompany, setSavingCompany] = useState(false);
+  const [editingRole, setEditingRole] = useState(false);
+  const [selectedRole, setSelectedRole] = useState<UserRole>(user.role ?? "EDITOR");
+  const [savingRole, setSavingRole] = useState(false);
+
+  const canEditRoles = currentUserRole === "SUPER_ADMIN";
 
   async function handleDelete() {
     if (!confirming) {
@@ -266,6 +294,20 @@ function UserDetails({ user, onDeleteUser, isSelf, organizations, onRefresh }: U
       toast.error(err instanceof Error ? err.message : "Failed to update company");
     } finally {
       setSavingCompany(false);
+    }
+  }
+
+  async function handleSaveRole() {
+    setSavingRole(true);
+    try {
+      const res = await updateUser(user.id, { role: selectedRole });
+      toast.success(res.message);
+      setEditingRole(false);
+      onRefresh?.();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to update role");
+    } finally {
+      setSavingRole(false);
     }
   }
 
@@ -299,6 +341,54 @@ function UserDetails({ user, onDeleteUser, isSelf, organizations, onRefresh }: U
           </span>
         </div>
       )}
+
+      {/* Role — display + super admin edit */}
+      <div className="flex items-center gap-2">
+        <span className="w-20 shrink-0 font-medium text-(--foreground)/60">Role</span>
+        {editingRole ? (
+          <div className="flex items-center gap-1.5">
+            <select
+              value={selectedRole}
+              onChange={(e) => setSelectedRole(e.target.value as UserRole)}
+              className="px-2 py-1 rounded text-xs bg-(--secondary) border border-(--border) text-(--foreground) focus:outline-none focus:border-(--accent-blue)"
+            >
+              {roleOptions.map((role) => (
+                <option key={role} value={role}>
+                  {role}
+                </option>
+              ))}
+            </select>
+            <button
+              onClick={handleSaveRole}
+              disabled={savingRole}
+              className="px-2 py-1 rounded text-xs font-semibold bg-(--accent-blue) text-white hover:opacity-90 cursor-pointer disabled:opacity-50"
+            >
+              {savingRole ? "..." : "Save"}
+            </button>
+            <button
+              onClick={() => {
+                setEditingRole(false);
+                setSelectedRole(user.role ?? "EDITOR");
+              }}
+              className="px-2 py-1 rounded text-xs text-(--muted-foreground) hover:text-(--foreground) cursor-pointer"
+            >
+              Cancel
+            </button>
+          </div>
+        ) : (
+          <div className="flex items-center gap-1.5">
+            <span className={roleBadgeClass(user.role)}>{user.role ?? "EDITOR"}</span>
+            {canEditRoles && (
+              <button
+                onClick={() => setEditingRole(true)}
+                className="text-[10px] text-(--accent-blue) hover:underline cursor-pointer"
+              >
+                Edit
+              </button>
+            )}
+          </div>
+        )}
+      </div>
 
       {/* Company — display + admin edit */}
       <div className="flex items-center gap-2">

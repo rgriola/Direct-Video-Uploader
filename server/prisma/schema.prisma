@@ -1,3 +1,4 @@
+// Last updated: May 12, 2026 - 3:35pm - GitHub Copilot (GPT-5.3-Codex)
 // Direct Video Uploader — Prisma Schema
 // PostgreSQL on Render
 
@@ -30,7 +31,7 @@ model User {
   team        String?
   companyCode String?    @map("company_code") @db.VarChar(4)
   pinHash     String     @map("pin_hash")
-  role        UserRole   @default(USER) @map("role")
+  role        UserRole   @default(EDITOR) @map("role")
   status      UserStatus @default(ACTIVE)
   lastLoginAt DateTime?  @map("last_login_at")
   createdAt   DateTime   @default(now()) @map("created_at")
@@ -44,8 +45,10 @@ model User {
 }
 
 enum UserRole {
-  USER
-  ADMIN
+  SUPER_ADMIN
+  ORG_ADMIN
+  EDITOR
+  VIEWER
 }
 
 enum UserStatus {
@@ -84,31 +87,31 @@ enum AssetStatus {
 
 // ─── Clips (individual video files) ──────────────────────
 model Clip {
-  id               String     @id @default(uuid())
-  assetId          String     @map("asset_id")
-  clipIndex        Int        @default(0) @map("clip_index")
-  originalFileName String?    @map("original_file_name")
-  storageUrl       String?    @map("storage_url")
-  streamUrl        String?    @map("stream_url")
-  thumbnailUrl     String?    @map("thumbnail_url")
-  muxAssetId       String?    @map("mux_asset_id")
-  muxPlaybackId    String?    @map("mux_playback_id")
-  muxUploadId      String?    @map("mux_upload_id")
-  gpsLat           Float?     @map("gps_lat")
-  gpsLon           Float?     @map("gps_lon")
-  gpsAltitude      Float?     @map("gps_altitude")
-  capturedAt       DateTime?  @map("captured_at")
-  deviceModel      String?    @map("device_model")
-  osVersion        String?    @map("os_version")
-  codec            String?
-  resolution       String?
-  orientation      String?    @default("landscape")
-  duration         Int?       @map("duration_seconds")
-  fileSize         BigInt?    @map("file_size_bytes")
-  transcript       String?    @map("transcript")
-  transcriptSegments Json?    @map("transcript_segments")
-  status           ClipStatus @default(UPLOADING)
-  createdAt        DateTime   @default(now()) @map("created_at")
+  id                 String     @id @default(uuid())
+  assetId            String     @map("asset_id")
+  clipIndex          Int        @default(0) @map("clip_index")
+  originalFileName   String?    @map("original_file_name")
+  storageUrl         String?    @map("storage_url")
+  streamUrl          String?    @map("stream_url")
+  thumbnailUrl       String?    @map("thumbnail_url")
+  muxAssetId         String?    @map("mux_asset_id")
+  muxPlaybackId      String?    @map("mux_playback_id")
+  muxUploadId        String?    @map("mux_upload_id")
+  gpsLat             Float?     @map("gps_lat")
+  gpsLon             Float?     @map("gps_lon")
+  gpsAltitude        Float?     @map("gps_altitude")
+  capturedAt         DateTime?  @map("captured_at")
+  deviceModel        String?    @map("device_model")
+  osVersion          String?    @map("os_version")
+  codec              String?
+  resolution         String?
+  orientation        String?    @default("landscape")
+  duration           Int?       @map("duration_seconds")
+  fileSize           BigInt?    @map("file_size_bytes")
+  transcript         String?    @map("transcript")
+  transcriptSegments Json?      @map("transcript_segments")
+  status             ClipStatus @default(UPLOADING)
+  createdAt          DateTime   @default(now()) @map("created_at")
 
   asset Asset @relation(fields: [assetId], references: [id], onDelete: Cascade)
 

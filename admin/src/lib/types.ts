@@ -1,4 +1,7 @@
+// May 12, 2026 - 3:35pm - GitHub Copilot (GPT-5.3-Codex)
 /* ─── API Types ─── */
+
+export type UserRole = "SUPER_ADMIN" | "ORG_ADMIN" | "EDITOR" | "VIEWER";
 
 export interface User {
   id: string;
@@ -6,7 +9,7 @@ export interface User {
   phoneNumber: string;
   email?: string | null;
   team?: string | null;
-  role?: string;
+  role?: UserRole;
   status: string;
   companyCode?: string | null;
   companyName?: string | null;

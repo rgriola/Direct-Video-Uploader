@@ -1,3 +1,4 @@
+// May 12, 2026 - 3:35pm - GitHub Copilot (GPT-5.3-Codex)
 import Foundation
 
 // MARK: - User
@@ -8,6 +9,7 @@ struct User: Codable, Identifiable {
     let name: String
     let email: String?
     let team: String?
+    let role: String?
     let status: String?
     let companyCode: String?
     let companyName: String?
