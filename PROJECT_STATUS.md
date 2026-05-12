@@ -1,8 +1,8 @@
-May 12, 2026 - 1:25pm - GitHub Copilot (GPT-5.3-Codex)
+May 12, 2026 - 3:30pm - GitHub Copilot (GPT-5.3-Codex)
 
 # Direct Video Uploader — Project Status
 
-> **Last Updated:** May 12, 2026 · 1:25pm PT
+> **Last Updated:** May 12, 2026 · 3:30pm PT
 > **Current Phase:** Phase 4 (QA + Rollout) — iOS UI/UX refresh validation and release-readiness checks
 > **Overall Progress:** ████████████████████ 100% (Phase 2) · Phase 3 complete · Phase 4 in progress
 
@@ -13,6 +13,8 @@ May 12, 2026 - 1:25pm - GitHub Copilot (GPT-5.3-Codex)
 The **Direct Video Uploader** is a mobile-first video upload platform disguised as a text conversation. Field crew members "text" videos to the **Mediasource Fixer** server, which processes them the way a news assignment desk operates - fast, structured, and integrated with Slack.
 
 We've completed the **interactive chat demo** (HTML prototype), **project specification** (v4), the **Phase 1 server foundation** (Node.js API, WebSocket, PostgreSQL, auth, admin dashboard), the **Phase 2 - iOS Demo App** core flow (login -> chat -> video upload -> form -> confirmation -> archive), and the **Web Clip Viewer** (server-rendered at `/clips/:slug`). Latest session (May 11): implemented **Obs.10 upload telemetry + correlation** end-to-end: iOS captures URLSession task metrics, uploader sends correlation headers, server echoes telemetry from `/api/assets/:id/mux-upload`, webhooks compute `asset_created`/`ready` deltas, and `mux:ready` now includes `uploadTelemetry`. Follow-up session (May 11 evening): finalized dashboard web-session self-heal, updated asset accordion layout (Play Clip moved to top of Form Response with icon treatment), and documented local dev serving behavior (`:5173` live Vite vs `:3000` static build). Validation is green: iOS `xcodebuild` succeeded, admin build check passed, and server test suite passed (118/118).
+
+Latest session (May 12): completed **Phase 1.5 rate limiting hardening** — Redis-backed `@fastify/rate-limit`, per-user keying for authenticated traffic, explicit `X-RateLimit-*` headers, WebSocket anti-spam throttling (10 messages / 10 seconds with disconnect escalation), and dedicated `POST /api/assets/:id/mux-upload` limit (10/hour per user). Server tests remain green (118/118).
 
 ---
 

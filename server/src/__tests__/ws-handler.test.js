@@ -1,4 +1,4 @@
-// Last updated: May 12, 2026 - 3:05pm - GitHub Copilot (GPT-5.3-Codex)
+// Last updated: May 12, 2026 - 3:19pm - GitHub Copilot (GPT-5.3-Codex)
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const prismaMock = {
@@ -152,6 +152,7 @@ function createSocket({ token = 'valid-token', clientType = 'ios' } = {}) {
             handlers[event] = cb;
         }),
         emit: vi.fn(),
+        disconnect: vi.fn(),
         handlers,
     };
 
@@ -546,6 +547,45 @@ describe('ws handler targeted coverage', () => {
                 }),
             })
         );
+    });
+
+    it('throttles rapid websocket messages and disconnects repeat offenders', async () => {
+        vi.useFakeTimers();
+
+        const { io, harness } = createIoHarness();
+        const fastify = createFastifyHarness();
+        fastify.jwt.verify.mockReturnValue({
+            id: 'user-1',
+            name: 'David Burgess',
+            phoneNumber: '5055551000',
+            jti: 'session-user-1',
+        });
+
+        setupWebSocket(io, fastify);
+
+        const socket = createSocket({ token: 'valid-token', clientType: 'ios' });
+        await harness.authMiddleware(socket, vi.fn());
+        harness.connectionHandler(socket);
+
+        for (let index = 0; index < 10; index += 1) {
+            await socket.handlers['message:send']({ text: `burst ${index}` });
+        }
+
+        await socket.handlers['message:send']({ text: 'burst 10' });
+        await socket.handlers['message:send']({ text: 'burst 11' });
+        await socket.handlers['message:send']({ text: 'burst 12' });
+
+        expect(prismaMock.chatMessage.create).toHaveBeenCalledTimes(10);
+        expect(socket.emit).toHaveBeenCalledWith(
+            'message:new',
+            expect.objectContaining({
+                messageType: 'SYSTEM_NOTE',
+                content: expect.objectContaining({
+                    code: 'WS_RATE_LIMITED',
+                }),
+            })
+        );
+        expect(socket.disconnect).toHaveBeenCalledWith(true);
     });
 
     it('cleans up socket tracking on disconnect', async () => {

@@ -1,4 +1,4 @@
-Last updated: May 12, 2026 - 3:19pm - GitHub Copilot (GPT-5.3-Codex)
+Last updated: May 12, 2026 - 3:30pm - GitHub Copilot (GPT-5.3-Codex)
 
 # Enterprise Readiness Plan — Fixer
 
@@ -251,12 +251,12 @@ server/src/__tests__/
 
 > Depends on Phase 0.4 (Redis).
 
-- [ ] Switch `@fastify/rate-limit` store to Redis
-- [ ] Add per-user rate limiting on authenticated routes (by userId from JWT)
-- [ ] Add `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset` headers
-- [ ] Add WebSocket message throttling in `server/src/ws/handler.js`
+- [x] Switch `@fastify/rate-limit` store to Redis
+- [x] Add per-user rate limiting on authenticated routes (by userId from JWT)
+- [x] Add `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset` headers
+- [x] Add WebSocket message throttling in `server/src/ws/handler.js`
   - Max 10 messages/10s per connection; disconnect on sustained abuse
-- [ ] Add dedicated limit for Mux upload creation: 5/hour per user
+- [x] Add dedicated limit for Mux upload creation: 10/hour per user
 
 **Files to modify:**
 

@@ -1,8 +1,8 @@
-May 12, 2026 - 3:19pm - GitHub Copilot (GPT-5.3-Codex)
+May 12, 2026 - 3:30pm - GitHub Copilot (GPT-5.3-Codex)
 
 # Fixer — Enterprise Readiness Tasks
 
-> Last audit sync: May 12, 2026 - 3:19pm - GitHub Copilot (GPT-5.3-Codex)
+> Last audit sync: May 12, 2026 - 3:30pm - GitHub Copilot (GPT-5.3-Codex)
 
 > Companion to [ENTERPRISE_READINESS_PLAN.md](ENTERPRISE_READINESS_PLAN.md).
 > Check items off as you complete them. Each task should be a single PR.
@@ -125,11 +125,11 @@ May 12, 2026 - 3:19pm - GitHub Copilot (GPT-5.3-Codex)
 
 > Requires Phase 0.4
 
-- [ ] Switch `@fastify/rate-limit` store to Redis
-- [ ] Add per-user limits on authenticated routes
-- [ ] Add `X-RateLimit-*` response headers
-- [ ] WebSocket throttling (10 msgs / 10s)
-- [ ] Mux upload creation: 10/hour per user - We will be using multiple clip uploads soon so this may no longer work. 
+- [x] Switch `@fastify/rate-limit` store to Redis
+- [x] Add per-user limits on authenticated routes
+- [x] Add `X-RateLimit-*` response headers
+- [x] WebSocket throttling (10 msgs / 10s)
+- [x] Mux upload creation: 10/hour per user
 
 ---
 

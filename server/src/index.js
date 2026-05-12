@@ -1,4 +1,4 @@
-// Last updated: May 12, 2026 - 3:05pm - GitHub Copilot (GPT-5.3-Codex)
+// Last updated: May 12, 2026 - 3:19pm - GitHub Copilot (GPT-5.3-Codex)
 /**
  * Fixer — Server Entry Point
  *
@@ -229,14 +229,6 @@ fastify.addHook('onSend', async (request, reply, payload) => {
 });
 
 // B7: Global rate limiting — sensible defaults, per-route overrides below
-await fastify.register(rateLimit, {
-    global: true,
-    // Keep production strict, but avoid noisy local throttling during dev/HMR.
-    max: GLOBAL_RATE_LIMIT_MAX,
-    timeWindow: '1 minute',
-    allowList: (request) => shouldBypassGlobalRateLimit(request),
-});
-
 await fastify.register(multipart, {
     limits: {
         fileSize: 1024 * 1024 * 500, // 500 MB max upload
@@ -252,6 +244,50 @@ const jwtSecret = process.env.JWT_SECRET || (() => {
 
 await fastify.register(fastifyJwt, {
     secret: jwtSecret,
+});
+
+function rateLimitKeyGenerator(request) {
+    const token =
+        getBearerToken(request.headers?.authorization)
+        || getWebSessionToken(request.cookies);
+
+    // Authenticated requests are rate-limited per user ID.
+    if (token) {
+        try {
+            const decoded = fastify.jwt.verify(token);
+            if (decoded?.id) {
+                return `user:${decoded.id}`;
+            }
+        } catch {
+            // Fall back to IP-based limiting for invalid or expired tokens.
+        }
+    }
+
+    return `ip:${request.ip}`;
+}
+
+// B7: Global rate limiting — Redis-backed in production, in-memory fallback for local dev.
+await fastify.register(rateLimit, {
+    global: true,
+    // Keep production strict, but avoid noisy local throttling during dev/HMR.
+    max: GLOBAL_RATE_LIMIT_MAX,
+    timeWindow: '1 minute',
+    allowList: (request) => shouldBypassGlobalRateLimit(request),
+    keyGenerator: rateLimitKeyGenerator,
+    redis: isRedisConfigured ? redis : undefined,
+    nameSpace: 'fixer-rate-limit-',
+    skipOnError: true,
+    addHeadersOnExceeding: {
+        'x-ratelimit-limit': true,
+        'x-ratelimit-remaining': true,
+        'x-ratelimit-reset': true,
+    },
+    addHeaders: {
+        'x-ratelimit-limit': true,
+        'x-ratelimit-remaining': true,
+        'x-ratelimit-reset': true,
+        'retry-after': true,
+    },
 });
 
 const docsGuard = async (request, reply) => {

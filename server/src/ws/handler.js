@@ -1,4 +1,4 @@
-// Last updated: May 12, 2026 - 3:05pm - GitHub Copilot (GPT-5.3-Codex)
+// Last updated: May 12, 2026 - 3:19pm - GitHub Copilot (GPT-5.3-Codex)
 /**
  * WebSocket handler — Socket.IO event management.
  * Handles real-time communication between the iOS app and server.
@@ -78,6 +78,9 @@ function getTip() {
 
 const MESSAGE_SCHEMA_VERSION = 1;
 const WEB_SESSION_COOKIE_NAME = 'fixer_clip_token';
+const WS_MESSAGE_RATE_LIMIT_MAX = 10;
+const WS_MESSAGE_RATE_LIMIT_WINDOW_MS = 10 * 1000;
+const WS_MESSAGE_RATE_LIMIT_MAX_VIOLATIONS = 3;
 
 function stringifyParams(params = {}) {
     return Object.fromEntries(
@@ -418,6 +421,7 @@ export function setupWebSocket(io, fastify) {
 
     // Debounce map for text-message auto-replies: userId → { timer, texts[] }
     const pendingReplies = new Map();
+    const wsMessageRateState = new Map(); // socketId -> { timestamps: number[], violations: number }
 
     // Track client types separately
     const iosSockets = new Set();   // socket IDs from iOS app
@@ -607,6 +611,68 @@ export function setupWebSocket(io, fastify) {
          */
         socket.on('message:send', async (data) => {
             try {
+                const nowMs = Date.now();
+                const rateState = wsMessageRateState.get(socket.id) || { timestamps: [], violations: 0 };
+                rateState.timestamps = rateState.timestamps.filter(
+                    (timestamp) => nowMs - timestamp < WS_MESSAGE_RATE_LIMIT_WINDOW_MS
+                );
+
+                if (rateState.timestamps.length >= WS_MESSAGE_RATE_LIMIT_MAX) {
+                    rateState.violations += 1;
+                    wsMessageRateState.set(socket.id, rateState);
+
+                    const oldestTimestamp = rateState.timestamps[0] || nowMs;
+                    const retryAfterSeconds = Math.max(
+                        1,
+                        Math.ceil((WS_MESSAGE_RATE_LIMIT_WINDOW_MS - (nowMs - oldestTimestamp)) / 1000)
+                    );
+                    const fallbackText = `Too many messages too fast. Please wait ${retryAfterSeconds}s and try again.`;
+
+                    socket.emit('message:new', {
+                        id: crypto.randomUUID(),
+                        userId: null,
+                        assetId: null,
+                        direction: 'INCOMING',
+                        messageType: 'SYSTEM_NOTE',
+                        content: buildContent({
+                            code: 'WS_RATE_LIMITED',
+                            params: { retryAfterSeconds },
+                            fallbackText,
+                            text: fallbackText,
+                        }),
+                        createdAt: new Date().toISOString(),
+                    });
+
+                    log.warn(
+                        {
+                            userName: redactPersonName(socket.userName),
+                            socketId: socket.id,
+                            violations: rateState.violations,
+                            retryAfterSeconds,
+                        },
+                        'Websocket message rate limit exceeded'
+                    );
+
+                    if (rateState.violations >= WS_MESSAGE_RATE_LIMIT_MAX_VIOLATIONS) {
+                        log.warn(
+                            {
+                                userName: redactPersonName(socket.userName),
+                                socketId: socket.id,
+                            },
+                            'Disconnecting websocket client for repeated rate limit violations'
+                        );
+                        socket.disconnect(true);
+                    }
+
+                    return;
+                }
+
+                rateState.timestamps.push(nowMs);
+                if (rateState.violations > 0) {
+                    rateState.violations -= 1;
+                }
+                wsMessageRateState.set(socket.id, rateState);
+
                 const { text, assetId, assetIds: rawAssetIds } = data;
                 const assetIds = Array.isArray(rawAssetIds)
                     ? [...new Set(
@@ -719,6 +785,8 @@ export function setupWebSocket(io, fastify) {
         // ─── Disconnect ────────────────────────────────────────
 
         socket.on('disconnect', () => {
+            wsMessageRateState.delete(socket.id);
+
             // Clean up client type tracking
             const wasIos = iosSockets.delete(socket.id);
             adminSockets.delete(socket.id);

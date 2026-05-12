@@ -1,4 +1,4 @@
-// Last updated: May 12, 2026 - 3:12pm - GitHub Copilot (GPT-5.3-Codex)
+// Last updated: May 12, 2026 - 3:19pm - GitHub Copilot (GPT-5.3-Codex)
 /**
  * Asset routes — Create, upload, retrieve, submit form.
  */
@@ -105,6 +105,14 @@ export default async function assetRoutes(fastify) {
      */
     fastify.post('/api/assets/:id/mux-upload', {
         preHandler: [fastify.authenticate],
+        config: {
+            // Phase 1.5: constrain expensive upload-URL creation per authenticated user.
+            rateLimit: {
+                max: 10,
+                timeWindow: '1 hour',
+                groupId: 'mux-upload-create',
+            },
+        },
         schema: {
             params: {
                 type: 'object',
