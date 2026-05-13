@@ -1,4 +1,4 @@
-// Last updated: May 12, 2026 - 4:28pm - GitHub Copilot (GPT-5.3-Codex)
+// Last updated: May 13, 2026 - 1:18pm - GitHub Copilot (GPT-5.3-Codex)
 /**
  * Fixer — Server Entry Point
  *
@@ -555,7 +555,7 @@ fastify.get('/favicon.ico', async (_request, reply) => {
 });
 
 // Legacy URL compatibility so old bookmarks/deep-links do not dead-end in dev/prod.
-fastify.get('/login', async (_request, reply) => reply.redirect('/clips/login?redirect=%2F'));
+fastify.get('/login', async (_request, reply) => reply.redirect('/'));
 fastify.get('/dashboard', async (_request, reply) => reply.redirect('/'));
 fastify.get('/dashboard/*', async (_request, reply) => reply.redirect('/'));
 

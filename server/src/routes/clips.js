@@ -1,13 +1,15 @@
-// Last updated: May 12, 2026 - 3:35pm - GitHub Copilot (GPT-5.3-Codex)
+// Last updated: May 13, 2026 - 1:18pm - GitHub Copilot (GPT-5.3-Codex)
 /**
  * Clip Viewer — Authenticated page to view a video clip with metadata.
  * Requires cookie-based auth (phone + PIN + company code for non-admin users).
  * Accessible at GET /clips/:mediasourceId
  */
+import crypto from 'node:crypto';
 import prisma from '../lib/prisma.js';
 import { MUX_ENV_KEY } from '../lib/mux.js';
 import { verifyPin, hashPin, dbRetry } from '../lib/utils.js';
 import { redactCompanyCode, redactPersonName, redactPhoneNumber } from '../lib/redact.js';
+import { createSession, deleteSession, hasSession } from '../lib/session-store.js';
 import { Role, normalizeRole, isSuperAdmin, isDashboardAdmin } from '../lib/rbac.js';
 
 /** Escape HTML special characters to prevent XSS (#5). */
@@ -33,40 +35,6 @@ function normalizeRedirectPath(rawValue, fallback = '/') {
 }
 
 export default async function clipRoutes(fastify) {
-
-    // ─── Shared Styles ──────────────────────────────────────
-    const loginPageCSS = `
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { background: #0E0F14; color: #E2E4ED; font-family: 'Outfit', sans-serif;
-               display: flex; align-items: center; justify-content: center;
-               min-height: 100vh; padding: 24px; }
-        .card { background: #16171E; border: 1px solid rgba(255,255,255,0.06);
-                border-radius: 16px; padding: 40px 32px; width: 100%; max-width: 380px; }
-        .logo { text-align: center; margin-bottom: 24px; }
-        .logo span { font-size: 28px; }
-        h1 { font-size: 1.1rem; font-weight: 600; text-align: center; margin-bottom: 24px;
-             color: rgba(226,228,237,0.7); }
-        label { display: block; font-size: 0.75rem; font-weight: 600; letter-spacing: 0.05em;
-                color: rgba(226,228,237,0.4); margin-bottom: 6px; text-transform: uppercase; }
-        input { width: 100%; padding: 12px 14px; background: rgba(255,255,255,0.04);
-                border: 1px solid rgba(255,255,255,0.08); border-radius: 10px;
-                color: #E2E4ED; font-family: 'Outfit', sans-serif; font-size: 0.95rem;
-                margin-bottom: 16px; outline: none; transition: border-color 0.2s; }
-        input:focus { border-color: rgba(168,85,247,0.5); }
-        input::placeholder { color: rgba(226,228,237,0.2); }
-        button { width: 100%; padding: 14px; background: linear-gradient(135deg, #A855F7, #7C3AED);
-                 color: white; border: none; border-radius: 10px; font-family: 'Outfit', sans-serif;
-                 font-size: 1rem; font-weight: 600; cursor: pointer; transition: opacity 0.2s; }
-        button:hover { opacity: 0.9; }
-        button:disabled { opacity: 0.5; cursor: not-allowed; }
-        .error { background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3);
-                 border-radius: 8px; padding: 10px 14px; margin-bottom: 16px;
-                 font-size: 0.85rem; color: #F87171; }
-        .footer { text-align: center; margin-top: 20px; font-size: 0.7rem;
-                  color: rgba(226,228,237,0.2); }
-    `;
-    const googleFontsHead = '<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">';
-
     // Cookie options — HttpOnly, 7-day expiry, shared across dashboard + clip viewer
     const COOKIE_NAME = 'fixer_clip_token';
     const cookieOpts = (isSecure) => ({
@@ -83,6 +51,14 @@ export default async function clipRoutes(fastify) {
         if (!token) return null;
         try {
             const decoded = fastify.jwt.verify(token);
+
+            // Enforce shared web-session semantics with dashboard APIs.
+            if (!decoded?.jti || !(await hasSession(decoded.jti))) {
+                reply.clearCookie(COOKIE_NAME, { path: '/' });
+                reply.clearCookie(COOKIE_NAME, { path: '/clips' });
+                return null;
+            }
+
             request.user = decoded;
             return decoded;
         } catch {
@@ -102,60 +78,29 @@ export default async function clipRoutes(fastify) {
         return viewer.companyCode.toLowerCase() === clipUploaderCompanyCode.toLowerCase();
     }
 
+    function rootLoginUrl(redirectPath = '/', errorMessage = '') {
+        const params = new URLSearchParams();
+        params.set('redirect', normalizeRedirectPath(redirectPath, '/'));
+        if (errorMessage) {
+            params.set('error', errorMessage);
+        }
+        return `/?${params.toString()}`;
+    }
+
     /**
      * GET /clips/login
-     * Render a login form for the clip viewer.
+     * Legacy clip login route. Root (/) is now the single login entry point.
      */
     fastify.get('/clips/login', async (request, reply) => {
-        // Already logged in? Redirect to the clip they wanted
         const user = await verifyClipCookie(request, reply);
         const redirectPath = normalizeRedirectPath(request.query?.redirect, '/');
+
         if (user) {
-            const token = request.cookies?.[COOKIE_NAME];
-            if (token) {
-                const isSecure = request.protocol === 'https';
-                // Legacy migration: promote any /clips-only cookie to root path
-                // so /api/auth/me receives the same session token.
-                reply.setCookie(COOKIE_NAME, token, cookieOpts(isSecure));
-                reply.clearCookie(COOKIE_NAME, { path: '/clips' });
-            }
             return reply.redirect(redirectPath);
         }
 
-        const error = request.query.error || '';
-        const redirect = escapeHtml(redirectPath);
-        const csrfToken = await reply.generateCsrf();
-
-        const html = `<!DOCTYPE html>
-<html lang="en"><head>
-<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Fixer — Sign In to View Clip</title>
-${googleFontsHead}
-<style>${loginPageCSS}</style>
-</head><body>
-<div class="card">
-    <div class="logo"><span>🎬</span></div>
-    <h1>Sign in to Fixer</h1>
-    ${error ? `<div class="error">${escapeHtml(error)}</div>` : ''}
-    <form method="POST" action="/clips/login">
-        <input type="hidden" name="_csrf" value="${escapeHtml(csrfToken)}" />
-        <input type="hidden" name="redirect" value="${redirect}" />
-         <label for="companyCode">Company Code (non-admin only)</label>
-        <input id="companyCode" name="companyCode" type="text" placeholder="ABC or ABCD"
-             maxlength="4" pattern="[A-Za-z]{3,4}" autocomplete="off" />
-        <label for="phoneNumber">Phone Number</label>
-        <input id="phoneNumber" name="phoneNumber" type="tel" placeholder="10-digit phone"
-               maxlength="10" pattern="[0-9]{10}" required autocomplete="tel" />
-        <label for="pin">PIN</label>
-        <input id="pin" name="pin" type="password" placeholder="••••"
-               maxlength="8" required autocomplete="current-password" />
-        <button type="submit">Sign In</button>
-    </form>
-    <div class="footer">Fixer &middot; Secure Clip Viewer</div>
-</div>
-</body></html>`;
-
-        reply.type('text/html').send(html);
+        const error = typeof request.query?.error === 'string' ? request.query.error : '';
+        return reply.redirect(rootLoginUrl(redirectPath, error));
     });
 
     /**
@@ -185,7 +130,7 @@ ${googleFontsHead}
 
         // Validate inputs
         if (!phoneNumber || !pin) {
-            return reply.redirect(`/clips/login?error=${encodeURIComponent('Phone number and PIN are required')}&redirect=${encodeURIComponent(redirectTo)}`);
+            return reply.redirect(rootLoginUrl(redirectTo, 'Phone number and PIN are required'));
         }
 
         // Look up user
@@ -195,12 +140,12 @@ ${googleFontsHead}
         }));
 
         if (!user || user.status !== 'ACTIVE') {
-            return reply.redirect(`/clips/login?error=${encodeURIComponent('Invalid credentials')}&redirect=${encodeURIComponent(redirectTo)}`);
+            return reply.redirect(rootLoginUrl(redirectTo, 'Invalid credentials'));
         }
 
         // Verify PIN
         if (!(await verifyPin(pin, user.pinHash))) {
-            return reply.redirect(`/clips/login?error=${encodeURIComponent('Invalid credentials')}&redirect=${encodeURIComponent(redirectTo)}`);
+            return reply.redirect(rootLoginUrl(redirectTo, 'Invalid credentials'));
         }
 
         const normalizedRole = normalizeRole(user.role) || Role.EDITOR;
@@ -209,11 +154,11 @@ ${googleFontsHead}
         // Non-admin users must provide a matching company code.
         if (!isAdminUser) {
             if (!companyCode) {
-                return reply.redirect(`/clips/login?error=${encodeURIComponent('Company code is required')}&redirect=${encodeURIComponent(redirectTo)}`);
+                return reply.redirect(rootLoginUrl(redirectTo, 'Company code is required'));
             }
 
             if (!user.companyCode || user.companyCode.toLowerCase() !== companyCode.toLowerCase()) {
-                return reply.redirect(`/clips/login?error=${encodeURIComponent('Invalid credentials')}&redirect=${encodeURIComponent(redirectTo)}`);
+                return reply.redirect(rootLoginUrl(redirectTo, 'Invalid credentials'));
             }
         }
 
@@ -226,6 +171,8 @@ ${googleFontsHead}
             }));
         }
 
+        const jti = crypto.randomUUID();
+
         // Generate JWT (7-day expiry)
         const token = fastify.jwt.sign(
             {
@@ -234,9 +181,20 @@ ${googleFontsHead}
                 name: user.name,
                 role: normalizedRole,
                 companyCode: user.companyCode || null,
+                jti,
             },
             { expiresIn: '7d' }
         );
+
+        try {
+            await createSession({ userId: user.id, jti });
+        } catch (err) {
+            request.log.error(
+                { err: { message: err.message }, userId: user.id },
+                'Failed to create clip viewer session'
+            );
+            return reply.redirect(rootLoginUrl(redirectTo, 'Unable to establish session'));
+        }
 
         // Set HttpOnly cookie
         const isSecure = request.protocol === 'https';
@@ -269,9 +227,20 @@ ${googleFontsHead}
             },
         },
     }, async (request, reply) => {
+        const token = request.cookies?.[COOKIE_NAME];
+
+        if (token) {
+            try {
+                const decoded = fastify.jwt.verify(token);
+                await deleteSession({ userId: decoded.id, jti: decoded.jti });
+            } catch {
+                // Best-effort logout: still clear cookies and redirect.
+            }
+        }
+
         reply.clearCookie(COOKIE_NAME, { path: '/' });
         reply.clearCookie(COOKIE_NAME, { path: '/clips' });
-        return reply.redirect('/clips/login');
+        return reply.redirect('/');
     });
 
     /**
@@ -325,7 +294,7 @@ ${googleFontsHead}
         // ── Auth gate ──
         const viewer = await verifyClipCookie(request, reply);
         if (!viewer) {
-            return reply.redirect(`/clips/login?redirect=${encodeURIComponent(request.url)}`);
+            return reply.redirect(rootLoginUrl(request.url));
         }
 
         // Reject obviously invalid IDs (e.g. "undefined", empty, non-numeric)
@@ -376,7 +345,7 @@ ${googleFontsHead}
                     <style>body{background:#0E0F14;color:#E2E4ED;font-family:'Outfit',sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;flex-direction:column;gap:12px}
                     h1{font-size:1.5rem;opacity:0.7}p{font-size:0.9rem;opacity:0.4}a{color:#A855F7}</style></head>
                     <body><h1>🔒 Access Denied</h1><p>This clip belongs to a different organization.</p>
-                    <a href="/clips/login">Sign in with a different account</a></body></html>
+                    <a href="/?redirect=${encodeURIComponent(request.url)}">Sign in with a different account</a></body></html>
                 `);
                 return;
             }

@@ -1,4 +1,4 @@
-// Last updated: May 12, 2026 - 3:52pm - GitHub Copilot (GPT-5.3-Codex)
+// Last updated: May 13, 2026 - 1:18pm - GitHub Copilot (GPT-5.3-Codex)
 import Fastify from 'fastify';
 import cookie from '@fastify/cookie';
 import formbody from '@fastify/formbody';
@@ -148,14 +148,14 @@ describe('Route smoke coverage', () => {
         expect(response.statusCode).toBe(401);
     });
 
-    it('clip routes are registered and render login form with CSRF token', async () => {
+    it('clip login route redirects to root login entrypoint', async () => {
         const response = await app.inject({
             method: 'GET',
             url: '/clips/login',
         });
 
-        expect(response.statusCode).toBe(200);
-        expect(response.body).toContain('name="_csrf"');
+        expect(response.statusCode).toBe(302);
+        expect(response.headers.location).toContain('/?redirect=%2F');
     });
 
     it('error routes are registered', async () => {

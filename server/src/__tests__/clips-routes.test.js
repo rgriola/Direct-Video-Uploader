@@ -1,4 +1,4 @@
-// Last updated: May 11, 2026 - 7:15pm - GitHub Copilot (GPT-5.3-Codex)
+// Last updated: May 13, 2026 - 1:18pm - GitHub Copilot (GPT-5.3-Codex)
 import Fastify from 'fastify';
 import cookie from '@fastify/cookie';
 import fastifyJwt from '@fastify/jwt';
@@ -23,8 +23,20 @@ const prismaMock = {
     },
 };
 
+const sessionStoreMock = {
+    createSession: vi.fn(),
+    deleteSession: vi.fn(),
+    hasSession: vi.fn(),
+};
+
 vi.mock('../lib/prisma.js', () => ({
     default: prismaMock,
+}));
+
+vi.mock('../lib/session-store.js', () => ({
+    createSession: sessionStoreMock.createSession,
+    deleteSession: sessionStoreMock.deleteSession,
+    hasSession: sessionStoreMock.hasSession,
 }));
 
 vi.mock('../lib/mux.js', () => ({
@@ -41,6 +53,10 @@ beforeAll(async () => {
 
 beforeEach(async () => {
     vi.clearAllMocks();
+
+    sessionStoreMock.createSession.mockResolvedValue(undefined);
+    sessionStoreMock.deleteSession.mockResolvedValue(1);
+    sessionStoreMock.hasSession.mockResolvedValue(true);
 
     prismaMock.user.findUnique.mockResolvedValue(null);
     prismaMock.user.findFirst.mockResolvedValue({ companyCode: 'NEWS' });
@@ -65,7 +81,10 @@ afterEach(async () => {
 });
 
 function authCookieFor(user) {
-    const token = app.jwt.sign(user, { expiresIn: '7d' });
+    const token = app.jwt.sign({
+        ...user,
+        jti: user.jti || 'test-jti-123',
+    }, { expiresIn: '7d' });
     return `fixer_clip_token=${token}`;
 }
 
@@ -80,7 +99,8 @@ describe('clip routes deeper coverage', () => {
         });
 
         expect(response.statusCode).toBe(302);
-        expect(response.headers.location).toContain('/clips/login?error=Phone%20number%20and%20PIN%20are%20required');
+        expect(response.headers.location).toContain('/?redirect=%2F');
+        expect(response.headers.location).toContain('error=Phone+number+and+PIN+are+required');
     });
 
     it('allows admin login without company code for unified dashboard/clip auth', async () => {
@@ -108,6 +128,7 @@ describe('clip routes deeper coverage', () => {
         expect(response.statusCode).toBe(302);
         expect(response.headers.location).toBe('/');
         expect(response.headers['set-cookie']).toContain('fixer_clip_token=');
+        expect(sessionStoreMock.createSession).toHaveBeenCalledTimes(1);
     });
 
     it('rejects login when company code does not match', async () => {
@@ -134,7 +155,8 @@ describe('clip routes deeper coverage', () => {
         });
 
         expect(response.statusCode).toBe(302);
-        expect(response.headers.location).toContain('Invalid%20credentials');
+        expect(response.headers.location).toContain('/?redirect=%2Fclips%2F100000001');
+        expect(response.headers.location).toContain('error=Invalid+credentials');
     });
 
     it('sets clip auth cookie and redirects on successful login', async () => {
@@ -164,6 +186,7 @@ describe('clip routes deeper coverage', () => {
         expect(response.headers.location).toBe('/clips/100000001');
         const setCookie = response.headers['set-cookie'];
         expect(setCookie).toContain('fixer_clip_token=');
+        expect(sessionStoreMock.createSession).toHaveBeenCalledTimes(1);
     });
 
     it('requires auth cookie for status polling endpoint', async () => {
@@ -240,14 +263,14 @@ describe('clip routes deeper coverage', () => {
         });
     });
 
-    it('redirects unauthenticated clip viewer requests to login', async () => {
+    it('redirects unauthenticated clip viewer requests to root login', async () => {
         const response = await app.inject({
             method: 'GET',
             url: '/clips/100000001',
         });
 
         expect(response.statusCode).toBe(302);
-        expect(response.headers.location).toContain('/clips/login?redirect=');
+        expect(response.headers.location).toContain('/?redirect=%2Fclips%2F100000001');
     });
 
     it('returns not found page for invalid mediasource id value', async () => {

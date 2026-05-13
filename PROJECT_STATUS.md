@@ -1,8 +1,8 @@
-May 12, 2026 - 4:40pm - GitHub Copilot (GPT-5.3-Codex)
+May 13, 2026 - 1:32pm - GitHub Copilot (GPT-5.3-Codex)
 
 # Direct Video Uploader — Project Status
 
-> **Last Updated:** May 12, 2026 · 4:40pm PT
+> **Last Updated:** May 13, 2026 · 1:32pm PT
 > **Current Phase:** Phase 4 (QA + Rollout) — iOS UI/UX refresh validation and release-readiness checks
 > **Overall Progress:** ████████████████████ 100% (Phase 2) · Phase 3 complete · Phase 4 in progress
 
@@ -25,6 +25,16 @@ Latest session continuation (May 12): completed **Phase 4.2/4.3 observability in
 Latest session continuation (May 12): completed **Phase 4.2 emoji-console cleanup** — replaced emoji-based console logging with structured log objects across server bootstrap and shared modules (`server/src/index.js`, `server/src/lib/mux.js`, `server/src/lib/prisma.js`, `server/src/seed.js`), and updated branch/unit tests accordingly. Validation is green: full server suite still passes (125/125). **Phase 4.1 Sentry remains intentionally deferred** until a Sentry account/DSN is available.
 
 Latest session continuation (May 12): completed a **second logging pass** by converting remaining non-emoji error console paths in `server/src/lib/slack.js` and `server/src/lib/redis.js` to structured event objects, and suppressing Mux integration startup info logs when `NODE_ENV === 'test'` to keep route-smoke output clean. Validation remains green: server suite passes (125/125).
+
+Latest session continuation (May 13): started **Phase 4.1 Sentry (admin partial)** by wiring React + Vite integration in the admin dashboard (`@sentry/react` runtime init with env-driven DSN/release/environment and `@sentry/vite-plugin` for production-only source-map upload when build credentials are present). Added `admin/.env.example` to document required Sentry variables. Remaining Phase 4.1 items are still pending on server and iOS tracks.
+
+Latest session continuation (May 13): fixed **dashboard web-session loop after clip login** by updating `server/src/routes/clips.js` to issue JWTs with `jti`, persist session records via `createSession`, enforce `hasSession` in clip-cookie verification, and revoke session records on `/clips/logout`. Updated clip route tests in `server/src/__tests__/clips-routes.test.js` for the new session-backed cookie auth semantics; suite is green (11/11).
+
+Latest session continuation (May 13): updated admin root auth UX so `localhost:3000` acts as the login entry point without hard redirecting to `/clips/login` when unauthenticated. `admin/src/App.tsx` now renders an inline root login form, authenticates via `POST /api/auth/login`, stores bearer token in localStorage (`fixer_admin_token`), and clears token/session state on logout. Validation is green: admin production build succeeded.
+
+Latest session continuation (May 13): consolidated web login routes so root (`/`) is the single login entry for admin and non-admin users. `server/src/routes/clips.js` now redirects unauthenticated `/clips/*` access to `/?redirect=...` and treats `GET /clips/login` as a legacy redirect to root. `server/src/routes/auth.js` now sets the shared `fixer_clip_token` cookie during `POST /api/auth/login`, allowing root login to authorize clip viewer pages without a separate `/clips/login` step. Updated tests (`clips-routes`, `route-smoke`, `auth-errors`) are green (28/28).
+
+Latest session continuation (May 13): restored the motorcycle/Fixer icon on the root login card (`admin/src/App.tsx`) and added dashboard auth self-healing when polling receives 401/403 responses (auto-clears token/session state and returns to root login) to prevent repeated unauthorized `/api/admin/*` request loops after stale token/HMR state. Validation is green: admin production build succeeded.
 
 ---
 

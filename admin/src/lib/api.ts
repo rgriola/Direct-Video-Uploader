@@ -1,4 +1,4 @@
-// Last updated: May 12, 2026 - 3:52pm - GitHub Copilot (GPT-5.3-Codex)
+// Last updated: May 13, 2026 - 1:18pm - GitHub Copilot (GPT-5.3-Codex)
 /* ─── API Client ─── */
 
 let authToken: string | null = null;
@@ -45,12 +45,13 @@ export async function fetchHealth() {
   return api<{ status: string; service: string; version: string }>("GET", "/api/health");
 }
 
-export async function login(phoneNumber: string, pin: string) {
+export async function login(phoneNumber: string, pin: string, companyCode?: string) {
   // Mark as admin login so server doesn't update lastLoginAt
   return api<{ token: string; user: User }>("POST", "/api/auth/login", {
     phoneNumber,
     pin,
     clientType: "admin",
+    ...(companyCode ? { companyCode } : {}),
   });
 }
 

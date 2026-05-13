@@ -1,9 +1,9 @@
-// Last updated: May 12, 2026 - 3:35pm - GitHub Copilot (GPT-5.3-Codex)
-import { useEffect, useState, useCallback, useRef } from "react";
+// Last updated: May 13, 2026 - 1:32pm - GitHub Copilot (GPT-5.3-Codex)
+import { useEffect, useState, useCallback, type FormEvent } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster, toast } from "sonner";
 
-import { fetchHealth, fetchMe, cleanupAssets, deleteUser, logoutWebSession } from "@/lib/api";
+import { fetchHealth, fetchMe, cleanupAssets, deleteUser, logoutWebSession, login, setToken, clearToken } from "@/lib/api";
 import { useStats, useUsers, useAssets, useRefreshDashboard, useTriadStatus, useOrganizations } from "@/hooks/use-dashboard";
 import { useSocket } from "@/hooks/use-socket";
 
@@ -27,40 +27,43 @@ const queryClient = new QueryClient({
 
 const AUTH_REQUIRED_MESSAGES = new Set(["HTTP 401", "HTTP 403", "Unauthorized", "Admin access required"]);
 const DASHBOARD_ROLES = new Set<UserRole>(["SUPER_ADMIN", "ORG_ADMIN"]);
+const ADMIN_AUTH_TOKEN_KEY = "fixer_admin_token";
 
-function buildRedirectTarget() {
+function readStoredAdminToken() {
+  if (typeof window === "undefined") return null;
+  const token = window.localStorage.getItem(ADMIN_AUTH_TOKEN_KEY)?.trim();
+  return token || null;
+}
+
+function writeStoredAdminToken(token: string) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(ADMIN_AUTH_TOKEN_KEY, token);
+}
+
+function clearStoredAdminToken() {
+  if (typeof window === "undefined") return;
+  window.localStorage.removeItem(ADMIN_AUTH_TOKEN_KEY);
+}
+
+function normalizeRootRedirectPath(value: string | null | undefined, fallback = "/") {
+  if (!value) return fallback;
+  const trimmed = value.trim();
+  if (!trimmed.startsWith("/")) return fallback;
+  if (trimmed.startsWith("//")) return fallback;
+  return trimmed;
+}
+
+function readRootRedirectTarget() {
   if (typeof window === "undefined") return "/";
-  return `${window.location.pathname}${window.location.search}${window.location.hash}` || "/";
+  const params = new URLSearchParams(window.location.search);
+  return normalizeRootRedirectPath(params.get("redirect"), "/");
 }
 
-function backendOrigin() {
-  if (typeof window === "undefined") return "http://localhost:3000";
-
-  const configured = import.meta.env.VITE_SERVER_ORIGIN?.trim();
-  if (configured) {
-    return configured.replace(/\/$/, "");
-  }
-
-  if (window.location.hostname === "localhost") {
-    return `${window.location.protocol}//127.0.0.1:3000`;
-  }
-
-  if (window.location.port === "5173") {
-    return `${window.location.protocol}//${window.location.hostname}:3000`;
-  }
-
-  return window.location.origin;
-}
-
-function buildWebLoginUrl() {
-  if (typeof window === "undefined") return "/clips/login?redirect=%2F";
-  const target = buildRedirectTarget();
-  return `/clips/login?redirect=${encodeURIComponent(target)}`;
-}
-
-function buildDirectLoginUrl() {
-  const target = buildRedirectTarget();
-  return `${backendOrigin()}/clips/login?redirect=${encodeURIComponent(target)}`;
+function readRootLoginError() {
+  if (typeof window === "undefined") return null;
+  const params = new URLSearchParams(window.location.search);
+  const message = params.get("error")?.trim();
+  return message || null;
 }
 
 export default function App() {
@@ -92,51 +95,34 @@ function Dashboard() {
   const [userId, setUserId] = useState<string | null>(null);
   const [userCompany, setUserCompany] = useState<string | null>(null);
   const [showChatHistory, setShowChatHistory] = useState(false);
-  const [loginRedirectFailed, setLoginRedirectFailed] = useState(false);
-  const [loginFallbackHref, setLoginFallbackHref] = useState<string>(buildDirectLoginUrl());
-  const loginRedirectTimerRef = useRef<number | null>(null);
+  const [companyCode, setCompanyCode] = useState("");
+  const [phoneNumber, setPhoneNumber] = useState("");
+  const [pin, setPin] = useState("");
+  const [authSubmitting, setAuthSubmitting] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(() => readRootLoginError());
+  const [rootRedirectTarget] = useState(() => readRootRedirectTarget());
 
-  const { data: stats } = useStats(loggedIn);
-  const { data: users, isLoading: usersLoading } = useUsers(loggedIn);
-  const { data: assets, isLoading: assetsLoading } = useAssets(loggedIn);
-  const { data: triadStatus, isLoading: triadLoading } = useTriadStatus(loggedIn);
-  const { data: organizations, isLoading: orgsLoading } = useOrganizations(loggedIn);
+  const { data: stats, error: statsError } = useStats(loggedIn);
+  const { data: users, isLoading: usersLoading, error: usersError } = useUsers(loggedIn);
+  const { data: assets, isLoading: assetsLoading, error: assetsError } = useAssets(loggedIn);
+  const { data: triadStatus, isLoading: triadLoading, error: triadError } = useTriadStatus(loggedIn);
+  const { data: organizations, isLoading: orgsLoading, error: organizationsError } = useOrganizations(loggedIn);
   const refreshDashboard = useRefreshDashboard();
 
   const { connected, logs, addLog, clearLogs, connect } = useSocket(() => {
     refreshDashboard("upload:complete");
   });
 
-  const redirectToLogin = useCallback(() => {
-    const loginUrl = buildWebLoginUrl();
-    setLoginRedirectFailed(false);
-    setLoginFallbackHref(buildDirectLoginUrl());
-
-    if (loginRedirectTimerRef.current) {
-      window.clearTimeout(loginRedirectTimerRef.current);
-    }
-
-    window.location.assign(loginUrl);
-
-    // If navigation fails (for example backend/proxy is down), stay on page and show a manual link.
-    loginRedirectTimerRef.current = window.setTimeout(() => {
-      setLoginRedirectFailed(true);
-    }, 1500);
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      if (loginRedirectTimerRef.current) {
-        window.clearTimeout(loginRedirectTimerRef.current);
-      }
-    };
-  }, []);
-
-  // Restore web session from HttpOnly cookie (shared clip viewer + dashboard login).
+  // Restore dashboard session from either stored bearer token or existing web cookie.
   useEffect(() => {
     let active = true;
 
     async function restoreSession() {
+      const storedToken = readStoredAdminToken();
+      if (storedToken) {
+        setToken(storedToken);
+      }
+
       try {
         const { user } = await fetchMe();
         if (!user) {
@@ -145,9 +131,13 @@ function Dashboard() {
 
         const role = (user.role ?? "EDITOR") as UserRole;
         if (!DASHBOARD_ROLES.has(role)) {
-          await logoutWebSession().catch(() => undefined);
           if (active) {
-            redirectToLogin();
+            if (rootRedirectTarget !== "/") {
+              window.location.assign(rootRedirectTarget);
+              return;
+            }
+
+            setAuthError((previous) => previous || "Signed in. Open your clip link to continue.");
           }
           return;
         }
@@ -160,6 +150,7 @@ function Dashboard() {
         setUserId(user.id ?? null);
         setUserPhone(user.phoneNumber ?? null);
         setUserCompany(user.companyName ?? null);
+        setAuthError(null);
         addLog("auth", `Session restored: ${user.name}`);
         connect();
       } catch (err) {
@@ -167,13 +158,13 @@ function Dashboard() {
 
         const msg = err instanceof Error ? err.message : "";
         if (AUTH_REQUIRED_MESSAGES.has(msg)) {
-          await logoutWebSession().catch(() => undefined);
-          if (active) {
-            redirectToLogin();
-          }
+          clearToken();
+          clearStoredAdminToken();
+          setAuthError((previous) => previous || null);
           return;
         }
 
+        setAuthError(msg || "Unable to verify login session");
         toast.error("Dashboard session check failed", {
           description: msg || "Unable to verify login session",
         });
@@ -189,7 +180,97 @@ function Dashboard() {
     return () => {
       active = false;
     };
-  }, [addLog, connect, redirectToLogin]);
+  }, [addLog, connect, rootRedirectTarget]);
+
+  // If any dashboard polling query receives auth errors, immediately self-heal
+  // to the root login state to stop repeated unauthorized request loops.
+  useEffect(() => {
+    if (!loggedIn) return;
+
+    const hasAuthPollingError = [statsError, usersError, assetsError, triadError, organizationsError]
+      .some((error) => error instanceof Error && AUTH_REQUIRED_MESSAGES.has(error.message));
+
+    if (!hasAuthPollingError) return;
+
+    clearToken();
+    clearStoredAdminToken();
+    void logoutWebSession().catch(() => undefined);
+
+    setLoggedIn(false);
+    setUserRole(null);
+    setUserName(null);
+    setUserPhone(null);
+    setUserId(null);
+    setUserCompany(null);
+    setShowChatHistory(false);
+    setAuthChecked(true);
+    setAuthError("Session expired. Please sign in again.");
+    addLog("auth", "Session expired; returned to root login.");
+  }, [
+    loggedIn,
+    statsError,
+    usersError,
+    assetsError,
+    triadError,
+    organizationsError,
+    addLog,
+  ]);
+
+  const handleRootLogin = useCallback(async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    const normalizedPhone = phoneNumber.replace(/\D/g, "").slice(0, 10);
+    const normalizedPin = pin.trim();
+    const normalizedCompanyCode = companyCode.replace(/[^a-zA-Z]/g, "").toUpperCase().slice(0, 4);
+
+    if (normalizedPhone.length !== 10 || normalizedPin.length < 4) {
+      setAuthError("Enter a valid 10-digit phone number and PIN.");
+      return;
+    }
+
+    setAuthSubmitting(true);
+    setAuthError(null);
+
+    try {
+      const result = await login(normalizedPhone, normalizedPin, normalizedCompanyCode || undefined);
+      const role = (result.user.role ?? "EDITOR") as UserRole;
+
+      setToken(result.token);
+      writeStoredAdminToken(result.token);
+
+      if (rootRedirectTarget !== "/") {
+        window.location.assign(rootRedirectTarget);
+        return;
+      }
+
+      if (!DASHBOARD_ROLES.has(role)) {
+        setPin("");
+        setAuthError("Signed in. Open your clip link to continue.");
+        return;
+      }
+
+      setLoggedIn(true);
+      setUserRole(role);
+      setUserName(result.user.name ?? null);
+      setUserId(result.user.id ?? null);
+      setUserPhone(result.user.phoneNumber ?? null);
+      setUserCompany(result.user.companyName ?? null);
+      setPin("");
+      setAuthError(null);
+
+      addLog("auth", `Signed in: ${result.user.name}`);
+      connect();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Unable to sign in";
+      setAuthError(msg);
+      toast.error("Sign-in failed", {
+        description: msg,
+      });
+    } finally {
+      setAuthSubmitting(false);
+      setAuthChecked(true);
+    }
+  }, [phoneNumber, pin, companyCode, addLog, connect, rootRedirectTarget]);
 
   const handleAction = useCallback(
     async (action: string) => {
@@ -257,24 +338,84 @@ function Dashboard() {
   if (!loggedIn) {
     return (
       <div className="min-h-screen flex items-center justify-center p-6">
-        <div className="bg-(--card) border border-(--border-subtle) rounded-(--radius) px-6 py-5 text-center max-w-md w-full">
-          <p className="text-sm text-(--foreground)">
-            {authChecked ? "Redirecting to login..." : "Restoring session..."}
+        <div className="bg-(--card) border border-(--border-subtle) rounded-(--radius) px-6 py-6 max-w-md w-full">
+          <div className="mx-auto mb-4 w-16 h-16 rounded-2xl overflow-hidden shadow-[0_8px_32px_rgba(74,158,255,0.3)]">
+            <img src="/fixer-icon.png" alt="Fixer motorcycle icon" className="w-full h-full object-cover" />
+          </div>
+          <h1 className="text-lg font-semibold text-(--foreground) text-center">Fixer Login</h1>
+          <p className="mt-2 text-sm text-(--muted-foreground) text-center">
+            {authChecked ? "Sign in from root to continue." : "Restoring session..."}
           </p>
 
-          {authChecked && loginRedirectFailed && (
-            <div className="mt-4 border border-red-400/35 bg-red-500/10 rounded-lg p-3 text-left">
-              <p className="text-xs text-red-200 mb-2">
-                Unable to reach login page. Make sure the server is running on localhost:3000.
-              </p>
-              <a
-                href={loginFallbackHref}
-                className="text-xs text-blue-300 hover:text-blue-200 underline"
-              >
-                Open login directly
-              </a>
+          {authError && (
+            <div className="mt-4 border border-red-400/35 bg-red-500/10 rounded-lg p-3 text-xs text-red-200">
+              {authError}
             </div>
           )}
+
+          <form className="mt-4 space-y-3" onSubmit={handleRootLogin}>
+            <div>
+              <label htmlFor="root-phone" className="block text-xs font-semibold uppercase tracking-wide text-(--muted-foreground) mb-1">
+                Phone Number
+              </label>
+              <input
+                id="root-phone"
+                type="tel"
+                inputMode="numeric"
+                autoComplete="tel"
+                placeholder="10-digit phone"
+                maxLength={10}
+                value={phoneNumber}
+                onChange={(event) => setPhoneNumber(event.target.value.replace(/\D/g, "").slice(0, 10))}
+                className="w-full px-3 py-2 rounded-md border border-(--border-subtle) bg-(--secondary) text-(--foreground)"
+                disabled={authSubmitting}
+                required
+              />
+            </div>
+
+            <div>
+              <label htmlFor="root-company" className="block text-xs font-semibold uppercase tracking-wide text-(--muted-foreground) mb-1">
+                Company Code (Non-Admin)
+              </label>
+              <input
+                id="root-company"
+                type="text"
+                autoComplete="off"
+                placeholder="ABC or ABCD"
+                maxLength={4}
+                value={companyCode}
+                onChange={(event) => setCompanyCode(event.target.value.replace(/[^a-zA-Z]/g, "").toUpperCase().slice(0, 4))}
+                className="w-full px-3 py-2 rounded-md border border-(--border-subtle) bg-(--secondary) text-(--foreground)"
+                disabled={authSubmitting}
+              />
+            </div>
+
+            <div>
+              <label htmlFor="root-pin" className="block text-xs font-semibold uppercase tracking-wide text-(--muted-foreground) mb-1">
+                PIN
+              </label>
+              <input
+                id="root-pin"
+                type="password"
+                autoComplete="current-password"
+                placeholder="PIN"
+                maxLength={8}
+                value={pin}
+                onChange={(event) => setPin(event.target.value)}
+                className="w-full px-3 py-2 rounded-md border border-(--border-subtle) bg-(--secondary) text-(--foreground)"
+                disabled={authSubmitting}
+                required
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={authSubmitting || !authChecked}
+              className="w-full px-4 py-2 rounded-md bg-blue-600 hover:bg-blue-500 disabled:opacity-60 disabled:cursor-not-allowed text-white font-semibold"
+            >
+              {authSubmitting ? "Signing in..." : "Sign In"}
+            </button>
+          </form>
         </div>
       </div>
     );
@@ -285,12 +426,20 @@ function Dashboard() {
       <Header
         onLogout={() => {
           void logoutWebSession().catch(() => undefined).finally(() => {
+            clearToken();
+            clearStoredAdminToken();
             setLoggedIn(false);
             setUserRole(null);
             setUserName(null);
             setUserPhone(null);
+            setUserId(null);
             setUserCompany(null);
-            redirectToLogin();
+            setPhoneNumber("");
+            setCompanyCode("");
+            setPin("");
+            setShowChatHistory(false);
+            setAuthChecked(true);
+            setAuthError(null);
           });
         }}
         userName={userName}

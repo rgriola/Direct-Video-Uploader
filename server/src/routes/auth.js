@@ -1,4 +1,4 @@
-// Last updated: May 12, 2026 - 3:52pm - GitHub Copilot (GPT-5.3-Codex)
+// Last updated: May 13, 2026 - 1:18pm - GitHub Copilot (GPT-5.3-Codex)
 /**
  * Auth routes — Simple phone# + PIN login for demo.
  */
@@ -13,6 +13,18 @@ function getBearerToken(rawHeader) {
     if (!rawHeader.startsWith('Bearer ')) return null;
     const token = rawHeader.slice(7).trim();
     return token || null;
+}
+
+const WEB_SESSION_COOKIE_NAME = 'fixer_clip_token';
+
+function webSessionCookieOptions(isSecure) {
+    return {
+        path: '/',
+        httpOnly: true,
+        secure: isSecure,
+        sameSite: 'lax',
+        maxAge: 7 * 24 * 60 * 60,
+    };
 }
 
 export default async function authRoutes(fastify) {
@@ -164,6 +176,13 @@ export default async function authRoutes(fastify) {
             return reply.status(503).send({ error: 'Unable to establish session' });
         }
 
+        // Root (/) is the canonical web login entrypoint; set shared cookie for clip viewer access too.
+        if (typeof reply.setCookie === 'function') {
+            const isSecure = request.protocol === 'https';
+            reply.setCookie(WEB_SESSION_COOKIE_NAME, token, webSessionCookieOptions(isSecure));
+            reply.clearCookie(WEB_SESSION_COOKIE_NAME, { path: '/clips' });
+        }
+
         return {
             token,
             user: {
@@ -229,7 +248,7 @@ export default async function authRoutes(fastify) {
         },
     }, async (request, reply) => {
         const bearerToken = getBearerToken(request.headers?.authorization);
-        const cookieToken = request.cookies?.fixer_clip_token;
+        const cookieToken = request.cookies?.[WEB_SESSION_COOKIE_NAME];
         const token = bearerToken || cookieToken || null;
 
         if (token) {
@@ -241,8 +260,8 @@ export default async function authRoutes(fastify) {
             }
         }
 
-        reply.clearCookie('fixer_clip_token', { path: '/' });
-        reply.clearCookie('fixer_clip_token', { path: '/clips' });
+        reply.clearCookie(WEB_SESSION_COOKIE_NAME, { path: '/' });
+        reply.clearCookie(WEB_SESSION_COOKIE_NAME, { path: '/clips' });
         return { ok: true };
     });
 }
