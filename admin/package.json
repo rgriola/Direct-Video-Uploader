@@ -19,7 +19,7 @@
     "clsx": "^2.1.1",
     "lucide-react": "^0.561.0",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0",
+    "react-dom": "^19.2.6",
     "socket.io-client": "^4.7.5",
     "sonner": "^2.0.7",
     "tailwind-merge": "^3.4.0"
