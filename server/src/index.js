@@ -1,4 +1,4 @@
-// Last updated: May 13, 2026 - 1:48pm - GitHub Copilot (GPT-5.3-Codex)
+// Last updated: May 13, 2026 - 3:33pm - GitHub Copilot (GPT-5.3-Codex)
 /**
  * Fixer — Server Entry Point
  *
@@ -83,7 +83,8 @@ function shouldBypassGlobalRateLimit(request) {
     return !url.startsWith('/api/');
 }
 
-const REQUIRED_PROD_ENV = ['DATABASE_URL', 'JWT_SECRET', 'REDIS_URL'];
+const REQUIRED_PROD_ENV = ['DATABASE_URL', 'JWT_SECRET'];
+const RECOMMENDED_PROD_ENV = ['REDIS_URL'];
 const REQUIRED_MUX_ENV = ['MUX_TOKEN_ID', 'MUX_TOKEN_SECRET', 'MUX_ENV_KEY', 'MUX_WEBHOOK_SECRET'];
 
 function missingEnvVars(keys) {
@@ -117,6 +118,7 @@ function getWebSessionToken(cookies) {
 
 function validateEnvironment() {
     const missingCore = missingEnvVars(REQUIRED_PROD_ENV);
+    const missingRecommended = missingEnvVars(RECOMMENDED_PROD_ENV);
     const missingMux = missingEnvVars(REQUIRED_MUX_ENV);
     const hasAnyMux = REQUIRED_MUX_ENV.some((key) => !!process.env[key]);
 
@@ -128,6 +130,15 @@ function validateEnvironment() {
                 missing,
             });
             process.exit(1);
+        }
+
+        if (missingRecommended.length > 0) {
+            console.warn({
+                event: 'env.missingRecommended',
+                missing: missingRecommended,
+                redisMode,
+                impact: 'non-durable sessions/rate limits across restarts',
+            });
         }
         return;
     }
