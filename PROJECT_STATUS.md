@@ -1,8 +1,8 @@
-May 13, 2026 - 1:32pm - GitHub Copilot (GPT-5.3-Codex)
+May 13, 2026 - 2:05pm - GitHub Copilot (GPT-5.3-Codex)
 
 # Direct Video Uploader — Project Status
 
-> **Last Updated:** May 13, 2026 · 1:32pm PT
+> **Last Updated:** May 13, 2026 · 2:05pm PT
 > **Current Phase:** Phase 4 (QA + Rollout) — iOS UI/UX refresh validation and release-readiness checks
 > **Overall Progress:** ████████████████████ 100% (Phase 2) · Phase 3 complete · Phase 4 in progress
 
@@ -35,6 +35,10 @@ Latest session continuation (May 13): updated admin root auth UX so `localhost:3
 Latest session continuation (May 13): consolidated web login routes so root (`/`) is the single login entry for admin and non-admin users. `server/src/routes/clips.js` now redirects unauthenticated `/clips/*` access to `/?redirect=...` and treats `GET /clips/login` as a legacy redirect to root. `server/src/routes/auth.js` now sets the shared `fixer_clip_token` cookie during `POST /api/auth/login`, allowing root login to authorize clip viewer pages without a separate `/clips/login` step. Updated tests (`clips-routes`, `route-smoke`, `auth-errors`) are green (28/28).
 
 Latest session continuation (May 13): restored the motorcycle/Fixer icon on the root login card (`admin/src/App.tsx`) and added dashboard auth self-healing when polling receives 401/403 responses (auto-clears token/session state and returns to root login) to prevent repeated unauthorized `/api/admin/*` request loops after stale token/HMR state. Validation is green: admin production build succeeded.
+
+Latest session continuation (May 13): executed a local **Sentry smoke test** for the admin track by building with `VITE_SENTRY_DSN` and triggering a controlled browser error; verified outbound envelope POST to Sentry ingest returned HTTP 200. During validation, fixed a web bootstrap regression in `server/src/index.js` by restoring wildcard static serving for `public/` so hashed Vite assets (`/assets/index-*.js`) resolve at `:3000` (previously 404, blank gradient page). Post-fix validation: `/assets/index-*.js` returns 200 and root login renders normally.
+
+Latest session continuation (May 13): fixed Render deploy blocker **P3005 (database schema is not empty)** by adding a Prisma baseline guard script `server/scripts/prisma-baseline-if-needed.js` and wiring it into both production/staging build commands in `render.yaml` before `prisma migrate deploy`. The guard checks for non-empty legacy schemas lacking `_prisma_migrations` baseline and runs `prisma migrate resolve --applied 20260512132446_baseline` only when needed.
 
 ---
 

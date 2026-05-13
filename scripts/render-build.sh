@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Last updated: May 12, 2026 - 1:25pm - GitHub Copilot (GPT-5.3-Codex)
+# Last updated: May 13, 2026 - 2:05pm - GitHub Copilot (GPT-5.3-Codex)
 # Render Build Script — Direct Video Uploader
 # Runs during each deploy: installs deps, builds admin, generates Prisma, applies migrations, seeds DB.
 set -euo pipefail
@@ -27,6 +27,10 @@ cd ..
 # 3. Generate Prisma client
 echo "🔧 Generating Prisma client..."
 cd server && npx prisma generate
+
+# 3.5. One-time baseline for pre-existing production databases (P3005 guard)
+echo "🧭 Checking Prisma baseline..."
+node scripts/prisma-baseline-if-needed.js
 
 # 4. Apply versioned migrations
 echo "🗄️  Applying migrations..."

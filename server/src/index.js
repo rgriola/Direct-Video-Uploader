@@ -1,4 +1,4 @@
-// Last updated: May 13, 2026 - 1:18pm - GitHub Copilot (GPT-5.3-Codex)
+// Last updated: May 13, 2026 - 1:48pm - GitHub Copilot (GPT-5.3-Codex)
 /**
  * Fixer — Server Entry Point
  *
@@ -391,12 +391,12 @@ await fastify.register(fastifyStatic, {
     decorateReply: false,
 });
 
-// Serve dashboard from public/ (wildcard: false so dynamic routes like /clips/:slug aren't swallowed)
+// Serve dashboard static files from public/. Keep wildcard enabled so hashed
+// Vite assets (/assets/index-*.js, CSS, images) are reachable in production.
 await fastify.register(fastifyStatic, {
     root: path.resolve(process.cwd(), 'public'),
     prefix: '/',
     decorateReply: false,
-    wildcard: false,
 });
 
 // ─── Auth Decorator ──────────────────────────────────────
