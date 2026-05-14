@@ -990,6 +990,17 @@ final class VideoUploadService: NSObject {
     ) async throws {
         AppLog.upload.info("[Mux] Got upload URL, uploading directly to Mux CDN...")
 
+        // Guard: URLSession.uploadTask(fromFile:) raises an uncatchable
+        // NSInvalidArgumentException if the file is missing. This happens with
+        // tmp/ files staged in a previous app session — iOS wipes tmp/ between
+        // launches. Convert it into a normal upload failure instead of crashing.
+        if !FileManager.default.fileExists(atPath: fileURL.path) {
+            AppLog.upload.error(
+                "[Mux] Source file missing for asset \(assetId, privacy: .public) at \(fileURL.path, privacy: .public)"
+            )
+            throw UploadError.fileNotFound
+        }
+
         var putRequest = URLRequest(url: uploadURL)
         putRequest.httpMethod = "PUT"
         putRequest.setValue("application/octet-stream", forHTTPHeaderField: "Content-Type")
