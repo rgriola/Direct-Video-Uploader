@@ -44,7 +44,7 @@ enum MessageCatalog {
           "The guide dog in the top right opens how Fixer works.",
      ]
 
-     private static let muxReadyFollowupTemplates: [String] = [
+     private static let streamReadyFollowupTemplates: [String] = [
           "{firstName}, you are working hard today. Send another when ready.",
           "{firstName}, nice clip. Send another whenever you're ready.",
           "{firstName}, it's in the can. I'd love to see more dailies.",
@@ -123,7 +123,7 @@ enum MessageCatalog {
           if let code = content.code,
                code == "IOS_MUX_READY_FOLLOWUP"
           {
-               return resolveMuxReadyFollowup(
+               return resolveStreamReadyFollowup(
                     params: content.params ?? [:],
                     fallbackText: content.fallbackText,
                     stableSeed: stableSeed)
@@ -217,7 +217,7 @@ enum MessageCatalog {
           ]
      }
 
-     private static func resolveMuxReadyFollowup(
+     private static func resolveStreamReadyFollowup(
           params: [String: String],
           fallbackText: String?,
           stableSeed: String?
@@ -230,8 +230,8 @@ enum MessageCatalog {
                fallbackText ?? "",
           ].joined(separator: "|")
 
-          let template = muxReadyFollowupTemplates[
-               stableIndex(seed: seedBase + "|followup", count: muxReadyFollowupTemplates.count)
+          let template = streamReadyFollowupTemplates[
+               stableIndex(seed: seedBase + "|followup", count: streamReadyFollowupTemplates.count)
           ]
 
           return render(template: template, params: ["firstName": firstName])

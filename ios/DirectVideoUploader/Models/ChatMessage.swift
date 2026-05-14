@@ -45,7 +45,8 @@ enum MessageType: String, Codable {
     case text = "TEXT"
     case greeting = "GREETING"
     case systemNote = "SYSTEM_NOTE"
-    case muxReady = "MUX_READY"
+    /// Wire raw value stays "MUX_READY" for server compatibility (P3.5 vendor-name cleanup is Swift-internal only).
+    case streamReady = "MUX_READY"
 }
 
 // MARK: - Message Content

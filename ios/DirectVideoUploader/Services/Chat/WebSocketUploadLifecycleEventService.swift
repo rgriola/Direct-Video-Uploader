@@ -37,7 +37,7 @@ final class WebSocketUploadLifecycleEventService {
         runtime.wsFetchAssetDetail(assetId: assetId)
     }
 
-    func handleMuxErrored(data: [String: Any], runtime: WebSocketUploadLifecycleEventRuntime) {
+    func handleStreamErrored(data: [String: Any], runtime: WebSocketUploadLifecycleEventRuntime) {
         let assetId = data["assetId"] as? String
         let reason =
             data["reason"] as? String

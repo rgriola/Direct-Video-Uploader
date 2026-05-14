@@ -1,8 +1,8 @@
-// May 13, 2026 - 11:59pm - GitHub Copilot (GPT-5.3-Codex)
+// May 14, 2026 - 2:30pm - GitHub Copilot (Claude Opus 4.7)
 import Foundation
 
 @MainActor
-protocol WebSocketMuxReadyEventRuntime: AnyObject {
+protocol WebSocketStreamReadyEventRuntime: AnyObject {
     func wsShouldSuppressMutation(assetId: String?, event: String) -> Bool
     func wsClearBlockingConnectivityIssue(assetId: String?)
     func wsRegisterActiveAsset(assetId: String?)
@@ -35,8 +35,8 @@ protocol WebSocketMuxReadyEventRuntime: AnyObject {
 }
 
 @MainActor
-final class WebSocketMuxReadyEventService {
-    func handle(data: [String: Any], runtime: WebSocketMuxReadyEventRuntime) {
+final class WebSocketStreamReadyEventService {
+    func handle(data: [String: Any], runtime: WebSocketStreamReadyEventRuntime) {
         let assetId = data["assetId"] as? String
         let mediasourceId = data["mediasourceId"] as? String
         let mediasourceUrl = data["mediasourceUrl"] as? String

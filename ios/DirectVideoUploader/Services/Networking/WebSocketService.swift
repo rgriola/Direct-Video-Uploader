@@ -33,8 +33,10 @@ final class WebSocketService {
     var onUploadComplete: (@MainActor ([String: Any]) -> Void)?
     var onFormRequest: (@MainActor ([String: Any]) -> Void)?
     var onFormConfirmed: (@MainActor ([String: Any]) -> Void)?
-    var onMuxReady: (@MainActor ([String: Any]) -> Void)?
-    var onMuxErrored: (@MainActor ([String: Any]) -> Void)?
+    /// Streaming-vendor ready event (wire name "mux:ready" preserved server-side).
+    var onStreamReady: (@MainActor ([String: Any]) -> Void)?
+    /// Streaming-vendor error event (wire name "mux:errored" preserved server-side).
+    var onStreamErrored: (@MainActor ([String: Any]) -> Void)?
     var onConnected: (@MainActor () -> Void)?  // socket connected/reconnected
     var onReconnecting: (@MainActor (Int, Int) -> Void)?  // (attempt, maxAttempts)
     var onConnectionLost: (@MainActor () -> Void)?  // max retries exhausted
@@ -370,12 +372,12 @@ final class WebSocketService {
 
         case "mux:ready":
             if let dict = payload as? [String: Any] {
-                onMuxReady?(dict)
+                onStreamReady?(dict)
             }
 
         case "mux:errored":
             if let dict = payload as? [String: Any] {
-                onMuxErrored?(dict)
+                onStreamErrored?(dict)
             }
 
         default:

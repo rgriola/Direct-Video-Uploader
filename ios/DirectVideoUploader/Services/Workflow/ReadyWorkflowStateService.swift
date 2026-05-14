@@ -52,7 +52,7 @@ final class ReadyWorkflowStateService {
                 userId: nil,
                 assetId: assetId,
                 direction: .incoming,
-                messageType: .muxReady,
+                messageType: .streamReady,
                 content: MessageContent(
                     text: "Mediasource confirmed.",
                     code: "IOS_MUX_READY_SUMMARY",

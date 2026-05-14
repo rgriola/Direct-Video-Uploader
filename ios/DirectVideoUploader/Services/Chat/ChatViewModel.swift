@@ -1,4 +1,4 @@
-// May 14, 2026 - 6:48am - GitHub Copilot (GPT-5.3-Codex)
+// May 14, 2026 - 2:30pm - GitHub Copilot (Claude Opus 4.7)
 import Foundation
 import Observation
 import UIKit
@@ -7,7 +7,7 @@ import UIKit
 @MainActor
 @Observable
 final class ChatViewModel: WebSocketConnectionStateRuntime, WebSocketFormRequestEventRuntime,
-    WebSocketFormConfirmedEventRuntime, WebSocketMuxReadyEventRuntime,
+    WebSocketFormConfirmedEventRuntime, WebSocketStreamReadyEventRuntime,
     WebSocketMessageEventRuntime, WebSocketUploadLifecycleEventRuntime
 {
     // MARK: - State
@@ -141,7 +141,7 @@ final class ChatViewModel: WebSocketConnectionStateRuntime, WebSocketFormRequest
     private let webSocketUploadLifecycleEventService = WebSocketUploadLifecycleEventService()
     private let webSocketFormRequestEventService = WebSocketFormRequestEventService()
     private let webSocketFormConfirmedEventService = WebSocketFormConfirmedEventService()
-    private let webSocketMuxReadyEventService = WebSocketMuxReadyEventService()
+    private let webSocketStreamReadyEventService = WebSocketStreamReadyEventService()
     private let readyWorkflowStateService = ReadyWorkflowStateService()
     private let workflowReconcilePlanService = WorkflowReconcilePlanService()
     private let workflowReconcileExecutionService = WorkflowReconcileExecutionService()
@@ -177,8 +177,8 @@ final class ChatViewModel: WebSocketConnectionStateRuntime, WebSocketFormRequest
         registerOnUploadCompleteHandler()
         registerOnFormRequestHandler()
         registerOnFormConfirmedHandler()
-        registerOnMuxReadyHandler()
-        registerOnMuxErroredHandler()
+        registerOnStreamReadyHandler()
+        registerOnStreamErroredHandler()
     }
 
     private func shouldSuppressMutation(assetId: String?, event: String) -> Bool {
@@ -226,19 +226,19 @@ final class ChatViewModel: WebSocketConnectionStateRuntime, WebSocketFormRequest
         }
     }
 
-    private func registerOnMuxReadyHandler() {
-        ws.onMuxReady = { [weak self] data in
+    private func registerOnStreamReadyHandler() {
+        ws.onStreamReady = { [weak self] data in
             guard let self else { return }
 
-            self.webSocketMuxReadyEventService.handle(data: data, runtime: self)
+            self.webSocketStreamReadyEventService.handle(data: data, runtime: self)
         }
     }
 
-    private func registerOnMuxErroredHandler() {
-        ws.onMuxErrored = { [weak self] data in
+    private func registerOnStreamErroredHandler() {
+        ws.onStreamErrored = { [weak self] data in
             guard let self else { return }
 
-            self.webSocketUploadLifecycleEventService.handleMuxErrored(data: data, runtime: self)
+            self.webSocketUploadLifecycleEventService.handleStreamErrored(data: data, runtime: self)
         }
     }
 

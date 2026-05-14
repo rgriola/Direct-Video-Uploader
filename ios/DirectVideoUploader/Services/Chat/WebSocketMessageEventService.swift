@@ -51,7 +51,7 @@ final class WebSocketMessageEventService {
                 return
             }
 
-            if message.messageType == .muxReady {
+            if message.messageType == .streamReady {
                 runtime.wsMarkBatchClipReady(
                     assetId: message.assetId,
                     mediasourceId: message.content.mediasourceId,

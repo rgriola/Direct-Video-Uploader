@@ -252,7 +252,7 @@ struct ChatView: View {
                 }
             )
             .id(message.id)
-        } else if message.messageType == .muxReady {
+        } else if message.messageType == .streamReady {
             let canUseArchiveFallback = message.assetId == vm.archive.assetId
             let summaryMediasourceId =
                 message.content.mediasourceId

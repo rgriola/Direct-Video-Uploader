@@ -19,7 +19,6 @@
 		2AFBDC48DC7C56C2ED5A9176 /* WorkflowReconcilePlanService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67F48E8AD3FD918226AFCFA3 /* WorkflowReconcilePlanService.swift */; };
 		2F5EB0FE2B5962DCCF6BCD5B /* LoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAA58A3F30BFA24CE268AD67 /* LoginView.swift */; };
 		2FAE80E649CAA21C36370ACD /* IngestTransportRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 69BF62881BB5D544301076A9 /* IngestTransportRegistry.swift */; };
-		30B153CF8A8B691184E92896 /* WebSocketMuxReadyEventService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB39CD8D2AAD7B82D5F3F810 /* WebSocketMuxReadyEventService.swift */; };
 		3397724BA17E25882518C0BD /* ConversationSummaryBubble.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC2A1D0A89F18984A90B5686 /* ConversationSummaryBubble.swift */; };
 		37912629DFC4719F11FEB3F5 /* MetadataView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2796AFC62F34F3182D7CCE1C /* MetadataView.swift */; };
 		3CEF79141FB9F628E02EE323 /* ConnectivityIssueTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = E41567636146A290B7D5B80B /* ConnectivityIssueTracker.swift */; };
@@ -79,6 +78,7 @@
 		C0FF6C600424BDB12C653F70 /* BatchStateTransitionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF6B124C27D1C814FCCA4FF1 /* BatchStateTransitionService.swift */; };
 		C34417685FC54E4FC2867FBF /* ReadyWorkflowStateService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F1BB8F59A5F2517F57A40D9 /* ReadyWorkflowStateService.swift */; };
 		C43AFC93CF4984D2A3C2DA9A /* ProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 571C0C62391282912FB69E9F /* ProfileView.swift */; };
+		C70FD2F9D55D3ADC7455E9C0 /* WebSocketStreamReadyEventService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F933DCF63898D90B96C6B29 /* WebSocketStreamReadyEventService.swift */; };
 		CC1C0E76EF9FE58674443EC5 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A7F3BED43E9CB3FFE330020 /* Theme.swift */; };
 		CE369C45B1DBDD7733EC4ADF /* WebSocketMessageEventService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C184DF2729A99F64D786097 /* WebSocketMessageEventService.swift */; };
 		CE6C303AB52C17CF99EFD315 /* User.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A0611DEBA9BE67788466164 /* User.swift */; };
@@ -127,6 +127,7 @@
 		4AE0C3F876229BB5F1F34302 /* ServerErrorReporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerErrorReporter.swift; sourceTree = "<group>"; };
 		4C27ACDB8440348608E9ADB1 /* KeychainHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainHelper.swift; sourceTree = "<group>"; };
 		4DBB133385999B4E09A826F7 /* DVUDateFormatting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DVUDateFormatting.swift; sourceTree = "<group>"; };
+		4F933DCF63898D90B96C6B29 /* WebSocketStreamReadyEventService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebSocketStreamReadyEventService.swift; sourceTree = "<group>"; };
 		51E2EB93368D36F22B8AC2A4 /* VideoTrimView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoTrimView.swift; sourceTree = "<group>"; };
 		5474D56924A220142B9C2AE9 /* BatchItemLifecycleService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatchItemLifecycleService.swift; sourceTree = "<group>"; };
 		571C0C62391282912FB69E9F /* ProfileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileView.swift; sourceTree = "<group>"; };
@@ -152,7 +153,6 @@
 		9ADF5BF95A0B22849BC383F0 /* PendingBatchStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PendingBatchStore.swift; sourceTree = "<group>"; };
 		9FBA02CA42C0AAAB57B73728 /* WebSocketFormRequestEventService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebSocketFormRequestEventService.swift; sourceTree = "<group>"; };
 		AAA58A3F30BFA24CE268AD67 /* LoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginView.swift; sourceTree = "<group>"; };
-		AB39CD8D2AAD7B82D5F3F810 /* WebSocketMuxReadyEventService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebSocketMuxReadyEventService.swift; sourceTree = "<group>"; };
 		AC53E361C83E04580CF05221 /* VideoLibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoLibraryView.swift; sourceTree = "<group>"; };
 		AE03117C083E0D8042235334 /* AssetDetailService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssetDetailService.swift; sourceTree = "<group>"; };
 		B136E4B9F4C6D88E9009D569 /* VideoBubble.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoBubble.swift; sourceTree = "<group>"; };
@@ -443,7 +443,7 @@
 				16CC34B73A6D23A24D28DA30 /* WebSocketFormConfirmedEventService.swift */,
 				9FBA02CA42C0AAAB57B73728 /* WebSocketFormRequestEventService.swift */,
 				8C184DF2729A99F64D786097 /* WebSocketMessageEventService.swift */,
-				AB39CD8D2AAD7B82D5F3F810 /* WebSocketMuxReadyEventService.swift */,
+				4F933DCF63898D90B96C6B29 /* WebSocketStreamReadyEventService.swift */,
 				2D232E9AFA5DAD829D608ED6 /* WebSocketUploadLifecycleEventService.swift */,
 			);
 			path = Chat;
@@ -631,8 +631,8 @@
 				9F7338A2C965C83358756F49 /* WebSocketFormConfirmedEventService.swift in Sources */,
 				B376FC2685BA0AE15858262E /* WebSocketFormRequestEventService.swift in Sources */,
 				CE369C45B1DBDD7733EC4ADF /* WebSocketMessageEventService.swift in Sources */,
-				30B153CF8A8B691184E92896 /* WebSocketMuxReadyEventService.swift in Sources */,
 				646CF99508A7D295C6556EE2 /* WebSocketService.swift in Sources */,
+				C70FD2F9D55D3ADC7455E9C0 /* WebSocketStreamReadyEventService.swift in Sources */,
 				A6C1EF0499632C4EF00532DD /* WebSocketUploadLifecycleEventService.swift in Sources */,
 				F14544D45251B0E183C80C3D /* WorkflowReconcileExecutionService.swift in Sources */,
 				2AFBDC48DC7C56C2ED5A9176 /* WorkflowReconcilePlanService.swift in Sources */,
