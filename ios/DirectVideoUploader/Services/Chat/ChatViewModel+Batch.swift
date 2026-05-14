@@ -516,7 +516,21 @@ extension ChatViewModel {
         AppLog.chat.info(
             "Batch reconciliation: all \(assetIds.count, privacy: .public) asset(s) returned 404 — clearing stale batch \(batchId, privacy: .public)"
         )
+
+        // Capture identifiers we need to purge BEFORE resetBatchState wipes them.
+        let staleAssetIds = Set(assetIds)
+        let staleAnchorId = batchBubbleAnchorMessageId
+
         resetBatchState(clearDisk: true)
+
+        // Also purge the stale chat messages tied to this batch — the anchor
+        // bubble and any per-clip messages — so the timeline doesn't visually
+        // "stack" the dead batch above a freshly staged one.
+        messages.removeAll { message in
+            if let anchorId = staleAnchorId, message.id == anchorId { return true }
+            if let assetId = message.assetId, staleAssetIds.contains(assetId) { return true }
+            return false
+        }
     }
 
     func applyRestoredBatchAssetOwnership(_ assetIds: [String]) {
