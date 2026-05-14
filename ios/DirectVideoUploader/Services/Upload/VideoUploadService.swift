@@ -23,6 +23,11 @@ enum UploadRetryPolicy {
     static let maxTransientAttempts = 3
     static let maxRefreshAttempts = 2
 
+    /// Upper bound for honoring a server-supplied `Retry-After` value. If the
+    /// server tells us to wait longer than this, surface the failure instead of
+    /// hanging the upload — the user can retry manually once the window resets.
+    static let maxRateLimitWaitSeconds: TimeInterval = 60
+
     private static let baseDelaySeconds: Double = 1
     private static let maxDelaySeconds: Double = 8
     private static let jitterScale: Double = 0.35
@@ -69,10 +74,15 @@ enum UploadRetryClassifier {
             return classifyStatusCode(stage: stage, statusCode: statusCode)
         }
 
-        if let uploadError = error as? UploadError,
-            case .serverError(let code, _) = uploadError
-        {
-            return classifyStatusCode(stage: stage, statusCode: code)
+        if let uploadError = error as? UploadError {
+            switch uploadError {
+            case .serverError(let code, _):
+                return classifyStatusCode(stage: stage, statusCode: code)
+            case .rateLimited:
+                return .retryTransient
+            default:
+                break
+            }
         }
 
         if let urlError = error as? URLError {
@@ -671,9 +681,30 @@ final class VideoUploadService: NSObject {
 
                         switch disposition {
                         case .retryTransient:
-                            guard transientAttempt < UploadRetryPolicy.maxTransientAttempts else {
-                                let message =
-                                    "Could not request upload URL after \(UploadRetryPolicy.maxTransientAttempts) retries."
+                            // If the server told us exactly when to retry (Retry-After
+                            // on a 429), honor it instead of exponential backoff —
+                            // unless the wait is so long it's better to surface the
+                            // failure and let the user retry manually.
+                            let rateLimitDelay: TimeInterval?
+                            if case .rateLimited(let retryAfter, _) = (error as? UploadError) {
+                                rateLimitDelay = retryAfter
+                            } else {
+                                rateLimitDelay = nil
+                            }
+                            let rateLimitTooLong =
+                                (rateLimitDelay ?? 0) > UploadRetryPolicy.maxRateLimitWaitSeconds
+
+                            guard transientAttempt < UploadRetryPolicy.maxTransientAttempts,
+                                !rateLimitTooLong
+                            else {
+                                let message: String
+                                if rateLimitTooLong, let delay = rateLimitDelay {
+                                    message =
+                                        "Server is rate-limited (retry in \(Int(delay.rounded()))s) — try again later."
+                                } else {
+                                    message =
+                                        "Could not request upload URL after \(UploadRetryPolicy.maxTransientAttempts) retries."
+                                }
                                 UploadQueueStore.markState(
                                     localUploadId: assetId,
                                     state: .failed,
@@ -695,10 +726,18 @@ final class VideoUploadService: NSObject {
                                     "Retrying upload setup (\(transientAttempt)/\(UploadRetryPolicy.maxTransientAttempts))",
                                 retries: transientAttempt
                             )
-                            try await Task.sleep(
-                                nanoseconds: UploadRetryPolicy.delayNanoseconds(
+                            let sleepNanos: UInt64
+                            if let delay = rateLimitDelay {
+                                let bounded = max(0.5, delay)
+                                sleepNanos = UInt64(bounded * 1_000_000_000)
+                                AppLog.upload.info(
+                                    "[Mux] Honoring Retry-After: sleeping \(Int(bounded.rounded()))s before retry \(transientAttempt)/\(UploadRetryPolicy.maxTransientAttempts)"
+                                )
+                            } else {
+                                sleepNanos = UploadRetryPolicy.delayNanoseconds(
                                     forAttempt: transientAttempt)
-                            )
+                            }
+                            try await Task.sleep(nanoseconds: sleepNanos)
                             continue
 
                         case .refreshUploadURL:
@@ -951,6 +990,12 @@ final class VideoUploadService: NSObject {
             let statusCode = (createResponse as? HTTPURLResponse)?.statusCode ?? 0
             let body = String(data: createData, encoding: .utf8) ?? "Unknown"
             AppLog.upload.error("[Mux] Failed to get upload URL: \(body)")
+            if statusCode == 429,
+                let retryAfter = Self.parseRetryAfterSeconds(
+                    from: createResponse as? HTTPURLResponse)
+            {
+                throw UploadError.rateLimited(retryAfterSeconds: retryAfter, body: body)
+            }
             throw UploadError.serverError(statusCode, body)
         }
 
@@ -984,6 +1029,30 @@ final class VideoUploadService: NSObject {
         }
         if let stringValue = value as? String {
             return Int(stringValue)
+        }
+        return nil
+    }
+
+    /// Parse a `Retry-After` header per RFC 7231 §7.1.3 — either a delta in
+    /// seconds or an HTTP-date. Returns the delay in seconds, or nil when the
+    /// header is missing or malformed.
+    fileprivate static func parseRetryAfterSeconds(from response: HTTPURLResponse?)
+        -> TimeInterval?
+    {
+        guard let response,
+            let raw = response.value(forHTTPHeaderField: "Retry-After")?
+                .trimmingCharacters(in: .whitespaces),
+            !raw.isEmpty
+        else { return nil }
+
+        if let seconds = TimeInterval(raw) { return max(0, seconds) }
+
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(identifier: "GMT")
+        formatter.dateFormat = "EEE, dd MMM yyyy HH:mm:ss zzz"
+        if let date = formatter.date(from: raw) {
+            return max(0, date.timeIntervalSinceNow)
         }
         return nil
     }
@@ -1083,6 +1152,7 @@ struct MuxUploadResponse {
 enum UploadError: LocalizedError {
     case invalidResponse
     case serverError(Int, String)
+    case rateLimited(retryAfterSeconds: TimeInterval, body: String)
     case fileNotFound
     case duplicateUploadInFlight(String)
     case retryLimitExceeded(String)
@@ -1091,6 +1161,8 @@ enum UploadError: LocalizedError {
         switch self {
         case .invalidResponse: return "Invalid server response"
         case .serverError(let code, let msg): return "Upload failed (HTTP \(code)): \(msg)"
+        case .rateLimited(let retryAfter, _):
+            return "Server is rate-limited (retry in \(Int(retryAfter.rounded()))s)"
         case .fileNotFound: return "Video file not found"
         case .duplicateUploadInFlight(let assetId):
             return "Upload already in progress for asset \(assetId)."
