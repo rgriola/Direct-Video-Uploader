@@ -22,6 +22,7 @@
 		2FAE80E649CAA21C36370ACD /* IngestTransportRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 69BF62881BB5D544301076A9 /* IngestTransportRegistry.swift */; };
 		3397724BA17E25882518C0BD /* ConversationSummaryBubble.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC2A1D0A89F18984A90B5686 /* ConversationSummaryBubble.swift */; };
 		37912629DFC4719F11FEB3F5 /* MetadataView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2796AFC62F34F3182D7CCE1C /* MetadataView.swift */; };
+		379F0C7D23A7669DB6ED8B52 /* VideoBatchItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = B95536A6C12B8EC0A510BDD6 /* VideoBatchItem.swift */; };
 		3CEF79141FB9F628E02EE323 /* ConnectivityIssueTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = E41567636146A290B7D5B80B /* ConnectivityIssueTracker.swift */; };
 		44B25D51E7749B820E3E5F03 /* WebSocketEventRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = 81E177365B6FD5C582E1DC51 /* WebSocketEventRuntime.swift */; };
 		4A9D38353721080742EDBA01 /* BatchItemProcessingService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 29915DD2DADC1973885B8498 /* BatchItemProcessingService.swift */; };
@@ -46,6 +47,7 @@
 		7AE2B9818D7C0F7B0F9F6506 /* BatchUploadTransportService.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE3A73DF6BE4780045ED5058 /* BatchUploadTransportService.swift */; };
 		7D6C4ADE8374C39A5C0B5DDB /* ArchiveRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5BE16E72579F144A61F60847 /* ArchiveRowView.swift */; };
 		7E5F43FD9CBD258A86141F2C /* ChatOwnershipRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD7E50C56A226347C54DCD2B /* ChatOwnershipRouter.swift */; };
+		80C4D6BAE7E5A464496B2B51 /* SelectedVideo.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4ECE6649AA9863FDFA3EE102 /* SelectedVideo.swift */; };
 		8134E058C6830587E107FF34 /* AuthService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 27594B89FEDBE19BA3F807BB /* AuthService.swift */; };
 		8479D08EF2DC76BFF0C2BDCF /* DirectVideoUploaderApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE10509FD1B4B7983FB58B3D /* DirectVideoUploaderApp.swift */; };
 		85DF83FC67BBDA28A1DDC7F8 /* KeychainHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C27ACDB8440348608E9ADB1 /* KeychainHelper.swift */; };
@@ -67,6 +69,7 @@
 		A6C1EF0499632C4EF00532DD /* WebSocketUploadLifecycleEventService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D232E9AFA5DAD829D608ED6 /* WebSocketUploadLifecycleEventService.swift */; };
 		A799AD82492D9C64ABA26F96 /* BatchItemExecutionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = D80D926D39FC5D974459575B /* BatchItemExecutionService.swift */; };
 		A9F088643DC2986469FFC84B /* ContextFormView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3899E53553FC5E50293A8E8 /* ContextFormView.swift */; };
+		AE0481FE9C10C9142DB52E76 /* VideoBatchContext.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE50B81DCD68A653803F5640 /* VideoBatchContext.swift */; };
 		B0BB3888F486E388A1583885 /* ServerErrorReporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4AE0C3F876229BB5F1F34302 /* ServerErrorReporter.swift */; };
 		B232F6B18466FB01AFDF1784 /* RetryHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CB447F960F2A8A21F7DA5C5 /* RetryHelper.swift */; };
 		B2D90368941B727C69119896 /* TranscriptSubmissionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0289EE7E1D82A4100FEF4E52 /* TranscriptSubmissionService.swift */; };
@@ -101,6 +104,7 @@
 		F10D6B52A7FB3C74ADB93160 /* OnboardingWalkthroughView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC50492C0045E1B5334C32ED /* OnboardingWalkthroughView.swift */; };
 		F14544D45251B0E183C80C3D /* WorkflowReconcileExecutionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41B724B0549F90F580170090 /* WorkflowReconcileExecutionService.swift */; };
 		F35DE01BD68A069A3CB04989 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 894318625F91A1D2462249FE /* ContentView.swift */; };
+		F78F049BABEF2507D670F2B4 /* VideoBatchEnums.swift in Sources */ = {isa = PBXBuildFile; fileRef = A45A6A9F29BD2161C854282B /* VideoBatchEnums.swift */; };
 		FD85A83F2B113BB394A15D3E /* ChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1FF094BA3F6CC3D1003E121 /* ChatView.swift */; };
 /* End PBXBuildFile section */
 
@@ -145,6 +149,7 @@
 		4AE0C3F876229BB5F1F34302 /* ServerErrorReporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerErrorReporter.swift; sourceTree = "<group>"; };
 		4C27ACDB8440348608E9ADB1 /* KeychainHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainHelper.swift; sourceTree = "<group>"; };
 		4DBB133385999B4E09A826F7 /* DVUDateFormatting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DVUDateFormatting.swift; sourceTree = "<group>"; };
+		4ECE6649AA9863FDFA3EE102 /* SelectedVideo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SelectedVideo.swift; sourceTree = "<group>"; };
 		4F933DCF63898D90B96C6B29 /* WebSocketStreamReadyEventService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebSocketStreamReadyEventService.swift; sourceTree = "<group>"; };
 		51E2EB93368D36F22B8AC2A4 /* VideoTrimView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoTrimView.swift; sourceTree = "<group>"; };
 		5474D56924A220142B9C2AE9 /* BatchItemLifecycleService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatchItemLifecycleService.swift; sourceTree = "<group>"; };
@@ -173,10 +178,12 @@
 		944EE826833A1F37DAC5ADCB /* PendingForm.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PendingForm.swift; sourceTree = "<group>"; };
 		9ADF5BF95A0B22849BC383F0 /* PendingBatchStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PendingBatchStore.swift; sourceTree = "<group>"; };
 		9FBA02CA42C0AAAB57B73728 /* WebSocketFormRequestEventService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebSocketFormRequestEventService.swift; sourceTree = "<group>"; };
+		A45A6A9F29BD2161C854282B /* VideoBatchEnums.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoBatchEnums.swift; sourceTree = "<group>"; };
 		AAA58A3F30BFA24CE268AD67 /* LoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginView.swift; sourceTree = "<group>"; };
 		AC53E361C83E04580CF05221 /* VideoLibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoLibraryView.swift; sourceTree = "<group>"; };
 		AE03117C083E0D8042235334 /* AssetDetailService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssetDetailService.swift; sourceTree = "<group>"; };
 		B136E4B9F4C6D88E9009D569 /* VideoBubble.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoBubble.swift; sourceTree = "<group>"; };
+		B95536A6C12B8EC0A510BDD6 /* VideoBatchItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoBatchItem.swift; sourceTree = "<group>"; };
 		BED1BBCA2E5972A6CFB66462 /* AppLogTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLogTests.swift; sourceTree = "<group>"; };
 		BF6B124C27D1C814FCCA4FF1 /* BatchStateTransitionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatchStateTransitionService.swift; sourceTree = "<group>"; };
 		C6B9108722A3D334FF7F2B5D /* PendingBatchRestoreService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PendingBatchRestoreService.swift; sourceTree = "<group>"; };
@@ -202,6 +209,7 @@
 		E5FBF029E415AC82A8455FDE /* APIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClient.swift; sourceTree = "<group>"; };
 		E7A81292325663F81C4B8772 /* ArchiveListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArchiveListView.swift; sourceTree = "<group>"; };
 		EC50492C0045E1B5334C32ED /* OnboardingWalkthroughView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingWalkthroughView.swift; sourceTree = "<group>"; };
+		EE50B81DCD68A653803F5640 /* VideoBatchContext.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoBatchContext.swift; sourceTree = "<group>"; };
 		EF5B8A623A0F5AA9CA07EA1A /* InputBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InputBar.swift; sourceTree = "<group>"; };
 		F12E4ADC5BFAB1099957FDEE /* BatchCompletionMessageService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatchCompletionMessageService.swift; sourceTree = "<group>"; };
 		F14E4C2E85DB0CE719772A3F /* VideoUploadService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoUploadService.swift; sourceTree = "<group>"; };
@@ -418,9 +426,13 @@
 			children = (
 				2F9DE735EEFFFCC798CA054C /* Asset.swift */,
 				CC18F5FFC74280EFFEB0BE65 /* ChatMessage.swift */,
+				4ECE6649AA9863FDFA3EE102 /* SelectedVideo.swift */,
 				D56F342EB8CB3B26EC77BBF3 /* ServerConfig.swift */,
 				3A0611DEBA9BE67788466164 /* User.swift */,
 				906B4EE592B6559E18A30C6C /* VideoBatch.swift */,
+				EE50B81DCD68A653803F5640 /* VideoBatchContext.swift */,
+				A45A6A9F29BD2161C854282B /* VideoBatchEnums.swift */,
+				B95536A6C12B8EC0A510BDD6 /* VideoBatchItem.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -700,6 +712,7 @@
 				C43AFC93CF4984D2A3C2DA9A /* ProfileView.swift in Sources */,
 				C34417685FC54E4FC2867FBF /* ReadyWorkflowStateService.swift in Sources */,
 				B232F6B18466FB01AFDF1784 /* RetryHelper.swift in Sources */,
+				80C4D6BAE7E5A464496B2B51 /* SelectedVideo.swift in Sources */,
 				889C07C34F8BFC90EF7CB2CE /* ServerConfig.swift in Sources */,
 				B0BB3888F486E388A1583885 /* ServerErrorReporter.swift in Sources */,
 				6873EB82F0B416D8B44935B3 /* SingleUploadFlowService.swift in Sources */,
@@ -714,6 +727,9 @@
 				C96CA6B0030C90252990347F /* UploadQueueStore.swift in Sources */,
 				CE6C303AB52C17CF99EFD315 /* User.swift in Sources */,
 				24514C388FE23338E0243A71 /* VideoBatch.swift in Sources */,
+				AE0481FE9C10C9142DB52E76 /* VideoBatchContext.swift in Sources */,
+				F78F049BABEF2507D670F2B4 /* VideoBatchEnums.swift in Sources */,
+				379F0C7D23A7669DB6ED8B52 /* VideoBatchItem.swift in Sources */,
 				75932DE2985E13382C8E0301 /* VideoBatchUploadCoordinator.swift in Sources */,
 				8CDB0858FD44667AD9882E4D /* VideoBubble.swift in Sources */,
 				257DDBB48613A0897D5754F0 /* VideoLibraryView.swift in Sources */,
