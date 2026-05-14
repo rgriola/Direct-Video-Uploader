@@ -1,6 +1,8 @@
-// May 14, 2026 - 11:00am - GitHub Copilot (Claude Opus 4.7)
+// May 14, 2026 - 5:30pm - GitHub Copilot (Claude Opus 4.7)
 //
 // Extension extracted from ChatViewModel.swift during P8 file decomposition.
+// Added server-side batch reconciliation on restore to clear stale cards
+// when server-side asset records are gone (e.g., admin DB nuke).
 
 import Foundation
 import UIKit
@@ -466,6 +468,55 @@ extension ChatViewModel {
         }
 
         persistBatchState()
+
+        // Server reconciliation: if the server has none of this batch's assets
+        // (e.g., DB nuke / account reset), drop the stale card. Runs in the
+        // background so it doesn't delay UI restoration.
+        Task { [weak self] in
+            await self?.reconcileBatchAgainstServer()
+        }
+    }
+
+    /// Verify a restored batch still has at least one corresponding asset on
+    /// the server. If every assetId returns 404, the batch is stale (server
+    /// state was wiped) and we clear it. Network errors are treated as
+    /// "unknown" and leave the batch untouched.
+    func reconcileBatchAgainstServer() async {
+        guard let batchId = currentBatchId else { return }
+        let assetIds = batchItems.compactMap { $0.assetId }.filter { !$0.isEmpty }
+        guard !assetIds.isEmpty else { return }
+
+        let detailService = AssetDetailService()
+        var sawNotFound = false
+        for assetId in assetIds {
+            do {
+                let result = try await detailService.fetchAssetDetail(
+                    auth: auth, assetId: assetId
+                )
+                if result.statusCode == 200 {
+                    // At least one asset still exists — batch is real.
+                    return
+                }
+                if result.statusCode == 404 {
+                    sawNotFound = true
+                    continue
+                }
+                // 401/403/5xx → don't trust this signal; bail.
+                return
+            } catch {
+                // Network failure — be safe, keep the batch.
+                return
+            }
+        }
+
+        guard sawNotFound else { return }
+        // Confirm batch hasn't changed during async work.
+        guard currentBatchId == batchId else { return }
+
+        AppLog.chat.info(
+            "Batch reconciliation: all \(assetIds.count, privacy: .public) asset(s) returned 404 — clearing stale batch \(batchId, privacy: .public)"
+        )
+        resetBatchState(clearDisk: true)
     }
 
     func applyRestoredBatchAssetOwnership(_ assetIds: [String]) {
