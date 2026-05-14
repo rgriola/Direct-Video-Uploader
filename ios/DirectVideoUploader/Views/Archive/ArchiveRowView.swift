@@ -681,14 +681,16 @@ private func phAssetToTempFile(phAsset: PHAsset, fileName: String) async throws 
                 return
             }
 
-            let subdir = FileManager.default.temporaryDirectory
-                .appendingPathComponent(UUID().uuidString)
+            // Stage in Library/Caches/uploads so the re-upload bytes survive
+            // app relaunches (iOS wipes tmp/ between launches).
+            let subdir = UploadStorage.stagingDirectory()
+                .appendingPathComponent(UUID().uuidString, isDirectory: true)
             try? FileManager.default.createDirectory(at: subdir, withIntermediateDirectories: true)
-            let tempURL = subdir.appendingPathComponent(fileName)
+            let stagedURL = subdir.appendingPathComponent(fileName)
 
             do {
-                try FileManager.default.copyItem(at: urlAsset.url, to: tempURL)
-                continuation.resume(returning: tempURL)
+                try FileManager.default.copyItem(at: urlAsset.url, to: stagedURL)
+                continuation.resume(returning: stagedURL)
             } catch {
                 continuation.resume(throwing: error)
             }

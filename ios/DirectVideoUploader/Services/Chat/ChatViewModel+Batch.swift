@@ -700,8 +700,7 @@ extension ChatViewModel {
     }
 
     func cleanupTempFileIfNeeded(_ url: URL) {
-        let tempDir = FileManager.default.temporaryDirectory.path
-        if url.path.hasPrefix(tempDir) {
+        if UploadStorage.isStagedUploadURL(url) {
             cleanupTempFile(url)
         }
     }

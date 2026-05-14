@@ -39,6 +39,7 @@
 		58BCBB8B40EB01ED95D96A5D /* VideoUploadService.swift in Sources */ = {isa = PBXBuildFile; fileRef = F14E4C2E85DB0CE719772A3F /* VideoUploadService.swift */; };
 		5D78B58E2BE37233E19AA1F9 /* PhotosView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02302BA1984533BE8F7E4F3E /* PhotosView.swift */; };
 		5F6183791993FEDB578513D4 /* VideoMetadataExtractor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0EFFBA139883DDCF4F798C17 /* VideoMetadataExtractor.swift */; };
+		A1B2C3D4E5F60718293A4B5C /* UploadStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F2E3D4C5B6A79808F90A1B2 /* UploadStorage.swift */; };
 		640CE9562775BC9726466D8F /* AssetDetailSyncService.swift in Sources */ = {isa = PBXBuildFile; fileRef = D45AD3A9C2D8ACED841A146C /* AssetDetailSyncService.swift */; };
 		646CF99508A7D295C6556EE2 /* WebSocketService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22EB9027AFB1A8564D6C10F8 /* WebSocketService.swift */; };
 		646DAF2781D145E80CCEF5E4 /* PHAssetIdentifierStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAF4E12A86D97957F910E48A /* PHAssetIdentifierStore.swift */; };
@@ -131,6 +132,7 @@
 		05478495469C54B6983538BD /* ChatViewModel+WSRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ChatViewModel+WSRuntime.swift"; sourceTree = "<group>"; };
 		0DF7F67324DE89ECF059ADD5 /* ChatViewModel+Batch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ChatViewModel+Batch.swift"; sourceTree = "<group>"; };
 		0EFFBA139883DDCF4F798C17 /* VideoMetadataExtractor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoMetadataExtractor.swift; sourceTree = "<group>"; };
+		1F2E3D4C5B6A79808F90A1B2 /* UploadStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UploadStorage.swift; sourceTree = "<group>"; };
 		10639CEE28493C5C5EE868DF /* ConversationResetService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationResetService.swift; sourceTree = "<group>"; };
 		11BA2952ADE42DB053AAE827 /* ChatViewModel+WebSocket.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ChatViewModel+WebSocket.swift"; sourceTree = "<group>"; };
 		11D39EE8D05CC894E99A1322 /* DirectVideoUploaderTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = DirectVideoUploaderTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -546,6 +548,7 @@
 				DCC20D5B6B03D80CB71B2B2E /* SingleUploadFlowService.swift */,
 				5DCBC9580C439381A268A6D0 /* VideoBatchUploadCoordinator.swift */,
 				0EFFBA139883DDCF4F798C17 /* VideoMetadataExtractor.swift */,
+				1F2E3D4C5B6A79808F90A1B2 /* UploadStorage.swift */,
 				F14E4C2E85DB0CE719772A3F /* VideoUploadService.swift */,
 				E3C264A6F7F6490D99B56D92 /* Batch */,
 				167804C9E1A4FAA3D06568F3 /* Transports */,
@@ -762,6 +765,7 @@
 				8CDB0858FD44667AD9882E4D /* VideoBubble.swift in Sources */,
 				257DDBB48613A0897D5754F0 /* VideoLibraryView.swift in Sources */,
 				5F6183791993FEDB578513D4 /* VideoMetadataExtractor.swift in Sources */,
+				A1B2C3D4E5F60718293A4B5C /* UploadStorage.swift in Sources */,
 				8CC14DFD30C33058BF4FA39B /* VideoTrimView.swift in Sources */,
 				58BCBB8B40EB01ED95D96A5D /* VideoUploadService.swift in Sources */,
 				756BCF783BB4A85E6AFED5A7 /* WebSocketConnectionStateService.swift in Sources */,
