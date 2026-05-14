@@ -1,4 +1,4 @@
-// May 14, 2026 - 3:35pm - GitHub Copilot (Claude Opus 4.7)
+// May 14, 2026 - 10:30am - GitHub Copilot (Claude Opus 4.7)
 // Priority 5b: Dependencies closure-bags replaced with BatchAssetFlowHost protocol.
 import Foundation
 import UIKit
@@ -100,7 +100,8 @@ final class BatchAssetFlowService {
         guard let token = authToken else { return false }
 
         do {
-            let clipId = try await transport.uploadViaMux(
+            let result = try await transport.runIngest(
+                kind: .streamingMux,
                 assetId: assetId,
                 fileURL: fileURL,
                 token: token,
@@ -108,7 +109,7 @@ final class BatchAssetFlowService {
                 onProgress: onProgress
             )
             AppLog.upload.info(
-                "[Batch Upload] Mux direct upload completed for asset: \(assetId), clipId: \(clipId)"
+                "[Batch Upload] Mux direct upload completed for asset: \(assetId), clipId: \(result.clipId)"
             )
             return true
         } catch {
