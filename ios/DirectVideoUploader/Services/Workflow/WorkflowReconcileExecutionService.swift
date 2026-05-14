@@ -1,55 +1,57 @@
-// May 13, 2026 - 11:13pm - GitHub Copilot (GPT-5.3-Codex)
+// May 14, 2026 - 3:35pm - GitHub Copilot (Claude Opus 4.7)
+// Priority 5b: Dependencies closure-bag replaced with WorkflowReconcileExecutionHost protocol.
 import Foundation
 
 @MainActor
-final class WorkflowReconcileExecutionService {
-    struct Dependencies {
-        let markBatchClipFailed: (String?, String) -> Void
-        let appendUploadFailedBubble: (String, String) -> Void
-        let updateBatchMetadataToProcessing: (Asset) -> Void
-        let markBatchClipReady: (Asset) -> Void
-        let appendFormConfirmed: (Asset, MessagePolicyCoordinator.Source) -> Void
-        let resetReadyMessagePolicy: (String) -> Void
-        let applyReadyWorkflowState: (Asset, MessagePolicyCoordinator.Source) -> Void
-    }
+protocol WorkflowReconcileExecutionHost: AnyObject {
+    func wreMarkBatchClipFailed(assetId: String?, reason: String)
+    func wreAppendUploadFailedBubble(assetId: String, reason: String)
+    func wreUpdateBatchMetadataToProcessing(asset: Asset)
+    func wreMarkBatchClipReady(asset: Asset)
+    func wreAppendFormConfirmed(asset: Asset, source: MessagePolicyCoordinator.Source)
+    func wreResetReadyMessagePolicy(assetId: String)
+    func wreApplyReadyWorkflowState(asset: Asset, source: MessagePolicyCoordinator.Source)
+}
 
+@MainActor
+final class WorkflowReconcileExecutionService {
     func execute(
         asset: Asset,
         plan: WorkflowReconcilePlanService.Plan,
         isBatchAsset: Bool,
         source: MessagePolicyCoordinator.Source,
-        dependencies: Dependencies
+        host: WorkflowReconcileExecutionHost
     ) {
         if let failureReason = plan.failureReason {
             if isBatchAsset {
-                dependencies.markBatchClipFailed(asset.id, failureReason)
+                host.wreMarkBatchClipFailed(assetId: asset.id, reason: failureReason)
             } else {
-                dependencies.appendUploadFailedBubble(asset.id, failureReason)
+                host.wreAppendUploadFailedBubble(assetId: asset.id, reason: failureReason)
             }
             return
         }
 
         if isBatchAsset {
             if plan.shouldUpdateBatchMetadataToProcessing {
-                dependencies.updateBatchMetadataToProcessing(asset)
+                host.wreUpdateBatchMetadataToProcessing(asset: asset)
             }
 
             if plan.shouldMarkBatchReady {
-                dependencies.markBatchClipReady(asset)
+                host.wreMarkBatchClipReady(asset: asset)
             }
             return
         }
 
         if plan.shouldAppendFormConfirmed {
-            dependencies.appendFormConfirmed(asset, source)
+            host.wreAppendFormConfirmed(asset: asset, source: source)
         }
 
         if plan.shouldResetReadyMessagePolicy {
-            dependencies.resetReadyMessagePolicy(asset.id)
+            host.wreResetReadyMessagePolicy(assetId: asset.id)
         }
 
         if plan.shouldApplyReadyWorkflowState {
-            dependencies.applyReadyWorkflowState(asset, source)
+            host.wreApplyReadyWorkflowState(asset: asset, source: source)
         }
     }
 }

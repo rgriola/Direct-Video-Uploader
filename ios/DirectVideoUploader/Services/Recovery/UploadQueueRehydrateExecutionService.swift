@@ -1,71 +1,79 @@
-// May 13, 2026 - 11:39pm - GitHub Copilot (GPT-5.3-Codex)
+// May 14, 2026 - 3:35pm - GitHub Copilot (Claude Opus 4.7)
+// Priority 5b: Dependencies closure-bag replaced with UploadQueueRehydrateHost protocol.
 import Foundation
 
 @MainActor
-final class UploadQueueRehydrateExecutionService {
-    struct Dependencies {
-        let hasCurrentAsset: () -> Bool
-        let setCurrentAsset: (String) -> Void
-        let registerActiveAsset: (String?) -> Void
-        let appendSummaryMessage: (ChatMessage) -> Void
-        let promoteWorkflowStage: (String, WorkflowStage) -> Void
-        let setBatchItems: ([VideoBatchItem]) -> Void
-        let syncBatchDisplayState: (String) -> Void
-        let hasUploadFailureMessage: (String) -> Bool
-        let appendUploadFailedBubble: (String, String) -> Void
-        let hasActiveBatch: () -> Bool
-        let setBatchState: (VideoBatchState) -> Void
-        let updateBatchProgress: () -> Void
-        let persistBatchState: () -> Void
-        let reconcileAssetDetails: ([String]) -> Void
-    }
+protocol UploadQueueRehydrateHost: AnyObject {
+    func uqrHasCurrentAsset() -> Bool
+    func uqrSetCurrentAsset(assetId: String)
+    func uqrRegisterActiveAsset(assetId: String?)
+    func uqrAppendSummaryMessage(_ message: ChatMessage)
+    func uqrPromoteWorkflowStage(assetId: String, targetStage: WorkflowStage)
+    func uqrSetBatchItems(_ items: [VideoBatchItem])
+    func uqrSyncBatchDisplayState(assetId: String)
+    func uqrHasUploadFailureMessage(assetId: String) -> Bool
+    func uqrAppendUploadFailedBubble(assetId: String, reason: String)
+    func uqrHasActiveBatch() -> Bool
+    func uqrSetBatchState(_ state: VideoBatchState)
+    func uqrUpdateBatchProgress()
+    func uqrPersistBatchState()
+    func uqrReconcileAssetDetails(assetIds: [String])
+}
 
-    func execute(plan: UploadQueueRehydratePlan, dependencies: Dependencies) {
-        if !dependencies.hasCurrentAsset(),
+@MainActor
+final class UploadQueueRehydrateExecutionService {
+    func execute(plan: UploadQueueRehydratePlan, host: UploadQueueRehydrateHost) {
+        if !host.uqrHasCurrentAsset(),
             let newestAssetId = plan.newestAssetId
         {
-            dependencies.setCurrentAsset(newestAssetId)
-            dependencies.registerActiveAsset(newestAssetId)
+            host.uqrSetCurrentAsset(assetId: newestAssetId)
+            host.uqrRegisterActiveAsset(assetId: newestAssetId)
         }
 
         if let summaryMessage = plan.summaryMessage {
-            dependencies.appendSummaryMessage(summaryMessage)
+            host.uqrAppendSummaryMessage(summaryMessage)
         }
 
         for transition in plan.workflowTransitions {
             if transition.shouldRegisterActiveAsset {
-                dependencies.registerActiveAsset(transition.assetId)
+                host.uqrRegisterActiveAsset(assetId: transition.assetId)
             }
-            dependencies.promoteWorkflowStage(transition.assetId, transition.targetStage)
+            host.uqrPromoteWorkflowStage(
+                assetId: transition.assetId,
+                targetStage: transition.targetStage
+            )
         }
 
-        dependencies.setBatchItems(plan.updatedBatchItems)
+        host.uqrSetBatchItems(plan.updatedBatchItems)
 
         for assetId in plan.assetIdsForDisplaySync {
-            dependencies.syncBatchDisplayState(assetId)
+            host.uqrSyncBatchDisplayState(assetId: assetId)
         }
 
         for failedAsset in plan.failedNotices {
-            if !dependencies.hasUploadFailureMessage(failedAsset.assetId) {
-                dependencies.appendUploadFailedBubble(failedAsset.assetId, failedAsset.reason)
+            if !host.uqrHasUploadFailureMessage(assetId: failedAsset.assetId) {
+                host.uqrAppendUploadFailedBubble(
+                    assetId: failedAsset.assetId,
+                    reason: failedAsset.reason
+                )
             }
         }
 
-        if dependencies.hasActiveBatch() {
+        if host.uqrHasActiveBatch() {
             if plan.hasUploadingBatchWork {
-                dependencies.setBatchState(.uploading)
+                host.uqrSetBatchState(.uploading)
             } else if plan.hasBatchFailures {
-                dependencies.setBatchState(.partialFailed)
+                host.uqrSetBatchState(.partialFailed)
             }
 
-            dependencies.updateBatchProgress()
+            host.uqrUpdateBatchProgress()
 
             if plan.shouldPersistBatch {
-                dependencies.persistBatchState()
+                host.uqrPersistBatchState()
             }
         }
 
         guard !plan.assetIdsToReconcile.isEmpty else { return }
-        dependencies.reconcileAssetDetails(plan.assetIdsToReconcile.sorted())
+        host.uqrReconcileAssetDetails(assetIds: plan.assetIdsToReconcile.sorted())
     }
 }

@@ -1,30 +1,31 @@
-// May 13, 2026 - 11:59pm - GitHub Copilot (GPT-5.3-Codex)
+// May 14, 2026 - 3:35pm - GitHub Copilot (Claude Opus 4.7)
+// Priority 5b: Dependencies closure-bags replaced with BatchAssetFlowHost protocol.
 import Foundation
 import UIKit
 
 @MainActor
+protocol BatchAssetFlowHost: AnyObject {
+    // createBatchAsset
+    func bafRegisterAsset(_ asset: Asset)
+    func bafAppendOutgoingMessage(_ message: ChatMessage)
+    func bafStoreUploadInfo(messageId: String, assetId: String, uploadInfo: SentUploadInfo)
+    func bafMarkBatchUploadStarted(assetId: String)
+    func bafSavePHAssetIdentifier(assetId: String, identifier: String)
+    func bafSendVideoUpload(assetId: String, fileName: String, fileSize: Int64)
+    func bafAppendStartErrorBubble()
+    func bafReportStartError(errorDescription: String, fileName: String) async
+
+    // uploadBatchVideo
+    func bafMarkAssetFailed(assetId: String, reason: String)
+    func bafReportUploadError(errorDescription: String, assetId: String) async
+
+    // shared
+    func bafIsConnectivityIssue(_ error: Error) -> Bool
+    func bafNoteBlockingConnectivityIssue(operation: String, assetId: String?)
+}
+
+@MainActor
 final class BatchAssetFlowService {
-    struct CreateBatchAssetDependencies {
-        let registerAsset: (Asset) -> Void
-        let appendOutgoingMessage: (ChatMessage) -> Void
-        let storeUploadInfo: (_ messageId: String, _ assetId: String, _ uploadInfo: SentUploadInfo)
-            -> Void
-        let markBatchUploadStarted: (_ assetId: String) -> Void
-        let savePHAssetIdentifier: (_ assetId: String, _ identifier: String) -> Void
-        let sendVideoUpload: (_ assetId: String, _ fileName: String, _ fileSize: Int64) -> Void
-        let isConnectivityIssue: (Error) -> Bool
-        let noteBlockingConnectivityIssue: (_ operation: String, _ assetId: String?) -> Void
-        let appendStartErrorBubble: () -> Void
-        let reportStartError: (_ errorDescription: String, _ fileName: String) async -> Void
-    }
-
-    struct UploadBatchVideoDependencies {
-        let markAssetFailed: (_ assetId: String, _ reason: String) -> Void
-        let isConnectivityIssue: (Error) -> Bool
-        let noteBlockingConnectivityIssue: (_ operation: String, _ assetId: String?) -> Void
-        let reportUploadError: (_ errorDescription: String, _ assetId: String) async -> Void
-    }
-
     func createBatchAsset(
         fileName: String,
         fileURL: URL,
@@ -35,13 +36,13 @@ final class BatchAssetFlowService {
         auth: AuthService,
         transport: BatchUploadTransportService,
         presentation: BatchAssetPresentationService,
-        dependencies: CreateBatchAssetDependencies
+        host: BatchAssetFlowHost
     ) async -> Asset? {
         let fileSize = transport.fileSize(for: fileURL)
 
         do {
             let asset = try await transport.createAsset(auth: auth, fileName: fileName)
-            dependencies.registerAsset(asset)
+            host.bafRegisterAsset(asset)
 
             let assetPresentation = presentation.makePresentation(
                 userId: auth.currentUser?.id,
@@ -51,28 +52,38 @@ final class BatchAssetFlowService {
                 createdDate: createdDate,
                 hasLocation: hasLocation
             )
-            dependencies.appendOutgoingMessage(assetPresentation.message)
-            dependencies.storeUploadInfo(
-                assetPresentation.messageId,
-                asset.id,
-                assetPresentation.uploadInfo
+            host.bafAppendOutgoingMessage(assetPresentation.message)
+            host.bafStoreUploadInfo(
+                messageId: assetPresentation.messageId,
+                assetId: asset.id,
+                uploadInfo: assetPresentation.uploadInfo
             )
-            dependencies.markBatchUploadStarted(asset.id)
+            host.bafMarkBatchUploadStarted(assetId: asset.id)
 
             if let phAssetIdentifier {
-                dependencies.savePHAssetIdentifier(asset.id, phAssetIdentifier)
+                host.bafSavePHAssetIdentifier(assetId: asset.id, identifier: phAssetIdentifier)
             }
 
-            dependencies.sendVideoUpload(asset.id, fileName, fileSize)
+            host.bafSendVideoUpload(
+                assetId: asset.id,
+                fileName: fileName,
+                fileSize: fileSize
+            )
             return asset
         } catch {
-            if dependencies.isConnectivityIssue(error) {
-                dependencies.noteBlockingConnectivityIssue("starting upload", nil)
+            if host.bafIsConnectivityIssue(error) {
+                host.bafNoteBlockingConnectivityIssue(
+                    operation: "starting upload",
+                    assetId: nil
+                )
             } else {
-                dependencies.appendStartErrorBubble()
+                host.bafAppendStartErrorBubble()
             }
 
-            await dependencies.reportStartError(error.localizedDescription, fileName)
+            await host.bafReportStartError(
+                errorDescription: error.localizedDescription,
+                fileName: fileName
+            )
             return nil
         }
     }
@@ -84,7 +95,7 @@ final class BatchAssetFlowService {
         authToken: String?,
         transport: BatchUploadTransportService,
         onProgress: @escaping (Double) -> Void,
-        dependencies: UploadBatchVideoDependencies
+        host: BatchAssetFlowHost
     ) async -> Bool {
         guard let token = authToken else { return false }
 
@@ -102,15 +113,21 @@ final class BatchAssetFlowService {
             return true
         } catch {
             print("❌ [Batch Upload] Failed for asset \(assetId): \(error)")
-            dependencies.markAssetFailed(assetId, error.localizedDescription)
+            host.bafMarkAssetFailed(assetId: assetId, reason: error.localizedDescription)
 
-            if dependencies.isConnectivityIssue(error) {
-                dependencies.noteBlockingConnectivityIssue("uploading video", assetId)
+            if host.bafIsConnectivityIssue(error) {
+                host.bafNoteBlockingConnectivityIssue(
+                    operation: "uploading video",
+                    assetId: assetId
+                )
             } else {
                 // Batch clips surface failure directly on their own upload cards.
             }
 
-            await dependencies.reportUploadError(error.localizedDescription, assetId)
+            await host.bafReportUploadError(
+                errorDescription: error.localizedDescription,
+                assetId: assetId
+            )
             return false
         }
     }

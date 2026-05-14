@@ -1,27 +1,29 @@
-// May 13, 2026 - 11:46pm - GitHub Copilot (GPT-5.3-Codex)
+// May 14, 2026 - 3:35pm - GitHub Copilot (Claude Opus 4.7)
+// Priority 5b: Dependencies closure-bag replaced with AssetDetailSyncHost protocol.
 import Foundation
 
 @MainActor
-final class AssetDetailSyncService {
-    struct Dependencies {
-        let fetchAssetDetail: (String) async throws -> AssetDetailFetchResult
-        let hasDetailLoadFailureMessage: (String) -> Bool
-        let appendDetailLoadFailureBubble: (String) -> Void
-        let cacheAsset: (Asset) -> Void
-        let clearBlockingConnectivityIssue: (String) -> Void
-        let reconcileWorkflowState: (Asset) -> Void
-        let isConnectivityIssue: (Error) -> Bool
-        let noteBlockingConnectivityIssue: (String, String?) -> Void
-    }
+protocol AssetDetailSyncHost: AnyObject {
+    func adsFetchAssetDetail(assetId: String) async throws -> AssetDetailFetchResult
+    func adsHasDetailLoadFailureMessage(assetId: String) -> Bool
+    func adsAppendDetailLoadFailureBubble(assetId: String)
+    func adsCacheAsset(_ asset: Asset)
+    func adsClearBlockingConnectivityIssue(assetId: String)
+    func adsReconcileWorkflowState(asset: Asset)
+    func adsIsConnectivityIssue(_ error: Error) -> Bool
+    func adsNoteBlockingConnectivityIssue(operation: String, assetId: String?)
+}
 
+@MainActor
+final class AssetDetailSyncService {
     func sync(
         assetId: String,
         presentErrorsInChat: Bool,
         reason: String,
-        dependencies: Dependencies
+        host: AssetDetailSyncHost
     ) async {
         do {
-            let result = try await dependencies.fetchAssetDetail(assetId)
+            let result = try await host.adsFetchAssetDetail(assetId: assetId)
             let statusCode = result.statusCode
 
             guard statusCode == 200 else {
@@ -33,23 +35,26 @@ final class AssetDetailSyncService {
 
                 guard presentErrorsInChat else { return }
 
-                if !dependencies.hasDetailLoadFailureMessage(assetId) {
-                    dependencies.appendDetailLoadFailureBubble(assetId)
+                if !host.adsHasDetailLoadFailureMessage(assetId: assetId) {
+                    host.adsAppendDetailLoadFailureBubble(assetId: assetId)
                 }
                 return
             }
 
             guard let asset = result.asset else { return }
-            dependencies.cacheAsset(asset)
-            dependencies.clearBlockingConnectivityIssue(assetId)
-            dependencies.reconcileWorkflowState(asset)
+            host.adsCacheAsset(asset)
+            host.adsClearBlockingConnectivityIssue(assetId: assetId)
+            host.adsReconcileWorkflowState(asset: asset)
         } catch {
             print("❌ Failed to fetch asset detail:", error)
-            if dependencies.isConnectivityIssue(error) {
-                dependencies.noteBlockingConnectivityIssue("syncing metadata", assetId)
+            if host.adsIsConnectivityIssue(error) {
+                host.adsNoteBlockingConnectivityIssue(
+                    operation: "syncing metadata",
+                    assetId: assetId
+                )
             } else if presentErrorsInChat {
-                if !dependencies.hasDetailLoadFailureMessage(assetId) {
-                    dependencies.appendDetailLoadFailureBubble(assetId)
+                if !host.adsHasDetailLoadFailureMessage(assetId: assetId) {
+                    host.adsAppendDetailLoadFailureBubble(assetId: assetId)
                 }
             } else {
                 #if DEBUG

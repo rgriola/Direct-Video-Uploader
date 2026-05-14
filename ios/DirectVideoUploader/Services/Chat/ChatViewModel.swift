@@ -762,57 +762,7 @@ final class ChatViewModel: WebSocketConnectionStateRuntime, WebSocketEventRuntim
             plan: plan,
             isBatchAsset: isBatchAsset,
             source: source,
-            dependencies: makeWorkflowReconcileExecutionDependencies()
-        )
-    }
-
-    private func makeWorkflowReconcileExecutionDependencies()
-        -> WorkflowReconcileExecutionService.Dependencies
-    {
-        .init(
-            markBatchClipFailed: { assetId, reason in
-                self.markBatchClipFailed(assetId: assetId, reason: reason)
-            },
-            appendUploadFailedBubble: { assetId, reason in
-                self.wsAppendUploadFailedBubble(assetId: assetId, reason: reason)
-            },
-            updateBatchMetadataToProcessing: { asset in
-                self.updateBatchClipMetadata(
-                    assetId: asset.id,
-                    mediasourceId: asset.mediasourceId,
-                    mediasourceUrl: asset.mediasourceUrl,
-                    formSlug: asset.formResponse?.slug
-                )
-                self.setBatchClipPhase(assetId: asset.id, phase: .processing)
-            },
-            markBatchClipReady: { asset in
-                self.markBatchClipReady(
-                    assetId: asset.id,
-                    mediasourceId: asset.mediasourceId,
-                    mediasourceUrl: asset.mediasourceUrl,
-                    formSlug: asset.formResponse?.slug
-                )
-            },
-            appendFormConfirmed: { asset, source in
-                self.appendReconciledFormConfirmed(asset: asset, source: source)
-            },
-            resetReadyMessagePolicy: { assetId in
-                self.messagePolicy.resetAssetScope(assetId: assetId)
-            },
-            applyReadyWorkflowState: { asset, source in
-                self.applyReadyWorkflowState(
-                    assetId: asset.id,
-                    mediasourceId: asset.mediasourceId,
-                    mediasourceUrl: asset.mediasourceUrl,
-                    originalFileName: asset.originalFileName
-                        ?? asset.clips?.first?.originalFileName,
-                    formSlug: asset.formResponse?.slug,
-                    duration: asset.clips?.first?.duration,
-                    resolution: asset.clips?.first?.resolution,
-                    fileSize: asset.clips?.first?.fileSize,
-                    source: source
-                )
-            }
+            host: self
         )
     }
 
@@ -1097,7 +1047,7 @@ final class ChatViewModel: WebSocketConnectionStateRuntime, WebSocketEventRuntim
             auth: auth,
             transport: batchUploadTransportService,
             presentation: batchAssetPresentationService,
-            dependencies: makeSingleUploadCreateAssetDependencies()
+            host: self
         )
     }
 
@@ -1110,82 +1060,7 @@ final class ChatViewModel: WebSocketConnectionStateRuntime, WebSocketEventRuntim
             metadata: metadata,
             token: auth.token,
             uploader: uploader,
-            dependencies: makeSingleUploadVideoDependencies(assetId: assetId)
-        )
-    }
-
-    private func makeSingleUploadCreateAssetDependencies()
-        -> SingleUploadFlowService.CreateAssetDependencies
-    {
-        .init(
-            registerAsset: { asset in
-                self.currentAssetId = asset.id
-                self.chatOwnership.registerActiveAsset(asset.id)
-                _ = self.promoteWorkflowStage(for: asset.id, to: .uploading)
-                self.clearBlockingConnectivityIssueIfNeeded(assetId: asset.id)
-            },
-            appendOutgoingMessage: { message in
-                self.appendMessage(message, source: .outgoing)
-            },
-            storeUploadInfo: { messageId, assetId, uploadInfo in
-                self.sentUploads[messageId] = uploadInfo
-                self.sentUploadsByAssetId[assetId] = uploadInfo
-            },
-            sendVideoUpload: { assetId, fileName, fileSize in
-                self.ws.sendVideoUpload(assetId: assetId, fileName: fileName, fileSize: fileSize)
-            },
-            isConnectivityIssue: { self.connectivityIssues.isConnectivityIssue($0) },
-            noteBlockingConnectivityIssue: { operation, assetId in
-                self.noteBlockingConnectivityIssue(operation: operation, assetId: assetId)
-            },
-            appendStartErrorBubble: {
-                self.appendErrorBubble(
-                    "Could not start upload. Please try again.",
-                    code: "IOS_UPLOAD_START_FAILED"
-                )
-            },
-            reportStartError: { [weak self] errorDescription, fileName in
-                guard let self else { return }
-                await self.reportError(
-                    category: "upload",
-                    message: "Asset creation failed after 3 attempts: \(errorDescription)",
-                    severity: "ERROR",
-                    details: ["fileName": fileName]
-                )
-            }
-        )
-    }
-
-    private func makeSingleUploadVideoDependencies(assetId: String)
-        -> SingleUploadFlowService.UploadVideoDependencies
-    {
-        .init(
-            setUploading: { self.isUploading = $0 },
-            updateProgress: { self.uploadProgress = $0 },
-            markAssetFailed: {
-                _ = self.promoteWorkflowStage(for: assetId, to: .failed)
-            },
-            isConnectivityIssue: { self.connectivityIssues.isConnectivityIssue($0) },
-            noteBlockingConnectivityIssue: { operation, failedAssetId in
-                self.noteBlockingConnectivityIssue(operation: operation, assetId: failedAssetId)
-            },
-            appendUploadErrorBubble: { reason in
-                self.appendErrorBubble(
-                    "Upload failed: \(reason)",
-                    assetId: assetId,
-                    code: "IOS_UPLOAD_FAILED",
-                    params: ["reason": reason]
-                )
-            },
-            reportUploadError: { [weak self] errorDescription in
-                guard let self else { return }
-                await self.reportError(
-                    category: "upload",
-                    message: "File upload failed: \(errorDescription)",
-                    severity: "ERROR",
-                    assetId: assetId
-                )
-            }
+            host: self
         )
     }
 
@@ -1497,98 +1372,7 @@ final class ChatViewModel: WebSocketConnectionStateRuntime, WebSocketEventRuntim
     private func processBatchItem(localId: String) async {
         await batchItemProcessingService.process(
             localId: localId,
-            dependencies: makeBatchItemProcessingDependencies(localId: localId)
-        )
-    }
-
-    private func makeBatchItemProcessingDependencies(localId: String)
-        -> BatchItemProcessingService.Dependencies
-    {
-        .init(
-            prepareForProcessing: { localId in
-                self.batchItemExecutionService.prepareForProcessing(
-                    localId: localId,
-                    batchItems: &self.batchItems,
-                    stagedBatchVideos: self.stagedBatchVideos,
-                    lifecycle: self.batchItemLifecycleService
-                )
-            },
-            noteItemPreparedForCreation: {
-                self.noteBatchItemPreparedForCreation()
-            },
-            buildCreationContext: { selectedContext in
-                await self.batchItemExecutionService.buildCreationContext(from: selectedContext)
-            },
-            createBatchAsset: { creationContext in
-                await self.createBatchAsset(
-                    fileName: creationContext.fileName,
-                    fileURL: creationContext.fileURL,
-                    thumbnail: creationContext.thumbnail,
-                    createdDate: creationContext.createdDate,
-                    hasLocation: creationContext.hasLocation,
-                    phAssetIdentifier: creationContext.phAssetIdentifier
-                )
-            },
-            prepareForUpload: { localId, assetId in
-                self.batchItemExecutionService.prepareForUpload(
-                    localId: localId,
-                    assetId: assetId,
-                    batchItems: &self.batchItems,
-                    lifecycle: self.batchItemLifecycleService
-                )
-            },
-            noteItemPreparedForUpload: { assetId in
-                self.noteBatchItemPreparedForUpload(assetId: assetId)
-            },
-            uploadBatchVideo: { assetId, creationContext in
-                await self.uploadBatchVideo(
-                    assetId: assetId,
-                    fileURL: creationContext.fileURL,
-                    metadata: creationContext.metadata,
-                    onProgress: { progress in
-                        self.updateBatchUploadProgress(localId: localId, progress: progress)
-                    }
-                )
-            },
-            pendingFailureIndex: { localId, skipAlreadyFailed in
-                self.batchItemExecutionService.pendingFailureIndex(
-                    localId: localId,
-                    batchItems: self.batchItems,
-                    skipAlreadyFailed: skipAlreadyFailed
-                )
-            },
-            markFailedAtIndex: { index, message in
-                self.markBatchItemFailedAtIndex(index: index, message: message)
-            },
-            noteUploadSucceeded: { assetId in
-                self.setBatchClipPhase(assetId: assetId, phase: .processing)
-            },
-            prepareForApplyingForm: { localId in
-                self.batchItemExecutionService.prepareForApplyingForm(
-                    localId: localId,
-                    batchItems: &self.batchItems,
-                    lifecycle: self.batchItemLifecycleService
-                )
-            },
-            noteItemPreparedForApplyingForm: { assetId, applyingUpdate in
-                self.noteBatchItemPreparedForApplyingForm(
-                    assetId: assetId,
-                    applyingUpdate: applyingUpdate
-                )
-            },
-            applyGroupedFormToAsset: { assetId in
-                await self.applyGroupedFormToAsset(assetId: assetId)
-            },
-            prepareForCompletion: { localId in
-                self.batchItemExecutionService.prepareForCompletion(
-                    localId: localId,
-                    batchItems: &self.batchItems,
-                    lifecycle: self.batchItemLifecycleService
-                )
-            },
-            noteItemCompleted: { completedUpdate, fileURL in
-                self.noteBatchItemCompleted(completedUpdate: completedUpdate, fileURL: fileURL)
-            }
+            host: self
         )
     }
 
@@ -1661,7 +1445,7 @@ final class ChatViewModel: WebSocketConnectionStateRuntime, WebSocketEventRuntim
             auth: auth,
             transport: batchUploadTransportService,
             presentation: batchAssetPresentationService,
-            dependencies: makeBatchCreateAssetDependencies()
+            host: self
         )
     }
 
@@ -1678,80 +1462,7 @@ final class ChatViewModel: WebSocketConnectionStateRuntime, WebSocketEventRuntim
             authToken: auth.token,
             transport: batchUploadTransportService,
             onProgress: onProgress,
-            dependencies: makeBatchUploadVideoDependencies()
-        )
-    }
-
-    private func makeBatchCreateAssetDependencies()
-        -> BatchAssetFlowService.CreateBatchAssetDependencies
-    {
-        .init(
-            registerAsset: { asset in
-                self.currentAssetId = asset.id
-                self.chatOwnership.registerActiveAsset(asset.id)
-                _ = self.promoteWorkflowStage(for: asset.id, to: .uploading)
-                self.clearBlockingConnectivityIssueIfNeeded(assetId: asset.id)
-            },
-            appendOutgoingMessage: { message in
-                self.appendMessage(message, source: .outgoing)
-            },
-            storeUploadInfo: { messageId, assetId, uploadInfo in
-                self.sentUploads[messageId] = uploadInfo
-                self.sentUploadsByAssetId[assetId] = uploadInfo
-            },
-            markBatchUploadStarted: { assetId in
-                self.setBatchClipPhase(assetId: assetId, phase: .uploading)
-                self.updateBatchClipProgress(assetId: assetId, progress: 0)
-            },
-            savePHAssetIdentifier: { assetId, identifier in
-                PHAssetIdentifierStore.save(assetId: assetId, phAssetIdentifier: identifier)
-            },
-            sendVideoUpload: { assetId, fileName, fileSize in
-                self.ws.sendVideoUpload(assetId: assetId, fileName: fileName, fileSize: fileSize)
-            },
-            isConnectivityIssue: { self.connectivityIssues.isConnectivityIssue($0) },
-            noteBlockingConnectivityIssue: { operation, assetId in
-                self.noteBlockingConnectivityIssue(operation: operation, assetId: assetId)
-            },
-            appendStartErrorBubble: {
-                self.appendErrorBubble(
-                    "Could not start batch upload. Please try again.",
-                    code: "IOS_BATCH_UPLOAD_START_FAILED"
-                )
-            },
-            reportStartError: { [weak self] errorDescription, fileName in
-                guard let self else { return }
-                await self.reportError(
-                    category: "upload",
-                    message: "Batch asset creation failed after 3 attempts: \(errorDescription)",
-                    severity: "ERROR",
-                    details: ["fileName": fileName]
-                )
-            }
-        )
-    }
-
-    private func makeBatchUploadVideoDependencies()
-        -> BatchAssetFlowService.UploadBatchVideoDependencies
-    {
-        .init(
-            markAssetFailed: { assetId, reason in
-                _ = self.promoteWorkflowStage(for: assetId, to: .failed)
-                self.markBatchClipFailed(assetId: assetId, reason: reason)
-            },
-            isConnectivityIssue: { self.connectivityIssues.isConnectivityIssue($0) },
-            noteBlockingConnectivityIssue: { operation, assetId in
-                self.noteBlockingConnectivityIssue(operation: operation, assetId: assetId)
-            },
-            reportUploadError: { [weak self] errorDescription, assetId in
-                guard let self else { return }
-                await self.reportError(
-                    category: "upload",
-                    message: "Batch file upload failed: \(errorDescription)",
-                    severity: "ERROR",
-                    assetId: assetId
-                )
-            }
+            host: self
         )
     }
 
@@ -1835,60 +1546,7 @@ final class ChatViewModel: WebSocketConnectionStateRuntime, WebSocketEventRuntim
 
         uploadQueueRehydrateExecutionService.execute(
             plan: rehydratePlan,
-            dependencies: makeUploadQueueRehydrateDependencies()
-        )
-    }
-
-    private func makeUploadQueueRehydrateDependencies()
-        -> UploadQueueRehydrateExecutionService.Dependencies
-    {
-        .init(
-            hasCurrentAsset: {
-                self.currentAssetId != nil
-            },
-            setCurrentAsset: { assetId in
-                self.currentAssetId = assetId
-            },
-            registerActiveAsset: { assetId in
-                self.chatOwnership.registerActiveAsset(assetId)
-            },
-            appendSummaryMessage: { message in
-                self.appendMessage(message, source: .workflow)
-            },
-            promoteWorkflowStage: { assetId, targetStage in
-                _ = self.promoteWorkflowStage(for: assetId, to: targetStage)
-            },
-            setBatchItems: { updatedItems in
-                self.batchItems = updatedItems
-            },
-            syncBatchDisplayState: { assetId in
-                self.syncBatchDisplayStateForRehydratedAsset(assetId: assetId)
-            },
-            hasUploadFailureMessage: { assetId in
-                self.hasWorkflowMessage(
-                    code: "IOS_UPLOAD_FAILED",
-                    assetId: assetId,
-                    mediasourceId: nil
-                )
-            },
-            appendUploadFailedBubble: { assetId, reason in
-                self.wsAppendUploadFailedBubble(assetId: assetId, reason: reason)
-            },
-            hasActiveBatch: {
-                self.hasActiveBatch
-            },
-            setBatchState: { state in
-                self.batchState = state
-            },
-            updateBatchProgress: {
-                self.batchProgress = self.computeBatchProgress()
-            },
-            persistBatchState: {
-                self.persistBatchState()
-            },
-            reconcileAssetDetails: { assetIds in
-                self.reconcileAssetDetailsAfterUploadQueueRehydrate(assetIds)
-            }
+            host: self
         )
     }
 
@@ -2223,46 +1881,7 @@ final class ChatViewModel: WebSocketConnectionStateRuntime, WebSocketEventRuntim
             assetId: assetId,
             presentErrorsInChat: presentErrorsInChat,
             reason: reason,
-            dependencies: makeAssetDetailSyncDependencies()
-        )
-    }
-
-    private func makeAssetDetailSyncDependencies() -> AssetDetailSyncService.Dependencies {
-        .init(
-            fetchAssetDetail: { assetId in
-                try await self.assetDetailService.fetchAssetDetail(auth: self.auth, assetId: assetId)
-            },
-            hasDetailLoadFailureMessage: { assetId in
-                self.hasWorkflowMessage(
-                    code: "IOS_ASSET_DETAILS_LOAD_FAILED",
-                    assetId: assetId,
-                    mediasourceId: nil
-                )
-            },
-            appendDetailLoadFailureBubble: { assetId in
-                self.appendErrorBubble(
-                    "Could not load video details.",
-                    assetId: assetId,
-                    code: "IOS_ASSET_DETAILS_LOAD_FAILED"
-                )
-            },
-            cacheAsset: { asset in
-                self.lastAsset = asset
-                self.lastClip = asset.clips?.first
-                self.assetDetailCache[asset.id] = asset
-            },
-            clearBlockingConnectivityIssue: { assetId in
-                self.clearBlockingConnectivityIssueIfNeeded(assetId: assetId)
-            },
-            reconcileWorkflowState: { asset in
-                self.reconcileWorkflowState(from: asset, source: .workflow)
-            },
-            isConnectivityIssue: { error in
-                self.connectivityIssues.isConnectivityIssue(error)
-            },
-            noteBlockingConnectivityIssue: { operation, assetId in
-                self.noteBlockingConnectivityIssue(operation: operation, assetId: assetId)
-            }
+            host: self
         )
     }
 
@@ -2453,5 +2072,441 @@ final class ChatViewModel: WebSocketConnectionStateRuntime, WebSocketEventRuntim
                 print("⚠️ Failed to download Slack thumbnail: \(error.localizedDescription)")
             }
         }
+    }
+}
+
+// MARK: - Priority 5b: Upload/Workflow Host Conformances
+// These extensions are inlined in this file so they can access ChatViewModel's
+// private members (Swift's `private` is file-scoped). Each extension replaces
+// the closure-bag `Dependencies` struct that previously sat on each service.
+
+// MARK: WorkflowReconcileExecutionHost
+
+extension ChatViewModel: WorkflowReconcileExecutionHost {
+    func wreMarkBatchClipFailed(assetId: String?, reason: String) {
+        markBatchClipFailed(assetId: assetId, reason: reason)
+    }
+
+    func wreAppendUploadFailedBubble(assetId: String, reason: String) {
+        wsAppendUploadFailedBubble(assetId: assetId, reason: reason)
+    }
+
+    func wreUpdateBatchMetadataToProcessing(asset: Asset) {
+        updateBatchClipMetadata(
+            assetId: asset.id,
+            mediasourceId: asset.mediasourceId,
+            mediasourceUrl: asset.mediasourceUrl,
+            formSlug: asset.formResponse?.slug
+        )
+        setBatchClipPhase(assetId: asset.id, phase: .processing)
+    }
+
+    func wreMarkBatchClipReady(asset: Asset) {
+        markBatchClipReady(
+            assetId: asset.id,
+            mediasourceId: asset.mediasourceId,
+            mediasourceUrl: asset.mediasourceUrl,
+            formSlug: asset.formResponse?.slug
+        )
+    }
+
+    func wreAppendFormConfirmed(asset: Asset, source: MessagePolicyCoordinator.Source) {
+        appendReconciledFormConfirmed(asset: asset, source: source)
+    }
+
+    func wreResetReadyMessagePolicy(assetId: String) {
+        messagePolicy.resetAssetScope(assetId: assetId)
+    }
+
+    func wreApplyReadyWorkflowState(asset: Asset, source: MessagePolicyCoordinator.Source) {
+        applyReadyWorkflowState(
+            assetId: asset.id,
+            mediasourceId: asset.mediasourceId,
+            mediasourceUrl: asset.mediasourceUrl,
+            originalFileName: asset.originalFileName
+                ?? asset.clips?.first?.originalFileName,
+            formSlug: asset.formResponse?.slug,
+            duration: asset.clips?.first?.duration,
+            resolution: asset.clips?.first?.resolution,
+            fileSize: asset.clips?.first?.fileSize,
+            source: source
+        )
+    }
+}
+
+// MARK: SingleUploadFlowHost
+
+extension ChatViewModel: SingleUploadFlowHost {
+    // createAsset
+    func sufRegisterAsset(_ asset: Asset) {
+        currentAssetId = asset.id
+        chatOwnership.registerActiveAsset(asset.id)
+        _ = promoteWorkflowStage(for: asset.id, to: .uploading)
+        clearBlockingConnectivityIssueIfNeeded(assetId: asset.id)
+    }
+
+    func sufAppendOutgoingMessage(_ message: ChatMessage) {
+        appendMessage(message, source: .outgoing)
+    }
+
+    func sufStoreUploadInfo(messageId: String, assetId: String, uploadInfo: SentUploadInfo) {
+        sentUploads[messageId] = uploadInfo
+        sentUploadsByAssetId[assetId] = uploadInfo
+    }
+
+    func sufSendVideoUpload(assetId: String, fileName: String, fileSize: Int64) {
+        ws.sendVideoUpload(assetId: assetId, fileName: fileName, fileSize: fileSize)
+    }
+
+    func sufAppendStartErrorBubble() {
+        appendErrorBubble(
+            "Could not start upload. Please try again.",
+            code: "IOS_UPLOAD_START_FAILED"
+        )
+    }
+
+    func sufReportStartError(errorDescription: String, fileName: String) async {
+        await reportError(
+            category: "upload",
+            message: "Asset creation failed after 3 attempts: \(errorDescription)",
+            severity: "ERROR",
+            details: ["fileName": fileName]
+        )
+    }
+
+    // uploadVideo
+    func sufSetUploading(_ isUploading: Bool) {
+        self.isUploading = isUploading
+    }
+
+    func sufUpdateProgress(_ progress: Double) {
+        uploadProgress = progress
+    }
+
+    func sufMarkAssetFailed(assetId: String) {
+        _ = promoteWorkflowStage(for: assetId, to: .failed)
+    }
+
+    func sufAppendUploadErrorBubble(assetId: String, reason: String) {
+        appendErrorBubble(
+            "Upload failed: \(reason)",
+            assetId: assetId,
+            code: "IOS_UPLOAD_FAILED",
+            params: ["reason": reason]
+        )
+    }
+
+    func sufReportUploadError(assetId: String, errorDescription: String) async {
+        await reportError(
+            category: "upload",
+            message: "File upload failed: \(errorDescription)",
+            severity: "ERROR",
+            assetId: assetId
+        )
+    }
+
+    // shared
+    func sufIsConnectivityIssue(_ error: Error) -> Bool {
+        connectivityIssues.isConnectivityIssue(error)
+    }
+
+    func sufNoteBlockingConnectivityIssue(operation: String, assetId: String?) {
+        noteBlockingConnectivityIssue(operation: operation, assetId: assetId)
+    }
+}
+
+// MARK: BatchAssetFlowHost
+
+extension ChatViewModel: BatchAssetFlowHost {
+    // createBatchAsset
+    func bafRegisterAsset(_ asset: Asset) {
+        currentAssetId = asset.id
+        chatOwnership.registerActiveAsset(asset.id)
+        _ = promoteWorkflowStage(for: asset.id, to: .uploading)
+        clearBlockingConnectivityIssueIfNeeded(assetId: asset.id)
+    }
+
+    func bafAppendOutgoingMessage(_ message: ChatMessage) {
+        appendMessage(message, source: .outgoing)
+    }
+
+    func bafStoreUploadInfo(messageId: String, assetId: String, uploadInfo: SentUploadInfo) {
+        sentUploads[messageId] = uploadInfo
+        sentUploadsByAssetId[assetId] = uploadInfo
+    }
+
+    func bafMarkBatchUploadStarted(assetId: String) {
+        setBatchClipPhase(assetId: assetId, phase: .uploading)
+        updateBatchClipProgress(assetId: assetId, progress: 0)
+    }
+
+    func bafSavePHAssetIdentifier(assetId: String, identifier: String) {
+        PHAssetIdentifierStore.save(assetId: assetId, phAssetIdentifier: identifier)
+    }
+
+    func bafSendVideoUpload(assetId: String, fileName: String, fileSize: Int64) {
+        ws.sendVideoUpload(assetId: assetId, fileName: fileName, fileSize: fileSize)
+    }
+
+    func bafAppendStartErrorBubble() {
+        appendErrorBubble(
+            "Could not start batch upload. Please try again.",
+            code: "IOS_BATCH_UPLOAD_START_FAILED"
+        )
+    }
+
+    func bafReportStartError(errorDescription: String, fileName: String) async {
+        await reportError(
+            category: "upload",
+            message: "Batch asset creation failed after 3 attempts: \(errorDescription)",
+            severity: "ERROR",
+            details: ["fileName": fileName]
+        )
+    }
+
+    // uploadBatchVideo
+    func bafMarkAssetFailed(assetId: String, reason: String) {
+        _ = promoteWorkflowStage(for: assetId, to: .failed)
+        markBatchClipFailed(assetId: assetId, reason: reason)
+    }
+
+    func bafReportUploadError(errorDescription: String, assetId: String) async {
+        await reportError(
+            category: "upload",
+            message: "Batch file upload failed: \(errorDescription)",
+            severity: "ERROR",
+            assetId: assetId
+        )
+    }
+
+    // shared
+    func bafIsConnectivityIssue(_ error: Error) -> Bool {
+        connectivityIssues.isConnectivityIssue(error)
+    }
+
+    func bafNoteBlockingConnectivityIssue(operation: String, assetId: String?) {
+        noteBlockingConnectivityIssue(operation: operation, assetId: assetId)
+    }
+}
+
+// MARK: BatchItemProcessingHost
+
+extension ChatViewModel: BatchItemProcessingHost {
+    func bipPrepareForProcessing(localId: String) -> BatchItemPreparationResult {
+        batchItemExecutionService.prepareForProcessing(
+            localId: localId,
+            batchItems: &batchItems,
+            stagedBatchVideos: stagedBatchVideos,
+            lifecycle: batchItemLifecycleService
+        )
+    }
+
+    func bipNoteItemPreparedForCreation() {
+        noteBatchItemPreparedForCreation()
+    }
+
+    func bipBuildCreationContext(
+        from selectedContext: BatchItemSelectedContext
+    ) async -> BatchItemCreationContext {
+        await batchItemExecutionService.buildCreationContext(from: selectedContext)
+    }
+
+    func bipCreateBatchAsset(creationContext: BatchItemCreationContext) async -> Asset? {
+        await createBatchAsset(
+            fileName: creationContext.fileName,
+            fileURL: creationContext.fileURL,
+            thumbnail: creationContext.thumbnail,
+            createdDate: creationContext.createdDate,
+            hasLocation: creationContext.hasLocation,
+            phAssetIdentifier: creationContext.phAssetIdentifier
+        )
+    }
+
+    func bipPrepareForUpload(localId: String, assetId: String) -> Bool {
+        batchItemExecutionService.prepareForUpload(
+            localId: localId,
+            assetId: assetId,
+            batchItems: &batchItems,
+            lifecycle: batchItemLifecycleService
+        )
+    }
+
+    func bipNoteItemPreparedForUpload(assetId: String) {
+        noteBatchItemPreparedForUpload(assetId: assetId)
+    }
+
+    func bipUploadBatchVideo(
+        localId: String,
+        assetId: String,
+        creationContext: BatchItemCreationContext
+    ) async -> Bool {
+        await uploadBatchVideo(
+            assetId: assetId,
+            fileURL: creationContext.fileURL,
+            metadata: creationContext.metadata,
+            onProgress: { progress in
+                self.updateBatchUploadProgress(localId: localId, progress: progress)
+            }
+        )
+    }
+
+    func bipPendingFailureIndex(localId: String, skipAlreadyFailed: Bool) -> Int? {
+        batchItemExecutionService.pendingFailureIndex(
+            localId: localId,
+            batchItems: batchItems,
+            skipAlreadyFailed: skipAlreadyFailed
+        )
+    }
+
+    func bipMarkFailedAtIndex(index: Int, message: String) {
+        markBatchItemFailedAtIndex(index: index, message: message)
+    }
+
+    func bipNoteUploadSucceeded(assetId: String) {
+        setBatchClipPhase(assetId: assetId, phase: .processing)
+    }
+
+    func bipPrepareForApplyingForm(localId: String) -> BatchItemProgressUpdate? {
+        batchItemExecutionService.prepareForApplyingForm(
+            localId: localId,
+            batchItems: &batchItems,
+            lifecycle: batchItemLifecycleService
+        )
+    }
+
+    func bipNoteItemPreparedForApplyingForm(
+        assetId: String,
+        applyingUpdate: BatchItemProgressUpdate
+    ) {
+        noteBatchItemPreparedForApplyingForm(
+            assetId: assetId,
+            applyingUpdate: applyingUpdate
+        )
+    }
+
+    func bipApplyGroupedFormToAsset(assetId: String) async -> Bool {
+        await applyGroupedFormToAsset(assetId: assetId)
+    }
+
+    func bipPrepareForCompletion(localId: String) -> BatchItemProgressUpdate? {
+        batchItemExecutionService.prepareForCompletion(
+            localId: localId,
+            batchItems: &batchItems,
+            lifecycle: batchItemLifecycleService
+        )
+    }
+
+    func bipNoteItemCompleted(completedUpdate: BatchItemProgressUpdate, fileURL: URL) {
+        noteBatchItemCompleted(completedUpdate: completedUpdate, fileURL: fileURL)
+    }
+}
+
+// MARK: UploadQueueRehydrateHost
+
+extension ChatViewModel: UploadQueueRehydrateHost {
+    func uqrHasCurrentAsset() -> Bool {
+        currentAssetId != nil
+    }
+
+    func uqrSetCurrentAsset(assetId: String) {
+        currentAssetId = assetId
+    }
+
+    func uqrRegisterActiveAsset(assetId: String?) {
+        chatOwnership.registerActiveAsset(assetId)
+    }
+
+    func uqrAppendSummaryMessage(_ message: ChatMessage) {
+        appendMessage(message, source: .workflow)
+    }
+
+    func uqrPromoteWorkflowStage(assetId: String, targetStage: WorkflowStage) {
+        _ = promoteWorkflowStage(for: assetId, to: targetStage)
+    }
+
+    func uqrSetBatchItems(_ items: [VideoBatchItem]) {
+        batchItems = items
+    }
+
+    func uqrSyncBatchDisplayState(assetId: String) {
+        syncBatchDisplayStateForRehydratedAsset(assetId: assetId)
+    }
+
+    func uqrHasUploadFailureMessage(assetId: String) -> Bool {
+        hasWorkflowMessage(
+            code: "IOS_UPLOAD_FAILED",
+            assetId: assetId,
+            mediasourceId: nil
+        )
+    }
+
+    func uqrAppendUploadFailedBubble(assetId: String, reason: String) {
+        wsAppendUploadFailedBubble(assetId: assetId, reason: reason)
+    }
+
+    func uqrHasActiveBatch() -> Bool {
+        hasActiveBatch
+    }
+
+    func uqrSetBatchState(_ state: VideoBatchState) {
+        batchState = state
+    }
+
+    func uqrUpdateBatchProgress() {
+        batchProgress = computeBatchProgress()
+    }
+
+    func uqrPersistBatchState() {
+        persistBatchState()
+    }
+
+    func uqrReconcileAssetDetails(assetIds: [String]) {
+        reconcileAssetDetailsAfterUploadQueueRehydrate(assetIds)
+    }
+}
+
+// MARK: AssetDetailSyncHost
+
+extension ChatViewModel: AssetDetailSyncHost {
+    func adsFetchAssetDetail(assetId: String) async throws -> AssetDetailFetchResult {
+        try await assetDetailService.fetchAssetDetail(auth: auth, assetId: assetId)
+    }
+
+    func adsHasDetailLoadFailureMessage(assetId: String) -> Bool {
+        hasWorkflowMessage(
+            code: "IOS_ASSET_DETAILS_LOAD_FAILED",
+            assetId: assetId,
+            mediasourceId: nil
+        )
+    }
+
+    func adsAppendDetailLoadFailureBubble(assetId: String) {
+        appendErrorBubble(
+            "Could not load video details.",
+            assetId: assetId,
+            code: "IOS_ASSET_DETAILS_LOAD_FAILED"
+        )
+    }
+
+    func adsCacheAsset(_ asset: Asset) {
+        lastAsset = asset
+        lastClip = asset.clips?.first
+        assetDetailCache[asset.id] = asset
+    }
+
+    func adsClearBlockingConnectivityIssue(assetId: String) {
+        clearBlockingConnectivityIssueIfNeeded(assetId: assetId)
+    }
+
+    func adsReconcileWorkflowState(asset: Asset) {
+        reconcileWorkflowState(from: asset, source: .workflow)
+    }
+
+    func adsIsConnectivityIssue(_ error: Error) -> Bool {
+        connectivityIssues.isConnectivityIssue(error)
+    }
+
+    func adsNoteBlockingConnectivityIssue(operation: String, assetId: String?) {
+        noteBlockingConnectivityIssue(operation: operation, assetId: assetId)
     }
 }
