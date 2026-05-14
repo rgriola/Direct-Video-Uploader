@@ -67,7 +67,10 @@ export default async function assetRoutes(fastify) {
             },
         },
         config: {
-            rateLimit: { max: 10, timeWindow: '1 minute' },
+            // Batch uploads regularly create 20–50 assets in under a minute.
+            // Cap kept per-user (auth-keyed) so a runaway client can't flood,
+            // but high enough that a normal news shoot never trips it.
+            rateLimit: { max: 120, timeWindow: '1 minute' },
         },
     }, async (request) => {
         const { fileName } = request.body || {};
@@ -108,8 +111,12 @@ export default async function assetRoutes(fastify) {
         preHandler: [fastify.authenticate],
         config: {
             // Phase 1.5: constrain expensive upload-URL creation per authenticated user.
+            // 10/hour was too tight — a single 14-clip batch tripped it and the
+            // iOS retry budget (3 attempts, seconds apart) had no chance against
+            // a 1-hour reset window. 200/hour leaves ample headroom for real
+            // shoots while still capping abuse.
             rateLimit: {
-                max: 10,
+                max: 200,
                 timeWindow: '1 hour',
                 groupId: 'mux-upload-create',
             },
