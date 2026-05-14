@@ -353,17 +353,16 @@ struct VideoLibraryView: View {
                 phAssetIdentifier: item.itemIdentifier
             )
         } catch {
-            print("❌ [Library] Failed to load video: \(error)")
+            AppLog.ui.error("[Library] Failed to load video: \(error.localizedDescription)")
             return nil
         }
     }
 
     private func cleanUpLoadedVideos() {
-        let tempDir = FileManager.default.temporaryDirectory.path
         let urlsToDelete =
             selectedVideos
             .map(\.fileURL)
-            .filter { $0.path.hasPrefix(tempDir) }
+            .filter { UploadStorage.isStagedUploadURL($0) }
 
         for url in urlsToDelete {
             Task.detached(priority: .utility) {
@@ -460,14 +459,16 @@ struct VideoTransferable: Transferable {
         FileRepresentation(contentType: .movie) { movie in
             SentTransferredFile(movie.url)
         } importing: { received in
-            // Keep the original filename from the photo library (e.g. IMG_1245.MOV)
+            // Keep the original filename from the photo library (e.g. IMG_1245.MOV).
+            // Stage in Library/Caches/uploads so the file survives app relaunches
+            // (iOS wipes tmp/ aggressively, breaking batch retry).
             let originalName = received.file.lastPathComponent
-            let subdir = FileManager.default.temporaryDirectory
-                .appendingPathComponent(UUID().uuidString)
+            let subdir = UploadStorage.stagingDirectory()
+                .appendingPathComponent(UUID().uuidString, isDirectory: true)
             try FileManager.default.createDirectory(at: subdir, withIntermediateDirectories: true)
-            let tempURL = subdir.appendingPathComponent(originalName)
-            try FileManager.default.copyItem(at: received.file, to: tempURL)
-            return Self(url: tempURL)
+            let stagedURL = subdir.appendingPathComponent(originalName)
+            try FileManager.default.copyItem(at: received.file, to: stagedURL)
+            return Self(url: stagedURL)
         }
     }
 }

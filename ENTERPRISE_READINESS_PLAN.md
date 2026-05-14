@@ -1,9 +1,9 @@
-Last updated: May 12, 2026 - 4:40pm - GitHub Copilot (GPT-5.3-Codex)
+Last updated: May 13, 2026 - 4:08pm - GitHub Copilot (GPT-5.3-Codex)
 
 # Enterprise Readiness Plan — Fixer
 
-> Last updated: May 12, 2026
-> Status: Execution in progress. Core foundation and security quick wins are partially implemented.
+> Last updated: May 13, 2026
+> Status: Execution in progress. Foundation and security phases are largely implemented; IAM is partial; compliance/scaling tracks remain pending.
 > Progress sync: Items checked below were verified in code/config as implemented. Unchecked items are pending or partially complete.
 
 This document is a phased roadmap to bring Fixer to enterprise-grade quality.
@@ -121,6 +121,7 @@ server/src/__tests__/
 - [x] Create `server/src/lib/redis.js` — `ioredis` singleton with reconnect/backoff
 - [x] Add Redis ping to `/api/health/ready` (Phase 4.3)
 - [x] Document local-dev fallback: in-memory shim when `REDIS_URL` is unset
+- [x] Verify `REDIS_URL` binding on Render services and confirm `/api/health/ready` returns `redis: ok` after deploy
 
 ---
 
@@ -171,7 +172,6 @@ server/src/__tests__/
 
 > Depends on Phase 0.4 (Redis).
 
-- [ ] Use Redis from Phase 0.4 to store token JTI (JWT ID) with TTL matching token expiry
 - [x] Use Redis from Phase 0.4 to store token JTI (JWT ID) with TTL matching token expiry
   - On logout: delete JTI from Redis
   - On every auth check: verify JTI exists in Redis (or use a deny-list pattern for lower latency)
@@ -447,9 +447,12 @@ VIEWER       → read-only clip access within their org
 
 ### 4.1 Sentry Integration
 
-> Deferred for now: no active Sentry account is available yet. Resume this phase once a Sentry account and DSN are provisioned.
+> Current state: Admin dashboard Sentry is implemented and smoke-tested. Server and iOS Sentry tracks remain pending.
 
-- [ ] Install `@sentry/node` on server, `@sentry/react` + `@sentry/vite-plugin` on admin (admin is React + Vite, NOT SvelteKit)
+- [x] Install `@sentry/react` + `@sentry/vite-plugin` on admin (admin is React + Vite, NOT SvelteKit)
+- [x] Initialize Sentry in `admin/src/main.tsx` with DSN/environment/release (`tracesSampleRate: 0.1`)
+- [x] Run admin smoke test and verify event ingestion
+- [ ] Install `@sentry/node` on server
 - [ ] Initialize Sentry in `server/src/index.js` with:
   - DSN from env var `SENTRY_DSN`
   - `tracesSampleRate: 0.1` (10% performance traces)

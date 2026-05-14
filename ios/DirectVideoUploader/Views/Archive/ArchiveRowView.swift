@@ -493,12 +493,12 @@ struct ArchiveRowView: View {
                 // Update local state immediately — switches to Ready + Details button
                 formSubmitted = true
                 submittedFormData = formData
-                print("✅ [Archive] Form submitted for asset: \(asset.id)")
+                AppLog.ui.info("[Archive] Form submitted for asset: \(asset.id)")
                 // Refresh parent list so server data is in sync
                 onFormSubmitted?()
             }
         } catch {
-            print("❌ [Archive] Form submit failed: \(error.localizedDescription)")
+            AppLog.ui.error("[Archive] Form submit failed: \(error.localizedDescription)")
         }
     }
 
@@ -516,7 +516,7 @@ struct ArchiveRowView: View {
             if let phId = PHAssetIdentifierStore.identifier(for: asset.id) {
                 let fetchResult = PHAsset.fetchAssets(withLocalIdentifiers: [phId], options: nil)
                 if let phAsset = fetchResult.firstObject {
-                    print("📷 [Archive] Found video by stored PHAsset ID")
+                    AppLog.ui.info("[Archive] Found video by stored PHAsset ID")
                     let tempURL = try await exportVideoToTemp(phAsset: phAsset)
                     defer { try? FileManager.default.removeItem(at: tempURL) }
                     try await performUpload(fileURL: tempURL)
@@ -531,7 +531,7 @@ struct ArchiveRowView: View {
                 let phAsset = discoverPHAsset(
                     capturedAt: capturedDate, duration: asset.clips?.first?.duration)
                 if let phAsset {
-                    print("📷 [Archive] Auto-discovered video by capturedAt: \(capturedAtStr)")
+                    AppLog.ui.info("[Archive] Auto-discovered video by capturedAt: \(capturedAtStr)")
                     // Save for future re-uploads
                     PHAssetIdentifierStore.save(
                         assetId: asset.id, phAssetIdentifier: phAsset.localIdentifier)
@@ -547,7 +547,7 @@ struct ArchiveRowView: View {
 
         } catch {
             reuploadError = "Re-upload failed: \(error.localizedDescription)"
-            print("❌ [Archive] Auto re-upload failed: \(error)")
+            AppLog.ui.error("[Archive] Auto re-upload failed: \(error.localizedDescription)")
         }
     }
 
@@ -616,7 +616,7 @@ struct ArchiveRowView: View {
             try await performUpload(fileURL: tempURL)
         } catch {
             reuploadError = "Re-upload failed: \(error.localizedDescription)"
-            print("❌ [Archive] Re-upload failed: \(error)")
+            AppLog.ui.error("[Archive] Re-upload failed: \(error.localizedDescription)")
         }
     }
 
@@ -649,7 +649,7 @@ struct ArchiveRowView: View {
         reuploadProgress = 1.0
         reuploadComplete = true
         isReuploadingVideo = false
-        print("✅ [Archive] Re-upload complete for asset: \(asset.id)")
+        AppLog.ui.info("[Archive] Re-upload complete for asset: \(asset.id)")
 
         try? await Task.sleep(for: .seconds(2))
         onFormSubmitted?()
@@ -681,14 +681,16 @@ private func phAssetToTempFile(phAsset: PHAsset, fileName: String) async throws 
                 return
             }
 
-            let subdir = FileManager.default.temporaryDirectory
-                .appendingPathComponent(UUID().uuidString)
+            // Stage in Library/Caches/uploads so the re-upload bytes survive
+            // app relaunches (iOS wipes tmp/ between launches).
+            let subdir = UploadStorage.stagingDirectory()
+                .appendingPathComponent(UUID().uuidString, isDirectory: true)
             try? FileManager.default.createDirectory(at: subdir, withIntermediateDirectories: true)
-            let tempURL = subdir.appendingPathComponent(fileName)
+            let stagedURL = subdir.appendingPathComponent(fileName)
 
             do {
-                try FileManager.default.copyItem(at: urlAsset.url, to: tempURL)
-                continuation.resume(returning: tempURL)
+                try FileManager.default.copyItem(at: urlAsset.url, to: stagedURL)
+                continuation.resume(returning: stagedURL)
             } catch {
                 continuation.resume(throwing: error)
             }

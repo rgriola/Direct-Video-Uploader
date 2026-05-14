@@ -1,4 +1,4 @@
-// May 10, 2026 - 3:07pm - GitHub Copilot (GPT-5.3-Codex)
+// May 14, 2026 - 2:50pm - GitHub Copilot (Claude Opus 4.7)
 import SwiftUI
 
 /// Root view — shows Login or Chat/Archive tabs depending on auth state.
@@ -8,18 +8,13 @@ struct ContentView: View {
     @Environment(AppearanceService.self) private var appearance
     @Environment(\.scenePhase) private var scenePhase
     @State private var backgroundDisconnectTask: Task<Void, Never>?
-    @State private var sessionCheckComplete = false
+    @State private var didRevalidateSession = false
 
     var body: some View {
         Group {
-            if !sessionCheckComplete {
-                // Resolving stored token — show a neutral loading screen
-                Theme.black.ignoresSafeArea()
-                    .overlay {
-                        ProgressView()
-                            .tint(Theme.white.opacity(0.4))
-                    }
-            } else if auth.isAuthenticated && auth.currentUser != nil {
+            if auth.isAuthenticated && auth.currentUser != nil {
+                // Token + cached user — render authenticated UI immediately.
+                // Silent /api/me revalidation runs in .task below.
                 TabView {
                     ChatView()
                         .tabItem {
@@ -47,26 +42,28 @@ struct ContentView: View {
                 }
                 .tint(Theme.purple)
             } else {
+                // No token, or token without cached user — show login immediately.
+                // (currentUser is persisted alongside token, so this branch is rare.)
                 LoginView()
             }
         }
         .preferredColorScheme(appearance.preferredColorScheme)
         .task {
-            // Validate stored token before showing any UI
-            if auth.token != nil {
-                do {
-                    try await auth.fetchMe()
-                } catch {
-                    // fetchMe already calls logout() on 401/403;
-                    // any other error (network down) also forces login
-                    // so the user doesn't get stuck on a blank profile.
-                    print(
-                        "⚠️ [Session] Restore failed: \(error.localizedDescription) — clearing session"
-                    )
-                    auth.logout()
-                }
+            // Background revalidation — runs once per cold launch when authenticated.
+            // Does NOT block the UI. Only logs the user out on a confirmed 401/403.
+            // Network errors leave the cached session intact.
+            guard !didRevalidateSession else { return }
+            didRevalidateSession = true
+            guard auth.token != nil else { return }
+            do {
+                try await auth.fetchMe()
+            } catch AuthError.tokenExpired {
+                AppLog.auth.info("[Session] Token expired — logged out")
+            } catch {
+                AppLog.auth.warning(
+                    "[Session] Revalidation failed (keeping cached session): \(error.localizedDescription)"
+                )
             }
-            sessionCheckComplete = true
         }
         .onChange(of: scenePhase) { _, newPhase in
             switch newPhase {
@@ -77,7 +74,7 @@ struct ContentView: View {
                 // Reconnect only when fully disconnected. If we're already in
                 // .connecting, allow that in-flight attempt to finish.
                 if auth.isAuthenticated, let token = auth.token, ws.isDisconnected {
-                    print("🔄 [Scene] Returned to foreground — reconnecting WebSocket")
+                    AppLog.ws.info("[Scene] Returned to foreground — reconnecting WebSocket")
                     ws.reconnectFromForeground(token: token)
                 }
             case .background:
@@ -86,7 +83,7 @@ struct ContentView: View {
                     backgroundDisconnectTask = Task {
                         try? await Task.sleep(for: .seconds(30))
                         guard !Task.isCancelled else { return }
-                        print("💤 [Scene] Background timeout — closing WebSocket")
+                        AppLog.ws.info("[Scene] Background timeout — closing WebSocket")
                         ws.backgroundDisconnect()
                     }
                 }

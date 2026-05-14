@@ -1,4 +1,4 @@
-// May 10, 2026 - 2:15pm - GitHub Copilot (GPT-5.3-Codex)
+// May 14, 2026 - 10:30am - GitHub Copilot (Claude Opus 4.7)
 import SwiftUI
 import UIKit
 
@@ -33,23 +33,17 @@ enum Theme {
     /// Change this one line to restyle every font in the app.
     static let fontFamily: FontFamily = .system
 
+    /// Resolve a concrete light/dark style from the dynamic provider's `traits`.
+    /// UIKit always passes a concrete style (`.light` or `.dark`) to a dynamic UIColor provider,
+    /// so we just pin `.unspecified` to `.light` and avoid touching `UIScreen.main` /
+    /// `UITraitCollection.current` from the (potentially non-main) provider closure.
     private static func resolvedInterfaceStyle(from traits: UITraitCollection)
         -> UIUserInterfaceStyle
     {
         switch traits.userInterfaceStyle {
-        case .dark, .light:
-            return traits.userInterfaceStyle
-        case .unspecified:
-            let current = UITraitCollection.current.userInterfaceStyle
-            if current == .dark || current == .light {
-                return current
-            }
-
-            let screen = UIScreen.main.traitCollection.userInterfaceStyle
-            if screen == .dark || screen == .light {
-                return screen
-            }
-
+        case .dark:
+            return .dark
+        case .light, .unspecified:
             return .light
         @unknown default:
             return .light

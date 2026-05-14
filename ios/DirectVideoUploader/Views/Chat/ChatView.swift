@@ -174,6 +174,11 @@ struct ChatView: View {
             viewModel = vm
             vm.connectWebSocket()
 
+            // Reconcile any background-upload tasks left over from a previous
+            // session. Deferred to here (post-login) so it never blocks app launch
+            // and never runs for unauthenticated users.
+            BackgroundUploadSessionCoordinator.shared.reconcileOutstandingTasks()
+
             if !hasCompletedOnboarding {
                 showOnboarding = true
             }
@@ -252,7 +257,7 @@ struct ChatView: View {
                 }
             )
             .id(message.id)
-        } else if message.messageType == .muxReady {
+        } else if message.messageType == .streamReady {
             let canUseArchiveFallback = message.assetId == vm.archive.assetId
             let summaryMediasourceId =
                 message.content.mediasourceId

@@ -7,180 +7,259 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		0597302A0A40700F7C89F10C /* WebSocketConnectionStateService.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF832B7FFECB82D590207866 /* WebSocketConnectionStateService.swift */; };
-		11D6533D179EE7F2AAA89D91 /* ConversationResetService.swift in Sources */ = {isa = PBXBuildFile; fileRef = DBD7F5A3B5FB706B8A06A881 /* ConversationResetService.swift */; };
-		14AEA5F4C9C3ADEB01EDE832 /* WebSocketFormRequestEventService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F882A616547681B986DF977 /* WebSocketFormRequestEventService.swift */; };
-		14EE8747DCAB398AE2B4F511 /* WorkflowStageTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3533A958197D037FC6EA505D /* WorkflowStageTracker.swift */; };
+		0134F7E0E6B56F462D4FA249 /* PendingForm.swift in Sources */ = {isa = PBXBuildFile; fileRef = 944EE826833A1F37DAC5ADCB /* PendingForm.swift */; };
+		0B18B9F9F9558508CE1C0624 /* FormSubmissionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C4ADC17B893DF293D5DD7EB /* FormSubmissionService.swift */; };
+		12DE11919B53BD68575BBFDF /* ChatViewModel+WSRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05478495469C54B6983538BD /* ChatViewModel+WSRuntime.swift */; };
 		169D8BAC6DCF93E8BA23331B /* OnboardingStepView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D9A41DBC2D0BD1F47AF7EE95 /* OnboardingStepView.swift */; };
-		1E7641773C019BDC56307952 /* FormSubmissionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B8B66639636FACBAA7491E67 /* FormSubmissionService.swift */; };
-		20BACAEC6E1098C397C1FEB0 /* WebSocketMessageEventService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C343FD39F250EB4145AA932 /* WebSocketMessageEventService.swift */; };
+		198D9F0B3F969141BBB1C29E /* ChatViewModel+Send.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD1A24A54229EBE6D3221B14 /* ChatViewModel+Send.swift */; };
+		19B92FB1E9BB56286E632E1F /* ArchiveIngestTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4692B5219F6AD416875DFE2C /* ArchiveIngestTransport.swift */; };
+		1C2D98434B4172C7C7ACEC17 /* BatchClipDisplayService.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4B8798217E6EABF7F82EFDA /* BatchClipDisplayService.swift */; };
+		1C566B63607F5D90A7A8042C /* GroupedFormService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEB117AA444296AC9A211F19 /* GroupedFormService.swift */; };
 		24514C388FE23338E0243A71 /* VideoBatch.swift in Sources */ = {isa = PBXBuildFile; fileRef = 906B4EE592B6559E18A30C6C /* VideoBatch.swift */; };
 		257DDBB48613A0897D5754F0 /* VideoLibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC53E361C83E04580CF05221 /* VideoLibraryView.swift */; };
-		25D22AA74C5C0F656CB2C480 /* WebSocketFormConfirmedEventService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB466E29A44672F9357FF9AE /* WebSocketFormConfirmedEventService.swift */; };
-		25F4475ABDC354FFB218DC4B /* VideoUploadService.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA58877C26F0C09FF7DFA4DC /* VideoUploadService.swift */; };
-		26792F62A47983975DB4A697 /* ReadyWorkflowStateService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62B5EC27AFEBD160F703877D /* ReadyWorkflowStateService.swift */; };
-		274E5DCB462323AD73FE53D0 /* PendingBatchStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE6E0F942C662BAFDA11CFA4 /* PendingBatchStore.swift */; };
-		2A8D68699975091090384804 /* PendingFormRecoveryService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBF25CBD708E82D1150C29D4 /* PendingFormRecoveryService.swift */; };
+		291858F0BD660F5D1FE91227 /* PendingFormRecoveryService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D0D0375A91423F42CC34340 /* PendingFormRecoveryService.swift */; };
+		2AC247B195848B449DC11B37 /* IngestTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B184A9B10D8C34799B39553 /* IngestTransport.swift */; };
+		2AFBDC48DC7C56C2ED5A9176 /* WorkflowReconcilePlanService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67F48E8AD3FD918226AFCFA3 /* WorkflowReconcilePlanService.swift */; };
 		2F5EB0FE2B5962DCCF6BCD5B /* LoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAA58A3F30BFA24CE268AD67 /* LoginView.swift */; };
-		3326B73E86C395A539C4B69E /* WebSocketService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0813D4F9F9F55CFAE78F08B5 /* WebSocketService.swift */; };
+		2FAE80E649CAA21C36370ACD /* IngestTransportRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 69BF62881BB5D544301076A9 /* IngestTransportRegistry.swift */; };
 		3397724BA17E25882518C0BD /* ConversationSummaryBubble.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC2A1D0A89F18984A90B5686 /* ConversationSummaryBubble.swift */; };
-		34161D54EBB85147CAB0C13D /* TextMessageFlowService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BCF9578C57545FDADB560DCB /* TextMessageFlowService.swift */; };
 		37912629DFC4719F11FEB3F5 /* MetadataView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2796AFC62F34F3182D7CCE1C /* MetadataView.swift */; };
-		3A022C8E02782600E2C46AAA /* WorkflowReconcilePlanService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67EFEC479D73B5032402DA35 /* WorkflowReconcilePlanService.swift */; };
-		4100E9F25D9326F7B8627D42 /* PendingBatchRestoreService.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA68D51F52BCE0942D5D7F67 /* PendingBatchRestoreService.swift */; };
-		4597120D5E340F235051EC32 /* BatchAssetFlowService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B76D4870E5FFC366B9AC85D7 /* BatchAssetFlowService.swift */; };
-		481932C9646920D4445CD4CA /* WebSocketUploadLifecycleEventService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77F35B102A873F8EC153465B /* WebSocketUploadLifecycleEventService.swift */; };
+		379F0C7D23A7669DB6ED8B52 /* VideoBatchItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = B95536A6C12B8EC0A510BDD6 /* VideoBatchItem.swift */; };
+		3CEF79141FB9F628E02EE323 /* ConnectivityIssueTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = E41567636146A290B7D5B80B /* ConnectivityIssueTracker.swift */; };
+		425920BD78C657E0E1B08829 /* ChatViewModel+WebSocket.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11BA2952ADE42DB053AAE827 /* ChatViewModel+WebSocket.swift */; };
+		44B25D51E7749B820E3E5F03 /* WebSocketEventRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = 81E177365B6FD5C582E1DC51 /* WebSocketEventRuntime.swift */; };
+		4A9D38353721080742EDBA01 /* BatchItemProcessingService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 29915DD2DADC1973885B8498 /* BatchItemProcessingService.swift */; };
+		4AB1792A5FDB204CB10F32D8 /* AppLogTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BED1BBCA2E5972A6CFB66462 /* AppLogTests.swift */; };
 		4B254383C12F662D1C19C869 /* ChatButtonStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = E40A97DC8EDA46629FA1ACA5 /* ChatButtonStyle.swift */; };
-		4B76C4D7A5B89E7C775D45FD /* WorkflowReconcileExecutionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B61289AB93D25E5868041022 /* WorkflowReconcileExecutionService.swift */; };
-		4D9ED27635179F4F1AC29622 /* BatchItemStateService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2AE9F069A651C4E56AF6B9BC /* BatchItemStateService.swift */; };
-		4E05A46E7FD0A96EE6D23A30 /* ServerErrorReporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 581DDC1D18A0567466816BB4 /* ServerErrorReporter.swift */; };
-		4E6BF553001411137DCE8332 /* BatchItemProcessingService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FA13A759836D159946E4B9C /* BatchItemProcessingService.swift */; };
-		52DEC1E47DF5649ABBBC6F20 /* PermissionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 744BF6B02789CE656827F003 /* PermissionManager.swift */; };
-		5CBB8176B0649E4F784E7CF8 /* WebSocketMuxReadyEventService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B8670CB55AAF934023C48145 /* WebSocketMuxReadyEventService.swift */; };
+		4B7ED98EDE6CFA0AE4A2C10A /* ChatViewModel+Hosts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 901BCCB3907AB4EE12175760 /* ChatViewModel+Hosts.swift */; };
+		4D2CBBF0C28707D7736B668B /* AssetDetailService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE03117C083E0D8042235334 /* AssetDetailService.swift */; };
+		4EFA9B8AFF8317F63E85F7F6 /* BatchCompletionMessageService.swift in Sources */ = {isa = PBXBuildFile; fileRef = F12E4ADC5BFAB1099957FDEE /* BatchCompletionMessageService.swift */; };
+		515C0FB2875E650116D36E0A /* ChatViewModelTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD2F6722C7B4A163F2FA6C58 /* ChatViewModelTypes.swift */; };
+		51CF18D8FD3D4CFF3078A4BE /* UploadQueueRehydrateExecutionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = CBC586090789F142C3CAE68B /* UploadQueueRehydrateExecutionService.swift */; };
+		58BCBB8B40EB01ED95D96A5D /* VideoUploadService.swift in Sources */ = {isa = PBXBuildFile; fileRef = F14E4C2E85DB0CE719772A3F /* VideoUploadService.swift */; };
 		5D78B58E2BE37233E19AA1F9 /* PhotosView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02302BA1984533BE8F7E4F3E /* PhotosView.swift */; };
-		5F94E14F8A85A751EFFAFFD2 /* TranscriptSubmissionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD047D744F61BEFB2E85DB79 /* TranscriptSubmissionService.swift */; };
-		610ABA84479B55060D56C3FD /* TranscriptionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = E0F22B2B9DC29CAFA863CDB2 /* TranscriptionService.swift */; };
-		64BF94995D1CF9038E2A18A2 /* BatchCompletionMessageService.swift in Sources */ = {isa = PBXBuildFile; fileRef = D524B140830D8A60F4DDE653 /* BatchCompletionMessageService.swift */; };
-		671F7F7838B8F6528919D91A /* BatchItemExecutionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 632632A72AC47B3015030AAE /* BatchItemExecutionService.swift */; };
-		6D33A3123AE13D1CADF387DC /* ChatViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66AE6120B342F8FBF6D9F832 /* ChatViewModel.swift */; };
-		6E2C3F9DF8BDE5B337F101DD /* AssetDetailSyncService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC482FEB4594429AB6DA9EAF /* AssetDetailSyncService.swift */; };
+		5F6183791993FEDB578513D4 /* VideoMetadataExtractor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0EFFBA139883DDCF4F798C17 /* VideoMetadataExtractor.swift */; };
+		A1B2C3D4E5F60718293A4B5C /* UploadStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F2E3D4C5B6A79808F90A1B2 /* UploadStorage.swift */; };
+		640CE9562775BC9726466D8F /* AssetDetailSyncService.swift in Sources */ = {isa = PBXBuildFile; fileRef = D45AD3A9C2D8ACED841A146C /* AssetDetailSyncService.swift */; };
+		646CF99508A7D295C6556EE2 /* WebSocketService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22EB9027AFB1A8564D6C10F8 /* WebSocketService.swift */; };
+		646DAF2781D145E80CCEF5E4 /* PHAssetIdentifierStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAF4E12A86D97957F910E48A /* PHAssetIdentifierStore.swift */; };
+		6873EB82F0B416D8B44935B3 /* SingleUploadFlowService.swift in Sources */ = {isa = PBXBuildFile; fileRef = DCC20D5B6B03D80CB71B2B2E /* SingleUploadFlowService.swift */; };
 		6E552E05D744677CF4C5DA6A /* ChatMessage.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC18F5FFC74280EFFEB0BE65 /* ChatMessage.swift */; };
-		7729D79FB5E60511684A48DB /* BatchRunExecutionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CD46F020F88392CDC3E848A /* BatchRunExecutionService.swift */; };
-		7A67446620B13BD9E2BBC805 /* ChatViewModelTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = F71A9731ED936CC124EED6C9 /* ChatViewModelTypes.swift */; };
+		7071CF9FA60A7231C44EF7BA /* BatchRunExecutionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22B10AE56E2115E8FD6015B0 /* BatchRunExecutionService.swift */; };
+		756BCF783BB4A85E6AFED5A7 /* WebSocketConnectionStateService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22E71BA78EE2809F7FDABBB1 /* WebSocketConnectionStateService.swift */; };
+		75932DE2985E13382C8E0301 /* VideoBatchUploadCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5DCBC9580C439381A268A6D0 /* VideoBatchUploadCoordinator.swift */; };
+		79548836BF73DDAD61F035B7 /* MessagePolicyCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4109F062E8D6BBC5214C52CC /* MessagePolicyCoordinator.swift */; };
+		7AE2B9818D7C0F7B0F9F6506 /* BatchUploadTransportService.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE3A73DF6BE4780045ED5058 /* BatchUploadTransportService.swift */; };
 		7D6C4ADE8374C39A5C0B5DDB /* ArchiveRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5BE16E72579F144A61F60847 /* ArchiveRowView.swift */; };
-		8192E8CC2AD8CF8188B7BA52 /* MessageCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD0ED0DC26FB3DB82C03DDF6 /* MessageCatalog.swift */; };
+		7E5F43FD9CBD258A86141F2C /* ChatOwnershipRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD7E50C56A226347C54DCD2B /* ChatOwnershipRouter.swift */; };
+		80C4D6BAE7E5A464496B2B51 /* SelectedVideo.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4ECE6649AA9863FDFA3EE102 /* SelectedVideo.swift */; };
+		8134E058C6830587E107FF34 /* AuthService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 27594B89FEDBE19BA3F807BB /* AuthService.swift */; };
 		8479D08EF2DC76BFF0C2BDCF /* DirectVideoUploaderApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE10509FD1B4B7983FB58B3D /* DirectVideoUploaderApp.swift */; };
+		85DF83FC67BBDA28A1DDC7F8 /* KeychainHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C27ACDB8440348608E9ADB1 /* KeychainHelper.swift */; };
+		85E36C357D32B1BF54A1C977 /* UploadQueueRehydratePlanService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 279DBE2EE3FFB1DA7A7E58D2 /* UploadQueueRehydratePlanService.swift */; };
 		87ACFBE05C9BBA14AF4A07E1 /* SlackShareSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89F6F2F5DBBEE529E69418D7 /* SlackShareSheet.swift */; };
 		889C07C34F8BFC90EF7CB2CE /* ServerConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = D56F342EB8CB3B26EC77BBF3 /* ServerConfig.swift */; };
 		8942F3630BCFD538BAE544E5 /* Asset.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F9DE735EEFFFCC798CA054C /* Asset.swift */; };
+		8B294EAC438028CC6854826B /* BatchItemStateService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6992FDEBED5F021CF2703840 /* BatchItemStateService.swift */; };
 		8CC14DFD30C33058BF4FA39B /* VideoTrimView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51E2EB93368D36F22B8AC2A4 /* VideoTrimView.swift */; };
 		8CDB0858FD44667AD9882E4D /* VideoBubble.swift in Sources */ = {isa = PBXBuildFile; fileRef = B136E4B9F4C6D88E9009D569 /* VideoBubble.swift */; };
-		8F44FAC4E78AC5F45D931FAE /* UploadQueueRehydrateExecutionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71140C8ED063864DD48F3500 /* UploadQueueRehydrateExecutionService.swift */; };
+		8F43FE12D4B567A1B2507067 /* WorkflowStageTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 746E827AC05313987D197707 /* WorkflowStageTracker.swift */; };
+		93F8C6EBFDA79E305224E8FA /* MuxStreamingTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = F19F620AF3B92B241F5E140B /* MuxStreamingTransport.swift */; };
+		944E565907B42053B25646DA /* AppLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F621A00503D35CFFB5D11DF /* AppLog.swift */; };
 		94EB8482D6F7158958A03393 /* InputBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF5B8A623A0F5AA9CA07EA1A /* InputBar.swift */; };
 		958C853DDA42C7E81E258AC7 /* DVUDateFormatting.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4DBB133385999B4E09A826F7 /* DVUDateFormatting.swift */; };
-		9931F418F57A483BC928DC0F /* SingleUploadFlowService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22DAF708C7ED47F7F0E0DEFC /* SingleUploadFlowService.swift */; };
+		99F79DD53B14A542B4FB1137 /* MessageCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67EB750518E9F3A799CB438E /* MessageCatalog.swift */; };
+		9EC1E8B88070ABCFD5A524E0 /* ChatViewModel+Batch.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0DF7F67324DE89ECF059ADD5 /* ChatViewModel+Batch.swift */; };
+		9F7338A2C965C83358756F49 /* WebSocketFormConfirmedEventService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 16CC34B73A6D23A24D28DA30 /* WebSocketFormConfirmedEventService.swift */; };
 		9F8F876E364EA40959AE53BD /* InstructionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1D2E1E9A55D56991D3BA689 /* InstructionsView.swift */; };
-		A87E0ED233923C55614479BB /* GroupedFormService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 262569CCAAFCC9D9960F5EA7 /* GroupedFormService.swift */; };
-		A954D978E06CB63F4C59BB8A /* AssetDetailService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 748A8A62E08DEDD97D3D8FBF /* AssetDetailService.swift */; };
+		A6C1EF0499632C4EF00532DD /* WebSocketUploadLifecycleEventService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D232E9AFA5DAD829D608ED6 /* WebSocketUploadLifecycleEventService.swift */; };
+		A799AD82492D9C64ABA26F96 /* BatchItemExecutionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = D80D926D39FC5D974459575B /* BatchItemExecutionService.swift */; };
 		A9F088643DC2986469FFC84B /* ContextFormView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3899E53553FC5E50293A8E8 /* ContextFormView.swift */; };
+		AE0481FE9C10C9142DB52E76 /* VideoBatchContext.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE50B81DCD68A653803F5640 /* VideoBatchContext.swift */; };
+		B0BB3888F486E388A1583885 /* ServerErrorReporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4AE0C3F876229BB5F1F34302 /* ServerErrorReporter.swift */; };
 		B232F6B18466FB01AFDF1784 /* RetryHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CB447F960F2A8A21F7DA5C5 /* RetryHelper.swift */; };
-		B23CA5DB5C7678A863AC8029 /* VideoMetadataExtractor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E996DE4500DDFF0790F62F0 /* VideoMetadataExtractor.swift */; };
-		B4C8A94E9D6FEE5A35C487AF /* KeychainHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2F7D1991BA8E3668878BC47 /* KeychainHelper.swift */; };
-		B6E5E2854F719C05EA0C5F9D /* BatchAssetPresentationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BCFE66E1917468D4E98EED15 /* BatchAssetPresentationService.swift */; };
+		B2D90368941B727C69119896 /* TranscriptSubmissionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0289EE7E1D82A4100FEF4E52 /* TranscriptSubmissionService.swift */; };
+		B376FC2685BA0AE15858262E /* WebSocketFormRequestEventService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FBA02CA42C0AAAB57B73728 /* WebSocketFormRequestEventService.swift */; };
+		B7667AB84A03B8A2342042F3 /* AppearanceService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 761057A4B2D1969E2523F441 /* AppearanceService.swift */; };
+		B9A7F21542DC7CF9D1F3CDF8 /* OnboardingCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF7B5E504E811709CF6D1028 /* OnboardingCatalog.swift */; };
+		BADB9BA7AC868C43024CB4F9 /* TranscriptionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 39E70C7D264668FD3EF99F1C /* TranscriptionService.swift */; };
+		BB81C7370760D61FA96B693C /* ConversationResetService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10639CEE28493C5C5EE868DF /* ConversationResetService.swift */; };
 		BB8D6AF27EE9A0B211E28483 /* ArchiveListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7A81292325663F81C4B8772 /* ArchiveListView.swift */; };
-		C0D7D0CA1163768546B04594 /* BatchStateTransitionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 16424C9541A0930967489042 /* BatchStateTransitionService.swift */; };
+		BBCB7B71D99DBBD771311A8E /* PermissionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FC36277151EAFDFFB1744C7 /* PermissionManager.swift */; };
+		BC55A7CFD4272DE07938B074 /* TextMessageFlowService.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD2C722F393C34E138A5DBD1 /* TextMessageFlowService.swift */; };
+		BC6A8E4A974C3ACBF36BE67D /* PendingBatchRestoreService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6B9108722A3D334FF7F2B5D /* PendingBatchRestoreService.swift */; };
+		BD39B03CEED6330DDFB8717F /* PendingBatchStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9ADF5BF95A0B22849BC383F0 /* PendingBatchStore.swift */; };
+		C0FF6C600424BDB12C653F70 /* BatchStateTransitionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF6B124C27D1C814FCCA4FF1 /* BatchStateTransitionService.swift */; };
+		C34417685FC54E4FC2867FBF /* ReadyWorkflowStateService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F1BB8F59A5F2517F57A40D9 /* ReadyWorkflowStateService.swift */; };
+		C384B6B53CCA2270F47E87AA /* ChatViewModel+Form.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC080CC07F07674393877E86 /* ChatViewModel+Form.swift */; };
+		C3AB9C94895218607AACBF33 /* APIClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5ED8195A44647AD9BF3347B /* APIClientTests.swift */; };
 		C43AFC93CF4984D2A3C2DA9A /* ProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 571C0C62391282912FB69E9F /* ProfileView.swift */; };
-		C580ED7D08982A24440B91B7 /* OnboardingCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = B32A4BA1AD50B50D44528EF2 /* OnboardingCatalog.swift */; };
-		C835EAF550F3E8CE275669C3 /* UploadQueueRehydratePlanService.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF56A9ECC698653D41B18A71 /* UploadQueueRehydratePlanService.swift */; };
+		C70FD2F9D55D3ADC7455E9C0 /* WebSocketStreamReadyEventService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F933DCF63898D90B96C6B29 /* WebSocketStreamReadyEventService.swift */; };
+		C96CA6B0030C90252990347F /* UploadQueueStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1A152F51D801029FE0BB898 /* UploadQueueStore.swift */; };
 		CC1C0E76EF9FE58674443EC5 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A7F3BED43E9CB3FFE330020 /* Theme.swift */; };
+		CE369C45B1DBDD7733EC4ADF /* WebSocketMessageEventService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C184DF2729A99F64D786097 /* WebSocketMessageEventService.swift */; };
 		CE6C303AB52C17CF99EFD315 /* User.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A0611DEBA9BE67788466164 /* User.swift */; };
-		D13651701B7EDAD2CA935BD6 /* BatchClipDisplayService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D1178234307F4F4F56D1069 /* BatchClipDisplayService.swift */; };
-		D35F71AB2A8C77C18E4F6616 /* ChatOwnershipRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC53F904024638C906FC6F39 /* ChatOwnershipRouter.swift */; };
-		D683D53CD3990DC7DE74FBC0 /* AuthService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86A11FF4693D09E9320E8C07 /* AuthService.swift */; };
-		E011DDE1B0D32667AD5CA037 /* VideoBatchUploadCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A767AA4F2DC375E572642C3C /* VideoBatchUploadCoordinator.swift */; };
-		E144F5D17D4BFEAD29916893 /* MessagePolicyCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 971135FDDFCC6553BD6FD5DC /* MessagePolicyCoordinator.swift */; };
-		E2782952317AB19DC7277235 /* UploadQueueRecoveryService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F39A000A005E77BDD12CE38 /* UploadQueueRecoveryService.swift */; };
-		E27CF75E534CDBE2E4533653 /* ConnectivityIssueTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 213E049A356EFFF9B755A2F8 /* ConnectivityIssueTracker.swift */; };
+		D15F3CB607C3279485C74DCD /* UploadQueueRecoveryService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D3517F7DC2EC62BD638EB81 /* UploadQueueRecoveryService.swift */; };
+		D4D88560BC406A19FABE1EDD /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5FBF029E415AC82A8455FDE /* APIClient.swift */; };
+		D516EDEEB5E6DA0833145BD1 /* BatchItemLifecycleService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5474D56924A220142B9C2AE9 /* BatchItemLifecycleService.swift */; };
+		DCA351B5DECB2C997FDEF7B7 /* ChatViewModel+Lifecycle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50B96A1214B08990E892C212 /* ChatViewModel+Lifecycle.swift */; };
+		DF67D373BFD1884367B6D77B /* BatchAssetFlowService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7BAE4E318616877895C5FEFB /* BatchAssetFlowService.swift */; };
 		E2AB9C60B42CFBE53F549879 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = CC7AA7D72D102A4BC8F6B464 /* Assets.xcassets */; };
 		E2AE05593A1911192268E5FB /* ChatHeaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49E974DDC963928102FA291B /* ChatHeaderView.swift */; };
 		E6DDF3D43DC556C9E5C75AAF /* MessageBubble.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B7EEEC345EAFF2EE3EFD9CA /* MessageBubble.swift */; };
-		E8B3CDC132459E6AD6D92EA8 /* BatchUploadTransportService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 140157D28522F623785E3571 /* BatchUploadTransportService.swift */; };
+		EC5D7F899B1D5B16776A7FA5 /* ChatViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E9B67FABD7818A66DE3AD59 /* ChatViewModel.swift */; };
+		EC7BC1608D35DAAC0530F5BC /* BatchAssetPresentationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 457405144C58A4AE56772C78 /* BatchAssetPresentationService.swift */; };
 		F10D6B52A7FB3C74ADB93160 /* OnboardingWalkthroughView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC50492C0045E1B5334C32ED /* OnboardingWalkthroughView.swift */; };
+		F14544D45251B0E183C80C3D /* WorkflowReconcileExecutionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41B724B0549F90F580170090 /* WorkflowReconcileExecutionService.swift */; };
 		F35DE01BD68A069A3CB04989 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 894318625F91A1D2462249FE /* ContentView.swift */; };
-		F7D11EA565E78AEAB757DE18 /* BatchItemLifecycleService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71DBA0D39BD2C6C8BE2BC1C8 /* BatchItemLifecycleService.swift */; };
+		F78F049BABEF2507D670F2B4 /* VideoBatchEnums.swift in Sources */ = {isa = PBXBuildFile; fileRef = A45A6A9F29BD2161C854282B /* VideoBatchEnums.swift */; };
 		FD85A83F2B113BB394A15D3E /* ChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1FF094BA3F6CC3D1003E121 /* ChatView.swift */; };
-		FFF7BA9E6503EB34CC477CFF /* AppearanceService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6174AE8F4469952EC7041C1A /* AppearanceService.swift */; };
 /* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		F9F86D173A667BF65C460C4B /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 0CC166FC5FFC5266E300EF0B /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 49FA393813097910E5C66B21;
+			remoteInfo = DirectVideoUploader;
+		};
+/* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
 		02302BA1984533BE8F7E4F3E /* PhotosView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotosView.swift; sourceTree = "<group>"; };
-		0813D4F9F9F55CFAE78F08B5 /* WebSocketService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebSocketService.swift; sourceTree = "<group>"; };
-		0E996DE4500DDFF0790F62F0 /* VideoMetadataExtractor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoMetadataExtractor.swift; sourceTree = "<group>"; };
-		140157D28522F623785E3571 /* BatchUploadTransportService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatchUploadTransportService.swift; sourceTree = "<group>"; };
-		16424C9541A0930967489042 /* BatchStateTransitionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatchStateTransitionService.swift; sourceTree = "<group>"; };
-		213E049A356EFFF9B755A2F8 /* ConnectivityIssueTracker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectivityIssueTracker.swift; sourceTree = "<group>"; };
-		22DAF708C7ED47F7F0E0DEFC /* SingleUploadFlowService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SingleUploadFlowService.swift; sourceTree = "<group>"; };
-		262569CCAAFCC9D9960F5EA7 /* GroupedFormService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupedFormService.swift; sourceTree = "<group>"; };
+		0289EE7E1D82A4100FEF4E52 /* TranscriptSubmissionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptSubmissionService.swift; sourceTree = "<group>"; };
+		05478495469C54B6983538BD /* ChatViewModel+WSRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ChatViewModel+WSRuntime.swift"; sourceTree = "<group>"; };
+		0DF7F67324DE89ECF059ADD5 /* ChatViewModel+Batch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ChatViewModel+Batch.swift"; sourceTree = "<group>"; };
+		0EFFBA139883DDCF4F798C17 /* VideoMetadataExtractor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoMetadataExtractor.swift; sourceTree = "<group>"; };
+		1F2E3D4C5B6A79808F90A1B2 /* UploadStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UploadStorage.swift; sourceTree = "<group>"; };
+		10639CEE28493C5C5EE868DF /* ConversationResetService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationResetService.swift; sourceTree = "<group>"; };
+		11BA2952ADE42DB053AAE827 /* ChatViewModel+WebSocket.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ChatViewModel+WebSocket.swift"; sourceTree = "<group>"; };
+		11D39EE8D05CC894E99A1322 /* DirectVideoUploaderTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = DirectVideoUploaderTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		16CC34B73A6D23A24D28DA30 /* WebSocketFormConfirmedEventService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebSocketFormConfirmedEventService.swift; sourceTree = "<group>"; };
+		1D0D0375A91423F42CC34340 /* PendingFormRecoveryService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PendingFormRecoveryService.swift; sourceTree = "<group>"; };
+		1E9B67FABD7818A66DE3AD59 /* ChatViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatViewModel.swift; sourceTree = "<group>"; };
+		22B10AE56E2115E8FD6015B0 /* BatchRunExecutionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatchRunExecutionService.swift; sourceTree = "<group>"; };
+		22E71BA78EE2809F7FDABBB1 /* WebSocketConnectionStateService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebSocketConnectionStateService.swift; sourceTree = "<group>"; };
+		22EB9027AFB1A8564D6C10F8 /* WebSocketService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebSocketService.swift; sourceTree = "<group>"; };
+		27594B89FEDBE19BA3F807BB /* AuthService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthService.swift; sourceTree = "<group>"; };
 		2796AFC62F34F3182D7CCE1C /* MetadataView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetadataView.swift; sourceTree = "<group>"; };
-		2AE9F069A651C4E56AF6B9BC /* BatchItemStateService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatchItemStateService.swift; sourceTree = "<group>"; };
+		279DBE2EE3FFB1DA7A7E58D2 /* UploadQueueRehydratePlanService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UploadQueueRehydratePlanService.swift; sourceTree = "<group>"; };
+		29915DD2DADC1973885B8498 /* BatchItemProcessingService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatchItemProcessingService.swift; sourceTree = "<group>"; };
 		2B7EEEC345EAFF2EE3EFD9CA /* MessageBubble.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageBubble.swift; sourceTree = "<group>"; };
+		2C4ADC17B893DF293D5DD7EB /* FormSubmissionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FormSubmissionService.swift; sourceTree = "<group>"; };
+		2D232E9AFA5DAD829D608ED6 /* WebSocketUploadLifecycleEventService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebSocketUploadLifecycleEventService.swift; sourceTree = "<group>"; };
 		2F9DE735EEFFFCC798CA054C /* Asset.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Asset.swift; sourceTree = "<group>"; };
-		3533A958197D037FC6EA505D /* WorkflowStageTracker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkflowStageTracker.swift; sourceTree = "<group>"; };
+		39E70C7D264668FD3EF99F1C /* TranscriptionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptionService.swift; sourceTree = "<group>"; };
 		3A0611DEBA9BE67788466164 /* User.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = User.swift; sourceTree = "<group>"; };
 		3A7F3BED43E9CB3FFE330020 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
-		3C343FD39F250EB4145AA932 /* WebSocketMessageEventService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebSocketMessageEventService.swift; sourceTree = "<group>"; };
-		3CD46F020F88392CDC3E848A /* BatchRunExecutionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatchRunExecutionService.swift; sourceTree = "<group>"; };
+		4109F062E8D6BBC5214C52CC /* MessagePolicyCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessagePolicyCoordinator.swift; sourceTree = "<group>"; };
+		41B724B0549F90F580170090 /* WorkflowReconcileExecutionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkflowReconcileExecutionService.swift; sourceTree = "<group>"; };
+		457405144C58A4AE56772C78 /* BatchAssetPresentationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatchAssetPresentationService.swift; sourceTree = "<group>"; };
+		4692B5219F6AD416875DFE2C /* ArchiveIngestTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArchiveIngestTransport.swift; sourceTree = "<group>"; };
 		49E974DDC963928102FA291B /* ChatHeaderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatHeaderView.swift; sourceTree = "<group>"; };
+		4AE0C3F876229BB5F1F34302 /* ServerErrorReporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerErrorReporter.swift; sourceTree = "<group>"; };
+		4C27ACDB8440348608E9ADB1 /* KeychainHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainHelper.swift; sourceTree = "<group>"; };
 		4DBB133385999B4E09A826F7 /* DVUDateFormatting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DVUDateFormatting.swift; sourceTree = "<group>"; };
+		4ECE6649AA9863FDFA3EE102 /* SelectedVideo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SelectedVideo.swift; sourceTree = "<group>"; };
+		4F933DCF63898D90B96C6B29 /* WebSocketStreamReadyEventService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebSocketStreamReadyEventService.swift; sourceTree = "<group>"; };
+		50B96A1214B08990E892C212 /* ChatViewModel+Lifecycle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ChatViewModel+Lifecycle.swift"; sourceTree = "<group>"; };
 		51E2EB93368D36F22B8AC2A4 /* VideoTrimView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoTrimView.swift; sourceTree = "<group>"; };
+		5474D56924A220142B9C2AE9 /* BatchItemLifecycleService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatchItemLifecycleService.swift; sourceTree = "<group>"; };
 		571C0C62391282912FB69E9F /* ProfileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileView.swift; sourceTree = "<group>"; };
-		581DDC1D18A0567466816BB4 /* ServerErrorReporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerErrorReporter.swift; sourceTree = "<group>"; };
 		5BE16E72579F144A61F60847 /* ArchiveRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArchiveRowView.swift; sourceTree = "<group>"; };
-		5D1178234307F4F4F56D1069 /* BatchClipDisplayService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatchClipDisplayService.swift; sourceTree = "<group>"; };
-		5F882A616547681B986DF977 /* WebSocketFormRequestEventService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebSocketFormRequestEventService.swift; sourceTree = "<group>"; };
-		6174AE8F4469952EC7041C1A /* AppearanceService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppearanceService.swift; sourceTree = "<group>"; };
-		62B5EC27AFEBD160F703877D /* ReadyWorkflowStateService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReadyWorkflowStateService.swift; sourceTree = "<group>"; };
-		632632A72AC47B3015030AAE /* BatchItemExecutionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatchItemExecutionService.swift; sourceTree = "<group>"; };
-		66AE6120B342F8FBF6D9F832 /* ChatViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatViewModel.swift; sourceTree = "<group>"; };
-		67EFEC479D73B5032402DA35 /* WorkflowReconcilePlanService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkflowReconcilePlanService.swift; sourceTree = "<group>"; };
+		5DCBC9580C439381A268A6D0 /* VideoBatchUploadCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoBatchUploadCoordinator.swift; sourceTree = "<group>"; };
+		5F1BB8F59A5F2517F57A40D9 /* ReadyWorkflowStateService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReadyWorkflowStateService.swift; sourceTree = "<group>"; };
+		5F621A00503D35CFFB5D11DF /* AppLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLog.swift; sourceTree = "<group>"; };
+		67EB750518E9F3A799CB438E /* MessageCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageCatalog.swift; sourceTree = "<group>"; };
+		67F48E8AD3FD918226AFCFA3 /* WorkflowReconcilePlanService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkflowReconcilePlanService.swift; sourceTree = "<group>"; };
+		6992FDEBED5F021CF2703840 /* BatchItemStateService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatchItemStateService.swift; sourceTree = "<group>"; };
+		69BF62881BB5D544301076A9 /* IngestTransportRegistry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IngestTransportRegistry.swift; sourceTree = "<group>"; };
+		6D3517F7DC2EC62BD638EB81 /* UploadQueueRecoveryService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UploadQueueRecoveryService.swift; sourceTree = "<group>"; };
 		6F12FE8A5DFBB6A96349CB07 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
-		71140C8ED063864DD48F3500 /* UploadQueueRehydrateExecutionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UploadQueueRehydrateExecutionService.swift; sourceTree = "<group>"; };
-		71DBA0D39BD2C6C8BE2BC1C8 /* BatchItemLifecycleService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatchItemLifecycleService.swift; sourceTree = "<group>"; };
-		744BF6B02789CE656827F003 /* PermissionManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionManager.swift; sourceTree = "<group>"; };
-		748A8A62E08DEDD97D3D8FBF /* AssetDetailService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssetDetailService.swift; sourceTree = "<group>"; };
-		77F35B102A873F8EC153465B /* WebSocketUploadLifecycleEventService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebSocketUploadLifecycleEventService.swift; sourceTree = "<group>"; };
+		746E827AC05313987D197707 /* WorkflowStageTracker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkflowStageTracker.swift; sourceTree = "<group>"; };
+		761057A4B2D1969E2523F441 /* AppearanceService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppearanceService.swift; sourceTree = "<group>"; };
+		7BAE4E318616877895C5FEFB /* BatchAssetFlowService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatchAssetFlowService.swift; sourceTree = "<group>"; };
 		7CB447F960F2A8A21F7DA5C5 /* RetryHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RetryHelper.swift; sourceTree = "<group>"; };
-		86A11FF4693D09E9320E8C07 /* AuthService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthService.swift; sourceTree = "<group>"; };
+		81E177365B6FD5C582E1DC51 /* WebSocketEventRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebSocketEventRuntime.swift; sourceTree = "<group>"; };
 		894318625F91A1D2462249FE /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		89F6F2F5DBBEE529E69418D7 /* SlackShareSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SlackShareSheet.swift; sourceTree = "<group>"; };
-		8FA13A759836D159946E4B9C /* BatchItemProcessingService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatchItemProcessingService.swift; sourceTree = "<group>"; };
+		8B184A9B10D8C34799B39553 /* IngestTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IngestTransport.swift; sourceTree = "<group>"; };
+		8C184DF2729A99F64D786097 /* WebSocketMessageEventService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebSocketMessageEventService.swift; sourceTree = "<group>"; };
+		8FC36277151EAFDFFB1744C7 /* PermissionManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionManager.swift; sourceTree = "<group>"; };
+		901BCCB3907AB4EE12175760 /* ChatViewModel+Hosts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ChatViewModel+Hosts.swift"; sourceTree = "<group>"; };
 		906B4EE592B6559E18A30C6C /* VideoBatch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoBatch.swift; sourceTree = "<group>"; };
-		971135FDDFCC6553BD6FD5DC /* MessagePolicyCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessagePolicyCoordinator.swift; sourceTree = "<group>"; };
-		9F39A000A005E77BDD12CE38 /* UploadQueueRecoveryService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UploadQueueRecoveryService.swift; sourceTree = "<group>"; };
-		A767AA4F2DC375E572642C3C /* VideoBatchUploadCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoBatchUploadCoordinator.swift; sourceTree = "<group>"; };
+		944EE826833A1F37DAC5ADCB /* PendingForm.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PendingForm.swift; sourceTree = "<group>"; };
+		9ADF5BF95A0B22849BC383F0 /* PendingBatchStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PendingBatchStore.swift; sourceTree = "<group>"; };
+		9FBA02CA42C0AAAB57B73728 /* WebSocketFormRequestEventService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebSocketFormRequestEventService.swift; sourceTree = "<group>"; };
+		A45A6A9F29BD2161C854282B /* VideoBatchEnums.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoBatchEnums.swift; sourceTree = "<group>"; };
 		AAA58A3F30BFA24CE268AD67 /* LoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginView.swift; sourceTree = "<group>"; };
-		AB466E29A44672F9357FF9AE /* WebSocketFormConfirmedEventService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebSocketFormConfirmedEventService.swift; sourceTree = "<group>"; };
+		AC080CC07F07674393877E86 /* ChatViewModel+Form.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ChatViewModel+Form.swift"; sourceTree = "<group>"; };
 		AC53E361C83E04580CF05221 /* VideoLibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoLibraryView.swift; sourceTree = "<group>"; };
-		AD0ED0DC26FB3DB82C03DDF6 /* MessageCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageCatalog.swift; sourceTree = "<group>"; };
+		AE03117C083E0D8042235334 /* AssetDetailService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssetDetailService.swift; sourceTree = "<group>"; };
 		B136E4B9F4C6D88E9009D569 /* VideoBubble.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoBubble.swift; sourceTree = "<group>"; };
-		B32A4BA1AD50B50D44528EF2 /* OnboardingCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingCatalog.swift; sourceTree = "<group>"; };
-		B61289AB93D25E5868041022 /* WorkflowReconcileExecutionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkflowReconcileExecutionService.swift; sourceTree = "<group>"; };
-		B76D4870E5FFC366B9AC85D7 /* BatchAssetFlowService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatchAssetFlowService.swift; sourceTree = "<group>"; };
-		B8670CB55AAF934023C48145 /* WebSocketMuxReadyEventService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebSocketMuxReadyEventService.swift; sourceTree = "<group>"; };
-		B8B66639636FACBAA7491E67 /* FormSubmissionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FormSubmissionService.swift; sourceTree = "<group>"; };
-		BBF25CBD708E82D1150C29D4 /* PendingFormRecoveryService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PendingFormRecoveryService.swift; sourceTree = "<group>"; };
-		BC482FEB4594429AB6DA9EAF /* AssetDetailSyncService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssetDetailSyncService.swift; sourceTree = "<group>"; };
-		BCF9578C57545FDADB560DCB /* TextMessageFlowService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextMessageFlowService.swift; sourceTree = "<group>"; };
-		BCFE66E1917468D4E98EED15 /* BatchAssetPresentationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatchAssetPresentationService.swift; sourceTree = "<group>"; };
-		BD047D744F61BEFB2E85DB79 /* TranscriptSubmissionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptSubmissionService.swift; sourceTree = "<group>"; };
+		B95536A6C12B8EC0A510BDD6 /* VideoBatchItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoBatchItem.swift; sourceTree = "<group>"; };
+		BED1BBCA2E5972A6CFB66462 /* AppLogTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLogTests.swift; sourceTree = "<group>"; };
+		BF6B124C27D1C814FCCA4FF1 /* BatchStateTransitionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatchStateTransitionService.swift; sourceTree = "<group>"; };
+		C6B9108722A3D334FF7F2B5D /* PendingBatchRestoreService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PendingBatchRestoreService.swift; sourceTree = "<group>"; };
+		CBC586090789F142C3CAE68B /* UploadQueueRehydrateExecutionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UploadQueueRehydrateExecutionService.swift; sourceTree = "<group>"; };
 		CC18F5FFC74280EFFEB0BE65 /* ChatMessage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatMessage.swift; sourceTree = "<group>"; };
 		CC7AA7D72D102A4BC8F6B464 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		CE10509FD1B4B7983FB58B3D /* DirectVideoUploaderApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DirectVideoUploaderApp.swift; sourceTree = "<group>"; };
-		CF56A9ECC698653D41B18A71 /* UploadQueueRehydratePlanService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UploadQueueRehydratePlanService.swift; sourceTree = "<group>"; };
+		CE3A73DF6BE4780045ED5058 /* BatchUploadTransportService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatchUploadTransportService.swift; sourceTree = "<group>"; };
 		D1D2E1E9A55D56991D3BA689 /* InstructionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InstructionsView.swift; sourceTree = "<group>"; };
-		D524B140830D8A60F4DDE653 /* BatchCompletionMessageService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatchCompletionMessageService.swift; sourceTree = "<group>"; };
+		D45AD3A9C2D8ACED841A146C /* AssetDetailSyncService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssetDetailSyncService.swift; sourceTree = "<group>"; };
 		D56F342EB8CB3B26EC77BBF3 /* ServerConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerConfig.swift; sourceTree = "<group>"; };
+		D80D926D39FC5D974459575B /* BatchItemExecutionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatchItemExecutionService.swift; sourceTree = "<group>"; };
 		D9A41DBC2D0BD1F47AF7EE95 /* OnboardingStepView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingStepView.swift; sourceTree = "<group>"; };
-		DA68D51F52BCE0942D5D7F67 /* PendingBatchRestoreService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PendingBatchRestoreService.swift; sourceTree = "<group>"; };
-		DBD7F5A3B5FB706B8A06A881 /* ConversationResetService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationResetService.swift; sourceTree = "<group>"; };
+		DAF4E12A86D97957F910E48A /* PHAssetIdentifierStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PHAssetIdentifierStore.swift; sourceTree = "<group>"; };
 		DC2A1D0A89F18984A90B5686 /* ConversationSummaryBubble.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationSummaryBubble.swift; sourceTree = "<group>"; };
-		DF832B7FFECB82D590207866 /* WebSocketConnectionStateService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebSocketConnectionStateService.swift; sourceTree = "<group>"; };
-		E0F22B2B9DC29CAFA863CDB2 /* TranscriptionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptionService.swift; sourceTree = "<group>"; };
-		E2F7D1991BA8E3668878BC47 /* KeychainHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainHelper.swift; sourceTree = "<group>"; };
+		DCC20D5B6B03D80CB71B2B2E /* SingleUploadFlowService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SingleUploadFlowService.swift; sourceTree = "<group>"; };
+		DD2C722F393C34E138A5DBD1 /* TextMessageFlowService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextMessageFlowService.swift; sourceTree = "<group>"; };
 		E3899E53553FC5E50293A8E8 /* ContextFormView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContextFormView.swift; sourceTree = "<group>"; };
 		E40A97DC8EDA46629FA1ACA5 /* ChatButtonStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatButtonStyle.swift; sourceTree = "<group>"; };
+		E41567636146A290B7D5B80B /* ConnectivityIssueTracker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectivityIssueTracker.swift; sourceTree = "<group>"; };
+		E4B8798217E6EABF7F82EFDA /* BatchClipDisplayService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatchClipDisplayService.swift; sourceTree = "<group>"; };
+		E5ED8195A44647AD9BF3347B /* APIClientTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClientTests.swift; sourceTree = "<group>"; };
+		E5FBF029E415AC82A8455FDE /* APIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClient.swift; sourceTree = "<group>"; };
 		E7A81292325663F81C4B8772 /* ArchiveListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArchiveListView.swift; sourceTree = "<group>"; };
-		EA58877C26F0C09FF7DFA4DC /* VideoUploadService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoUploadService.swift; sourceTree = "<group>"; };
 		EC50492C0045E1B5334C32ED /* OnboardingWalkthroughView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingWalkthroughView.swift; sourceTree = "<group>"; };
-		EE6E0F942C662BAFDA11CFA4 /* PendingBatchStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PendingBatchStore.swift; sourceTree = "<group>"; };
+		EE50B81DCD68A653803F5640 /* VideoBatchContext.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoBatchContext.swift; sourceTree = "<group>"; };
 		EF5B8A623A0F5AA9CA07EA1A /* InputBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InputBar.swift; sourceTree = "<group>"; };
+		F12E4ADC5BFAB1099957FDEE /* BatchCompletionMessageService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatchCompletionMessageService.swift; sourceTree = "<group>"; };
+		F14E4C2E85DB0CE719772A3F /* VideoUploadService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoUploadService.swift; sourceTree = "<group>"; };
+		F19F620AF3B92B241F5E140B /* MuxStreamingTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MuxStreamingTransport.swift; sourceTree = "<group>"; };
+		F1A152F51D801029FE0BB898 /* UploadQueueStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UploadQueueStore.swift; sourceTree = "<group>"; };
 		F1FF094BA3F6CC3D1003E121 /* ChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatView.swift; sourceTree = "<group>"; };
-		F71A9731ED936CC124EED6C9 /* ChatViewModelTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatViewModelTypes.swift; sourceTree = "<group>"; };
-		FC53F904024638C906FC6F39 /* ChatOwnershipRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatOwnershipRouter.swift; sourceTree = "<group>"; };
+		FD1A24A54229EBE6D3221B14 /* ChatViewModel+Send.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ChatViewModel+Send.swift"; sourceTree = "<group>"; };
+		FD2F6722C7B4A163F2FA6C58 /* ChatViewModelTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatViewModelTypes.swift; sourceTree = "<group>"; };
+		FD7E50C56A226347C54DCD2B /* ChatOwnershipRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatOwnershipRouter.swift; sourceTree = "<group>"; };
+		FEB117AA444296AC9A211F19 /* GroupedFormService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupedFormService.swift; sourceTree = "<group>"; };
 		FF11D8E240B8AF1F2DFFB68B /* DirectVideoUploader.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = DirectVideoUploader.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		FF7B5E504E811709CF6D1028 /* OnboardingCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingCatalog.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
+		0A6481ED3975CF016618D9E5 /* DirectVideoUploaderTests */ = {
+			isa = PBXGroup;
+			children = (
+				E5ED8195A44647AD9BF3347B /* APIClientTests.swift */,
+				BED1BBCA2E5972A6CFB66462 /* AppLogTests.swift */,
+			);
+			path = DirectVideoUploaderTests;
+			sourceTree = "<group>";
+		};
+		0CED6FA1656E41DDA315025A /* Networking */ = {
+			isa = PBXGroup;
+			children = (
+				E5FBF029E415AC82A8455FDE /* APIClient.swift */,
+				27594B89FEDBE19BA3F807BB /* AuthService.swift */,
+				4AE0C3F876229BB5F1F34302 /* ServerErrorReporter.swift */,
+				22EB9027AFB1A8564D6C10F8 /* WebSocketService.swift */,
+			);
+			path = Networking;
+			sourceTree = "<group>";
+		};
 		111EDB16AC2A10DDB6D30662 /* Archive */ = {
 			isa = PBXGroup;
 			children = (
@@ -190,61 +269,28 @@
 			path = Archive;
 			sourceTree = "<group>";
 		};
+		167804C9E1A4FAA3D06568F3 /* Transports */ = {
+			isa = PBXGroup;
+			children = (
+				4692B5219F6AD416875DFE2C /* ArchiveIngestTransport.swift */,
+				8B184A9B10D8C34799B39553 /* IngestTransport.swift */,
+				69BF62881BB5D544301076A9 /* IngestTransportRegistry.swift */,
+				F19F620AF3B92B241F5E140B /* MuxStreamingTransport.swift */,
+			);
+			path = Transports;
+			sourceTree = "<group>";
+		};
 		263B14748A595B60BB0C3D18 /* Services */ = {
 			isa = PBXGroup;
 			children = (
-				6174AE8F4469952EC7041C1A /* AppearanceService.swift */,
-				748A8A62E08DEDD97D3D8FBF /* AssetDetailService.swift */,
-				BC482FEB4594429AB6DA9EAF /* AssetDetailSyncService.swift */,
-				86A11FF4693D09E9320E8C07 /* AuthService.swift */,
-				B76D4870E5FFC366B9AC85D7 /* BatchAssetFlowService.swift */,
-				BCFE66E1917468D4E98EED15 /* BatchAssetPresentationService.swift */,
-				5D1178234307F4F4F56D1069 /* BatchClipDisplayService.swift */,
-				D524B140830D8A60F4DDE653 /* BatchCompletionMessageService.swift */,
-				632632A72AC47B3015030AAE /* BatchItemExecutionService.swift */,
-				71DBA0D39BD2C6C8BE2BC1C8 /* BatchItemLifecycleService.swift */,
-				8FA13A759836D159946E4B9C /* BatchItemProcessingService.swift */,
-				2AE9F069A651C4E56AF6B9BC /* BatchItemStateService.swift */,
-				3CD46F020F88392CDC3E848A /* BatchRunExecutionService.swift */,
-				16424C9541A0930967489042 /* BatchStateTransitionService.swift */,
-				140157D28522F623785E3571 /* BatchUploadTransportService.swift */,
-				FC53F904024638C906FC6F39 /* ChatOwnershipRouter.swift */,
-				66AE6120B342F8FBF6D9F832 /* ChatViewModel.swift */,
-				F71A9731ED936CC124EED6C9 /* ChatViewModelTypes.swift */,
-				213E049A356EFFF9B755A2F8 /* ConnectivityIssueTracker.swift */,
-				DBD7F5A3B5FB706B8A06A881 /* ConversationResetService.swift */,
-				B8B66639636FACBAA7491E67 /* FormSubmissionService.swift */,
-				262569CCAAFCC9D9960F5EA7 /* GroupedFormService.swift */,
-				E2F7D1991BA8E3668878BC47 /* KeychainHelper.swift */,
-				AD0ED0DC26FB3DB82C03DDF6 /* MessageCatalog.swift */,
-				971135FDDFCC6553BD6FD5DC /* MessagePolicyCoordinator.swift */,
-				B32A4BA1AD50B50D44528EF2 /* OnboardingCatalog.swift */,
-				DA68D51F52BCE0942D5D7F67 /* PendingBatchRestoreService.swift */,
-				EE6E0F942C662BAFDA11CFA4 /* PendingBatchStore.swift */,
-				BBF25CBD708E82D1150C29D4 /* PendingFormRecoveryService.swift */,
-				744BF6B02789CE656827F003 /* PermissionManager.swift */,
-				62B5EC27AFEBD160F703877D /* ReadyWorkflowStateService.swift */,
-				581DDC1D18A0567466816BB4 /* ServerErrorReporter.swift */,
-				22DAF708C7ED47F7F0E0DEFC /* SingleUploadFlowService.swift */,
-				BCF9578C57545FDADB560DCB /* TextMessageFlowService.swift */,
-				E0F22B2B9DC29CAFA863CDB2 /* TranscriptionService.swift */,
-				BD047D744F61BEFB2E85DB79 /* TranscriptSubmissionService.swift */,
-				9F39A000A005E77BDD12CE38 /* UploadQueueRecoveryService.swift */,
-				71140C8ED063864DD48F3500 /* UploadQueueRehydrateExecutionService.swift */,
-				CF56A9ECC698653D41B18A71 /* UploadQueueRehydratePlanService.swift */,
-				A767AA4F2DC375E572642C3C /* VideoBatchUploadCoordinator.swift */,
-				0E996DE4500DDFF0790F62F0 /* VideoMetadataExtractor.swift */,
-				EA58877C26F0C09FF7DFA4DC /* VideoUploadService.swift */,
-				DF832B7FFECB82D590207866 /* WebSocketConnectionStateService.swift */,
-				AB466E29A44672F9357FF9AE /* WebSocketFormConfirmedEventService.swift */,
-				5F882A616547681B986DF977 /* WebSocketFormRequestEventService.swift */,
-				3C343FD39F250EB4145AA932 /* WebSocketMessageEventService.swift */,
-				B8670CB55AAF934023C48145 /* WebSocketMuxReadyEventService.swift */,
-				0813D4F9F9F55CFAE78F08B5 /* WebSocketService.swift */,
-				77F35B102A873F8EC153465B /* WebSocketUploadLifecycleEventService.swift */,
-				B61289AB93D25E5868041022 /* WorkflowReconcileExecutionService.swift */,
-				67EFEC479D73B5032402DA35 /* WorkflowReconcilePlanService.swift */,
-				3533A958197D037FC6EA505D /* WorkflowStageTracker.swift */,
+				EB660DC13CDF23DA97F43D5B /* Chat */,
+				B1B2AD1F4C130A9249982E1E /* Logging */,
+				0CED6FA1656E41DDA315025A /* Networking */,
+				91CFB5AAD25FE718621D1957 /* Permissions */,
+				D5C86D414FD35F508BA87106 /* Persistence */,
+				C1C8AA7D06ABD5BCB0B3BF28 /* Recovery */,
+				EDB5D1A7B04966DED91A3F5F /* Upload */,
+				62DCE480FD3E798D87B492F0 /* Workflow */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -253,6 +299,7 @@
 			isa = PBXGroup;
 			children = (
 				C26051BCDF417085C92C74B4 /* DirectVideoUploader */,
+				0A6481ED3975CF016618D9E5 /* DirectVideoUploaderTests */,
 				5743955FF4CE584D1C05A446 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -293,8 +340,22 @@
 			isa = PBXGroup;
 			children = (
 				FF11D8E240B8AF1F2DFFB68B /* DirectVideoUploader.app */,
+				11D39EE8D05CC894E99A1322 /* DirectVideoUploaderTests.xctest */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		62DCE480FD3E798D87B492F0 /* Workflow */ = {
+			isa = PBXGroup;
+			children = (
+				D45AD3A9C2D8ACED841A146C /* AssetDetailSyncService.swift */,
+				FD7E50C56A226347C54DCD2B /* ChatOwnershipRouter.swift */,
+				5F1BB8F59A5F2517F57A40D9 /* ReadyWorkflowStateService.swift */,
+				41B724B0549F90F580170090 /* WorkflowReconcileExecutionService.swift */,
+				67F48E8AD3FD918226AFCFA3 /* WorkflowReconcilePlanService.swift */,
+				746E827AC05313987D197707 /* WorkflowStageTracker.swift */,
+			);
+			path = Workflow;
 			sourceTree = "<group>";
 		};
 		78541B4B4D21D14231E05745 /* Utilities */ = {
@@ -339,12 +400,30 @@
 			path = Onboarding;
 			sourceTree = "<group>";
 		};
+		91CFB5AAD25FE718621D1957 /* Permissions */ = {
+			isa = PBXGroup;
+			children = (
+				761057A4B2D1969E2523F441 /* AppearanceService.swift */,
+				4C27ACDB8440348608E9ADB1 /* KeychainHelper.swift */,
+				8FC36277151EAFDFFB1744C7 /* PermissionManager.swift */,
+			);
+			path = Permissions;
+			sourceTree = "<group>";
+		};
 		B01505EC365B69298354AAFC /* Photos */ = {
 			isa = PBXGroup;
 			children = (
 				02302BA1984533BE8F7E4F3E /* PhotosView.swift */,
 			);
 			path = Photos;
+			sourceTree = "<group>";
+		};
+		B1B2AD1F4C130A9249982E1E /* Logging */ = {
+			isa = PBXGroup;
+			children = (
+				5F621A00503D35CFFB5D11DF /* AppLog.swift */,
+			);
+			path = Logging;
 			sourceTree = "<group>";
 		};
 		B271A0A7D1005CC7E2294E11 /* App */ = {
@@ -363,11 +442,27 @@
 			children = (
 				2F9DE735EEFFFCC798CA054C /* Asset.swift */,
 				CC18F5FFC74280EFFEB0BE65 /* ChatMessage.swift */,
+				4ECE6649AA9863FDFA3EE102 /* SelectedVideo.swift */,
 				D56F342EB8CB3B26EC77BBF3 /* ServerConfig.swift */,
 				3A0611DEBA9BE67788466164 /* User.swift */,
 				906B4EE592B6559E18A30C6C /* VideoBatch.swift */,
+				EE50B81DCD68A653803F5640 /* VideoBatchContext.swift */,
+				A45A6A9F29BD2161C854282B /* VideoBatchEnums.swift */,
+				B95536A6C12B8EC0A510BDD6 /* VideoBatchItem.swift */,
 			);
 			path = Models;
+			sourceTree = "<group>";
+		};
+		C1C8AA7D06ABD5BCB0B3BF28 /* Recovery */ = {
+			isa = PBXGroup;
+			children = (
+				E41567636146A290B7D5B80B /* ConnectivityIssueTracker.swift */,
+				1D0D0375A91423F42CC34340 /* PendingFormRecoveryService.swift */,
+				6D3517F7DC2EC62BD638EB81 /* UploadQueueRecoveryService.swift */,
+				CBC586090789F142C3CAE68B /* UploadQueueRehydrateExecutionService.swift */,
+				279DBE2EE3FFB1DA7A7E58D2 /* UploadQueueRehydratePlanService.swift */,
+			);
+			path = Recovery;
 			sourceTree = "<group>";
 		};
 		C26051BCDF417085C92C74B4 /* DirectVideoUploader */ = {
@@ -382,6 +477,83 @@
 				357C9C93C3B9F07720823BE1 /* Views */,
 			);
 			path = DirectVideoUploader;
+			sourceTree = "<group>";
+		};
+		D5C86D414FD35F508BA87106 /* Persistence */ = {
+			isa = PBXGroup;
+			children = (
+				944EE826833A1F37DAC5ADCB /* PendingForm.swift */,
+				DAF4E12A86D97957F910E48A /* PHAssetIdentifierStore.swift */,
+				F1A152F51D801029FE0BB898 /* UploadQueueStore.swift */,
+			);
+			path = Persistence;
+			sourceTree = "<group>";
+		};
+		E3C264A6F7F6490D99B56D92 /* Batch */ = {
+			isa = PBXGroup;
+			children = (
+				7BAE4E318616877895C5FEFB /* BatchAssetFlowService.swift */,
+				457405144C58A4AE56772C78 /* BatchAssetPresentationService.swift */,
+				E4B8798217E6EABF7F82EFDA /* BatchClipDisplayService.swift */,
+				F12E4ADC5BFAB1099957FDEE /* BatchCompletionMessageService.swift */,
+				D80D926D39FC5D974459575B /* BatchItemExecutionService.swift */,
+				5474D56924A220142B9C2AE9 /* BatchItemLifecycleService.swift */,
+				29915DD2DADC1973885B8498 /* BatchItemProcessingService.swift */,
+				6992FDEBED5F021CF2703840 /* BatchItemStateService.swift */,
+				22B10AE56E2115E8FD6015B0 /* BatchRunExecutionService.swift */,
+				BF6B124C27D1C814FCCA4FF1 /* BatchStateTransitionService.swift */,
+				C6B9108722A3D334FF7F2B5D /* PendingBatchRestoreService.swift */,
+				9ADF5BF95A0B22849BC383F0 /* PendingBatchStore.swift */,
+			);
+			path = Batch;
+			sourceTree = "<group>";
+		};
+		EB660DC13CDF23DA97F43D5B /* Chat */ = {
+			isa = PBXGroup;
+			children = (
+				AE03117C083E0D8042235334 /* AssetDetailService.swift */,
+				1E9B67FABD7818A66DE3AD59 /* ChatViewModel.swift */,
+				0DF7F67324DE89ECF059ADD5 /* ChatViewModel+Batch.swift */,
+				AC080CC07F07674393877E86 /* ChatViewModel+Form.swift */,
+				901BCCB3907AB4EE12175760 /* ChatViewModel+Hosts.swift */,
+				50B96A1214B08990E892C212 /* ChatViewModel+Lifecycle.swift */,
+				FD1A24A54229EBE6D3221B14 /* ChatViewModel+Send.swift */,
+				11BA2952ADE42DB053AAE827 /* ChatViewModel+WebSocket.swift */,
+				05478495469C54B6983538BD /* ChatViewModel+WSRuntime.swift */,
+				FD2F6722C7B4A163F2FA6C58 /* ChatViewModelTypes.swift */,
+				10639CEE28493C5C5EE868DF /* ConversationResetService.swift */,
+				2C4ADC17B893DF293D5DD7EB /* FormSubmissionService.swift */,
+				FEB117AA444296AC9A211F19 /* GroupedFormService.swift */,
+				67EB750518E9F3A799CB438E /* MessageCatalog.swift */,
+				4109F062E8D6BBC5214C52CC /* MessagePolicyCoordinator.swift */,
+				FF7B5E504E811709CF6D1028 /* OnboardingCatalog.swift */,
+				DD2C722F393C34E138A5DBD1 /* TextMessageFlowService.swift */,
+				39E70C7D264668FD3EF99F1C /* TranscriptionService.swift */,
+				0289EE7E1D82A4100FEF4E52 /* TranscriptSubmissionService.swift */,
+				22E71BA78EE2809F7FDABBB1 /* WebSocketConnectionStateService.swift */,
+				81E177365B6FD5C582E1DC51 /* WebSocketEventRuntime.swift */,
+				16CC34B73A6D23A24D28DA30 /* WebSocketFormConfirmedEventService.swift */,
+				9FBA02CA42C0AAAB57B73728 /* WebSocketFormRequestEventService.swift */,
+				8C184DF2729A99F64D786097 /* WebSocketMessageEventService.swift */,
+				4F933DCF63898D90B96C6B29 /* WebSocketStreamReadyEventService.swift */,
+				2D232E9AFA5DAD829D608ED6 /* WebSocketUploadLifecycleEventService.swift */,
+			);
+			path = Chat;
+			sourceTree = "<group>";
+		};
+		EDB5D1A7B04966DED91A3F5F /* Upload */ = {
+			isa = PBXGroup;
+			children = (
+				CE3A73DF6BE4780045ED5058 /* BatchUploadTransportService.swift */,
+				DCC20D5B6B03D80CB71B2B2E /* SingleUploadFlowService.swift */,
+				5DCBC9580C439381A268A6D0 /* VideoBatchUploadCoordinator.swift */,
+				0EFFBA139883DDCF4F798C17 /* VideoMetadataExtractor.swift */,
+				1F2E3D4C5B6A79808F90A1B2 /* UploadStorage.swift */,
+				F14E4C2E85DB0CE719772A3F /* VideoUploadService.swift */,
+				E3C264A6F7F6490D99B56D92 /* Batch */,
+				167804C9E1A4FAA3D06568F3 /* Transports */,
+			);
+			path = Upload;
 			sourceTree = "<group>";
 		};
 		F34A4940F605231E72129F84 /* Auth */ = {
@@ -421,6 +593,24 @@
 			productReference = FF11D8E240B8AF1F2DFFB68B /* DirectVideoUploader.app */;
 			productType = "com.apple.product-type.application";
 		};
+		B87A93323F2C05CF01D9D78B /* DirectVideoUploaderTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = EC69A2EF27CC5BFA27790585 /* Build configuration list for PBXNativeTarget "DirectVideoUploaderTests" */;
+			buildPhases = (
+				04B9594065F6017A647328D8 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				5B5F386367985F569934301C /* PBXTargetDependency */,
+			);
+			name = DirectVideoUploaderTests;
+			packageProductDependencies = (
+			);
+			productName = DirectVideoUploaderTests;
+			productReference = 11D39EE8D05CC894E99A1322 /* DirectVideoUploaderTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -431,6 +621,10 @@
 				LastUpgradeCheck = 1600;
 				TargetAttributes = {
 					49FA393813097910E5C66B21 = {
+						DevelopmentTeam = LW5P4PVL96;
+						ProvisioningStyle = Automatic;
+					};
+					B87A93323F2C05CF01D9D78B = {
 						DevelopmentTeam = LW5P4PVL96;
 						ProvisioningStyle = Automatic;
 					};
@@ -451,6 +645,7 @@
 			projectRoot = "";
 			targets = (
 				49FA393813097910E5C66B21 /* DirectVideoUploader */,
+				B87A93323F2C05CF01D9D78B /* DirectVideoUploaderTests */,
 			);
 		};
 /* End PBXProject section */
@@ -467,96 +662,135 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		04B9594065F6017A647328D8 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C3AB9C94895218607AACBF33 /* APIClientTests.swift in Sources */,
+				4AB1792A5FDB204CB10F32D8 /* AppLogTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		741F7EB8730A6006097DE5B9 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				FFF7BA9E6503EB34CC477CFF /* AppearanceService.swift in Sources */,
+				D4D88560BC406A19FABE1EDD /* APIClient.swift in Sources */,
+				944E565907B42053B25646DA /* AppLog.swift in Sources */,
+				B7667AB84A03B8A2342042F3 /* AppearanceService.swift in Sources */,
+				19B92FB1E9BB56286E632E1F /* ArchiveIngestTransport.swift in Sources */,
 				BB8D6AF27EE9A0B211E28483 /* ArchiveListView.swift in Sources */,
 				7D6C4ADE8374C39A5C0B5DDB /* ArchiveRowView.swift in Sources */,
 				8942F3630BCFD538BAE544E5 /* Asset.swift in Sources */,
-				A954D978E06CB63F4C59BB8A /* AssetDetailService.swift in Sources */,
-				6E2C3F9DF8BDE5B337F101DD /* AssetDetailSyncService.swift in Sources */,
-				D683D53CD3990DC7DE74FBC0 /* AuthService.swift in Sources */,
-				4597120D5E340F235051EC32 /* BatchAssetFlowService.swift in Sources */,
-				B6E5E2854F719C05EA0C5F9D /* BatchAssetPresentationService.swift in Sources */,
-				D13651701B7EDAD2CA935BD6 /* BatchClipDisplayService.swift in Sources */,
-				64BF94995D1CF9038E2A18A2 /* BatchCompletionMessageService.swift in Sources */,
-				671F7F7838B8F6528919D91A /* BatchItemExecutionService.swift in Sources */,
-				F7D11EA565E78AEAB757DE18 /* BatchItemLifecycleService.swift in Sources */,
-				4E6BF553001411137DCE8332 /* BatchItemProcessingService.swift in Sources */,
-				4D9ED27635179F4F1AC29622 /* BatchItemStateService.swift in Sources */,
-				7729D79FB5E60511684A48DB /* BatchRunExecutionService.swift in Sources */,
-				C0D7D0CA1163768546B04594 /* BatchStateTransitionService.swift in Sources */,
-				E8B3CDC132459E6AD6D92EA8 /* BatchUploadTransportService.swift in Sources */,
+				4D2CBBF0C28707D7736B668B /* AssetDetailService.swift in Sources */,
+				640CE9562775BC9726466D8F /* AssetDetailSyncService.swift in Sources */,
+				8134E058C6830587E107FF34 /* AuthService.swift in Sources */,
+				DF67D373BFD1884367B6D77B /* BatchAssetFlowService.swift in Sources */,
+				EC7BC1608D35DAAC0530F5BC /* BatchAssetPresentationService.swift in Sources */,
+				1C2D98434B4172C7C7ACEC17 /* BatchClipDisplayService.swift in Sources */,
+				4EFA9B8AFF8317F63E85F7F6 /* BatchCompletionMessageService.swift in Sources */,
+				A799AD82492D9C64ABA26F96 /* BatchItemExecutionService.swift in Sources */,
+				D516EDEEB5E6DA0833145BD1 /* BatchItemLifecycleService.swift in Sources */,
+				4A9D38353721080742EDBA01 /* BatchItemProcessingService.swift in Sources */,
+				8B294EAC438028CC6854826B /* BatchItemStateService.swift in Sources */,
+				7071CF9FA60A7231C44EF7BA /* BatchRunExecutionService.swift in Sources */,
+				C0FF6C600424BDB12C653F70 /* BatchStateTransitionService.swift in Sources */,
+				7AE2B9818D7C0F7B0F9F6506 /* BatchUploadTransportService.swift in Sources */,
 				4B254383C12F662D1C19C869 /* ChatButtonStyle.swift in Sources */,
 				E2AE05593A1911192268E5FB /* ChatHeaderView.swift in Sources */,
 				6E552E05D744677CF4C5DA6A /* ChatMessage.swift in Sources */,
-				D35F71AB2A8C77C18E4F6616 /* ChatOwnershipRouter.swift in Sources */,
+				7E5F43FD9CBD258A86141F2C /* ChatOwnershipRouter.swift in Sources */,
 				FD85A83F2B113BB394A15D3E /* ChatView.swift in Sources */,
-				6D33A3123AE13D1CADF387DC /* ChatViewModel.swift in Sources */,
-				7A67446620B13BD9E2BBC805 /* ChatViewModelTypes.swift in Sources */,
-				E27CF75E534CDBE2E4533653 /* ConnectivityIssueTracker.swift in Sources */,
+				9EC1E8B88070ABCFD5A524E0 /* ChatViewModel+Batch.swift in Sources */,
+				C384B6B53CCA2270F47E87AA /* ChatViewModel+Form.swift in Sources */,
+				4B7ED98EDE6CFA0AE4A2C10A /* ChatViewModel+Hosts.swift in Sources */,
+				DCA351B5DECB2C997FDEF7B7 /* ChatViewModel+Lifecycle.swift in Sources */,
+				198D9F0B3F969141BBB1C29E /* ChatViewModel+Send.swift in Sources */,
+				12DE11919B53BD68575BBFDF /* ChatViewModel+WSRuntime.swift in Sources */,
+				425920BD78C657E0E1B08829 /* ChatViewModel+WebSocket.swift in Sources */,
+				EC5D7F899B1D5B16776A7FA5 /* ChatViewModel.swift in Sources */,
+				515C0FB2875E650116D36E0A /* ChatViewModelTypes.swift in Sources */,
+				3CEF79141FB9F628E02EE323 /* ConnectivityIssueTracker.swift in Sources */,
 				F35DE01BD68A069A3CB04989 /* ContentView.swift in Sources */,
 				A9F088643DC2986469FFC84B /* ContextFormView.swift in Sources */,
-				11D6533D179EE7F2AAA89D91 /* ConversationResetService.swift in Sources */,
+				BB81C7370760D61FA96B693C /* ConversationResetService.swift in Sources */,
 				3397724BA17E25882518C0BD /* ConversationSummaryBubble.swift in Sources */,
 				958C853DDA42C7E81E258AC7 /* DVUDateFormatting.swift in Sources */,
 				8479D08EF2DC76BFF0C2BDCF /* DirectVideoUploaderApp.swift in Sources */,
-				1E7641773C019BDC56307952 /* FormSubmissionService.swift in Sources */,
-				A87E0ED233923C55614479BB /* GroupedFormService.swift in Sources */,
+				0B18B9F9F9558508CE1C0624 /* FormSubmissionService.swift in Sources */,
+				1C566B63607F5D90A7A8042C /* GroupedFormService.swift in Sources */,
+				2AC247B195848B449DC11B37 /* IngestTransport.swift in Sources */,
+				2FAE80E649CAA21C36370ACD /* IngestTransportRegistry.swift in Sources */,
 				94EB8482D6F7158958A03393 /* InputBar.swift in Sources */,
 				9F8F876E364EA40959AE53BD /* InstructionsView.swift in Sources */,
-				B4C8A94E9D6FEE5A35C487AF /* KeychainHelper.swift in Sources */,
+				85DF83FC67BBDA28A1DDC7F8 /* KeychainHelper.swift in Sources */,
 				2F5EB0FE2B5962DCCF6BCD5B /* LoginView.swift in Sources */,
 				E6DDF3D43DC556C9E5C75AAF /* MessageBubble.swift in Sources */,
-				8192E8CC2AD8CF8188B7BA52 /* MessageCatalog.swift in Sources */,
-				E144F5D17D4BFEAD29916893 /* MessagePolicyCoordinator.swift in Sources */,
+				99F79DD53B14A542B4FB1137 /* MessageCatalog.swift in Sources */,
+				79548836BF73DDAD61F035B7 /* MessagePolicyCoordinator.swift in Sources */,
 				37912629DFC4719F11FEB3F5 /* MetadataView.swift in Sources */,
-				C580ED7D08982A24440B91B7 /* OnboardingCatalog.swift in Sources */,
+				93F8C6EBFDA79E305224E8FA /* MuxStreamingTransport.swift in Sources */,
+				B9A7F21542DC7CF9D1F3CDF8 /* OnboardingCatalog.swift in Sources */,
 				169D8BAC6DCF93E8BA23331B /* OnboardingStepView.swift in Sources */,
 				F10D6B52A7FB3C74ADB93160 /* OnboardingWalkthroughView.swift in Sources */,
-				4100E9F25D9326F7B8627D42 /* PendingBatchRestoreService.swift in Sources */,
-				274E5DCB462323AD73FE53D0 /* PendingBatchStore.swift in Sources */,
-				2A8D68699975091090384804 /* PendingFormRecoveryService.swift in Sources */,
-				52DEC1E47DF5649ABBBC6F20 /* PermissionManager.swift in Sources */,
+				646DAF2781D145E80CCEF5E4 /* PHAssetIdentifierStore.swift in Sources */,
+				BC6A8E4A974C3ACBF36BE67D /* PendingBatchRestoreService.swift in Sources */,
+				BD39B03CEED6330DDFB8717F /* PendingBatchStore.swift in Sources */,
+				0134F7E0E6B56F462D4FA249 /* PendingForm.swift in Sources */,
+				291858F0BD660F5D1FE91227 /* PendingFormRecoveryService.swift in Sources */,
+				BBCB7B71D99DBBD771311A8E /* PermissionManager.swift in Sources */,
 				5D78B58E2BE37233E19AA1F9 /* PhotosView.swift in Sources */,
 				C43AFC93CF4984D2A3C2DA9A /* ProfileView.swift in Sources */,
-				26792F62A47983975DB4A697 /* ReadyWorkflowStateService.swift in Sources */,
+				C34417685FC54E4FC2867FBF /* ReadyWorkflowStateService.swift in Sources */,
 				B232F6B18466FB01AFDF1784 /* RetryHelper.swift in Sources */,
+				80C4D6BAE7E5A464496B2B51 /* SelectedVideo.swift in Sources */,
 				889C07C34F8BFC90EF7CB2CE /* ServerConfig.swift in Sources */,
-				4E05A46E7FD0A96EE6D23A30 /* ServerErrorReporter.swift in Sources */,
-				9931F418F57A483BC928DC0F /* SingleUploadFlowService.swift in Sources */,
+				B0BB3888F486E388A1583885 /* ServerErrorReporter.swift in Sources */,
+				6873EB82F0B416D8B44935B3 /* SingleUploadFlowService.swift in Sources */,
 				87ACFBE05C9BBA14AF4A07E1 /* SlackShareSheet.swift in Sources */,
-				34161D54EBB85147CAB0C13D /* TextMessageFlowService.swift in Sources */,
+				BC55A7CFD4272DE07938B074 /* TextMessageFlowService.swift in Sources */,
 				CC1C0E76EF9FE58674443EC5 /* Theme.swift in Sources */,
-				5F94E14F8A85A751EFFAFFD2 /* TranscriptSubmissionService.swift in Sources */,
-				610ABA84479B55060D56C3FD /* TranscriptionService.swift in Sources */,
-				E2782952317AB19DC7277235 /* UploadQueueRecoveryService.swift in Sources */,
-				8F44FAC4E78AC5F45D931FAE /* UploadQueueRehydrateExecutionService.swift in Sources */,
-				C835EAF550F3E8CE275669C3 /* UploadQueueRehydratePlanService.swift in Sources */,
+				B2D90368941B727C69119896 /* TranscriptSubmissionService.swift in Sources */,
+				BADB9BA7AC868C43024CB4F9 /* TranscriptionService.swift in Sources */,
+				D15F3CB607C3279485C74DCD /* UploadQueueRecoveryService.swift in Sources */,
+				51CF18D8FD3D4CFF3078A4BE /* UploadQueueRehydrateExecutionService.swift in Sources */,
+				85E36C357D32B1BF54A1C977 /* UploadQueueRehydratePlanService.swift in Sources */,
+				C96CA6B0030C90252990347F /* UploadQueueStore.swift in Sources */,
 				CE6C303AB52C17CF99EFD315 /* User.swift in Sources */,
 				24514C388FE23338E0243A71 /* VideoBatch.swift in Sources */,
-				E011DDE1B0D32667AD5CA037 /* VideoBatchUploadCoordinator.swift in Sources */,
+				AE0481FE9C10C9142DB52E76 /* VideoBatchContext.swift in Sources */,
+				F78F049BABEF2507D670F2B4 /* VideoBatchEnums.swift in Sources */,
+				379F0C7D23A7669DB6ED8B52 /* VideoBatchItem.swift in Sources */,
+				75932DE2985E13382C8E0301 /* VideoBatchUploadCoordinator.swift in Sources */,
 				8CDB0858FD44667AD9882E4D /* VideoBubble.swift in Sources */,
 				257DDBB48613A0897D5754F0 /* VideoLibraryView.swift in Sources */,
-				B23CA5DB5C7678A863AC8029 /* VideoMetadataExtractor.swift in Sources */,
+				5F6183791993FEDB578513D4 /* VideoMetadataExtractor.swift in Sources */,
+				A1B2C3D4E5F60718293A4B5C /* UploadStorage.swift in Sources */,
 				8CC14DFD30C33058BF4FA39B /* VideoTrimView.swift in Sources */,
-				25F4475ABDC354FFB218DC4B /* VideoUploadService.swift in Sources */,
-				0597302A0A40700F7C89F10C /* WebSocketConnectionStateService.swift in Sources */,
-				25D22AA74C5C0F656CB2C480 /* WebSocketFormConfirmedEventService.swift in Sources */,
-				14AEA5F4C9C3ADEB01EDE832 /* WebSocketFormRequestEventService.swift in Sources */,
-				20BACAEC6E1098C397C1FEB0 /* WebSocketMessageEventService.swift in Sources */,
-				5CBB8176B0649E4F784E7CF8 /* WebSocketMuxReadyEventService.swift in Sources */,
-				3326B73E86C395A539C4B69E /* WebSocketService.swift in Sources */,
-				481932C9646920D4445CD4CA /* WebSocketUploadLifecycleEventService.swift in Sources */,
-				4B76C4D7A5B89E7C775D45FD /* WorkflowReconcileExecutionService.swift in Sources */,
-				3A022C8E02782600E2C46AAA /* WorkflowReconcilePlanService.swift in Sources */,
-				14EE8747DCAB398AE2B4F511 /* WorkflowStageTracker.swift in Sources */,
+				58BCBB8B40EB01ED95D96A5D /* VideoUploadService.swift in Sources */,
+				756BCF783BB4A85E6AFED5A7 /* WebSocketConnectionStateService.swift in Sources */,
+				44B25D51E7749B820E3E5F03 /* WebSocketEventRuntime.swift in Sources */,
+				9F7338A2C965C83358756F49 /* WebSocketFormConfirmedEventService.swift in Sources */,
+				B376FC2685BA0AE15858262E /* WebSocketFormRequestEventService.swift in Sources */,
+				CE369C45B1DBDD7733EC4ADF /* WebSocketMessageEventService.swift in Sources */,
+				646CF99508A7D295C6556EE2 /* WebSocketService.swift in Sources */,
+				C70FD2F9D55D3ADC7455E9C0 /* WebSocketStreamReadyEventService.swift in Sources */,
+				A6C1EF0499632C4EF00532DD /* WebSocketUploadLifecycleEventService.swift in Sources */,
+				F14544D45251B0E183C80C3D /* WorkflowReconcileExecutionService.swift in Sources */,
+				2AFBDC48DC7C56C2ED5A9176 /* WorkflowReconcilePlanService.swift in Sources */,
+				8F43FE12D4B567A1B2507067 /* WorkflowStageTracker.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		5B5F386367985F569934301C /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 49FA393813097910E5C66B21 /* DirectVideoUploader */;
+			targetProxy = F9F86D173A667BF65C460C4B /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		0C0562BD3ECF0FEAB9B38D0D /* Debug */ = {
@@ -625,6 +859,23 @@
 				SWIFT_VERSION = 6.0;
 			};
 			name = Debug;
+		};
+		103AF6B10BE2221A53821EA0 /* Debug-Staging */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.directvideo.uploader.tests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/DirectVideoUploader.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/DirectVideoUploader";
+			};
+			name = "Debug-Staging";
 		};
 		1964AC9F3F2CC0A4666EFDC0 /* Release */ = {
 			isa = XCBuildConfiguration;
@@ -723,6 +974,23 @@
 				SWIFT_VERSION = 6.0;
 			};
 			name = "Debug-Staging";
+		};
+		650F6801B70AF99B9228562A /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.directvideo.uploader.tests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/DirectVideoUploader.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/DirectVideoUploader";
+			};
+			name = Debug;
 		};
 		7EC0F9A58B85284693E88205 /* Debug-Staging */ = {
 			isa = XCBuildConfiguration;
@@ -848,6 +1116,23 @@
 			};
 			name = Release;
 		};
+		ECBD36888C7B20ADCC666F2F /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.directvideo.uploader.tests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/DirectVideoUploader.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/DirectVideoUploader";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -857,6 +1142,16 @@
 				0C0562BD3ECF0FEAB9B38D0D /* Debug */,
 				39C544D722FC6072D28A2759 /* Debug-Staging */,
 				B6E83B12A0C9BA0C1E067557 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		EC69A2EF27CC5BFA27790585 /* Build configuration list for PBXNativeTarget "DirectVideoUploaderTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				650F6801B70AF99B9228562A /* Debug */,
+				103AF6B10BE2221A53821EA0 /* Debug-Staging */,
+				ECBD36888C7B20ADCC666F2F /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;

@@ -1,8 +1,8 @@
-May 13, 2026 - 3:33pm - GitHub Copilot (GPT-5.3-Codex)
+May 13, 2026 - 4:02pm - GitHub Copilot (GPT-5.3-Codex)
 
 # Direct Video Uploader — Project Status
 
-> **Last Updated:** May 13, 2026 · 3:33pm PT
+> **Last Updated:** May 13, 2026 · 4:02pm PT
 > **Current Phase:** Phase 4 (QA + Rollout) — iOS UI/UX refresh validation and release-readiness checks
 > **Overall Progress:** ████████████████████ 100% (Phase 2) · Phase 3 complete · Phase 4 in progress
 
@@ -43,6 +43,8 @@ Latest session continuation (May 13): fixed Render deploy blocker **P3005 (datab
 Latest session continuation (May 13): hardened the P3005 fix by adding a `migrate deploy` preflight hook in `server/prisma.config.js` that invokes `server/scripts/prisma-baseline-if-needed.js` automatically whenever Prisma runs `migrate deploy`. This protects deploys even when a Render service is still using a stale manual build command that omitted the explicit baseline step.
 
 Latest session continuation (May 13): fixed Render runtime crash on missing `REDIS_URL` by downgrading Redis from required to recommended in `server/src/index.js` production env validation. Server now starts with the existing in-memory Redis shim (with structured warning `env.missingRecommended`) instead of exiting with status 1, while still requiring critical env vars (`DATABASE_URL`, `JWT_SECRET`, and Mux keys when enabled).
+
+Latest session continuation (May 13): completed Render production recovery validation. Deploy logs now show Prisma baseline preflight (`[baseline] Migration 20260512132446_baseline already marked as applied`) followed by successful `prisma migrate deploy` with no pending migrations. After setting `REDIS_URL` in Render env vars, production health checks are green on `https://ms-fixer.com`: `/api/health/live` returns `status: ok`, and `/api/health/ready` reports `db: ok`, `redis: ok`, `mux: ok`.
 
 ---
 

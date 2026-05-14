@@ -625,11 +625,12 @@ enum PassthroughExporter {
         }
         session.outputFileType = fileType
 
-        // Build trimmed output filename
+        // Build trimmed output filename. Stage in Library/Caches/uploads so
+        // the trimmed bytes survive an app relaunch mid-upload — tmp/ does not.
         let name = (originalFileName as NSString).deletingPathExtension
         let outExt = fileType == .mp4 ? "mp4" : "mov"
         let editedName = "\(name)-edited.\(outExt)"
-        let destURL = FileManager.default.temporaryDirectory.appendingPathComponent(editedName)
+        let destURL = UploadStorage.stagingDirectory().appendingPathComponent(editedName)
         try? FileManager.default.removeItem(at: destURL)
 
         session.outputURL = destURL

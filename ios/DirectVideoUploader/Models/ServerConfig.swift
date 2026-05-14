@@ -7,6 +7,7 @@ enum UserDefaultsKeys {
     static let authToken = "dvu_auth_token"
     static let appearanceMode = "dvu_appearance_mode"
     static let debugGroupedFormSubmits = "dvu_debug_grouped_form_submits"
+    static let cachedUser = "dvu_cached_user"
 }
 
 /// Central configuration for server connection.
@@ -56,7 +57,7 @@ enum ServerConfig {
             #else
                 // 5. Physical device in Debug → Mac's current tethering/LAN IP
                 //    Update this if your IP changes (check `npm run dev` output under "iOS (LAN)")
-                return URL(string: "http://172.20.10.2:3000")!
+                return URL(string: "http://192.168.1.200:3000")!
             #endif
 
         #else

@@ -1,4 +1,4 @@
-May 12, 2026 - 2:59pm - GitHub Copilot (GPT-5.3-Codex)
+May 13, 2026 - 4:02pm - GitHub Copilot (GPT-5.3-Codex)
 
 # Direct Video Uploader (DVU) — Mediasource Fixer
 
@@ -143,18 +143,18 @@ xcodebuild -project DirectVideoUploader.xcodeproj -scheme DirectVideoUploader \
 
 ## Tech Stack
 
-| Layer            | Technology                                    |
-| ---------------- | --------------------------------------------- |
-| **iOS App**      | SwiftUI + `URLSessionWebSocketTask`           |
-| **Server**       | Node.js + Fastify + Socket.IO                 |
-| **Database**     | PostgreSQL + Prisma 7 (pg adapter)            |
-| **Auth**         | Phone# + PIN → JWT (`@fastify/jwt`)           |
-| **Video**        | Mux (direct upload via tus + HLS playback)    |
-| **Dashboard**    | React 19 + Vite 6 + TypeScript + Tailwind v4  |
-| **Clip Viewer**  | Server-rendered HTML at `/clips/:slug`        |
-| **Slack**        | Bot API (`fixer-video` bot)                   |
-| **Transcription**| Apple Speech (on-device, opt-in)              |
-| **Hosting**      | Render (server + DB) · `ms-fixer.com`        |
+| Layer             | Technology                                   |
+| ----------------- | -------------------------------------------- |
+| **iOS App**       | SwiftUI + `URLSessionWebSocketTask`          |
+| **Server**        | Node.js + Fastify + Socket.IO                |
+| **Database**      | PostgreSQL + Prisma 7 (pg adapter)           |
+| **Auth**          | Phone# + PIN → JWT (`@fastify/jwt`)          |
+| **Video**         | Mux (direct upload via tus + HLS playback)   |
+| **Dashboard**     | React 19 + Vite 6 + TypeScript + Tailwind v4 |
+| **Clip Viewer**   | Server-rendered HTML at `/clips/:slug`       |
+| **Slack**         | Bot API (`fixer-video` bot)                  |
+| **Transcription** | Apple Speech (on-device, opt-in)             |
+| **Hosting**       | Render (server + DB) · `ms-fixer.com`        |
 
 ---
 
@@ -193,19 +193,19 @@ xcodebuild -project DirectVideoUploader.xcodeproj -scheme DirectVideoUploader \
 
 The server expects these in `server/.env` (see `.env.example`):
 
-| Variable           | Required | Description                          |
-| ------------------ | -------- | ------------------------------------ |
-| `DATABASE_URL`     | Yes      | PostgreSQL connection string         |
-| `REDIS_URL`        | Yes**    | Redis/Valkey connection string       |
-| `JWT_SECRET`       | Yes*     | JWT signing secret (*auto-generates) |
-| `MUX_TOKEN_ID`     | Yes      | Mux API token ID                     |
-| `MUX_TOKEN_SECRET` | Yes      | Mux API token secret                 |
-| `MUX_WEBHOOK_SECRET`| Yes     | Mux webhook signing secret           |
-| `SLACK_BOT_TOKEN`  | No       | Slack bot OAuth token (`xoxb-...`)   |
-| `PUBLIC_URL`       | No       | Public URL for clip links            |
-| `NODE_ENV`         | No       | `production` enables SSL, trust proxy|
+| Variable             | Required    | Description                           |
+| -------------------- | ----------- | ------------------------------------- |
+| `DATABASE_URL`       | Yes         | PostgreSQL connection string          |
+| `REDIS_URL`          | Recommended | Redis/Valkey connection string        |
+| `JWT_SECRET`         | Yes         | JWT signing secret                    |
+| `MUX_TOKEN_ID`       | Yes         | Mux API token ID                      |
+| `MUX_TOKEN_SECRET`   | Yes         | Mux API token secret                  |
+| `MUX_WEBHOOK_SECRET` | Yes         | Mux webhook signing secret            |
+| `SLACK_BOT_TOKEN`    | No          | Slack bot OAuth token (`xoxb-...`)    |
+| `PUBLIC_URL`         | No          | Public URL for clip links             |
+| `NODE_ENV`           | No          | `production` enables SSL, trust proxy |
 
-**`REDIS_URL` fallback behavior:** local development can run without `REDIS_URL`; the server uses an in-memory Redis shim. Production requires `REDIS_URL` and startup fails fast if it is missing.
+`REDIS_URL` fallback behavior: if unset, the server uses an in-memory Redis shim and still starts. This is acceptable for local/dev and emergency recovery, but not ideal for production durability (sessions/rate-limit state reset on restart, and do not synchronize across instances).
 
 ---
 
@@ -216,7 +216,7 @@ The repo includes `render.yaml` for Render Blueprint deploys:
 ```bash
 # Production auto-deploys from main branch
 # Staging auto-deploys from staging branch
-# Build: npm ci -> build admin -> prisma generate -> prisma migrate deploy -> seed
+# Build: npm ci -> build admin -> prisma generate -> baseline guard -> prisma migrate deploy -> seed
 # Start: cd server && node src/index.js
 ```
 
@@ -237,6 +237,9 @@ Custom domain: `ms-fixer.com` · Managed PostgreSQL · No cold starts (paid tier
   - Commit both `schema.prisma` and new migration folder
 - Deploy/fresh DB flow:
   - `cd server && npm run db:deploy`
+- Automated baseline guard on deploy:
+  - `server/scripts/prisma-baseline-if-needed.js` is invoked before `prisma migrate deploy`
+  - `server/prisma.config.js` also runs this preflight automatically for `migrate deploy`
 - Existing non-empty DB one-time baseline:
   - `cd server && npm run db:resolve -- --applied 20260512132446_baseline`
 
@@ -248,16 +251,16 @@ Rollback reference:
 
 ## Documentation
 
-| File                          | Contents                                           |
-| ----------------------------- | -------------------------------------------------- |
-| `PROJECT_SPEC.md`            | Full product specification (v4)                    |
-| `PROJECT_STATUS.md`          | Detailed progress log — every session documented   |
-| `STABILITY_PLAN.md`          | Security + reliability hardening (Phases A–C)      |
-| `STYLE_CENTRALIZATION_PLAN.md`| iOS Theme.swift centralization guide               |
-| `ios/STYLING_GUIDE.md`       | Portable iOS styling reference for agents          |
-| `TESTING_PLAN.md`            | Testing approach + 1000-user target                |
-| `TODO.md`                    | 25-issue security/perf audit tracker               |
-| `SERVER_URL_PATTERN.md`      | iOS ServerConfig URL construction patterns         |
+| File                           | Contents                                         |
+| ------------------------------ | ------------------------------------------------ |
+| `PROJECT_SPEC.md`              | Full product specification (v4)                  |
+| `PROJECT_STATUS.md`            | Detailed progress log — every session documented |
+| `STABILITY_PLAN.md`            | Security + reliability hardening (Phases A–C)    |
+| `STYLE_CENTRALIZATION_PLAN.md` | iOS Theme.swift centralization guide             |
+| `ios/STYLING_GUIDE.md`         | Portable iOS styling reference for agents        |
+| `TESTING_PLAN.md`              | Testing approach + 1000-user target              |
+| `TODO.md`                      | 25-issue security/perf audit tracker             |
+| `SERVER_URL_PATTERN.md`        | iOS ServerConfig URL construction patterns       |
 
 ---
 
