@@ -6,9 +6,7 @@ import UIKit
 /// Central chat view model — manages messages, assets, and coordinates services.
 @MainActor
 @Observable
-final class ChatViewModel: WebSocketConnectionStateRuntime, WebSocketFormRequestEventRuntime,
-    WebSocketFormConfirmedEventRuntime, WebSocketStreamReadyEventRuntime,
-    WebSocketMessageEventRuntime, WebSocketUploadLifecycleEventRuntime
+final class ChatViewModel: WebSocketConnectionStateRuntime, WebSocketEventRuntime
 {
     // MARK: - State
 

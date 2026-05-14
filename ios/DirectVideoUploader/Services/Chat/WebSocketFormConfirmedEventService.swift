@@ -1,38 +1,10 @@
-// May 13, 2026 - 11:59pm - GitHub Copilot (GPT-5.3-Codex)
+// May 14, 2026 - 3:10pm - GitHub Copilot (Claude Opus 4.7)
+// Runtime protocol consolidated into Services/Chat/WebSocketEventRuntime.swift (Priority 5).
 import Foundation
 
 @MainActor
-protocol WebSocketFormConfirmedEventRuntime: AnyObject {
-    func wsShouldSuppressMutation(assetId: String?, event: String) -> Bool
-    func wsClearBlockingConnectivityIssue(assetId: String?)
-    func wsRegisterActiveAsset(assetId: String?)
-    func wsParseStringParams(_ value: Any?) -> [String: String]?
-    func wsPromoteFormConfirmedStage(assetId: String?) -> WorkflowStage
-    func wsIsBatchAssetId(assetId: String?) -> Bool
-    func wsUpdateBatchClipMetadata(
-        assetId: String?,
-        mediasourceId: String?,
-        mediasourceUrl: String?,
-        formSlug: String?
-    )
-    func wsSetBatchClipPhase(assetId: String?, phase: VideoBubblePhase)
-    func wsHasWorkflowMessage(code: String, assetId: String?, mediasourceId: String?) -> Bool
-    func wsEnsureFormConfirmedMessage(
-        assetId: String?,
-        mediasourceId: String?,
-        mediasourceUrl: String?,
-        originalFileName: String?,
-        capturedAt: String?,
-        fallbackText: String?,
-        code: String,
-        params: [String: String]?,
-        schemaVersion: Int?
-    )
-}
-
-@MainActor
 final class WebSocketFormConfirmedEventService {
-    func handle(data: [String: Any], runtime: WebSocketFormConfirmedEventRuntime) {
+    func handle(data: [String: Any], runtime: WebSocketEventRuntime) {
         let assetId = data["assetId"] as? String
 
         runtime.wsClearBlockingConnectivityIssue(assetId: assetId)

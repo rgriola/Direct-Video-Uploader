@@ -1,42 +1,10 @@
-// May 14, 2026 - 2:30pm - GitHub Copilot (Claude Opus 4.7)
+// May 14, 2026 - 3:10pm - GitHub Copilot (Claude Opus 4.7)
+// Runtime protocol consolidated into Services/Chat/WebSocketEventRuntime.swift (Priority 5).
 import Foundation
 
 @MainActor
-protocol WebSocketStreamReadyEventRuntime: AnyObject {
-    func wsShouldSuppressMutation(assetId: String?, event: String) -> Bool
-    func wsClearBlockingConnectivityIssue(assetId: String?)
-    func wsRegisterActiveAsset(assetId: String?)
-    func wsIsBatchAssetId(assetId: String?) -> Bool
-    func wsMarkBatchClipReady(
-        assetId: String?,
-        mediasourceId: String?,
-        mediasourceUrl: String?,
-        formSlug: String?
-    )
-    func wsEnsureFormConfirmedForReady(
-        assetId: String?,
-        mediasourceId: String?,
-        mediasourceUrl: String?,
-        originalFileName: String?
-    )
-    func wsPromoteReadyStage(assetId: String?) -> WorkflowStage
-    func wsHasWorkflowMessage(code: String, assetId: String?, mediasourceId: String?) -> Bool
-    func wsResetMessagePolicyAssetScope(assetId: String?)
-    func wsApplyReadyWorkflowState(
-        assetId: String?,
-        mediasourceId: String?,
-        mediasourceUrl: String?,
-        originalFileName: String?,
-        formSlug: String?,
-        duration: Int?,
-        resolution: String?,
-        fileSize: String?
-    )
-}
-
-@MainActor
 final class WebSocketStreamReadyEventService {
-    func handle(data: [String: Any], runtime: WebSocketStreamReadyEventRuntime) {
+    func handle(data: [String: Any], runtime: WebSocketEventRuntime) {
         let assetId = data["assetId"] as? String
         let mediasourceId = data["mediasourceId"] as? String
         let mediasourceUrl = data["mediasourceUrl"] as? String

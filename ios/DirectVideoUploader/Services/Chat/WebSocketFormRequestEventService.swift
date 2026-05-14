@@ -1,32 +1,13 @@
-// May 13, 2026 - 11:58pm - GitHub Copilot (GPT-5.3-Codex)
+// May 14, 2026 - 3:10pm - GitHub Copilot (Claude Opus 4.7)
+// Runtime protocol consolidated into Services/Chat/WebSocketEventRuntime.swift (Priority 5).
 import Foundation
-
-@MainActor
-protocol WebSocketFormRequestEventRuntime: AnyObject {
-    func wsShouldSuppressMutation(assetId: String?, event: String) -> Bool
-    func wsSetCurrentAssetId(_ assetId: String?)
-    func wsRegisterActiveAsset(assetId: String?)
-    func wsClearBlockingConnectivityIssue(assetId: String?)
-    func wsPromoteFormRequestedStage(assetId: String)
-    func wsSetFormContext(
-        originalFileName: String?,
-        clipCount: Int?,
-        duration: Int?,
-        capturedAt: String?
-    )
-    func wsLogSuppressedFormRequest(assetId: String)
-    func wsHideFormSheet()
-    func wsShowFormSheet()
-    func wsSavePendingForm(_ pendingForm: PendingForm)
-    func wsMakeFormThumbnailJPEGData() -> Data?
-}
 
 @MainActor
 final class WebSocketFormRequestEventService {
     func handle(
         data: [String: Any],
         suppressPerAssetFormSheet: Bool,
-        runtime: WebSocketFormRequestEventRuntime
+        runtime: WebSocketEventRuntime
     ) {
         let assetId = data["assetId"] as? String
 

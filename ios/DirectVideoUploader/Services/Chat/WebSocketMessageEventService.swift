@@ -1,28 +1,6 @@
-// May 14, 2026 - 12:15am - GitHub Copilot (GPT-5.3-Codex)
+// May 14, 2026 - 3:10pm - GitHub Copilot (Claude Opus 4.7)
+// Runtime protocol consolidated into Services/Chat/WebSocketEventRuntime.swift (Priority 5).
 import Foundation
-
-@MainActor
-protocol WebSocketMessageEventRuntime: AnyObject {
-    func wsShouldSuppressMutation(assetId: String?, event: String) -> Bool
-    func wsClearBlockingConnectivityIssue(assetId: String?)
-    func wsIsBatchAssetId(assetId: String?) -> Bool
-    func wsUpdateBatchClipMetadata(
-        assetId: String?,
-        mediasourceId: String?,
-        mediasourceUrl: String?,
-        formSlug: String?
-    )
-    func wsSetBatchClipPhase(assetId: String?, phase: VideoBubblePhase)
-    func wsMarkBatchClipReady(
-        assetId: String?,
-        mediasourceId: String?,
-        mediasourceUrl: String?,
-        formSlug: String?
-    )
-    func wsMarkLatestOutgoingSlackAsConfirmed()
-    func wsAppendWebSocketMessage(_ message: ChatMessage)
-    func wsDownloadSlackThumbnail(url: URL, messageId: String)
-}
 
 @MainActor
 final class WebSocketMessageEventService {
@@ -32,7 +10,7 @@ final class WebSocketMessageEventService {
         "WS_FORM_CONFIRMED",
     ]
 
-    func handle(message: ChatMessage, runtime: WebSocketMessageEventRuntime) {
+    func handle(message: ChatMessage, runtime: WebSocketEventRuntime) {
         runtime.wsClearBlockingConnectivityIssue(assetId: message.assetId)
 
         if runtime.wsShouldSuppressMutation(assetId: message.assetId, event: "message:new") {

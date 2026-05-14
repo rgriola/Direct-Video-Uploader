@@ -23,6 +23,7 @@
 		3397724BA17E25882518C0BD /* ConversationSummaryBubble.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC2A1D0A89F18984A90B5686 /* ConversationSummaryBubble.swift */; };
 		37912629DFC4719F11FEB3F5 /* MetadataView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2796AFC62F34F3182D7CCE1C /* MetadataView.swift */; };
 		3CEF79141FB9F628E02EE323 /* ConnectivityIssueTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = E41567636146A290B7D5B80B /* ConnectivityIssueTracker.swift */; };
+		44B25D51E7749B820E3E5F03 /* WebSocketEventRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = 81E177365B6FD5C582E1DC51 /* WebSocketEventRuntime.swift */; };
 		4A9D38353721080742EDBA01 /* BatchItemProcessingService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 29915DD2DADC1973885B8498 /* BatchItemProcessingService.swift */; };
 		4B254383C12F662D1C19C869 /* ChatButtonStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = E40A97DC8EDA46629FA1ACA5 /* ChatButtonStyle.swift */; };
 		4D2CBBF0C28707D7736B668B /* AssetDetailService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE03117C083E0D8042235334 /* AssetDetailService.swift */; };
@@ -147,6 +148,7 @@
 		761057A4B2D1969E2523F441 /* AppearanceService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppearanceService.swift; sourceTree = "<group>"; };
 		7BAE4E318616877895C5FEFB /* BatchAssetFlowService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatchAssetFlowService.swift; sourceTree = "<group>"; };
 		7CB447F960F2A8A21F7DA5C5 /* RetryHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RetryHelper.swift; sourceTree = "<group>"; };
+		81E177365B6FD5C582E1DC51 /* WebSocketEventRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebSocketEventRuntime.swift; sourceTree = "<group>"; };
 		894318625F91A1D2462249FE /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		89F6F2F5DBBEE529E69418D7 /* SlackShareSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SlackShareSheet.swift; sourceTree = "<group>"; };
 		8B184A9B10D8C34799B39553 /* IngestTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IngestTransport.swift; sourceTree = "<group>"; };
@@ -457,6 +459,7 @@
 				39E70C7D264668FD3EF99F1C /* TranscriptionService.swift */,
 				0289EE7E1D82A4100FEF4E52 /* TranscriptSubmissionService.swift */,
 				22E71BA78EE2809F7FDABBB1 /* WebSocketConnectionStateService.swift */,
+				81E177365B6FD5C582E1DC51 /* WebSocketEventRuntime.swift */,
 				16CC34B73A6D23A24D28DA30 /* WebSocketFormConfirmedEventService.swift */,
 				9FBA02CA42C0AAAB57B73728 /* WebSocketFormRequestEventService.swift */,
 				8C184DF2729A99F64D786097 /* WebSocketMessageEventService.swift */,
@@ -648,6 +651,7 @@
 				8CC14DFD30C33058BF4FA39B /* VideoTrimView.swift in Sources */,
 				58BCBB8B40EB01ED95D96A5D /* VideoUploadService.swift in Sources */,
 				756BCF783BB4A85E6AFED5A7 /* WebSocketConnectionStateService.swift in Sources */,
+				44B25D51E7749B820E3E5F03 /* WebSocketEventRuntime.swift in Sources */,
 				9F7338A2C965C83358756F49 /* WebSocketFormConfirmedEventService.swift in Sources */,
 				B376FC2685BA0AE15858262E /* WebSocketFormRequestEventService.swift in Sources */,
 				CE369C45B1DBDD7733EC4ADF /* WebSocketMessageEventService.swift in Sources */,
