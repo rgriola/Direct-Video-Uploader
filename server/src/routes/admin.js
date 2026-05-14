@@ -1,4 +1,4 @@
-// Last updated: May 12, 2026 - 3:52pm - GitHub Copilot (GPT-5.3-Codex)
+// Last updated: May 14, 2026 - GitHub Copilot (Claude Opus 4.7) — Fix `request is not defined` in nuclear-reset handler
 /**
  * Admin routes — Dashboard data, user management, asset overview.
  * All data is LIVE — no simulated actions.
@@ -547,7 +547,7 @@ export default async function adminRoutes(fastify) {
                 },
             },
         },
-    }, async () => {
+    }, async (request) => {
         const results = { muxDeleted: 0, muxFailed: 0, muxSkipped: false };
 
         // 1. Collect all Mux asset IDs from clips before deleting DB rows
