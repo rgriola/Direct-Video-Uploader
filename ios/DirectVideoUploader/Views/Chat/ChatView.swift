@@ -174,6 +174,11 @@ struct ChatView: View {
             viewModel = vm
             vm.connectWebSocket()
 
+            // Reconcile any background-upload tasks left over from a previous
+            // session. Deferred to here (post-login) so it never blocks app launch
+            // and never runs for unauthenticated users.
+            BackgroundUploadSessionCoordinator.shared.reconcileOutstandingTasks()
+
             if !hasCompletedOnboarding {
                 showOnboarding = true
             }

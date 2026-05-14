@@ -7,6 +7,7 @@ enum UserDefaultsKeys {
     static let authToken = "dvu_auth_token"
     static let appearanceMode = "dvu_appearance_mode"
     static let debugGroupedFormSubmits = "dvu_debug_grouped_form_submits"
+    static let cachedUser = "dvu_cached_user"
 }
 
 /// Central configuration for server connection.

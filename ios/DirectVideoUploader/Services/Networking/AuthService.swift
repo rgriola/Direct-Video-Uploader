@@ -1,4 +1,4 @@
-// May 12, 2026 - 3:52pm - GitHub Copilot (GPT-5.3-Codex)
+// May 14, 2026 - 2:50pm - GitHub Copilot (Claude Opus 4.7)
 import AuthenticationServices
 import Foundation
 import Observation
@@ -10,15 +10,18 @@ import UIKit
 final class AuthService {
     // MARK: - State
 
-    var currentUser: User?
+    var currentUser: User? {
+        didSet { persistCurrentUser() }
+    }
     var token: String?
     var isAuthenticated: Bool { token != nil }
     var isLoading = false
     var errorMessage: String?
 
-    // MARK: - Keychain key
+    // MARK: - Keychain / UserDefaults keys
 
     private let tokenKey = UserDefaultsKeys.authToken
+    private let cachedUserKey = UserDefaultsKeys.cachedUser
     private var ssoSession: ASWebAuthenticationSession?
     private let ssoContextProvider = SSOAuthenticationContextProvider()
 
@@ -31,6 +34,23 @@ final class AuthService {
             token = legacyToken
             KeychainHelper.save(legacyToken, forKey: tokenKey)
             UserDefaults.standard.removeObject(forKey: tokenKey)
+        }
+
+        // Restore cached user so authenticated UI can render immediately on cold launch.
+        // didSet on currentUser is NOT called from init — assign via storage to skip persistence write.
+        if token != nil,
+            let data = UserDefaults.standard.data(forKey: cachedUserKey),
+            let user = try? JSONDecoder().decode(User.self, from: data)
+        {
+            currentUser = user
+        }
+    }
+
+    private func persistCurrentUser() {
+        if let user = currentUser, let data = try? JSONEncoder().encode(user) {
+            UserDefaults.standard.set(data, forKey: cachedUserKey)
+        } else {
+            UserDefaults.standard.removeObject(forKey: cachedUserKey)
         }
     }
 
@@ -207,20 +227,29 @@ final class AuthService {
         }
     }
 
-    func fetchMe() async throws {
+    func fetchMe(timeoutSeconds: TimeInterval = 10) async throws {
         guard let token else { throw AuthError.notAuthenticated }
 
         var request = URLRequest(url: ServerConfig.meURL)
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.timeoutInterval = timeoutSeconds
 
         let (data, response) = try await URLSession.shared.data(for: request)
 
-        guard let httpResponse = response as? HTTPURLResponse,
-            httpResponse.statusCode == 200
-        else {
-            // Token expired — force logout
+        guard let httpResponse = response as? HTTPURLResponse else {
+            // Network-layer failure — keep cached user, don't logout.
+            throw AuthError.invalidResponse
+        }
+
+        if httpResponse.statusCode == 401 || httpResponse.statusCode == 403 {
+            // Confirmed auth failure — token invalid/revoked.
             logout()
             throw AuthError.tokenExpired
+        }
+
+        guard httpResponse.statusCode == 200 else {
+            // Server error (5xx, etc.) — keep session, surface to caller.
+            throw AuthError.invalidResponse
         }
 
         let meResponse = try JSONDecoder().decode(MeResponse.self, from: data)

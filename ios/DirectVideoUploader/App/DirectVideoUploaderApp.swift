@@ -1,4 +1,4 @@
-// May 11, 2026 - 4:47pm - GitHub Copilot (GPT-5.3-Codex)
+// May 14, 2026 - 2:50pm - GitHub Copilot (Claude Opus 4.7)
 import SwiftUI
 import UIKit
 
@@ -26,10 +26,10 @@ struct DirectVideoUploaderApp: App {
     @State private var permissions = PermissionManager()
     @State private var appearance = AppearanceService()
 
-    init() {
-        // Ensure stale running tasks are reconciled on app launch.
-        BackgroundUploadSessionCoordinator.shared.reconcileOutstandingTasks()
-    }
+    // App init intentionally does no service work — get the user to the
+    // login screen as fast as possible. Background-upload reconciliation runs
+    // post-login (see ChatView.task) and on system relaunch via
+    // BackgroundUploadAppDelegate.application(_:handleEventsForBackgroundURLSession:).
 
     var body: some Scene {
         WindowGroup {
