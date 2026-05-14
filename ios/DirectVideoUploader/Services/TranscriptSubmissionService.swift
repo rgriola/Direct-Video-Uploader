@@ -1,10 +1,16 @@
-// May 13, 2026 - 11:59pm - GitHub Copilot (GPT-5.3-Codex)
+// May 14, 2026 - 1:35pm - GitHub Copilot (Claude Opus 4.7)
 import Foundation
 
 @MainActor
 final class TranscriptSubmissionService {
+    private let api: APIClient
+
+    init(api: APIClient = .shared) {
+        self.api = api
+    }
+
     func sendTranscript(assetId: String, result: TranscriptionResult, auth: AuthService) async {
-        var request = auth.authenticatedRequest(
+        let request = auth.authenticatedRequest(
             for: ServerConfig.transcriptURL(assetId),
             method: "PATCH"
         )
@@ -16,13 +22,10 @@ final class TranscriptSubmissionService {
             "transcript": result.text,
             "segments": segmentsJSON ?? [],
         ]
-        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
 
         do {
-            let (_, response) = try await URLSession.shared.data(for: request)
-            if let http = response as? HTTPURLResponse, http.statusCode == 200 {
-                print("✅ Transcript saved for asset \(assetId) (\(result.segments.count) segments)")
-            }
+            _ = try await api.sendJSONObject(request, body: body)
+            print("✅ Transcript saved for asset \(assetId) (\(result.segments.count) segments)")
         } catch {
             print("⚠️ Failed to save transcript: \(error)")
         }

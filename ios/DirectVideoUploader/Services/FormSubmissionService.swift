@@ -1,15 +1,26 @@
-// May 13, 2026 - 11:59pm - GitHub Copilot (GPT-5.3-Codex)
+// May 14, 2026 - 1:35pm - GitHub Copilot (Claude Opus 4.7)
 import Foundation
 
 @MainActor
 final class FormSubmissionService {
-    func submitForm(assetId: String, formData: [String: String], auth: AuthService) async throws {
-        var request = auth.authenticatedRequest(for: ServerConfig.formURL(assetId), method: "POST")
-        request.httpBody = try? JSONSerialization.data(withJSONObject: formData)
+    private let api: APIClient
 
-        let (_, response) = try await URLSession.shared.data(for: request)
-        if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode >= 400 {
-            throw URLError(.badServerResponse)
-        }
+    init(api: APIClient = .shared) {
+        self.api = api
     }
+
+    func submitForm(assetId: String, formData: [String: String], auth: AuthService) async throws {
+        let request = auth.authenticatedRequest(for: ServerConfig.formURL(assetId), method: "POST")
+        _ = try await api.sendJSON(
+            request,
+            body: formData,
+            expecting: EmptyResponse.self,
+            validStatus: 200..<400
+        )
+    }
+}
+
+/// Decodes any successful response — used when the body is ignored.
+private struct EmptyResponse: Decodable {
+    init(from decoder: Decoder) throws {}
 }

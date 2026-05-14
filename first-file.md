@@ -1038,58 +1038,53 @@ add.
 ..
 Enterprise Plan Apr 27 + Task.
 
-
 ...
-May 11 2026 
-
-
+May 11 2026
 
 - Greeting
-- + button > photopicker > Select Video
+- - button > photopicker > Select Video
 - edit video screen (single video only)
 - UI Screen > transcribe?-(single video only) > Upload
 - State Change to Video Processing
 - Metadata Return > Video moved to archive
 - Server Video Recieved Acknowledgement
 - Video Ready Acknowledgment
-- You can slack 
-- Next Video Please 
-- + wipes previous upload for slack > ready for video. 
-
-
+- You can slack
+- Next Video Please
+- - wipes previous upload for slack > ready for video.
 
 Batch Queue bubble Should stay at the point of entry to the Chat UI - after Greeting.
+
 - Video 1 Thumbnail + Meta + Mediasource > Video Ready (when done)
 - Video 2 Thumbnail + Meta + Mediasource > Video Ready (when done)
 - Video 3 Thumbnail + Meta + Mediasource > Video Ready (when done)
 - Video 4 Thumbnail + Meta + Mediasource > Video Ready (when done)
-- Summary of clips sent Confirmed. 
-- Great Work, Slack This, ready for your next masterpiece. 
-
+- Summary of clips sent Confirmed.
+- Great Work, Slack This, ready for your next masterpiece.
 
 - Is this possible to do this for Batch Upload clips after upload begins;
-  Append the Clip Bubble with the Metadata bubble, this would require tracking which bubble belongs to which clip and returning server messages then matching [video upload bubble] with [MS# + Metadata Return text] < remove high five message > then append [video ready green check or fail].  The Video Upload Bubble can remain where it entered the chat, presumeably the order it started to upload 1,2,3 etc.... 
+  Append the Clip Bubble with the Metadata bubble, this would require tracking which bubble belongs to which clip and returning server messages then matching [video upload bubble] with [MS# + Metadata Return text] < remove high five message > then append [video ready green check or fail]. The Video Upload Bubble can remain where it entered the chat, presumeably the order it started to upload 1,2,3 etc....
 
-
-- Changes 
-
+- Changes
 
 - Batch Upload Bubble Rename to Batch Queue.
-- Batch Queue should stay in place where it enters the chat UI and always shown, remove the auto hide. 
-- Messages should always be in order they appear in the chat UI so the user can track them visually, if they disappear then it is an error to them even if it is not actually an error. 
-
+- Batch Queue should stay in place where it enters the chat UI and always shown, remove the auto hide.
+- Messages should always be in order they appear in the chat UI so the user can track them visually, if they disappear then it is an error to them even if it is not actually an error.
 
 - batch upload message bubble needs to show full list of videos, currently shows first 3.
 
-- Conditions: User is uploading 4 videos, after 3 are completed and acknowledged user slacks status, data for 3 appear in the slack by default. 
-- Chat UI on state change resets and forces UI to the bottom even if User is engaged with the UI. 
+- Conditions: User is uploading 4 videos, after 3 are completed and acknowledged user slacks status, data for 3 appear in the slack by default.
+- Chat UI on state change resets and forces UI to the bottom even if User is engaged with the UI.
 - Change Indexing to Prepping
-- Slack supression when no video meta to send. 
+- Slack supression when no video meta to send.
 
+resolved.
 
-resolved. 
-- Video Upload feature needs to auto select upload modes, single or multiple clips. Our Single Upload feature has regressed.  - After User selects only one video leaves the photopicker screen >  the process stops screen goes black > user never gets to edit video screen, app locks up view disappears, no nav bar just a black screen. 
-
+- Video Upload feature needs to auto select upload modes, single or multiple clips. Our Single Upload feature has regressed. - After User selects only one video leaves the photopicker screen > the process stops screen goes black > user never gets to edit video screen, app locks up view disappears, no nav bar just a black screen.
 
 ....
-
+issue
+Multi Clip / Single Clip Management
+There are state issues we need to figure out how to manage.
+I uploaded multiple clips in a Batch Upload. Those were confirmed as uploaded, but not marked ready - for playback
+Then I immediately added a single clip upload. When I did this the chat UI wiped out the Batch Upload for the Single Clip, then the batch upload clips confrimed ready state and flooded the single upload. Thoughts on managing this. I think the best way is the suppress the chat UI from uploads that are older, only mark this in the archives. And deal with the current chat UI clip or batch. Thoughts?

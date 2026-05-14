@@ -1,34 +1,35 @@
-// May 13, 2026 - 7:00pm - GitHub Copilot (GPT-5.3-Codex)
+// May 14, 2026 - 1:35pm - GitHub Copilot (Claude Opus 4.7)
 import Foundation
 
 @MainActor
 final class BatchUploadTransportService {
+    private let api: APIClient
+
+    init(api: APIClient = .shared) {
+        self.api = api
+    }
+
     func fileSize(for fileURL: URL) -> Int64 {
         let attrs = try? FileManager.default.attributesOfItem(atPath: fileURL.path)
         return attrs?[.size] as? Int64 ?? 0
     }
 
     func createAsset(auth: AuthService, fileName: String) async throws -> Asset {
-        var request = auth.authenticatedRequest(for: ServerConfig.assetsURL, method: "POST")
+        let request = auth.authenticatedRequest(for: ServerConfig.assetsURL, method: "POST")
         let body = CreateAssetRequest(fileName: fileName)
-        request.httpBody = try? JSONEncoder().encode(body)
 
-        return try await withRetry(attempts: 3) { _ in
-            let (data, httpResponse) = try await URLSession.shared.data(for: request)
-            let statusCode = (httpResponse as? HTTPURLResponse)?.statusCode ?? 0
-
-            guard statusCode >= 200, statusCode < 300 else {
-                let body = String(data: data, encoding: .utf8) ?? "(empty)"
-                print("❌ createBatchAsset HTTP \(statusCode): \(body)")
-                throw NSError(
-                    domain: "createBatchAsset",
-                    code: statusCode,
-                    userInfo: [NSLocalizedDescriptionKey: "Server returned \(statusCode)"]
+        return try await withRetry(attempts: 3) { [api] _ in
+            do {
+                let response = try await api.sendJSON(
+                    request,
+                    body: body,
+                    expecting: CreateAssetResponse.self
                 )
+                return response.asset
+            } catch {
+                print("❌ createBatchAsset: \(error.localizedDescription)")
+                throw error
             }
-
-            let response = try JSONDecoder().decode(CreateAssetResponse.self, from: data)
-            return response.asset
         }
     }
 

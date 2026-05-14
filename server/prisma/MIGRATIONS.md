@@ -1,4 +1,4 @@
-Last updated: May 12, 2026 - 1:25pm - GitHub Copilot (GPT-5.3-Codex)
+Last updated: May 13, 2026 - 4:02pm - GitHub Copilot (GPT-5.3-Codex)
 
 # Prisma Migrations Runbook (Phase 0.5)
 
@@ -33,7 +33,12 @@ For fresh or ephemeral databases (no existing schema), apply migrations with:
 
 ## One-Time Baselining for Existing Non-Empty Databases
 
-If `prisma migrate deploy` fails with `P3005` (database schema is not empty), run this once per environment:
+This is now handled automatically in deploy flows:
+
+- `server/scripts/prisma-baseline-if-needed.js` runs before `prisma migrate deploy` in `render.yaml`.
+- `server/prisma.config.js` also invokes the same preflight automatically for `migrate deploy` (safety net for stale manual build commands).
+
+If `prisma migrate deploy` still fails with `P3005` (database schema is not empty), run this once per environment:
 
 1. Optional safety check:
    - `cd server && npx prisma migrate diff --from-schema prisma/schema.prisma --to-config-datasource --exit-code`

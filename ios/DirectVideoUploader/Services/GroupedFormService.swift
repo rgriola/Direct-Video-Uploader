@@ -1,4 +1,4 @@
-// May 13, 2026 - 7:32pm - GitHub Copilot (GPT-5.3-Codex)
+// May 14, 2026 - 1:35pm - GitHub Copilot (Claude Opus 4.7)
 import Foundation
 
 @MainActor
@@ -85,6 +85,7 @@ final class GroupedFormService {
         assetId: String,
         formData: [String: String],
         auth: AuthService,
+        api: APIClient = .shared,
         isConnectivityIssue: (Error) -> Bool,
         clearBlockingConnectivityIssue: (String?) -> Void,
         noteBlockingConnectivityIssue: (String, String?) -> Void,
@@ -92,26 +93,19 @@ final class GroupedFormService {
     ) async -> Bool {
         logSubmitDebug(assetId: assetId, event: .attempt, formData: formData)
 
-        var request = auth.authenticatedRequest(for: ServerConfig.formURL(assetId), method: "POST")
-        request.httpBody = try? JSONSerialization.data(withJSONObject: formData)
-        var responseStatusCode: Int?
+        let request = auth.authenticatedRequest(for: ServerConfig.formURL(assetId), method: "POST")
 
         do {
-            let (_, response) = try await URLSession.shared.data(for: request)
-            let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
-            responseStatusCode = statusCode
-            guard statusCode >= 200, statusCode < 300 else {
-                throw URLError(.badServerResponse)
-            }
-
+            let (_, statusCode) = try await api.sendJSONObject(request, body: formData)
             logSubmitDebug(assetId: assetId, event: .success, statusCode: statusCode)
             clearBlockingConnectivityIssue(assetId)
             return true
         } catch {
+            let statusCode = (error as? APIError)?.statusCode
             logSubmitDebug(
                 assetId: assetId,
                 event: .failure,
-                statusCode: responseStatusCode,
+                statusCode: statusCode,
                 error: error
             )
 

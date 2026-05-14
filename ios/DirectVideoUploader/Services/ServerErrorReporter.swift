@@ -1,8 +1,14 @@
-// May 13, 2026 - 4:45pm - GitHub Copilot (GPT-5.3-Codex)
+// May 14, 2026 - 1:35pm - GitHub Copilot (Claude Opus 4.7)
 import Foundation
 
 @MainActor
 final class ServerErrorReporter {
+    private let api: APIClient
+
+    init(api: APIClient = .shared) {
+        self.api = api
+    }
+
     func report(
         auth: AuthService,
         category: String,
@@ -31,6 +37,6 @@ final class ServerErrorReporter {
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
 
         // Fire-and-forget — logging should never block primary user workflows.
-        _ = try? await URLSession.shared.data(for: request)
+        await api.fireAndForget(request)
     }
 }
