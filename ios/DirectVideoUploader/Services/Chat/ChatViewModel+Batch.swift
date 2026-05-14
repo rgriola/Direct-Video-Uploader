@@ -604,6 +604,22 @@ extension ChatViewModel {
 
         if didChange {
             persistBatchState()
+
+            // Items moved to .failed externally — but the batch's own state
+            // machine doesn't know that. If nothing is still mid-flight, run
+            // the same finalize pipeline the live run loop uses so batchState
+            // transitions to .partialFailed (or .complete) and the spinner
+            // stops. Without this the card hangs on "Uploading queue…".
+            let stillActive = batchItems.contains { item in
+                switch item.status {
+                case .queued, .creatingAsset, .uploading, .applyingForm: return true
+                default: return false
+                }
+            }
+            if !stillActive {
+                let runFinishState = makeBatchRunFinishState()
+                applyBatchRunFinishState(runFinishState)
+            }
         }
     }
 
