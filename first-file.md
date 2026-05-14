@@ -1088,3 +1088,11 @@ Multi Clip / Single Clip Management
 There are state issues we need to figure out how to manage.
 I uploaded multiple clips in a Batch Upload. Those were confirmed as uploaded, but not marked ready - for playback
 Then I immediately added a single clip upload. When I did this the chat UI wiped out the Batch Upload for the Single Clip, then the batch upload clips confrimed ready state and flooded the single upload. Thoughts on managing this. I think the best way is the suppress the chat UI from uploads that are older, only mark this in the archives. And deal with the current chat UI clip or batch. Thoughts?
+
+...
+Batch upload since we can only do 2 concurrent uploads at a time lets show
+[Video 1] uploading
+[Video 2] uploading
+[Video 3] next up
+[Video 4] queued
+[Video 5] queued
