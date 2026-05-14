@@ -287,7 +287,7 @@ final class ChatViewModel: WebSocketConnectionStateRuntime, WebSocketEventRuntim
 
     private func debugLogChatOwnership(_ message: String) {
         #if DEBUG
-            print(message)
+            AppLog.chat.debug("\(message)")
         #endif
     }
 
@@ -902,7 +902,7 @@ final class ChatViewModel: WebSocketConnectionStateRuntime, WebSocketEventRuntim
             if connectivityIssues.isConnectivityIssue(error) {
                 noteBlockingConnectivityIssue(operation: "syncing workflow state", assetId: assetId)
             }
-            print("⚠️ [Reconnect] State reconcile skipped: \(error.localizedDescription)")
+            AppLog.workflow.warning("[Reconnect] State reconcile skipped: \(error.localizedDescription)")
         }
     }
 
@@ -918,8 +918,8 @@ final class ChatViewModel: WebSocketConnectionStateRuntime, WebSocketEventRuntim
         guard messagePolicy.shouldPresent(message, source: source) else {
             if shouldDebugCode {
                 let identity = message.assetId ?? message.content.mediasourceId ?? "n/a"
-                print(
-                    "⚠️ [Chat] Dropped message by policy: code=\(message.content.code ?? "n/a") source=\(source) target=\(identity)"
+                AppLog.chat.warning(
+                    "[Chat] Dropped message by policy: code=\(message.content.code ?? "n/a") source=\(String(describing: source)) target=\(identity)"
                 )
             }
             return
@@ -933,8 +933,8 @@ final class ChatViewModel: WebSocketConnectionStateRuntime, WebSocketEventRuntim
 
         if shouldDebugCode {
             let identity = message.assetId ?? message.content.mediasourceId ?? "n/a"
-            print(
-                "💬 [Chat] Appended message: code=\(message.content.code ?? "n/a") source=\(source) target=\(identity) total=\(messages.count)"
+            AppLog.chat.debug(
+                "[Chat] Appended message: code=\(message.content.code ?? "n/a") source=\(String(describing: source)) target=\(identity) total=\(self.messages.count)"
             )
         }
     }
@@ -1620,7 +1620,7 @@ final class ChatViewModel: WebSocketConnectionStateRuntime, WebSocketEventRuntim
             guard let asset = await createAsset(fileName: fileName, fileURL: fileURL) else {
                 return
             }
-            print("✅ Asset created: \(asset.mediasourceId ?? asset.id)")
+            AppLog.upload.info("Asset created: \(asset.mediasourceId ?? asset.id)")
 
             savePHAssetIdentifier(for: asset.id)
             await uploadVideo(assetId: asset.id, fileURL: fileURL, metadata: metadata)
@@ -1826,7 +1826,7 @@ final class ChatViewModel: WebSocketConnectionStateRuntime, WebSocketEventRuntim
             PendingForm.clear()
             clearBlockingConnectivityIssueIfNeeded(assetId: assetId)
         } catch {
-            print("❌ Failed to submit form:", error)
+            AppLog.chat.error("Failed to submit form: \(error.localizedDescription)")
             // Keep form open so user can retry — show error in chat too
             form.submitError = "Failed to send form. Please try again."
             if connectivityIssues.isConnectivityIssue(error) {
@@ -1927,7 +1927,7 @@ final class ChatViewModel: WebSocketConnectionStateRuntime, WebSocketEventRuntim
     private func checkPendingForm() {
         guard let pendingForm = PendingForm.load() else { return }
 
-        print("🔄 [Recovery] Found pending form for asset: \(pendingForm.assetId)")
+        AppLog.chat.info("[Recovery] Found pending form for asset: \(pendingForm.assetId)")
 
         Task {
             do {
@@ -1938,17 +1938,17 @@ final class ChatViewModel: WebSocketConnectionStateRuntime, WebSocketEventRuntim
 
                 switch recoveryDecision {
                 case .clear:
-                    print(
-                        "🔄 [Recovery] Form already submitted for \(pendingForm.assetId) — clearing"
+                    AppLog.chat.info(
+                        "[Recovery] Form already submitted for \(pendingForm.assetId) — clearing"
                     )
                     PendingForm.clear()
 
                 case .restore:
-                    print("🔄 [Recovery] Restoring pending form for \(pendingForm.assetId)")
+                    AppLog.chat.info("[Recovery] Restoring pending form for \(pendingForm.assetId)")
                     restoreFormFromPending(pendingForm)
                 }
             } catch {
-                print("🔄 [Recovery] Could not check pending form: \(error.localizedDescription)")
+                AppLog.chat.warning("[Recovery] Could not check pending form: \(error.localizedDescription)")
             }
         }
     }
@@ -2069,7 +2069,7 @@ final class ChatViewModel: WebSocketConnectionStateRuntime, WebSocketEventRuntim
                     self.slackThumbnails[messageId] = image
                 }
             } catch {
-                print("⚠️ Failed to download Slack thumbnail: \(error.localizedDescription)")
+                AppLog.chat.warning("Failed to download Slack thumbnail: \(error.localizedDescription)")
             }
         }
     }

@@ -23,9 +23,9 @@ struct PendingForm: Codable {
         do {
             let data = try JSONEncoder().encode(form)
             try data.write(to: storageURL, options: .atomic)
-            print("💾 [Form] Saved pending form state for asset: \(form.assetId)")
+            AppLog.persistence.info("[Form] Saved pending form state for asset: \(form.assetId)")
         } catch {
-            print("⚠️ [Form] Failed to save pending form state: \(error)")
+            AppLog.persistence.warning("[Form] Failed to save pending form state: \(error.localizedDescription)")
         }
     }
 
@@ -35,7 +35,7 @@ struct PendingForm: Codable {
             let data = try Data(contentsOf: storageURL)
             return try JSONDecoder().decode(PendingForm.self, from: data)
         } catch {
-            print("⚠️ [Form] Failed to load pending form state: \(error)")
+            AppLog.persistence.warning("[Form] Failed to load pending form state: \(error.localizedDescription)")
             clear()
             return nil
         }
@@ -43,6 +43,6 @@ struct PendingForm: Codable {
 
     static func clear() {
         try? FileManager.default.removeItem(at: storageURL)
-        print("🗑️ [Form] Cleared pending form state")
+        AppLog.persistence.info("[Form] Cleared pending form state")
     }
 }

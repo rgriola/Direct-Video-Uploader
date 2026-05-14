@@ -1,4 +1,4 @@
-// May 10, 2026 - 6:09pm - GitHub Copilot (GPT-5.3-Codex)
+// May 14, 2026 - 9:49am - GitHub Copilot (Claude Opus 4.7)
 import Foundation
 
 enum PendingBatchStore {
@@ -34,9 +34,9 @@ enum PendingBatchStore {
                let data = try encoder.encode(batch)
                try data.write(to: url, options: .atomic)
                try batch.id.data(using: .utf8)?.write(to: latestPointerURL, options: .atomic)
-               print("💾 [Batch] Saved pending batch state: \(batch.id)")
+               AppLog.persistence.info("[Batch] Saved pending batch state: \(batch.id)")
           } catch {
-               print("⚠️ [Batch] Failed to save pending batch: \(error.localizedDescription)")
+               AppLog.persistence.warning("[Batch] Failed to save pending batch: \(error.localizedDescription)")
           }
      }
 
@@ -48,7 +48,7 @@ enum PendingBatchStore {
                let data = try Data(contentsOf: url)
                return try decoder.decode(VideoBatch.self, from: data)
           } catch {
-               print("⚠️ [Batch] Failed to load batch \(batchId): \(error.localizedDescription)")
+               AppLog.persistence.warning("[Batch] Failed to load batch \(batchId): \(error.localizedDescription)")
                return nil
           }
      }
@@ -105,9 +105,9 @@ enum PendingBatchStore {
                     try FileManager.default.removeItem(at: latestPointerURL)
                }
 
-               print("🗑️ [Batch] Cleared pending batch state: \(batchId)")
+               AppLog.persistence.info("[Batch] Cleared pending batch state: \(batchId)")
           } catch {
-               print("⚠️ [Batch] Failed to clear batch \(batchId): \(error.localizedDescription)")
+               AppLog.persistence.warning("[Batch] Failed to clear batch \(batchId): \(error.localizedDescription)")
           }
      }
 

@@ -32,7 +32,7 @@ final class BatchUploadTransportService {
                 )
                 return response.asset
             } catch {
-                print("❌ createBatchAsset: \(error.localizedDescription)")
+                AppLog.upload.error("createBatchAsset: \(error.localizedDescription)")
                 throw error
             }
         }

@@ -497,7 +497,7 @@ final class BackgroundUploadSessionCoordinator: NSObject, URLSessionTaskDelegate
     }
 
     func urlSession(_ session: URLSession, taskIsWaitingForConnectivity task: URLSessionTask) {
-        print("⏳ [Upload] Waiting for connectivity - upload will resume when network returns")
+        AppLog.upload.info("[Upload] Waiting for connectivity - upload will resume when network returns")
     }
 
     func urlSessionDidFinishEvents(forBackgroundURLSession session: URLSession) {
@@ -637,7 +637,7 @@ final class VideoUploadService: NSObject {
         do {
             while true {
                 if descriptor == nil {
-                    print("📤 [Mux] Requesting direct upload URL for asset: \(assetId)")
+                    AppLog.upload.info("[Mux] Requesting direct upload URL for asset: \(assetId)")
 
                     do {
                         descriptor = try await requestDirectUploadDescriptor(
@@ -745,8 +745,8 @@ final class VideoUploadService: NSObject {
                     }
 
                     uploadProgress = 1.0
-                    print(
-                        "📤 [Mux] ✅ Direct upload complete! Mux will process and notify via webhook."
+                    AppLog.upload.info(
+                        "[Mux] Direct upload complete! Mux will process and notify via webhook."
                     )
                     return MuxUploadResponse(
                         clipId: activeDescriptor.clipId,
@@ -871,8 +871,8 @@ final class VideoUploadService: NSObject {
                 "tx=\(taskMetrics.transactionCount) total=\(total) request=\(request) response=\(response) proto=\(protocolName) cellular=\(cellular)"
         }()
         let errorSuffix = snapshot.errorMessage.map { " reason=\($0)" } ?? ""
-        print(
-            "📊 [UploadTelemetry] asset=\(snapshot.assetId) correlation=\(snapshot.correlationId) outcome=\(snapshot.outcome.rawValue) queueWait=\(queueWaitText) transfer=\(transferText) retries=\(snapshot.retries) serverUploadCreatedAtMs=\(serverUploadText) metrics={\(metricsText)}\(errorSuffix)"
+        AppLog.upload.info(
+            "[UploadTelemetry] asset=\(snapshot.assetId) correlation=\(snapshot.correlationId) outcome=\(snapshot.outcome.rawValue) queueWait=\(queueWaitText) transfer=\(transferText) retries=\(snapshot.retries) serverUploadCreatedAtMs=\(serverUploadText) metrics={\(metricsText)}\(errorSuffix)"
         )
     }
 
@@ -942,7 +942,7 @@ final class VideoUploadService: NSObject {
         else {
             let statusCode = (createResponse as? HTTPURLResponse)?.statusCode ?? 0
             let body = String(data: createData, encoding: .utf8) ?? "Unknown"
-            print("📤 [Mux] ❌ Failed to get upload URL: \(body)")
+            AppLog.upload.error("[Mux] Failed to get upload URL: \(body)")
             throw UploadError.serverError(statusCode, body)
         }
 
@@ -988,7 +988,7 @@ final class VideoUploadService: NSObject {
         uploadURL: URL,
         retries: Int
     ) async throws {
-        print("📤 [Mux] Got upload URL, uploading directly to Mux CDN...")
+        AppLog.upload.info("[Mux] Got upload URL, uploading directly to Mux CDN...")
 
         var putRequest = URLRequest(url: uploadURL)
         putRequest.httpMethod = "PUT"
@@ -1010,7 +1010,7 @@ final class VideoUploadService: NSObject {
             (200...204).contains(putHttp.statusCode)
         else {
             let code = (putResponse as? HTTPURLResponse)?.statusCode ?? 0
-            print("📤 [Mux] ❌ PUT to Mux failed with status \(code)")
+            AppLog.upload.error("[Mux] PUT to Mux failed with status \(code)")
             throw UploadError.serverError(code, "Mux upload failed")
         }
     }

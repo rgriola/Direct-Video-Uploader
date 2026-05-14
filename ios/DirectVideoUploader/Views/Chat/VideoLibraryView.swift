@@ -353,7 +353,7 @@ struct VideoLibraryView: View {
                 phAssetIdentifier: item.itemIdentifier
             )
         } catch {
-            print("❌ [Library] Failed to load video: \(error)")
+            AppLog.ui.error("[Library] Failed to load video: \(error.localizedDescription)")
             return nil
         }
     }

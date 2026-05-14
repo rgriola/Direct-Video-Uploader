@@ -107,12 +107,12 @@ final class BatchAssetFlowService {
                 metadata: metadata,
                 onProgress: onProgress
             )
-            print(
-                "✅ [Batch Upload] Mux direct upload completed for asset: \(assetId), clipId: \(clipId)"
+            AppLog.upload.info(
+                "[Batch Upload] Mux direct upload completed for asset: \(assetId), clipId: \(clipId)"
             )
             return true
         } catch {
-            print("❌ [Batch Upload] Failed for asset \(assetId): \(error)")
+            AppLog.upload.error("[Batch Upload] Failed for asset \(assetId): \(error.localizedDescription)")
             host.bafMarkAssetFailed(assetId: assetId, reason: error.localizedDescription)
 
             if host.bafIsConnectivityIssue(error) {

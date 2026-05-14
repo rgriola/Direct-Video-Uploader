@@ -22,8 +22,8 @@ final class WebSocketStreamReadyEventService {
             let serverToAssetCreatedMs = uploadTelemetry["serverToAssetCreatedMs"] as? Int
             let readyText = serverToReadyMs.map { "\($0)ms" } ?? "n/a"
             let assetCreatedText = serverToAssetCreatedMs.map { "\($0)ms" } ?? "n/a"
-            print(
-                "📊 [UploadCorrelation] correlation=\(correlationId) muxUploadId=\(muxUploadId) serverToAssetCreated=\(assetCreatedText) serverToReady=\(readyText)"
+            AppLog.upload.info(
+                "[UploadCorrelation] correlation=\(correlationId) muxUploadId=\(muxUploadId) serverToAssetCreated=\(assetCreatedText) serverToReady=\(readyText)"
             )
         }
 
@@ -56,7 +56,7 @@ final class WebSocketStreamReadyEventService {
             )
         }
 
-        print("✅ [Mux Ready] Asset \(assetId ?? "?") confirmed on Mediasource")
+        AppLog.upload.info("[Mux Ready] Asset \(assetId ?? "?") confirmed on Mediasource")
 
         let previousStage = runtime.wsPromoteReadyStage(assetId: assetId)
         if previousStage != .failed,

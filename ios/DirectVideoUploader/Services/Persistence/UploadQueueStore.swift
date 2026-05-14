@@ -206,8 +206,8 @@ enum UploadQueueStore {
             let data = try encoder.encode(tasks)
             try data.write(to: storageURL, options: .atomic)
         } catch {
-            print(
-                "⚠️ [UploadQueueStore] Failed to persist queue state: \(error.localizedDescription)")
+            AppLog.persistence.warning(
+                "[UploadQueueStore] Failed to persist queue state: \(error.localizedDescription)")
         }
     }
 }

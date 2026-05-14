@@ -25,9 +25,9 @@ final class TranscriptSubmissionService {
 
         do {
             _ = try await api.sendJSONObject(request, body: body)
-            print("✅ Transcript saved for asset \(assetId) (\(result.segments.count) segments)")
+            AppLog.transcription.info("Transcript saved for asset \(assetId) (\(result.segments.count) segments)")
         } catch {
-            print("⚠️ Failed to save transcript: \(error)")
+            AppLog.transcription.warning("Failed to save transcript: \(error.localizedDescription)")
         }
     }
 }

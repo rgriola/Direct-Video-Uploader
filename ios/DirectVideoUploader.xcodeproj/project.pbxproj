@@ -57,6 +57,7 @@
 		8CDB0858FD44667AD9882E4D /* VideoBubble.swift in Sources */ = {isa = PBXBuildFile; fileRef = B136E4B9F4C6D88E9009D569 /* VideoBubble.swift */; };
 		8F43FE12D4B567A1B2507067 /* WorkflowStageTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 746E827AC05313987D197707 /* WorkflowStageTracker.swift */; };
 		93F8C6EBFDA79E305224E8FA /* MuxStreamingTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = F19F620AF3B92B241F5E140B /* MuxStreamingTransport.swift */; };
+		944E565907B42053B25646DA /* AppLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F621A00503D35CFFB5D11DF /* AppLog.swift */; };
 		94EB8482D6F7158958A03393 /* InputBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF5B8A623A0F5AA9CA07EA1A /* InputBar.swift */; };
 		958C853DDA42C7E81E258AC7 /* DVUDateFormatting.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4DBB133385999B4E09A826F7 /* DVUDateFormatting.swift */; };
 		99F79DD53B14A542B4FB1137 /* MessageCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67EB750518E9F3A799CB438E /* MessageCatalog.swift */; };
@@ -138,6 +139,7 @@
 		5BE16E72579F144A61F60847 /* ArchiveRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArchiveRowView.swift; sourceTree = "<group>"; };
 		5DCBC9580C439381A268A6D0 /* VideoBatchUploadCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoBatchUploadCoordinator.swift; sourceTree = "<group>"; };
 		5F1BB8F59A5F2517F57A40D9 /* ReadyWorkflowStateService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReadyWorkflowStateService.swift; sourceTree = "<group>"; };
+		5F621A00503D35CFFB5D11DF /* AppLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLog.swift; sourceTree = "<group>"; };
 		67EB750518E9F3A799CB438E /* MessageCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageCatalog.swift; sourceTree = "<group>"; };
 		67F48E8AD3FD918226AFCFA3 /* WorkflowReconcilePlanService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkflowReconcilePlanService.swift; sourceTree = "<group>"; };
 		6992FDEBED5F021CF2703840 /* BatchItemStateService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatchItemStateService.swift; sourceTree = "<group>"; };
@@ -234,6 +236,7 @@
 			isa = PBXGroup;
 			children = (
 				EB660DC13CDF23DA97F43D5B /* Chat */,
+				B1B2AD1F4C130A9249982E1E /* Logging */,
 				0CED6FA1656E41DDA315025A /* Networking */,
 				91CFB5AAD25FE718621D1957 /* Permissions */,
 				D5C86D414FD35F508BA87106 /* Persistence */,
@@ -363,6 +366,14 @@
 				02302BA1984533BE8F7E4F3E /* PhotosView.swift */,
 			);
 			path = Photos;
+			sourceTree = "<group>";
+		};
+		B1B2AD1F4C130A9249982E1E /* Logging */ = {
+			isa = PBXGroup;
+			children = (
+				5F621A00503D35CFFB5D11DF /* AppLog.swift */,
+			);
+			path = Logging;
 			sourceTree = "<group>";
 		};
 		B271A0A7D1005CC7E2294E11 /* App */ = {
@@ -571,6 +582,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				D4D88560BC406A19FABE1EDD /* APIClient.swift in Sources */,
+				944E565907B42053B25646DA /* AppLog.swift in Sources */,
 				B7667AB84A03B8A2342042F3 /* AppearanceService.swift in Sources */,
 				19B92FB1E9BB56286E632E1F /* ArchiveIngestTransport.swift in Sources */,
 				BB8D6AF27EE9A0B211E28483 /* ArchiveListView.swift in Sources */,

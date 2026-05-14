@@ -116,11 +116,11 @@ final class SingleUploadFlowService {
                 token: token,
                 metadata: metadata
             )
-            print(
-                "✅ [Upload] Mux direct upload completed for asset: \(assetId), clipId: \(muxResult.clipId)"
+            AppLog.upload.info(
+                "[Upload] Mux direct upload completed for asset: \(assetId), clipId: \(muxResult.clipId)"
             )
         } catch {
-            print("❌ [Upload] Failed for asset \(assetId): \(error)")
+            AppLog.upload.error("[Upload] Failed for asset \(assetId): \(error.localizedDescription)")
             host.sufMarkAssetFailed(assetId: assetId)
 
             if host.sufIsConnectivityIssue(error) {

@@ -352,7 +352,7 @@ extension StagedVideo {
             let (cgImage, _) = try await generator.image(at: .zero)
             return UIImage(cgImage: cgImage)
         } catch {
-            print("❌ [Thumbnail] Failed to generate: \(error)")
+            AppLog.ui.error("[Thumbnail] Failed to generate: \(error.localizedDescription)")
             return nil
         }
     }

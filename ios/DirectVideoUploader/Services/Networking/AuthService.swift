@@ -42,7 +42,7 @@ final class AuthService {
         defer { isLoading = false }
 
         let url = ServerConfig.loginURL
-        print("🔐 [Auth] Attempting login to: \(url.absoluteString)")
+        AppLog.auth.info("[Auth] Attempting login to: \(url.absoluteString)")
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -52,16 +52,16 @@ final class AuthService {
         request.httpBody = try JSONEncoder().encode(body)
 
         let (data, response) = try await URLSession.shared.data(for: request)
-        print(
-            "🔐 [Auth] Response received: \(String(data: data, encoding: .utf8)?.prefix(200) ?? "nil")"
+        AppLog.auth.debug(
+            "[Auth] Response received: \(String(data: data, encoding: .utf8)?.prefix(200) ?? "nil")"
         )
 
         guard let httpResponse = response as? HTTPURLResponse else {
-            print("🔐 [Auth] ❌ Invalid response (not HTTP)")
+            AppLog.auth.error("[Auth] Invalid response (not HTTP)")
             throw AuthError.invalidResponse
         }
 
-        print("🔐 [Auth] HTTP status: \(httpResponse.statusCode)")
+        AppLog.auth.info("[Auth] HTTP status: \(httpResponse.statusCode)")
 
         guard httpResponse.statusCode == 200 else {
             let errorBody = try? JSONDecoder().decode(ErrorResponse.self, from: data)
@@ -243,7 +243,7 @@ final class AuthService {
         do {
             _ = try await URLSession.shared.data(for: request)
         } catch {
-            print("⚠️ [Auth] Logout request failed: \(error.localizedDescription)")
+            AppLog.auth.warning("[Auth] Logout request failed: \(error.localizedDescription)")
         }
     }
 

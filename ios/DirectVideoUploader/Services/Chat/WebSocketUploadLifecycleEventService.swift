@@ -6,7 +6,7 @@ import Foundation
 final class WebSocketUploadLifecycleEventService {
     func handleUploadComplete(data: [String: Any], runtime: WebSocketEventRuntime) {
         let assetId = data["assetId"] as? String ?? ""
-        print("✅ Upload complete for asset: \(assetId)")
+        AppLog.upload.info("Upload complete for asset: \(assetId)")
 
         runtime.wsClearBlockingConnectivityIssue(assetId: assetId)
 

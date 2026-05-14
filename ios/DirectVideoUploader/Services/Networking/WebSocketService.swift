@@ -1,4 +1,4 @@
-// May 11, 2026 - 6:11pm - GitHub Copilot (GPT-5.3-Codex)
+// May 14, 2026 - 9:49am - GitHub Copilot (Claude Opus 4.7)
 import Foundation
 import Network
 import Observation
@@ -74,8 +74,8 @@ final class WebSocketService {
 
     func connect(token: String) {
         guard state == .disconnected, !isReconnecting else {
-            print(
-                "🔌 [WS] Already \(state)\(isReconnecting ? " (reconnecting)" : ""), skipping connect"
+            AppLog.ws.info(
+                "[WS] Already \(String(describing: self.state))\(self.isReconnecting ? " (reconnecting)" : ""), skipping connect"
             )
             return
         }
@@ -84,7 +84,7 @@ final class WebSocketService {
         state = .connecting
         isReconnecting = true
         stopNetworkMonitor()
-        print("🔌 [WS] Connecting to: \(ServerConfig.wsURL.absoluteString)")
+        AppLog.ws.info("[WS] Connecting to: \(ServerConfig.wsURL.absoluteString)")
 
         // Step 1: Socket.IO handshake via HTTP polling to get session ID
         connectTask = Task { @MainActor in
@@ -92,7 +92,7 @@ final class WebSocketService {
                 try await performHandshake(token: token)
             } catch {
                 guard !Task.isCancelled else { return }
-                print("❌ [WS] Handshake failed:", error)
+                AppLog.ws.error("[WS] Handshake failed: \(error.localizedDescription)")
                 state = .disconnected
                 // Attempt reconnect on handshake failure too
                 reconnectAttempt += 1
@@ -103,8 +103,8 @@ final class WebSocketService {
                     return
                 }
                 let delay = min(3.0 * pow(2.0, Double(reconnectAttempt - 1)), 60.0)
-                print(
-                    "🔄 [WS] Reconnect attempt \(reconnectAttempt)/\(maxReconnectAttempts) in \(delay)s"
+                AppLog.ws.info(
+                    "[WS] Reconnect attempt \(self.reconnectAttempt)/\(self.maxReconnectAttempts) in \(delay)s"
                 )
                 onReconnecting?(reconnectAttempt, maxReconnectAttempts)
                 try? await Task.sleep(for: .seconds(delay))
@@ -208,14 +208,14 @@ final class WebSocketService {
                     self.listenForMessages(on: socket)
 
                 case .failure(let error):
-                    print("❌ WebSocket receive error:", error)
+                    AppLog.ws.error("WebSocket receive error: \(error.localizedDescription)")
                     self.cleanupConnection()
 
                     // Exponential backoff reconnect (3s → 6s → 12s … max 60s)
                     self.reconnectAttempt += 1
                     guard self.reconnectAttempt <= self.maxReconnectAttempts else {
-                        print(
-                            "🛑 [WS] Max reconnect attempts (\(self.maxReconnectAttempts)) reached — giving up"
+                        AppLog.ws.error(
+                            "[WS] Max reconnect attempts (\(self.maxReconnectAttempts)) reached — giving up"
                         )
                         self.isReconnecting = false
                         self.startNetworkMonitor()  // Watch for network return (1.3)
@@ -223,8 +223,8 @@ final class WebSocketService {
                         return
                     }
                     let delay = min(3.0 * pow(2.0, Double(self.reconnectAttempt - 1)), 60.0)
-                    print(
-                        "🔄 [WS] Reconnect attempt \(self.reconnectAttempt)/\(self.maxReconnectAttempts) in \(delay)s"
+                    AppLog.ws.info(
+                        "[WS] Reconnect attempt \(self.reconnectAttempt)/\(self.maxReconnectAttempts) in \(delay)s"
                     )
                     self.onReconnecting?(self.reconnectAttempt, self.maxReconnectAttempts)
                     try? await Task.sleep(for: .seconds(delay))
@@ -313,7 +313,7 @@ final class WebSocketService {
                 let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                 let sid = json["sid"] as? String
             {
-                print("✅ Socket.IO connected (sid: \(sid))")
+                AppLog.ws.info("Socket.IO connected (sid: \(sid))")
             }
             // Flush any queued messages
             flushPendingQueue()
@@ -350,8 +350,9 @@ final class WebSocketService {
                     let message = try JSONDecoder().decode(ChatMessage.self, from: jsonData)
                     onMessage?(message)
                 } catch {
-                    print("❌ [WS] Failed to decode message:new — \(error)")
-                    print("   Payload keys: \(dict.keys.sorted())")
+                    AppLog.ws.error("[WS] Failed to decode message:new — \(error.localizedDescription)")
+                    let keys = dict.keys.sorted().joined(separator: ",")
+                    AppLog.ws.debug("   Payload keys: \(keys)")
                 }
             }
 
@@ -381,7 +382,7 @@ final class WebSocketService {
             }
 
         default:
-            print("📨 Unhandled WS event: \(eventName)")
+            AppLog.ws.debug("Unhandled WS event: \(eventName)")
         }
     }
 
@@ -417,10 +418,10 @@ final class WebSocketService {
             // Drop oldest if queue is full (keep user's latest intent)
             if pendingQueue.count >= maxQueueSize {
                 let dropped = pendingQueue.removeFirst()
-                print("⚠️ [WS] Queue full — dropped oldest: \(dropped.prefix(60))…")
+                AppLog.ws.warning("[WS] Queue full — dropped oldest: \(dropped.prefix(60))…")
             }
             pendingQueue.append(frame)
-            print("📦 [WS] Queued message (\(pendingQueue.count)/\(maxQueueSize))")
+            AppLog.ws.debug("[WS] Queued message (\(self.pendingQueue.count)/\(self.maxQueueSize))")
         }
     }
 
@@ -428,7 +429,7 @@ final class WebSocketService {
     private func flushPendingQueue() {
         guard !pendingQueue.isEmpty else { return }
         let count = pendingQueue.count
-        print("📤 [WS] Flushing \(count) queued message(s)")
+        AppLog.ws.info("[WS] Flushing \(count) queued message(s)")
         for frame in pendingQueue {
             sendRaw(frame)
         }
@@ -442,7 +443,7 @@ final class WebSocketService {
 
         targetSocket.send(.string(text)) { [weak self] error in
             if let error {
-                print("❌ WS send error:", error)
+                AppLog.ws.error("WS send error: \(error.localizedDescription)")
                 // Send failure means connection is dead — trigger reconnect (1.4)
                 Task { @MainActor [weak self] in
                     guard let self else { return }
@@ -450,7 +451,7 @@ final class WebSocketService {
                     guard self.webSocket === targetSocket else { return }
                     guard self.state == .connected else { return }
 
-                    print("🔌 [WS] Send failure detected — triggering reconnect")
+                    AppLog.ws.info("[WS] Send failure detected — triggering reconnect")
                     self.cleanupConnection()
                     self.reconnectAttempt += 1
                     guard self.reconnectAttempt <= self.maxReconnectAttempts else {
@@ -502,7 +503,7 @@ final class WebSocketService {
         monitor.pathUpdateHandler = { [weak self] path in
             Task { @MainActor [weak self] in
                 guard let self, path.status == .satisfied, let token = self.token else { return }
-                print("🌐 [WS] Network restored — attempting reconnect")
+                AppLog.ws.info("[WS] Network restored — attempting reconnect")
                 self.reconnectAttempt = 0
                 self.isReconnecting = false
                 self.stopNetworkMonitor()
@@ -510,7 +511,7 @@ final class WebSocketService {
             }
         }
         monitor.start(queue: queue)
-        print("👁️ [WS] Network monitor started — waiting for connectivity")
+        AppLog.ws.debug("[WS] Network monitor started — waiting for connectivity")
     }
 
     private func stopNetworkMonitor() {
@@ -530,8 +531,8 @@ final class WebSocketService {
             guard !Task.isCancelled else { return }
             await MainActor.run { [weak self] in
                 guard let self, self.state == .connected else { return }
-                print(
-                    "⏰ [WS] Ping watchdog fired — no server ping in \(Int(self.pingWatchdogInterval))s, connection is zombie"
+                AppLog.ws.warning(
+                    "[WS] Ping watchdog fired — no server ping in \(Int(self.pingWatchdogInterval))s, connection is zombie"
                 )
                 self.cleanupConnection()
                 self.reconnectAttempt += 1

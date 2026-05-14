@@ -28,8 +28,8 @@ final class AssetDetailSyncService {
 
             guard statusCode == 200 else {
                 #if DEBUG
-                    print(
-                        "⚠️ [AssetDetail] Skipped detail sync (status=\(statusCode), asset=\(assetId), reason=\(reason), presentErrorsInChat=\(presentErrorsInChat))"
+                    AppLog.workflow.warning(
+                        "[AssetDetail] Skipped detail sync (status=\(statusCode), asset=\(assetId), reason=\(reason), presentErrorsInChat=\(presentErrorsInChat))"
                     )
                 #endif
 
@@ -46,7 +46,7 @@ final class AssetDetailSyncService {
             host.adsClearBlockingConnectivityIssue(assetId: assetId)
             host.adsReconcileWorkflowState(asset: asset)
         } catch {
-            print("❌ Failed to fetch asset detail:", error)
+            AppLog.workflow.error("Failed to fetch asset detail: \(error.localizedDescription)")
             if host.adsIsConnectivityIssue(error) {
                 host.adsNoteBlockingConnectivityIssue(
                     operation: "syncing metadata",
@@ -58,8 +58,8 @@ final class AssetDetailSyncService {
                 }
             } else {
                 #if DEBUG
-                    print(
-                        "⚠️ [AssetDetail] Suppressed error bubble for asset \(assetId) during \(reason): \(error.localizedDescription)"
+                    AppLog.workflow.warning(
+                        "[AssetDetail] Suppressed error bubble for asset \(assetId) during \(reason): \(error.localizedDescription)"
                     )
                 #endif
             }

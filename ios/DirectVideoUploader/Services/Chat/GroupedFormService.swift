@@ -54,20 +54,20 @@ final class GroupedFormService {
             let nextAttempt = (submitAttemptCountByAssetId[assetId] ?? 0) + 1
             submitAttemptCountByAssetId[assetId] = nextAttempt
             let slug = formData?["slug"]?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            print(
+            AppLog.chat.debug(
                 "[GroupedFormDebug] submit attempt #\(nextAttempt) assetId=\(assetId) slug=\"\(slug)\""
             )
 
         case .suppressedFormRequest:
             let attempts = submitAttemptCountByAssetId[assetId] ?? 0
-            print(
+            AppLog.chat.debug(
                 "[GroupedFormDebug] ws form:request suppressed assetId=\(assetId) attempts=\(attempts)"
             )
 
         case .success:
             let attempts = submitAttemptCountByAssetId[assetId] ?? 0
             let status = statusCode.map(String.init) ?? "n/a"
-            print(
+            AppLog.chat.debug(
                 "[GroupedFormDebug] submit success assetId=\(assetId) attempt=\(attempts) status=\(status)"
             )
 
@@ -75,7 +75,7 @@ final class GroupedFormService {
             let attempts = submitAttemptCountByAssetId[assetId] ?? 0
             let status = statusCode.map(String.init) ?? "n/a"
             let reason = error?.localizedDescription ?? "unknown"
-            print(
+            AppLog.chat.warning(
                 "[GroupedFormDebug] submit failure assetId=\(assetId) attempt=\(attempts) status=\(status) error=\(reason)"
             )
         }
