@@ -479,9 +479,12 @@ extension ChatViewModel {
         // Phantom-task sweep: any item still marked .uploading / .creatingAsset
         // whose persisted URLSession task didn't survive the prior process
         // would otherwise hang the run loop forever. Mark them failed so the
-        // batch can finish or the user can retry.
+        // batch can finish or the user can retry. Always followed by a
+        // finalize pass — restore may already have left items in terminal
+        // states while batchState lingered at .uploading.
         Task { [weak self] in
             await self?.sweepPhantomUploadingItems()
+            await self?.finalizeBatchIfQuiescent()
         }
     }
 
@@ -604,23 +607,39 @@ extension ChatViewModel {
 
         if didChange {
             persistBatchState()
+        }
+    }
 
-            // Items moved to .failed externally — but the batch's own state
-            // machine doesn't know that. If nothing is still mid-flight, run
-            // the same finalize pipeline the live run loop uses so batchState
-            // transitions to .partialFailed (or .complete) and the spinner
-            // stops. Without this the card hangs on "Uploading queue…".
-            let stillActive = batchItems.contains { item in
-                switch item.status {
-                case .queued, .creatingAsset, .uploading, .applyingForm: return true
-                default: return false
-                }
-            }
-            if !stillActive {
-                let runFinishState = makeBatchRunFinishState()
-                applyBatchRunFinishState(runFinishState)
+    /// If the batch has no items in an active phase but `batchState` is still
+    /// `.uploading` (or `.queued`/`.indexing`), drive it through the same
+    /// completion pipeline the live run loop uses so the bubble flips to
+    /// `.partialFailed` / `.complete` and the spinner stops. Safe no-op when
+    /// the run loop is actively processing.
+    func finalizeBatchIfQuiescent() async {
+        guard currentBatchId != nil else { return }
+        guard !isBatchUploading else { return }
+
+        let stillActive = batchItems.contains { item in
+            switch item.status {
+            case .queued, .creatingAsset, .uploading, .applyingForm: return true
+            default: return false
             }
         }
+        guard !stillActive else { return }
+
+        switch batchState {
+        case .uploading, .queued, .indexing:
+            break
+        default:
+            return
+        }
+
+        let priorState = batchState
+        AppLog.chat.info(
+            "Finalizing quiescent batch — no active items, transitioning out of \(String(describing: priorState), privacy: .public)"
+        )
+        let runFinishState = makeBatchRunFinishState()
+        applyBatchRunFinishState(runFinishState)
     }
 
     func rehydratePersistedUploadQueueState() {
