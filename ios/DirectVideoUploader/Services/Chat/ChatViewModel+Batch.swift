@@ -475,6 +475,14 @@ extension ChatViewModel {
         Task { [weak self] in
             await self?.reconcileBatchAgainstServer()
         }
+
+        // Phantom-task sweep: any item still marked .uploading / .creatingAsset
+        // whose persisted URLSession task didn't survive the prior process
+        // would otherwise hang the run loop forever. Mark them failed so the
+        // batch can finish or the user can retry.
+        Task { [weak self] in
+            await self?.sweepPhantomUploadingItems()
+        }
     }
 
     /// Verify a restored batch still has at least one corresponding asset on
@@ -536,6 +544,66 @@ extension ChatViewModel {
     func applyRestoredBatchAssetOwnership(_ assetIds: [String]) {
         for assetId in assetIds {
             chatOwnership.registerActiveAsset(assetId)
+        }
+    }
+
+    /// Sweep batch items left in `.uploading` / `.creatingAsset` after restore
+    /// whose backing URLSession task is no longer alive in this process. Those
+    /// items will never report progress or completion, so the batch run loop
+    /// hangs ("Uploading queue…" with no actual upload). Demote them to
+    /// `.failed` with a clear reason so the user can retry or the run finishes.
+    func sweepPhantomUploadingItems() async {
+        guard let batchId = currentBatchId else { return }
+
+        // Snapshot the items we need to check up front so we don't observe
+        // mutations from concurrent legitimate progress callbacks.
+        let candidateIds: [String] = batchItems.compactMap { item in
+            switch item.status {
+            case .uploading, .creatingAsset: return item.assetId
+            default: return nil
+            }
+        }
+        guard !candidateIds.isEmpty else { return }
+
+        let liveTaskIds = await BackgroundUploadSessionCoordinator.shared
+            .liveUploadTaskIdentifiers()
+        let persistedTasksByAssetId = uploadQueueRecovery.latestTasksByAssetId()
+
+        // Confirm the batch hasn't been swapped out while we awaited.
+        guard currentBatchId == batchId else { return }
+
+        var didChange = false
+        for assetId in candidateIds {
+            guard let index = batchItems.firstIndex(where: { $0.assetId == assetId }) else {
+                continue
+            }
+            // Re-check status — a real progress event may have moved the item.
+            switch batchItems[index].status {
+            case .uploading, .creatingAsset: break
+            default: continue
+            }
+
+            let persisted = persistedTasksByAssetId[assetId]
+            let hasLiveTask: Bool = {
+                guard let persisted, persisted.state == .running || persisted.state == .pending
+                else { return false }
+                guard let identifier = persisted.taskIdentifier else { return false }
+                return liveTaskIds.contains(identifier)
+            }()
+            if hasLiveTask { continue }
+
+            batchItems[index].status = .failed
+            batchItems[index].progress = 0
+            batchItems[index].error =
+                "Upload interrupted by app restart. Tap Retry Failed."
+            didChange = true
+            AppLog.chat.info(
+                "Phantom upload swept: asset \(assetId, privacy: .public) marked failed (no live URLSession task)"
+            )
+        }
+
+        if didChange {
+            persistBatchState()
         }
     }
 

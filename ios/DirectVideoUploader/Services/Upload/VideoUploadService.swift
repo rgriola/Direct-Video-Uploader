@@ -400,6 +400,14 @@ final class BackgroundUploadSessionCoordinator: NSObject, URLSessionTaskDelegate
         return taskIdentifier
     }
 
+    /// Returns the set of task identifiers currently known to the background
+    /// URLSession. Used at restore time to detect "phantom" persisted tasks
+    /// whose underlying URLSession task died with the prior process.
+    func liveUploadTaskIdentifiers() async -> Set<Int> {
+        let tasks = await session.allTasks
+        return Set(tasks.map(\.taskIdentifier))
+    }
+
     func handleBackgroundEvents(for identifier: String, completionHandler: @escaping () -> Void) {
         guard identifier == Self.sessionIdentifier else {
             completionHandler()

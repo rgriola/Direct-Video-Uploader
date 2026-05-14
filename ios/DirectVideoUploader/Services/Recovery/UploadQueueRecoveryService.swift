@@ -1,4 +1,4 @@
-// May 13, 2026 - 5:37pm - GitHub Copilot (GPT-5.3-Codex)
+// May 14, 2026 - 5:30pm - GitHub Copilot (Claude Opus 4.7)
 import Foundation
 
 struct RecoveredBatchItemState {
@@ -37,6 +37,8 @@ struct UploadQueueRehydrateSnapshot {
 final class UploadQueueRecoveryService {
     private let interruptedUploadMessage =
         "Upload interrupted by app restart. Tap Retry Failed."
+    private let sourceMissingMessage =
+        "Source video no longer available. Please re-select."
 
     func latestTasksByAssetId() -> [String: PersistedUploadTask] {
         var latestByAssetId: [String: PersistedUploadTask] = [:]
@@ -78,6 +80,14 @@ final class UploadQueueRecoveryService {
 
         switch task.state {
         case .pending, .running:
+            // iOS wipes tmp/ between launches. If the source file is gone,
+            // resuming the upload would crash URLSession.uploadTask(fromFile:).
+            if !FileManager.default.fileExists(atPath: task.fileURL.path) {
+                return UploadQueueTaskRecoveryPlan(
+                    assetId: assetId,
+                    kind: .failed(reason: sourceMissingMessage)
+                )
+            }
             return UploadQueueTaskRecoveryPlan(assetId: assetId, kind: .uploading)
 
         case .completed:
@@ -195,6 +205,17 @@ final class UploadQueueRecoveryService {
 
         switch persistedTask.state {
         case .pending, .running:
+            // Source file may have been wiped from tmp/ since the prior
+            // session. Without it, the upload can never resume — fail fast so
+            // the batch surfaces the real reason instead of spinning forever.
+            if !FileManager.default.fileExists(atPath: persistedTask.fileURL.path) {
+                return RecoveredBatchItemState(
+                    status: .failed,
+                    progress: 0,
+                    error: sourceMissingMessage,
+                    hasRecoverableRunningWork: false
+                )
+            }
             return RecoveredBatchItemState(
                 status: .uploading,
                 progress: max(currentItem.progress, 0.05),
