@@ -280,6 +280,15 @@ final class AuthService {
         token = nil
         currentUser = nil
         KeychainHelper.delete(forKey: tokenKey)
+
+        // Wipe local upload state. Without this, re-login rebuilds the chat
+        // timeline from the prior session's persisted upload queue / batches —
+        // resurfacing old completion bubbles, stale "stuck" rows, and even
+        // re-emitting WS_FORM_CONFIRMED messages on rehydrate.
+        UploadQueueStore.clearAll()
+        PendingBatchStore.clearAll()
+        PHAssetIdentifierStore.clearAll()
+        PendingForm.clear()
     }
 
     // MARK: - Authenticated Request Helper

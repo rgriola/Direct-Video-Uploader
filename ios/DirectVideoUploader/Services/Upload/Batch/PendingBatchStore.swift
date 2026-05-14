@@ -111,6 +111,19 @@ enum PendingBatchStore {
           }
      }
 
+     /// Wipe every persisted batch + the latest pointer. Used by logout so a
+     /// new session doesn't inherit the prior user's restored batch state.
+     static func clearAll() {
+          do {
+               if FileManager.default.fileExists(atPath: storageDirectoryURL.path) {
+                    try FileManager.default.removeItem(at: storageDirectoryURL)
+               }
+               AppLog.persistence.info("[Batch] Cleared all pending batch state")
+          } catch {
+               AppLog.persistence.warning("[Batch] Failed to clear all batches: \(error.localizedDescription)")
+          }
+     }
+
      private static func batchURL(batchId: String) -> URL {
           storageDirectoryURL.appendingPathComponent("\(batchId).json")
      }

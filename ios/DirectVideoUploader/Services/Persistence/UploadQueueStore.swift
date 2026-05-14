@@ -196,6 +196,16 @@ enum UploadQueueStore {
         }
     }
 
+    /// Wipe every persisted upload task from disk. Used by logout — without
+    /// this, a re-login rehydrates old completed uploads and re-emits their
+    /// chat bubbles even though those uploads belonged to the prior session.
+    static func clearAll() {
+        lock.withLock {
+            saveUnsafe([])
+        }
+        AppLog.persistence.info("[UploadQueueStore] Cleared all persisted upload tasks")
+    }
+
     private static func loadUnsafe() -> [PersistedUploadTask] {
         guard let data = try? Data(contentsOf: storageURL) else { return [] }
         return (try? decoder.decode([PersistedUploadTask].self, from: data)) ?? []

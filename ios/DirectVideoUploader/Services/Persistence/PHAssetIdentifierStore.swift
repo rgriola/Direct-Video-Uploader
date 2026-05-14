@@ -31,6 +31,13 @@ enum PHAssetIdentifierStore {
         }
     }
 
+    /// Wipe the entire assetId → PHAsset map from disk. Used by logout so a
+    /// new session doesn't inherit the prior user's re-upload bindings.
+    static func clearAll() {
+        try? FileManager.default.removeItem(at: storageURL)
+        AppLog.persistence.info("[PHAssetIdentifierStore] Cleared all PHAsset mappings")
+    }
+
     private static func loadAll() -> [String: String] {
         guard let data = try? Data(contentsOf: storageURL),
             let map = try? JSONDecoder().decode([String: String].self, from: data)
