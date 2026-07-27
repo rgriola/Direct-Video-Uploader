@@ -12,7 +12,17 @@ steps:
     entrypoint: 'sh'
     args:
       - '-c'
-      - 'cd server && npx prisma migrate deploy'
+      - |
+        # Download and start Cloud SQL Proxy in the background
+        apt-get update && apt-get install -y wget
+        wget https://storage.googleapis.com/cloud-sql-connectors/cloud-sql-proxy/v2.8.2/cloud-sql-proxy.linux.amd64 -O cloud-sql-proxy
+        chmod +x cloud-sql-proxy
+        mkdir -p /cloudsql
+        ./cloud-sql-proxy ms-fixer-video-uploading:us-east4:ms-fixer-video-database-72026 --unix-socket /cloudsql &
+        sleep 3
+        
+        # Run migration using the DATABASE_URL from Secret Manager
+        cd server && npx prisma migrate deploy
     secretEnv: ['DATABASE_URL']
 
   # Step 4: Deploy to Cloud Run
@@ -25,10 +35,12 @@ steps:
       - '--image'
       - 'gcr.io/$PROJECT_ID/direct-video-uploader:$COMMIT_SHA'
       - '--region'
-      - 'us-central1'
+      - 'us-east4'
       - '--platform'
       - 'managed'
       - '--allow-unauthenticated'
+      - '--add-cloudsql-instances'
+      - 'ms-fixer-video-uploading:us-east4:ms-fixer-video-database-72026'
       - '--set-secrets=DATABASE_URL=DATABASE_URL:latest,JWT_SECRET=JWT_SECRET:latest,MUX_TOKEN_ID=MUX_TOKEN_ID:latest,MUX_TOKEN_SECRET=MUX_TOKEN_SECRET:latest,MUX_ENV_KEY=MUX_ENV_KEY:latest,MUX_WEBHOOK_SECRET=MUX_WEBHOOK_SECRET:latest'
 
 availableSecrets:
