@@ -30,7 +30,7 @@ COPY server/ ./
 RUN npx prisma generate
 
 # Copy the built admin dashboard from the admin-build stage into the server's public folder
-COPY --from=admin-build /app/admin/dist ./public/
+COPY --from=admin-build /app/server/public ./public/
 
 # Expose port (Cloud Run defaults to 8080 or respects PORT env var, Fastify uses PORT)
 ENV PORT=3000
