@@ -22,7 +22,7 @@ steps:
         sleep 3
         
         # Run migration using the DATABASE_URL from Secret Manager
-        cd server && npx prisma migrate deploy
+        cd /app/server && npx prisma migrate deploy
     secretEnv: ['DATABASE_URL']
 
   # Step 4: Deploy to Cloud Run
