@@ -507,8 +507,8 @@ const start = async () => {
         await fastify.listen({ port: PORT, host: HOST });
 
         const baseUrl = isProduction
-            ? `https://${process.env.RENDER_EXTERNAL_HOSTNAME || 'your-app.onrender.com'}`
-            : `http://localhost:${PORT}`;
+    ? (process.env.PUBLIC_URL || `https://${process.env.RENDER_EXTERNAL_HOSTNAME || 'cloud-run'}`)
+    : `http://localhost:${PORT}`;
 
         console.log(`
 ╔════════════════════════════════════════════╗
