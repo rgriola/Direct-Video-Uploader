@@ -21,8 +21,8 @@ steps:
         ./cloud-sql-proxy ms-fixer-video-uploading:us-east4:ms-fixer-video-database-72026 --unix-socket /cloudsql &
         sleep 3
         
-        # Run migration using the DATABASE_URL from Secret Manager
-        cd /app/server && npx prisma migrate deploy
+        # Run schema push using the DATABASE_URL from Secret Manager
+        cd /app/server && npx prisma db push --accept-data-loss
     secretEnv: ['DATABASE_URL']
 
   # Step 4: Deploy to Cloud Run
