@@ -50,3 +50,6 @@ availableSecrets:
 
 images:
   - 'gcr.io/$PROJECT_ID/direct-video-uploader:$COMMIT_SHA'
+
+options:
+  logging: CLOUD_LOGGING_ONLY
