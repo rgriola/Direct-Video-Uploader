@@ -39,7 +39,10 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.directvideo.uploader
         TARGETED_DEVICE_FAMILY: "1"
         GENERATE_INFOPLIST_FILE: YES
+
         CODE_SIGN_IDENTITY: "Apple Development"
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: xxxxxxxxxx
     info:
       path: DirectVideoUploader/Info.plist
       properties:

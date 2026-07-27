@@ -1039,6 +1039,14 @@ add.
 Enterprise Plan Apr 27 + Task.
 
 
-...
-May 9 2026 
-- 
+July 26, 2026
+
+*** Task ***
+Review this project for the specific purpose of moving it all over to Google Cloud. It requires a live server for processing video, database, websockets. We can keep Mux.com this vendor process the video as a stand in for our Mediasource server.
+
+
+
+ms-fixer-video-database-72026
+~YTK|@-v"LJT&7^$
+ms-fixer-video-uploading:us-east4:ms-fixer-video-database-72026
+Port: 5432
