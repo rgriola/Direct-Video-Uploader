@@ -58,7 +58,8 @@ Direct-Video-Uploader/
 │       ├── components/     # LoginForm, StatsGrid, AssetList, UserList, AdminTools
 │       └── hooks/          # TanStack Query, Socket.IO real-time
 ├── scripts/dev.js          # Triad launcher (DB + Server + Admin)
-├── render.yaml             # Render deployment blueprint
+├── Dockerfile              # Multi-stage Docker build (Fastify + Vite)
+├── cloudbuild.yaml         # Google Cloud Build CI/CD pipeline definition
 ├── PROJECT_SPEC.md         # Full product specification (v4)
 ├── PROJECT_STATUS.md       # Detailed progress log with every session
 ├── STABILITY_PLAN.md       # Security + reliability hardening (Phases A–C)
@@ -140,7 +141,7 @@ cd ios && xcodegen generate
 | **Clip Viewer**  | Server-rendered HTML at `/clips/:slug`        |
 | **Slack**        | Bot API (`fixer-video` bot)                   |
 | **Transcription**| Apple Speech (on-device, opt-in)              |
-| **Hosting**      | Render (server + DB) · `ms-fixer.com`        |
+| **Hosting**      | GCP (Cloud Run + Cloud SQL + Secret Manager)  |
 
 ---
 
@@ -192,17 +193,24 @@ The server expects these in `server/.env` (see `.env.example`):
 
 ---
 
-## Deployment (Render)
+## Deployment (Google Cloud Platform)
 
-The repo includes `render.yaml` for Render Blueprint deploys:
+The project is fully containerized and uses **Google Cloud Build** for automated CI/CD deployment to **Google Cloud Run** and **Cloud SQL**:
 
 ```bash
-# Render auto-deploys from main branch
-# Build: npm ci → build admin → prisma generate → prisma db push → seed
-# Start: cd server && node src/index.js
+# Deploys automatically via Cloud Build on git push to main
+# 1. Builds multi-stage Dockerfile (bundles React admin into Fastify static public/)
+# 2. Pushes container image to Google Artifact Registry
+# 3. Executes Prisma schema sync (npx prisma db push) via ephemeral Cloud SQL Auth Proxy
+# 4. Deploys service to Cloud Run with Secret Manager environment variables
 ```
 
-Custom domain: `ms-fixer.com` · Managed PostgreSQL · No cold starts (paid tier).
+### Architecture on GCP
+- **Cloud Run**: Hosts the unified Node.js Fastify server + Vite React admin static bundle. Auto-scales down to zero when idle.
+- **Cloud SQL**: Managed PostgreSQL instance, connected securely via Unix Sockets (`/cloudsql/...`).
+- **Secret Manager**: Holds sensitive environment variables (`DATABASE_URL`, `JWT_SECRET`, `MUX_*`).
+- **Artifact Registry**: Stores versioned Docker container builds tagged by Git commit SHA.
+- **Cloudflare**: Managed DNS CNAME (`ghs.googlehosted.com.`) with automatic SSL certificate provisioning.
 
 ---
 
