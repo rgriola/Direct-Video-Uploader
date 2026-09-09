@@ -76,7 +76,7 @@ Direct-Video-Uploader/
 - **Node.js** 20+ and **npm**
 - **PostgreSQL** (Prisma manages schema)
 - **Xcode 16+** with iOS 17 SDK (for the iOS app)
-- Optional: Mux account, Slack bot token
+- Optional: Mux account, Slack bot token 
 
 ### 1. Setup
 

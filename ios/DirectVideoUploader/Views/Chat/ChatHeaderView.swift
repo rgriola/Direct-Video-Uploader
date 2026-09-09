@@ -57,7 +57,9 @@ struct ChatHeaderView: View {
                 // Instructions button
                 if let onTap = onTapInstructions {
                     Button(action: onTap) {
+
                         if #available(iOS 18.0, *) {
+
                             Image(systemName: "service.dog")
                                 .font(Theme.icon20)
                                 .foregroundStyle(Theme.purple)
@@ -67,6 +69,7 @@ struct ChatHeaderView: View {
                                 .font(Theme.icon20)
                                 .foregroundStyle(Theme.purple)
                         }
+                        
                     }
                 }
             }

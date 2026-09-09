@@ -247,7 +247,7 @@ struct MetadataView: View {
     }
 
     // MARK: - Date Formatting
-
+    // probably not used. 
     private func formatDate(_ isoString: String) -> String {
         DVUDateFormatting.longDate(isoString)
     }

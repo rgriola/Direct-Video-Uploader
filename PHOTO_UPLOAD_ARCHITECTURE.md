@@ -54,6 +54,7 @@ For demo development, Photo-Fixer keeps the existing Fixer auth model:
         └─ 5. Status notifications → sender + receiver
                         │
                         ▼ HTTPS (authenticated endpoint; no anonymous upload/download)
+                        
 [Catch Server — user-owned, minimal overhead]
         │
         ├─ Validate format
