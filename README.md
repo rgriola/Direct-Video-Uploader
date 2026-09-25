@@ -1,8 +1,10 @@
 # Direct Video Uploader (DVU) — Mediasource Fixer
 
+_Last updated: September 24, 2026_
+
 **Direct Video Uploader** is a mobile-first video upload platform disguised as a text conversation. Field crew members "text" full-resolution videos to the **Mediasource Fixer** server, which processes them the way a news assignment desk operates — fast, structured, and integrated with Slack.
 
-The UX is intentionally modeled after Apple Messages: the user opens a conversation with **"Fixer"**, selects a video, taps send, fills out a slug form, and the server replies back with metadata, a clip viewer link, and a one-tap Slack post. Under the hood, videos upload directly to **Mux** via tus protocol, bypassing the server entirely.
+The UX is intentionally modeled after text messaging work-flow: Opening the app displays a text thread. **"Fixer"** sends a message acknowledging it is ready for video. User uploads video starting with Photo Library. sation with **"Fixer"**, selects a video, taps send, fills out a slug form, and the server replies back with metadata, a clip viewer link, and a one-tap Slack post. Under the hood, videos upload directly to **Mux** via tus protocol, bypassing the server entirely.
 
 > **Status:** Phase 3 (~99%) — Mux pipeline operational, Slack integration live, Apple Speech transcription, admin tools, archive, video trim, stability hardening complete. See `PROJECT_STATUS.md` for full details.
 
@@ -74,9 +76,9 @@ Direct-Video-Uploader/
 ### Prerequisites
 
 - **Node.js** 20+ and **npm**
-- **PostgreSQL** (Prisma manages schema)
+- **PostgreSQL 18** (Homebrew recommended for local dev: `brew install postgresql@18`; Prisma manages schema)
 - **Xcode 16+** with iOS 17 SDK (for the iOS app)
-- Optional: Mux account, Slack bot token 
+- Optional: Mux account, Slack bot token
 
 ### 1. Setup
 
@@ -88,7 +90,7 @@ Installs dependencies for `server/` and `admin/`, pushes Prisma schema, generate
 
 ### 2. Run Everything
 
-```bash run from root 
+```bash run from root
 npm run dev
 ```
 
@@ -130,18 +132,18 @@ cd ios && xcodegen generate
 
 ## Tech Stack
 
-| Layer            | Technology                                    |
-| ---------------- | --------------------------------------------- |
-| **iOS App**      | SwiftUI + `URLSessionWebSocketTask`           |
-| **Server**       | Node.js + Fastify + Socket.IO                 |
-| **Database**     | PostgreSQL + Prisma 7 (pg adapter)            |
-| **Auth**         | Phone# + PIN → JWT (`@fastify/jwt`)           |
-| **Video**        | Mux (direct upload via tus + HLS playback)    |
-| **Dashboard**    | React 19 + Vite 6 + TypeScript + Tailwind v4  |
-| **Clip Viewer**  | Server-rendered HTML at `/clips/:slug`        |
-| **Slack**        | Bot API (`fixer-video` bot)                   |
-| **Transcription**| Apple Speech (on-device, opt-in)              |
-| **Hosting**      | GCP (Cloud Run + Cloud SQL + Secret Manager)  |
+| Layer             | Technology                                   |
+| ----------------- | -------------------------------------------- |
+| **iOS App**       | SwiftUI + `URLSessionWebSocketTask`          |
+| **Server**        | Node.js + Fastify + Socket.IO                |
+| **Database**      | PostgreSQL 18 + Prisma 7 (pg adapter)        |
+| **Auth**          | Phone# + PIN → JWT (`@fastify/jwt`)          |
+| **Video**         | Mux (direct upload via tus + HLS playback)   |
+| **Dashboard**     | React 19 + Vite 6 + TypeScript + Tailwind v4 |
+| **Clip Viewer**   | Server-rendered HTML at `/clips/:slug`       |
+| **Slack**         | Bot API (`fixer-video` bot)                  |
+| **Transcription** | Apple Speech (on-device, opt-in)             |
+| **Hosting**       | GCP (Cloud Run + Cloud SQL + Secret Manager) |
 
 ---
 
@@ -180,16 +182,16 @@ cd ios && xcodegen generate
 
 The server expects these in `server/.env` (see `.env.example`):
 
-| Variable           | Required | Description                          |
-| ------------------ | -------- | ------------------------------------ |
-| `DATABASE_URL`     | Yes      | PostgreSQL connection string         |
-| `JWT_SECRET`       | Yes*     | JWT signing secret (*auto-generates) |
-| `MUX_TOKEN_ID`     | Yes      | Mux API token ID                     |
-| `MUX_TOKEN_SECRET` | Yes      | Mux API token secret                 |
-| `MUX_WEBHOOK_SECRET`| Yes     | Mux webhook signing secret           |
-| `SLACK_BOT_TOKEN`  | No       | Slack bot OAuth token (`xoxb-...`)   |
-| `PUBLIC_URL`       | No       | Public URL for clip links            |
-| `NODE_ENV`         | No       | `production` enables SSL, trust proxy|
+| Variable             | Required | Description                                                                                                      |
+| -------------------- | -------- | ---------------------------------------------------------------------------------------------------------------- |
+| `DATABASE_URL`       | Yes      | PostgreSQL connection string (local: `postgresql://<user>@localhost:5432/directvideo`, no password — trust auth) |
+| `JWT_SECRET`         | Yes\*    | JWT signing secret (\*auto-generates)                                                                            |
+| `MUX_TOKEN_ID`       | Yes      | Mux API token ID                                                                                                 |
+| `MUX_TOKEN_SECRET`   | Yes      | Mux API token secret                                                                                             |
+| `MUX_WEBHOOK_SECRET` | No       | Mux webhook signing secret (optional — for verifying webhook signatures)                                         |
+| `SLACK_BOT_TOKEN`    | No       | Slack bot OAuth token (`xoxb-...`)                                                                               |
+| `PUBLIC_URL`         | No       | Public URL for clip links                                                                                        |
+| `NODE_ENV`           | No       | `production` enables SSL, trust proxy                                                                            |
 
 ---
 
@@ -206,6 +208,7 @@ The project is fully containerized and uses **Google Cloud Build** for automated
 ```
 
 ### Architecture on GCP
+
 - **Cloud Run**: Hosts the unified Node.js Fastify server + Vite React admin static bundle. Auto-scales down to zero when idle.
 - **Cloud SQL**: Managed PostgreSQL instance, connected securely via Unix Sockets (`/cloudsql/...`).
 - **Secret Manager**: Holds sensitive environment variables (`DATABASE_URL`, `JWT_SECRET`, `MUX_*`).
@@ -216,16 +219,16 @@ The project is fully containerized and uses **Google Cloud Build** for automated
 
 ## Documentation
 
-| File                          | Contents                                           |
-| ----------------------------- | -------------------------------------------------- |
-| `PROJECT_SPEC.md`            | Full product specification (v4)                    |
-| `PROJECT_STATUS.md`          | Detailed progress log — every session documented   |
-| `STABILITY_PLAN.md`          | Security + reliability hardening (Phases A–C)      |
-| `STYLE_CENTRALIZATION_PLAN.md`| iOS Theme.swift centralization guide               |
-| `ios/STYLING_GUIDE.md`       | Portable iOS styling reference for agents          |
-| `TESTING_PLAN.md`            | Testing approach + 1000-user target                |
-| `TODO.md`                    | 25-issue security/perf audit tracker               |
-| `SERVER_URL_PATTERN.md`      | iOS ServerConfig URL construction patterns         |
+| File                           | Contents                                         |
+| ------------------------------ | ------------------------------------------------ |
+| `PROJECT_SPEC.md`              | Full product specification (v4)                  |
+| `PROJECT_STATUS.md`            | Detailed progress log — every session documented |
+| `STABILITY_PLAN.md`            | Security + reliability hardening (Phases A–C)    |
+| `STYLE_CENTRALIZATION_PLAN.md` | iOS Theme.swift centralization guide             |
+| `ios/STYLING_GUIDE.md`         | Portable iOS styling reference for agents        |
+| `TESTING_PLAN.md`              | Testing approach + 1000-user target              |
+| `TODO.md`                      | 25-issue security/perf audit tracker             |
+| `SERVER_URL_PATTERN.md`        | iOS ServerConfig URL construction patterns       |
 
 ---
 
