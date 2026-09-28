@@ -25,37 +25,46 @@ Why: eliminates managed-DB costs while the project is still pre-production, keep
 
 ## Architecture
 
-Cloudflare edge → outbound TLS tunnel from MacBook Air (`cloudflared`, no open ports at home) → `http://127.0.0.1:3000` Fastify → `psql :5432` SCRAM loopback → Postgres 18 `directvideo` DB. Nothing at home is internet-reachable except what the tunnel forwards to `localhost:3000`.
+Cloudflare edge → outbound TLS tunnel from MacBook Air (`cloudflared`, no open ports at home) → `http://127.0.0.1:3000` Fastify → `psql :5432` SCRAM loopback → Postgres 18 `directvideo` DB. Nothing at home is internet-reachable except what the tunnel forwards to `localhost:3000`. `cloudflared` reconnects automatically on residential IP/DHCP changes or brief internet drops — no dynamic DNS needed.
 
 ---
 
 ## Phase 1 — MacBook Air host prep
 
-- [ ] Install Xcode Command Line Tools: `xcode-select --install`
-- [ ] Install Homebrew if missing
-- [ ] `brew install postgresql@18 cloudflared node@20 jq`
-- [ ] Set stable hostname: `sudo scutil --set HostName fixer-server`
-- [ ] Disable auto-sleep (System Settings → Battery → Prevent sleeping when display is off)
-- [ ] (Optional) DHCP-reserve the Air's LAN IP in the router
+- [x] Install Xcode Command Line Tools: `xcode-select --install` — already present
+- [x] Install Homebrew if missing — already present
+- [x] `brew install postgresql@18 cloudflared node@20 jq` — postgresql@18 was already installed; cloudflared, node@20, jq installed
+- [x] Set stable hostname: `sudo scutil --set HostName fixer-server` — confirmed via `scutil --get HostName`
+- [x] Disable auto-sleep: `sudo pmset -a sleep 0 disksleep 0 displaysleep 0` — confirmed via `pmset -g`; host runs lid-open + plugged in, so no clamshell caveat applies
+- [x] Disable automatic restart-after-macOS-update (System Settings → General → Software Update → Advanced) so an OS patch doesn't silently reboot the host outside a maintenance window
+- [ ] (Optional) DHCP-reserve the Air's LAN IP in the router — **deferred**; not required for correctness since Cloudflare Tunnel doesn't depend on a fixed LAN IP, but a stable local IP makes on-LAN troubleshooting (SSH, `lsof` checks from another device) easier. Revisit when convenient.
 
 ## Phase 2 — Postgres 18 "prod-like"
 
-- [ ] `brew services start postgresql@18`
-- [ ] `postgresql.conf`: `listen_addresses='localhost'`, `password_encryption='scram-sha-256'`, memory tuning (`shared_buffers=2GB`, `effective_cache_size=6GB`, `work_mem=16MB`), logging
-- [ ] `pg_hba.conf`: **remove all `trust` lines**, require `scram-sha-256` on `127.0.0.1/32` and `::1/128`, keep `peer` for local `postgres` admin only
-- [ ] Restart: `brew services restart postgresql@18`
-- [ ] Create non-superuser role + DB:
+- [x] `brew services start postgresql@18`
+- [x] `postgresql.conf`: `listen_addresses='localhost'`, `password_encryption='scram-sha-256'`, memory tuning (`shared_buffers=2GB`, `effective_cache_size=6GB`, `work_mem=16MB`), logging (`logging_collector=on`, `log_directory='log'`, `log_filename='postgresql-%Y-%m-%d_%H%M%S.log'`, `log_line_prefix='%m [%p] %q%u@%d '`)
+- [x] `pg_hba.conf`: **removed all `trust` lines**, require `scram-sha-256` on `127.0.0.1/32` and `::1/128`. **Correction**: this Homebrew install's superuser role is named after the OS user (`rodgriola`), not `postgres` — there is no `postgres` role in this cluster. `peer` is scoped to `rodgriola` only for local admin.
+- [x] Restart: `brew services restart postgresql@18`
+- [x] Create non-superuser role + DB:
   ```sql
   CREATE ROLE fixer_app LOGIN PASSWORD '<strong>' NOSUPERUSER NOCREATEDB NOCREATEROLE;
   CREATE DATABASE directvideo OWNER fixer_app;
   ```
-- [ ] Verify SCRAM prompts for password on both `fixer_app` and `postgres` connections
-- [ ] Enable macOS App Firewall; confirm `lsof -iTCP:5432 -sTCP:LISTEN` shows `127.0.0.1` only
+  Passwords generated with `openssl rand -base64 24` for both `rodgriola` (admin) and `fixer_app` — stored in password manager, not committed anywhere.
+- [x] Verify SCRAM prompts for password — confirmed via `psql -h 127.0.0.1 -U fixer_app -d directvideo` (successful auth with password); local peer auth confirmed for `rodgriola` via Unix socket
+- [x] Enable macOS App Firewall; confirm `lsof -iTCP:5432 -sTCP:LISTEN` shows `127.0.0.1` only — both confirmed
 
 ## Phase 3 — Fastify at home
 
-- [ ] Clone repo to `~/apps/direct-video-uploader`, `cd server && npm ci`
-- [ ] Author `server/.env`:
+- [x] Clone repo to `~/apps/direct-video-uploader`, `cd server && npm ci`
+- [x] `npm audit` triage: started at 37 vulns (1 critical, 24 high, 12 moderate) → 29 (0 critical, 19 high, 10 moderate) after fixes:
+  - `fast-jwt` critical (JWT auth-bypass via empty HMAC secret) → overridden to `^6.3.3`
+  - `@fastify/static` high (path traversal/auth bypass), directly serves `/uploads/` + dashboard through the tunnel → bumped direct dep to `^10.1.5`
+  - `ws` high (memory exhaustion DoS via Socket.IO) → overridden to `^8.22.0`
+  - `axios`, `brace-expansion`, `defu` → overridden to patched versions
+  - Remaining 29 are nested under `prisma`'s dev-tooling (`@prisma/dev`, unused — this plan uses `migrate deploy` against our own Postgres, not `prisma dev`'s ephemeral DB) and `vitest`/`@vitest/coverage-v8` (test-only), plus one `@fastify/static` copy nested inside `@fastify/swagger-ui`'s auth-guarded `/api/docs` route — deferred, revisit later
+  - Note: `content-disposition@3.0.0` (new dep of `@fastify/static@10.1.5`) wants Node ≥22; we're on Node 20 — `EBADENGINE` warning only, verify server boots before deciding whether to bump Node
+- [x] Author `server/.env`:
   ```
   DATABASE_URL="postgresql://fixer_app:<urlencoded-pass>@127.0.0.1:5432/directvideo?sslmode=disable"
   JWT_SECRET="<64-byte hex>"
@@ -69,16 +78,22 @@ Cloudflare edge → outbound TLS tunnel from MacBook Air (`cloudflared`, no open
   MUX_WEBHOOK_SECRET="…"
   SLACK_BOT_TOKEN="…"
   ```
-- [ ] `prisma db push` + `npm run seed`
-- [ ] Confirm `trustProxy` is enabled in server (Cloudflare forwards `CF-Connecting-IP`)
-- [ ] Verify `lsof -iTCP:3000 -sTCP:LISTEN` shows `127.0.0.1:3000` only, NOT `*:3000`
-- [ ] Install LaunchAgent `~/Library/LaunchAgents/com.msfixer.fastify.plist` with `KeepAlive=true`, `RunAtLoad=true`, logs to `~/Library/Logs/msfixer/`
+  Generated locally (JWT_SECRET via `crypto.randomBytes(64)`, DB URL from Phase 2 `fixer_app` creds); Mux/Slack values entered directly by Rod in the editor, not shared in chat.
+- [x] `chmod 600 server/.env` (holds DB password, JWT secret, Mux + Slack tokens)
+- [x] `prisma migrate deploy` + `npm run seed` — use `migrate deploy`, not `db push`, since this DB now holds real data and `db push` can silently drop/alter columns on drift
+  - **Correction**: repo had no `prisma/migrations` history (previously only used `db push`). Bootstrapped one with `prisma migrate dev --name init` against the fresh, empty `directvideo` DB — safe since no data existed yet. Going forward, schema changes should go through `migrate dev` locally then `migrate deploy` here.
+  - `migrate dev` needs shadow-DB create rights, which `fixer_app` intentionally lacks (`NOCREATEDB`) — ran that one bootstrap step as the `rodgriola` admin role via a one-off `DATABASE_URL` override, without touching `.env`.
+  - Bootstrapping as admin left all tables owned by `rodgriola` instead of `fixer_app` — fixed via `ALTER SCHEMA public OWNER TO fixer_app` + reassigning each table/sequence owner individually (`REASSIGN OWNED BY` failed cluster-wide since `rodgriola` also owns system-required objects). Verified all 8 tables now owned by `fixer_app`.
+  - `npx prisma generate` was needed explicitly (client wasn't generated automatically); seed then ran cleanly as `fixer_app`, creating 4 demo users.
+- [x] Confirm `trustProxy` is enabled in server (Cloudflare forwards `CF-Connecting-IP`) — `trustProxy: isProduction` in `src/index.js`, true since `NODE_ENV=production`. Inline comment still says "Render" — cosmetic, fix during Phase 5 cleanup.
+- [x] Verify `lsof -iTCP:3000 -sTCP:LISTEN` shows `127.0.0.1:3000` only, NOT `*:3000` — confirmed (`localhost:hbci`, loopback only). Foreground test boot also confirmed: DB connects, Mux enabled, `/api/health` → 200. Note: actual health route is `/api/health`, not `/healthz` — doc corrected below. Also noted `public/` (dashboard build) doesn't exist yet — non-blocking warning, revisit before exposing the dashboard.
+- [x] Install LaunchAgent `~/Library/LaunchAgents/com.msfixer.fastify.plist` with `KeepAlive=true`, `RunAtLoad=true`, logs to `~/Library/Logs/msfixer/` — loaded via `launchctl`, confirmed serving `/api/health` on port 3000, and confirmed `KeepAlive` restart after `kill -9` (new PID within ~3s)
 
 ## Phase 4 — Cloudflare Tunnel
 
-- [ ] `cloudflared tunnel login` (browser auth to Cloudflare account, select `ms-fixer.com` zone)
-- [ ] `cloudflared tunnel create fixer-dev` — save the UUID
-- [ ] Author `~/.cloudflared/config.yml`:
+- [x] `cloudflared tunnel login` (browser auth to Cloudflare account, select `ms-fixer.com` zone) — cert saved to `~/.cloudflared/cert.pem`
+- [x] `cloudflared tunnel create fixer-dev` — UUID `61348dc7-6e08-457e-bd92-9cd7257db18a`
+- [x] Author `~/.cloudflared/config.yml`:
   ```yaml
   tunnel: <UUID>
   credentials-file: /Users/<you>/.cloudflared/<UUID>.json
@@ -89,10 +104,18 @@ Cloudflare edge → outbound TLS tunnel from MacBook Air (`cloudflared`, no open
         connectTimeout: 30s
     - service: http_status:404
   ```
-- [ ] `cloudflared tunnel route dns fixer-dev dev.ms-fixer.com`
-- [ ] Test foreground: `cloudflared tunnel run fixer-dev`, then `curl -I https://dev.ms-fixer.com/healthz` from work laptop → 200
-- [ ] Install as system service: `sudo cloudflared service install`
-- [ ] (Recommended) Add Cloudflare Access email-OTP policy on `/admin*` — leave `/api/*` and `/socket.io/*` open (JWT-gated already)
+- [x] `cloudflared tunnel route dns fixer-dev dev.ms-fixer.com` — CNAME added
+- [x] Test foreground: `cloudflared tunnel run fixer-dev`, then `curl -I https://dev.ms-fixer.com/api/health` from work laptop → 200 — confirmed 200 (tested from this host via public DNS/Cloudflare edge round-trip, not localhost; optionally re-test from the work laptop later for full independent confirmation)
+- [x] Install as system service: `sudo cloudflared service install` — **required a manual fix**: the installed `LaunchDaemon` plist ran bare `cloudflared` with no arguments, which (running as root) can't find a user's `~/.cloudflared/config.yml` and just prints a hint instead of starting the tunnel (silent failure, HTTP 530/1033 externally). Fixed by copying `config.yml` + credentials JSON to `/etc/cloudflared/` (root-readable standard path) and editing `/Library/LaunchDaemons/com.cloudflare.cloudflared.plist`'s `ProgramArguments` to `cloudflared tunnel --config /etc/cloudflared/config.yml run`. Reloaded via `launchctl`; confirmed `/api/health` → 200 through the system service.
+- [x] (Recommended) Add Cloudflare Access email-OTP policy on `/admin*` — leave `/api/*` and `/socket.io/*` open (JWT-gated already)
+  - **Correction**: there is no `/admin*` path in this codebase — the admin dashboard SPA (built from `admin/` → `server/public`) is served at the site **root** (`/`), not a subpath. Client-facing routes (`/clips/*` cookie-gated viewer, `/api/*` JWT-gated, `/uploads/*` static assets, `/socket.io/*` websocket) needed explicit bypass policies instead.
+  - Set up: Cloudflare Zero Trust team created (free plan). 5 Access applications on `dev.ms-fixer.com`:
+    1. **Fixer Admin Dashboard** — domain `dev.ms-fixer.com`, no path (whole domain) — Allow policy, email OTP to `rodczaro@gmail.com`
+    2. **Fixer API Bypass** — path `/api/*` — Bypass, Everyone
+    3. **Fixer Socket.IO Bypass** — path `/socket.io/*` — Bypass, Everyone
+    4. **Fixer Uploads Bypass** — path `/uploads/*` — Bypass, Everyone
+    5. **Fixer Clips Bypass** — path `/clips/*` — Bypass, Everyone
+  - Verified via curl: `/` → 302 to `cloudflareaccess.com` login (protected, correct); `/api/health` → 200 (bypassed, correct); `/socket.io/` → 400 (reached app's own socket.io handshake handler, bypassed correctly); `/uploads/` → 404 (reached app's static handler, bypassed correctly); `/clips/` → 302 to the **app's own** `/clips/login` (not Cloudflare's login — confirms bypass working, app-level auth intact).
 
 ## Phase 5 — Client + config updates
 
@@ -104,8 +127,10 @@ Cloudflare edge → outbound TLS tunnel from MacBook Air (`cloudflared`, no open
 ## Phase 6 — Ops, backups, monitoring
 
 - [ ] Nightly `pg_dump` LaunchAgent → `~/backups/`, 7-day retention
+- [ ] Encrypt dumps before they leave the box (`gpg --symmetric` or provider-side SSE) — they contain user data
 - [ ] Weekly offsite copy → GCS Coldline or Backblaze B2
-- [ ] Uptime monitor on `/healthz` (UptimeRobot free tier or Cloudflare Health Checks)
+- [ ] Exclude the Postgres data directory from Time Machine (live file-copy backups of a running DB can be inconsistent — rely on `pg_dump` instead)
+- [ ] Uptime monitor on `/api/health` (UptimeRobot free tier or Cloudflare Health Checks)
 - [ ] Write `docs/HOME_SERVER_RUNBOOK.md` with restart commands + restore procedure
 - [ ] Decide Cloud Run + Cloud SQL fate after 1–2 stable weeks
 
@@ -114,11 +139,11 @@ Cloudflare edge → outbound TLS tunnel from MacBook Air (`cloudflared`, no open
 ## Verification (run in order)
 
 1. [ ] **DB isolation (critical)** — from an external host: `nc -vz <MBA-public-IP> 5432` MUST fail/timeout. If it succeeds, stop and diagnose.
-2. [ ] DB auth — `psql -h 127.0.0.1 -U postgres -d directvideo` prompts for password
-3. [ ] HTTPS through tunnel — `curl -I https://dev.ms-fixer.com/healthz` → 200 from work laptop
+2. [x] DB auth — `psql -h 127.0.0.1 -U fixer_app -d directvideo` prompts for password (verified; note: superuser role is `rodgriola`, not `postgres`, on this Homebrew install)
+3. [x] HTTPS through tunnel — `curl -I https://dev.ms-fixer.com/api/health` → 200 from work laptop
 4. [ ] WSS through tunnel — admin dashboard Socket.IO green
 5. [ ] iOS end-to-end — full upload → form → Mux → Slack flow
-6. [ ] LaunchAgent resilience — `kill -9` Fastify PID, restarts in 5s
+6. [x] LaunchAgent resilience — `kill -9` Fastify PID, restarts in 5s — confirmed, new PID served `/api/health` within ~3s
 7. [ ] Reboot resilience — reboot MBA, all three services up in 60s
 8. [ ] Backup restore — `pg_restore` a nightly dump into scratch DB, row counts match
 
@@ -134,7 +159,7 @@ Cloudflare edge → outbound TLS tunnel from MacBook Air (`cloudflared`, no open
 
 ## Open decisions during execution
 
-1. **Admin dashboard second auth**: Cloudflare Access on `/admin*` (Option A, recommended) vs split hostnames (Option B) vs JWT-only (Option C)
+1. ~~**Admin dashboard second auth**: Cloudflare Access on `/admin*` (Option A, recommended) vs split hostnames (Option B) vs JWT-only (Option C)~~ — **Resolved**: Option A implemented, domain-wide Access policy (not `/admin*` — see Phase 4 correction) with bypass rules for `/api/*`, `/socket.io/*`, `/uploads/*`, `/clips/*`.
 2. **Postgres SSL on loopback**: `sslmode=disable` recommended; `sslmode=require` for prod-parity is optional chore
 3. **Cloud Run + Cloud SQL fate**: keep 1–2 weeks, then delete Cloud SQL (biggest cost); Cloud Run auto-scales to zero — near-free as warm standby
 

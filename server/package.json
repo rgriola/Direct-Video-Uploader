@@ -5,6 +5,7 @@
   "type": "module",
   "main": "src/index.js",
   "scripts": {
+    "postinstall": "prisma generate",
     "dev": "npx prisma dev --detach && nodemon src/index.js",
     "start": "node src/index.js",
     "seed": "node src/seed.js",
