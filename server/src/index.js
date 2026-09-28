@@ -143,7 +143,7 @@ const fastify = Fastify({
     ajv: {
         plugins: [ajvFormats],
     },
-    trustProxy: isProduction, // Trust Render's reverse proxy for correct client IPs
+    trustProxy: isProduction, // Trust the reverse proxy (Cloud Run / Cloudflare Tunnel) for correct client IPs
     bodyLimit: MAX_NON_MULTIPART_BODY_BYTES,
 });
 

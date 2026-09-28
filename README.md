@@ -217,6 +217,20 @@ The project is fully containerized and uses **Google Cloud Build** for automated
 
 ---
 
+## Home Server (Cloudflare Tunnel)
+
+For pre-production development, the Fastify server and Postgres 18 run on a home MacBook Air instead of Cloud Run/Cloud SQL, exposed via a **Cloudflare Tunnel** at `dev.ms-fixer.com`. Postgres stays loopback-only (SCRAM auth, no open ports); only the Fastify server is tunneled out.
+
+- **Services**: `brew services` manages Postgres 18; a `launchd` `LaunchAgent` (`~/Library/LaunchAgents/com.msfixer.fastify.plist`) keeps Fastify running (`KeepAlive`, auto-restart).
+- **Tunnel**: `cloudflared` runs as a system `LaunchDaemon`, config at `/etc/cloudflared/config.yml`, routing `dev.ms-fixer.com` → `http://localhost:3000`.
+- **Access control**: Cloudflare Zero Trust protects the admin dashboard (site root) with email one-time-PIN login. `/api/*`, `/socket.io/*`, `/uploads/*`, and `/clips/*` bypass Access (already gated by the app's own JWT/cookie auth).
+- **Migrations**: schema changes go through `prisma migrate dev` locally, then `prisma migrate deploy` on the home server (not `db push`, to avoid destructive drift on real data).
+- **Backups**: nightly `pg_dump` with 7-day local retention, encrypted offsite copy.
+
+Full runbook: `docs/HOME_SERVER_RUNBOOK.md`.
+
+---
+
 ## Documentation
 
 | File                           | Contents                                         |
