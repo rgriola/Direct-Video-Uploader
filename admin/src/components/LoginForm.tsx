@@ -27,11 +27,11 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (!isPhoneValid) {
-      setError("Phone number must be exactly 10 digits");
+      setError("Phone number -10 digits");
       return;
     }
     if (!isPinValid) {
-      setError("PIN is required");
+      setError("PIN");
       return;
     }
     setError(null);
@@ -54,11 +54,17 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
         {/* Logo */}
         <div className="flex items-center gap-4 mb-8">
           <div className="w-16 h-16 rounded-2xl overflow-hidden shadow-[0_8px_32px_rgba(74,158,255,0.3)] shrink-0">
-            <img src="/fixer-icon.png" alt="Fixer" className="w-full h-full object-cover" />
+            <img
+              src="/fixer-icon.png"
+              alt="Fixer"
+              className="w-full h-full object-cover"
+            />
           </div>
           <div className="ml-auto text-right">
             <h1 className="text-2xl font-bold tracking-tight">Fixer</h1>
-            <p className="text-sm text-(--muted-foreground) mt-1">Admin Dashboard</p>
+            <p className="text-sm text-(--muted-foreground) mt-1">
+              Admin Dashboard
+            </p>
           </div>
         </div>
 
@@ -78,13 +84,16 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
               id="phone"
               type="tel"
               inputMode="numeric"
-              autoComplete="username"
+              autoComplete="tel"
+              pattern="\d{10}"
               required
               value={phoneNumber}
               onChange={(e) => handlePhoneChange(e.target.value)}
               placeholder="e.g. 8001234567"
               maxLength={10}
-              className="w-full px-4 py-2 rounded-lg bg-(--secondary) border border-(--border) text-(--foreground) text-sm placeholder:text-(--muted-foreground) focus:outline-none focus:ring-2 focus:ring-(--accent-blue) focus:border-transparent transition-all"
+              className="w-full px-4 py-2 rounded-lg 
+              bg-(--secondary) border border-(--border) text-(--secondary-foreground) 
+              text-sm placeholder:text-(--secondary) focus:outline-none focus:ring-2 focus:ring-(--accent-blue)focus:border-transparent transition-all"
             />
           </div>
 
@@ -110,7 +119,7 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
           </div>
 
           {error && (
-            <p className="text-sm text-(--accent-red) bg-(--accent-red-glow) border border-[rgba(248,113,113,0.2)] rounded-lg px-3 py-2">
+            <p className="text-sm text-(--accent-red) bg-(--accent-red-glow) border border-[--accent-red] rounded-lg px-3 py-2">
               {error}
             </p>
           )}

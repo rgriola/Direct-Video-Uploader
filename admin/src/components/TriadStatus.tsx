@@ -11,8 +11,18 @@ interface TriadStatusProps {
 }
 
 const serviceConfig = [
-  { key: "database" as const, label: "Database", icon: "🗄️", desc: "PostgreSQL" },
-  { key: "server" as const, label: "Server", icon: "⚡", desc: "Fastify :3000" },
+  {
+    key: "database" as const,
+    label: "Database",
+    icon: "🗄️",
+    desc: "PostgreSQL",
+  },
+  {
+    key: "server" as const,
+    label: "Server",
+    icon: "⚡",
+    desc: "Fastify :3000",
+  },
   { key: "ios" as const, label: "iOS App", icon: "📱", desc: "Mobile Client" },
   { key: "admin" as const, label: "Dashboard", icon: "📊", desc: "This Page" },
 ];
@@ -56,18 +66,25 @@ function statusTextColor(status: string) {
   }
 }
 
-export function TriadStatusPanel({ triad, isLoading, wsConnected = false, iosClients = 0 }: TriadStatusProps) {
+export function TriadStatusPanel({
+  triad,
+  isLoading,
+  wsConnected = false,
+  iosClients = 0,
+}: TriadStatusProps) {
   return (
     <div className="bg-(--card) border border-(--border-subtle) rounded-(--radius) overflow-hidden mb-8">
       <div className={panelHeader}>
-        <h2 className="text-lg font-semibold flex items-center gap-2">
+        <h2 className="text-lg font-semibold text-(--foreground) flex items-center gap-2">
           🔺 Triad Status
         </h2>
         <div className="flex items-center gap-3">
           {/* iOS client indicator */}
-          <div className="flex items-center gap-1 text-xs text-(--secondary-foreground)">
+          <div className="flex items-center gap-1 text-xs text-(--foreground)">
             <span>📱</span>
-            <span>{iosClients > 0 ? `${iosClients} iOS User` : "No iOS User"}</span>
+            <span>
+              {iosClients > 0 ? `${iosClients} iOS User` : "No iOS User"}
+            </span>
           </div>
 
           {/* WebSocket status badge */}
@@ -82,7 +99,9 @@ export function TriadStatusPanel({ triad, isLoading, wsConnected = false, iosCli
             <span
               className={cn(
                 "w-1.5 h-1.5 rounded-full",
-                wsConnected ? "bg-(--accent-green) animate-pulse-dot" : "bg-(--muted-foreground)",
+                wsConnected
+                  ? "bg-(--accent-green) animate-pulse-dot"
+                  : "bg-(--muted-foreground)",
               )}
             />
             {wsConnected ? "LIVE" : "CONNECTING"}
@@ -109,7 +128,7 @@ export function TriadStatusPanel({ triad, isLoading, wsConnected = false, iosCli
                     className={`w-2 h-2 rounded-full shrink-0 ${isLoading ? "bg-(--muted-foreground)" : statusDot(status)}`}
                   />
                   <span className="text-sm font-semibold">{svc.label}</span>
-                  
+
                   <span
                     className={`text-[11px] font-semibold ${isLoading ? "text-(--muted-foreground)" : statusTextColor(status)}`}
                   >
