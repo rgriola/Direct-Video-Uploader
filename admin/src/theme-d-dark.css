@@ -8,57 +8,57 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  --base: #6C63D6;
+  --base: #6c63d6;
 
   --font-sans: "Outfit", sans-serif;
   --font-mono: "JetBrains Mono", monospace;
 
   /* ─── Page ─── */
-  --background: #0E0F14;
+  --background: #0e0f14;
 
-  --foreground: #E2E4ED;
+  --foreground: #e2e4ed;
 
   /* ─── Cards ─── */
   --card: #161820;
-  --card-foreground: #E2E4ED;
-  --card-hover: #1C1F2A;
+  --card-foreground: #e2e4ed;
+  --card-hover: #1c1f2a;
 
   /* ─── Popover ─── */
-  --popover: #1C1F2A;
-  --popover-foreground: #E2E4ED;
+  --popover: #1c1f2a;
+  --popover-foreground: #e2e4ed;
 
   /* ─── Primary (buttons, links, ring) ─── */
-  --primary: #6C63D6;
-  --primary-foreground: #FFFFFF;
+  --primary: #6c63d6;
+  --primary-foreground: #ffffff;
 
   /* ─── Secondary (panel headers, section strips) ─── */
-  --secondary: #1C1F2A;
-  --secondary-dark-shade: #13151D;
-  --secondary-foreground: #C5C8D8;
+  --secondary: #1c1f2a;
+  --secondary-dark-shade: #13151d;
+  --secondary-foreground: #111111;
 
   /* ─── Muted ─── */
-  --muted: #2A2D3A;
-  --muted-foreground: #7B7F96;
+  --muted: #2a2d3a;
+  --muted-foreground: #7b7f96;
 
   /* ─── Accent (single hero accent — indigo) ─── */
-  --accent: #6C63D6;
-  --accent-foreground: #FFFFFF;
+  --accent: #6c63d6;
+  --accent-foreground: #ffffff;
 
   /* ─── Destructive ─── */
-  --destructive: #E05263;
-  --destructive-foreground: #FFFFFF;
+  --destructive: #e05263;
+  --destructive-foreground: #ffffff;
 
   /* ─── Borders & Input ─── */
-  --border: #2A2D3A;
-  --border-subtle: #1E2029;
-  --input: #1E2029;
-  --ring: #6C63D6;
+  --border: #2a2d3a;
+  --border-subtle: #1e2029;
+  --input: #1e2029;
+  --ring: #6c63d6;
 
   /* ─── Named border accents (used by AssetList, UserList badges) ─── */
-  --border-blue: #4F8ECC;
-  --border-green: #3DA882;
-  --border-purple: #6C63D6;
-  --border-amber: #C8972A;
+  --border-blue: #4f8ecc;
+  --border-green: #3da882;
+  --border-purple: #6c63d6;
+  --border-amber: #c8972a;
 
   --radius: 0.75rem;
 
@@ -66,23 +66,23 @@
      Rule: desaturated enough to read as "data" not "decoration".
      Each value passes 4.5:1 contrast against --card (#161820).
      ─────────────────────────────────────────────────────────── */
-  --accent-blue: #4F8ECC;
+  --accent-blue: #4f8ecc;
   /* cornflower — calm, readable  */
-  --accent-green: #3DA882;
+  --accent-green: #3da882;
   /* teal — healthy, confirms     */
-  --accent-amber: #C8972A;
+  --accent-amber: #c8972a;
   /* warm gold — caution          */
-  --accent-red: #E05263;
+  --accent-red: #e05263;
   /* rose — error, destructive    */
-  --accent-purple: #6C63D6;
+  --accent-purple: #6c63d6;
   /* indigo — primary brand       */
 
   /* Glow layers — very subtle, dark-mode safe */
-  --accent-blue-glow: #4F8ECC14;
-  --accent-green-glow: #3DA88214;
-  --accent-amber-glow: #C8972A14;
-  --accent-red-glow: #E0526314;
-  --accent-purple-glow: #6C63D614;
+  --accent-blue-glow: #4f8ecc14;
+  --accent-green-glow: #3da88214;
+  --accent-amber-glow: #c8972a14;
+  --accent-red-glow: #e0526314;
+  --accent-purple-glow: #6c63d614;
 }
 
 body {
@@ -92,7 +92,11 @@ body {
   min-height: 100vh;
   /* Extremely subtle depth gradient — not a light-show, just texture */
   /*background-image: radial-gradient(ellipse 80% 50% at 50% -10%, #1A1830 0%, transparent 70%);*/
-  background-image: linear-gradient(180deg, var(--base) 0%, var(--background) 100%);
+  background-image: linear-gradient(
+    180deg,
+    var(--base) 0%,
+    var(--background) 100%
+  );
   background-attachment: fixed;
 }
 
@@ -133,7 +137,6 @@ body {
 }
 
 @keyframes pulse-dot {
-
   0%,
   100% {
     opacity: 1;

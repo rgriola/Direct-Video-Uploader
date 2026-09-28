@@ -1038,15 +1038,28 @@ add.
 ..
 Enterprise Plan Apr 27 + Task.
 
-
 July 26, 2026
 
-*** Task ***
+**_ Task _**
 Review this project for the specific purpose of moving it all over to Google Cloud. It requires a live server for processing video, database, websockets. We can keep Mux.com this vendor process the video as a stand in for our Mediasource server.
-
-
 
 ms-fixer-video-database-72026
 ~YTK|@-v"LJT&7^$
 ms-fixer-video-uploading:us-east4:ms-fixer-video-database-72026
 Port: 5432
+
+> > >
+
+At Home DB
+
+For this project I would like a plan to set up a Postgre SQL database on my Mac Mini at home. This project is still in development and I would like to avoid the costs associated with a managed db instance.
+
+The plan should include steps for replacing a managed database with a local PostgreSQL instance:
+
+- installing PostgreSQL
+- configuring it for local development but treating this as a production server as if I was using Google Cloud SQL and Virtual Private Cloud with network connection.
+- setting up necessary databases and tables, and ensuring secure access from the application.
+- the fastify server would also need to be configured to connect securely to this local PostgreSQL instance.
+- allow DNS to continue through Cloudflare.
+
+I'm not sure how to do this but if this is a few hours of set up and testing I think this is the way to go until the project is ready for production.

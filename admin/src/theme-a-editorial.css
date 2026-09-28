@@ -8,70 +8,70 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  --base: #7565D4;
+  --base: #5038f5;
 
   --font-sans: "Outfit", sans-serif;
   --font-mono: "JetBrains Mono", monospace;
 
   /* ─── Page ─── */
-  --background: #F8F7F4;
-  --foreground: #1a1a2e;
+  --background: #ffffff;
+  --foreground: #111111;
+  --secondary-foreground: #ffffff;
 
   /* ─── Cards ─── */
-  --card: #FFFFFF;
-  --card-foreground: #1a1a2e;
-  --card-hover: #F3F1ED;
+  --card: #ffffff;
+  --card-foreground: #111111;
+  --card-hover: #f3f1ed;
 
   /* ─── Popover ─── */
-  --popover: #FFFFFF;
+  --popover: #ffffff;
   --popover-foreground: #1a1a2e;
 
   /* ─── Primary (buttons, links) ─── */
-  --primary: #483F7F;
-  --primary-foreground: #FFFFFF;
+  --primary: #483f7f;
+  --primary-foreground: #ffffff;
 
   /* ─── Secondary (status panels, section headers) ─── */
-  --secondary: #483F7F;
-  --secondary-dark-shade: #352E5D;
-  --secondary-foreground: #FFFFFF;
+  --secondary: #ffffff;
+  --secondary-dark-shade: #352e5d;
 
   /* ─── Muted ─── */
-  --muted: #9CA3AF;
-  --muted-foreground: #4B5563;
+  --muted: #9ca3af;
+  --muted-foreground: #4b5563;
 
   /* ─── Accent ─── */
-  --accent: #8576EE;
-  --accent-foreground: #FFFFFF;
+  --accent: #8576ee;
+  --accent-foreground: #ffffff;
 
   /* ─── Destructive ─── */
-  --destructive: #EA3343;
-  --destructive-foreground: #FFFFFF;
+  --destructive: #ea3343;
+  --destructive-foreground: #ffffff;
 
   /* ─── Borders & Input ─── */
-  --border: #D4D0E8;
-  --border-subtle: #E8E5F0;
-  --input: #E8E5F0;
-  --ring: #8576EE;
+  --border: #d4d0e8;
+  --border-subtle: #e8e5f0;
+  --input: #e8e5f0;
+  --ring: #8576ee;
 
   --border-blue: #4a9eff;
   --border-green: #47c6a7;
-  --border-purple: #8576EE;
-  --border-amber: #F4D247;
+  --border-purple: #8576ee;
+  --border-amber: #f4d247;
 
   --radius: 0.75rem;
 
   /* ─── Semantic Accent Palette ─── */
   --accent-blue: #4a9eff;
   --accent-green: #47c6a7;
-  --accent-amber: #F4D247;
-  --accent-red: #EA3343;
-  --accent-purple: #8576EE;
+  --accent-amber: #f4d247;
+  --accent-red: #ea3343;
+  --accent-purple: #8576ee;
 
   --accent-blue-glow: #4a9eff18;
   --accent-green-glow: #47c6a718;
-  --accent-amber-glow: #F4D24718;
-  --accent-red-glow: #EA334318;
-  --accent-purple-glow: #8576EE18;
+  --accent-amber-glow: #f4d24718;
+  --accent-red-glow: #ea334318;
+  --accent-purple-glow: #8576ee18;
 }
 
 body {
@@ -81,25 +81,56 @@ body {
 }
 
 /* ─── Scrollbar ─── */
-::-webkit-scrollbar { width: 5px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar {
+  width: 5px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
 
-.scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
-.scrollbar-hide::-webkit-scrollbar { display: none; }
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
 
 /* ─── Animations ─── */
 @keyframes fade-in {
-  from { opacity: 0; transform: translateY(-4px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 @keyframes pulse-dot {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
 }
 @keyframes spin-once {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
-.animate-fade-in { animation: fade-in 0.3s ease; }
-.animate-pulse-dot { animation: pulse-dot 2s infinite; }
-.animate-spin-once { animation: spin-once 0.6s linear; }
+.animate-fade-in {
+  animation: fade-in 0.3s ease;
+}
+.animate-pulse-dot {
+  animation: pulse-dot 2s infinite;
+}
+.animate-spin-once {
+  animation: spin-once 0.6s linear;
+}
