@@ -112,7 +112,7 @@ export function UserList({
     <div className="bg-(--card) border border-(--border-subtle) rounded-(--radius) overflow-hidden">
       {/* Panel header — "Users [count]" */}
       <div className={panelHeader}>
-        <h2 className="text-lg font-semibold flex items-center gap-2">
+        <h2 className="text-lg font-semibold text-(--text-foreground) items-center gap-2">
           <Users className="w-[1em] h-[1em]" /> Users{" "}
           <span className={subTextPanelHeader}>{users?.length ?? 0}</span>
         </h2>

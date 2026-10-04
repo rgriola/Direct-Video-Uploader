@@ -2,7 +2,7 @@
 
 _Drafted: September 25, 2026_
 _Owner: Rod_
-_Status: **Draft** — awaiting execution (target: later this week)_
+_Status: **Live** — all 6 phases complete, 7/8 verification checks passed. Only reboot resilience (Verification #7) remains, deferred until convenient._
 
 Move both the Postgres 18 database and the Fastify server off Google Cloud (Cloud Run + Cloud SQL) and host them on the 2026 MacBook Air at home. Expose only the Fastify server to the internet through a **Cloudflare Tunnel** bound to `dev.ms-fixer.com`. Postgres stays loopback-only with SCRAM auth so port 5432 is never internet-reachable — same security posture as Cloud SQL with a private-VPC-only IP.
 
@@ -116,6 +116,7 @@ Cloudflare edge → outbound TLS tunnel from MacBook Air (`cloudflared`, no open
     4. **Fixer Uploads Bypass** — path `/uploads/*` — Bypass, Everyone
     5. **Fixer Clips Bypass** — path `/clips/*` — Bypass, Everyone
   - Verified via curl: `/` → 302 to `cloudflareaccess.com` login (protected, correct); `/api/health` → 200 (bypassed, correct); `/socket.io/` → 400 (reached app's own socket.io handshake handler, bypassed correctly); `/uploads/` → 404 (reached app's static handler, bypassed correctly); `/clips/` → 302 to the **app's own** `/clips/login` (not Cloudflare's login — confirms bypass working, app-level auth intact).
+  - **Follow-up fix**: the real Socket.IO/Engine.IO polling handshake hits the bare path `/socket.io` (no trailing slash — this is the Engine.IO client spec, confirmed from both the iOS `URLSessionWebSocketTask`-based client and testing), which did NOT match the `/socket.io/*` bypass path (requires a literal `/` before the wildcard) and fell through to the domain-wide login policy, breaking the iOS WebSocket handshake (redirect response instead of a valid Engine.IO payload). Fixed by changing the bypass path to `/socket.io*` (no slash before the wildcard) — confirmed both `/socket.io` and `/socket.io/` now return 200/expected app responses instead of 302.
 
 ## Phase 5 — Client + config updates
 
@@ -126,26 +127,27 @@ Cloudflare edge → outbound TLS tunnel from MacBook Air (`cloudflared`, no open
 
 ## Phase 6 — Ops, backups, monitoring
 
-- [ ] Nightly `pg_dump` LaunchAgent → `~/backups/`, 7-day retention
-- [ ] Encrypt dumps before they leave the box (`gpg --symmetric` or provider-side SSE) — they contain user data
-- [ ] Weekly offsite copy → GCS Coldline or Backblaze B2
-- [ ] Exclude the Postgres data directory from Time Machine (live file-copy backups of a running DB can be inconsistent — rely on `pg_dump` instead)
-- [ ] Uptime monitor on `/api/health` (UptimeRobot free tier or Cloudflare Health Checks)
-- [ ] Write `docs/HOME_SERVER_RUNBOOK.md` with restart commands + restore procedure
-- [ ] Decide Cloud Run + Cloud SQL fate after 1–2 stable weeks
+- [x] Nightly `pg_dump` LaunchAgent → `~/backups/`, 7-day retention — `scripts/pg-backup.sh` + `com.msfixer.pgdump.plist` (2am daily), tested manually, restore verified (see Verification)
+- [x] Encrypt dumps before they leave the box (`gpg --symmetric` or provider-side SSE) — they contain user data — gpg AES256 symmetric, passphrase generated via `openssl rand -base64 32` at `~/.backup-passphrase` (chmod 600), never shown in chat
+- [x] Weekly offsite copy → GCS Coldline or Backblaze B2 — Backblaze B2 chosen. `rclone` installed, scoped Application Key created (bucket-restricted, not the account Master Key), `scripts/pg-backup-offsite-sync.sh` + `com.msfixer.pgdump-offsite.plist` (Sundays 3am), tested manually — synced successfully to `ms-fixer-backups` bucket.
+  - **Security note during setup**: a B2 application key got accidentally pasted into `server/.env` and shared in chat — treated as compromised, deleted, and replaced with a freshly scoped key. Lesson: cloud credentials for ops tooling should never go in the app's `.env`.
+- [x] Exclude the Postgres data directory from Time Machine (live file-copy backups of a running DB can be inconsistent — rely on `pg_dump` instead) — `tmutil addexclusion /opt/homebrew/var/postgresql@18`, confirmed via `tmutil isexcluded`
+- [x] Uptime monitor on `/api/health` (UptimeRobot free tier or Cloudflare Health Checks) — Cloudflare Health Checks requires a Pro plan upgrade; used **UptimeRobot free tier** instead, 5-minute interval
+- [x] Write `docs/HOME_SERVER_RUNBOOK.md` with restart commands + restore procedure
+- [ ] Decide Cloud Run + Cloud SQL fate after 1–2 stable weeks — **updated trigger**: shut down Cloud SQL once iOS end-to-end (Verification #5) is confirmed against the home server, not a fixed timeline
 
 ---
 
 ## Verification (run in order)
 
-1. [ ] **DB isolation (critical)** — from an external host: `nc -vz <MBA-public-IP> 5432` MUST fail/timeout. If it succeeds, stop and diagnose.
+1. [x] **DB isolation (critical)** — from an external host: `nc -vz <MBA-public-IP> 5432` MUST fail/timeout. If it succeeds, stop and diagnose. — confirmed via `yougetsignal.com`/nmap from an external host: port 5432 returned **filtered** (silently dropped, not reachable) on the public IPv4. Note: this Mac's public address is actually IPv6 by default (confirmed via `curl ifconfig.me`); Postgres's `listen_addresses='localhost'` binds only to `127.0.0.1`/`::1` (verified via `lsof`), so it's unreachable on both protocols regardless of router/firewall behavior — the external scan is corroborating evidence, not the sole guarantee.
 2. [x] DB auth — `psql -h 127.0.0.1 -U fixer_app -d directvideo` prompts for password (verified; note: superuser role is `rodgriola`, not `postgres`, on this Homebrew install)
 3. [x] HTTPS through tunnel — `curl -I https://dev.ms-fixer.com/api/health` → 200 from work laptop
-4. [ ] WSS through tunnel — admin dashboard Socket.IO green
-5. [ ] iOS end-to-end — full upload → form → Mux → Slack flow
+4. [x] WSS through tunnel — admin dashboard Socket.IO green — confirmed via dashboard log: `WS Connected (<socket-id>)` after logging in through Cloudflare Access + app auth (demo admin account)
+5. [x] iOS end-to-end — full upload → form → Mux → Slack flow — confirmed: on a real iPhone over cellular data (untethered, external network), uploaded 3 videos successfully and viewed them in the admin dashboard. Auth/login, API, WebSocket, upload, and Mux processing all working through the tunnel.
 6. [x] LaunchAgent resilience — `kill -9` Fastify PID, restarts in 5s — confirmed, new PID served `/api/health` within ~3s
 7. [ ] Reboot resilience — reboot MBA, all three services up in 60s
-8. [ ] Backup restore — `pg_restore` a nightly dump into scratch DB, row counts match
+8. [x] Backup restore — `pg_restore` a nightly dump into scratch DB, row counts match — verified: decrypted + restored into `directvideo_restoretest`, all 7 table row counts matched `directvideo` exactly, scratch DB dropped after
 
 ---
 
@@ -161,7 +163,7 @@ Cloudflare edge → outbound TLS tunnel from MacBook Air (`cloudflared`, no open
 
 1. ~~**Admin dashboard second auth**: Cloudflare Access on `/admin*` (Option A, recommended) vs split hostnames (Option B) vs JWT-only (Option C)~~ — **Resolved**: Option A implemented, domain-wide Access policy (not `/admin*` — see Phase 4 correction) with bypass rules for `/api/*`, `/socket.io/*`, `/uploads/*`, `/clips/*`.
 2. **Postgres SSL on loopback**: `sslmode=disable` recommended; `sslmode=require` for prod-parity is optional chore
-3. **Cloud Run + Cloud SQL fate**: keep 1–2 weeks, then delete Cloud SQL (biggest cost); Cloud Run auto-scales to zero — near-free as warm standby
+3. **Cloud Run + Cloud SQL fate**: keep until iOS end-to-end (Verification #5) is confirmed against the home server, then shut down Cloud SQL (biggest cost); Cloud Run auto-scales to zero — near-free as warm standby, can stay longer
 
 ---
 

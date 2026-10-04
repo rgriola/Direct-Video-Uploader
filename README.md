@@ -249,3 +249,4 @@ Full runbook: `docs/HOME_SERVER_RUNBOOK.md`.
 ## License
 
 Private — internal use only. No open-source license. Contact the author for usage terms.
+
