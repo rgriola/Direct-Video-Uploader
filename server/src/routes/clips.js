@@ -23,37 +23,40 @@ function escapeHtml(str) {
 export default async function clipRoutes(fastify) {
 
     // ─── Shared Styles ──────────────────────────────────────
+    // Values below are sourced from /tokens.css (see <link> in googleFontsHead
+    // and each page's <head>) — this block only contains structure/behavior,
+    // matching the Admin Dashboard's "Clean Editorial" theme. See /DESIGN.md.
     const loginPageCSS = `
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { background: #0E0F14; color: #E2E4ED; font-family: 'Outfit', sans-serif;
+        body { background: var(--background); color: var(--foreground); font-family: var(--font-sans);
                display: flex; align-items: center; justify-content: center;
                min-height: 100vh; padding: 24px; }
-        .card { background: #16171E; border: 1px solid rgba(255,255,255,0.06);
-                border-radius: 16px; padding: 40px 32px; width: 100%; max-width: 380px; }
+        .card { background: var(--card); border: 1px solid var(--border-subtle);
+                border-radius: var(--radius-2xl); padding: 40px 32px; width: 100%; max-width: 380px; }
         .logo { text-align: center; margin-bottom: 24px; }
-        .logo span { font-size: 28px; }
-        h1 { font-size: 1.1rem; font-weight: 600; text-align: center; margin-bottom: 24px;
-             color: rgba(226,228,237,0.7); }
-        label { display: block; font-size: 0.75rem; font-weight: 600; letter-spacing: 0.05em;
-                color: rgba(226,228,237,0.4); margin-bottom: 6px; text-transform: uppercase; }
-        input { width: 100%; padding: 12px 14px; background: rgba(255,255,255,0.04);
-                border: 1px solid rgba(255,255,255,0.08); border-radius: 10px;
-                color: #E2E4ED; font-family: 'Outfit', sans-serif; font-size: 0.95rem;
+        .logo span { font-size: var(--text-3xl); }
+        h1 { font-size: var(--text-lg); font-weight: 600; text-align: center; margin-bottom: 24px;
+             color: var(--foreground); }
+        label { display: block; font-size: var(--text-xs); font-weight: 600; letter-spacing: 0.05em;
+                color: var(--muted-foreground); margin-bottom: 6px; text-transform: uppercase; }
+        input { width: 100%; padding: 12px 14px; background: var(--secondary);
+                border: 1px solid var(--border); border-radius: var(--radius-lg);
+                color: var(--foreground); font-family: var(--font-sans); font-size: var(--text-base);
                 margin-bottom: 16px; outline: none; transition: border-color 0.2s; }
-        input:focus { border-color: rgba(168,85,247,0.5); }
-        input::placeholder { color: rgba(226,228,237,0.2); }
-        button { width: 100%; padding: 14px; background: linear-gradient(135deg, #A855F7, #7C3AED);
-                 color: white; border: none; border-radius: 10px; font-family: 'Outfit', sans-serif;
-                 font-size: 1rem; font-weight: 600; cursor: pointer; transition: opacity 0.2s; }
+        input:focus-visible { border-color: var(--ring); }
+        input::placeholder { color: var(--muted-foreground); opacity: 0.6; }
+        button { width: 100%; padding: 14px; background: var(--accent-blue);
+                 color: var(--accent-foreground); border: none; border-radius: var(--radius-lg); font-family: var(--font-sans);
+                 font-size: var(--text-base); font-weight: 600; cursor: pointer; transition: opacity 0.2s; }
         button:hover { opacity: 0.9; }
         button:disabled { opacity: 0.5; cursor: not-allowed; }
-        .error { background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3);
-                 border-radius: 8px; padding: 10px 14px; margin-bottom: 16px;
-                 font-size: 0.85rem; color: #F87171; }
-        .footer { text-align: center; margin-top: 20px; font-size: 0.7rem;
-                  color: rgba(226,228,237,0.2); }
+        .error { background: var(--accent-red-glow); border: 1px solid color-mix(in srgb, var(--accent-red) 30%, transparent);
+                 border-radius: var(--radius-md); padding: 10px 14px; margin-bottom: 16px;
+                 font-size: var(--text-sm); color: var(--accent-red); }
+        .footer { text-align: center; margin-top: 20px; font-size: var(--text-xs);
+                  color: var(--muted-foreground); }
     `;
-    const googleFontsHead = '<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">';
+    const googleFontsHead = '<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet"><link rel="stylesheet" href="/tokens.css">';
 
     // Cookie options — HttpOnly, 7-day expiry, scoped to /clips
     const COOKIE_NAME = 'fixer_clip_token';
@@ -263,7 +266,7 @@ ${googleFontsHead}
 
     /**
      * GET /clips/:mediasourceId
-     * Authenticated clip viewer page (dark theme, video player + metadata).
+     * Authenticated clip viewer page (shared Dashboard theme via /tokens.css, video player + metadata).
      * Requires cookie auth; org-scoped (admins see all).
      */
     fastify.get('/clips/:mediasourceId', async (request, reply) => {
@@ -280,8 +283,9 @@ ${googleFontsHead}
             reply.status(404).type('text/html').send(`
                 <!DOCTYPE html>
                 <html><head><title>Not Found</title>
-                <style>body{background:#0E0F14;color:#E2E4ED;font-family:'Outfit',sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}
-                h1{font-size:1.5rem;opacity:0.7}</style></head>
+                <link rel="stylesheet" href="/tokens.css">
+                <style>body{background:var(--background);color:var(--foreground);font-family:var(--font-sans);display:flex;align-items:center;justify-content:center;height:100vh;margin:0}
+                h1{font-size:var(--text-2xl);opacity:0.7}</style></head>
                 <body><h1>Clip not found</h1></body></html>
             `);
             return;
@@ -298,8 +302,9 @@ ${googleFontsHead}
                 reply.status(404).type('text/html').send(`
                     <!DOCTYPE html>
                     <html><head><title>Not Found</title>
-                    <style>body{background:#0E0F14;color:#E2E4ED;font-family:'Outfit',sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}
-                    h1{font-size:1.5rem;opacity:0.7}</style></head>
+                    <link rel="stylesheet" href="/tokens.css">
+                    <style>body{background:var(--background);color:var(--foreground);font-family:var(--font-sans);display:flex;align-items:center;justify-content:center;height:100vh;margin:0}
+                    h1{font-size:var(--text-2xl);opacity:0.7}</style></head>
                     <body><h1>Clip not found</h1></body></html>
                 `);
                 return;
@@ -320,8 +325,9 @@ ${googleFontsHead}
                 reply.status(403).type('text/html').send(`
                     <!DOCTYPE html>
                     <html><head><title>Access Denied</title>
-                    <style>body{background:#0E0F14;color:#E2E4ED;font-family:'Outfit',sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;flex-direction:column;gap:12px}
-                    h1{font-size:1.5rem;opacity:0.7}p{font-size:0.9rem;opacity:0.4}a{color:#A855F7}</style></head>
+                    <link rel="stylesheet" href="/tokens.css">
+                    <style>body{background:var(--background);color:var(--foreground);font-family:var(--font-sans);display:flex;align-items:center;justify-content:center;height:100vh;margin:0;flex-direction:column;gap:12px}
+                    h1{font-size:var(--text-2xl);opacity:0.7}p{font-size:var(--text-sm);opacity:0.4}a{color:var(--accent-blue)}</style></head>
                     <body><h1>🔒 Access Denied</h1><p>This clip belongs to a different organization.</p>
                     <a href="/clips/login">Sign in with a different account</a></body></html>
                 `);
@@ -332,8 +338,9 @@ ${googleFontsHead}
             reply.status(500).type('text/html').send(`
                 <!DOCTYPE html>
                 <html><head><title>Error</title>
-                <style>body{background:#0E0F14;color:#E2E4ED;font-family:'Outfit',sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}
-                pre{font-size:0.9rem;opacity:0.7;max-width:600px;white-space:pre-wrap}</style></head>
+                <link rel="stylesheet" href="/tokens.css">
+                <style>body{background:var(--background);color:var(--foreground);font-family:var(--font-sans);display:flex;align-items:center;justify-content:center;height:100vh;margin:0}
+                pre{font-size:var(--text-sm);opacity:0.7;max-width:600px;white-space:pre-wrap}</style></head>
                 <body><pre>DB Error: ${escapeHtml(err.message)}</pre></body></html>
             `);
             return;
@@ -411,7 +418,7 @@ ${googleFontsHead}
         // Build HTML helper
         const renderRows = (rows) => rows.map(r => {
             const val = r.link
-                ? `<a href="${escapeHtml(r.link)}" target="_blank" rel="noopener" style="color:#ccc;text-decoration:underline;text-underline-offset:2px">${escapeHtml(r.value)} ↗</a>`
+                ? `<a href="${escapeHtml(r.link)}" target="_blank" rel="noopener" style="color:var(--accent-blue);text-decoration:underline;text-underline-offset:2px">${escapeHtml(r.value)} ↗</a>`
                 : escapeHtml(r.value);
             return `<div class="meta-row"><span class="meta-icon">${r.icon}</span><span class="meta-label">${escapeHtml(r.label)}</span><span class="meta-value">${val}</span></div>`;
         }).join('\n');
@@ -429,7 +436,7 @@ ${googleFontsHead}
             ? `<script src="https://cdn.jsdelivr.net/npm/@mux/mux-player@latest"></script>`
             : '';
 
-        const googleFontsLink = `<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">`;
+        const googleFontsLink = `<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet"><link rel="stylesheet" href="/tokens.css">`;
 
         const html = `<!DOCTYPE html>
 <html lang="en">
@@ -440,31 +447,13 @@ ${googleFontsHead}
     ${googleFontsLink}
     ${muxPlayerScript}
     <style>
+        /* Design tokens (colors, radius, type scale) come from /tokens.css —
+           the same file the Admin Dashboard links. See /DESIGN.md. This
+           block is structure/layout only. */
         *, *::before, *::after { box-sizing: border-box; }
         body, h1, h2, h3, p, div, span { margin: 0; padding: 0; }
-        :root {
-            /* Midnight Studio — matches theme-d-dark.css */
-            --background:        #0E0F14;
-            --foreground:        #E2E4ED;
-            --card:              #161820;
-            --card-hover:        #1C1F2A;
-            --border:            #2A2D3A;
-            --border-subtle:     #1E2029;
-            --muted-foreground:  #7B7F96;
-            --secondary:         #1C1F2A;
-            --accent-blue:       #4F8ECC;
-            --accent-green:      #3DA882;
-            --accent-amber:      #C8972A;
-            --accent-red:        #E05263;
-            --accent-purple:     #6C63D6;
-            --accent-green-glow: #3DA88214;
-            --accent-red-glow:   #E0526314;
-            --radius: 0.75rem;
-        }
         body {
             background: var(--background);
-            background-image: linear-gradient(180deg, #6C63D6 0%, #0E0F14 100%);
-            background-attachment: fixed;
             color: var(--foreground);
             font-family: 'Outfit', sans-serif;
             min-height: 100vh;
@@ -493,19 +482,19 @@ ${googleFontsHead}
         .topbar-icon {
             width: 44px;
             height: 44px;
-            border-radius: 10px;
+            border-radius: var(--radius-lg);
             overflow: hidden;
             flex-shrink: 0;
-            box-shadow: 0 4px 16px rgba(74,158,255,0.25);
+            box-shadow: 0 4px 16px color-mix(in srgb, var(--accent-blue) 25%, transparent);
         }
         .topbar-icon img { width: 100%; height: 100%; object-fit: cover; }
         .topbar-title {
-            font-size: 20px;
+            font-size: var(--text-xl);
             font-weight: 700;
             letter-spacing: -0.01em;
         }
         .topbar-sub {
-            font-size: 11px;
+            font-size: var(--text-xs);
             color: var(--muted-foreground);
             margin-top: 2px;
         }
@@ -513,11 +502,11 @@ ${googleFontsHead}
             text-align: right;
         }
         .topbar-right .owner {
-            font-size: 15px;
+            font-size: var(--text-base);
             font-weight: 600;
         }
         .topbar-right .team {
-            font-size: 12px;
+            font-size: var(--text-xs);
             color: var(--muted-foreground);
         }
         /* ── Clip title block ── */
@@ -530,14 +519,14 @@ ${googleFontsHead}
         }
         .clip-title-left { flex: 1; min-width: 0; }
         .clip-title-block h1 {
-            font-size: 22px;
+            font-size: var(--text-2xl);
             font-weight: 700;
             letter-spacing: -0.01em;
             word-break: break-word;
         }
         .clip-title-block .msid {
             font-family: 'JetBrains Mono', monospace;
-            font-size: 12px;
+            font-size: var(--text-xs);
             color: var(--muted-foreground);
             margin-top: 4px;
         }
@@ -545,14 +534,14 @@ ${googleFontsHead}
             display: inline-flex;
             align-items: center;
             gap: 5px;
-            font-size: 13px;
+            font-size: var(--text-sm);
             font-weight: 500;
             color: var(--accent-blue);
             text-decoration: none;
             white-space: nowrap;
             padding: 6px 12px;
             border: 1px solid var(--border-subtle);
-            border-radius: 8px;
+            border-radius: var(--radius-lg);
             background: var(--card);
             flex-shrink: 0;
             margin-top: 4px;
@@ -562,7 +551,7 @@ ${googleFontsHead}
         .card {
             background: var(--card);
             border: 1px solid var(--border-subtle);
-            border-radius: var(--radius);
+            border-radius: var(--radius-xl);
             overflow: hidden;
             margin-bottom: 20px;
         }
@@ -574,7 +563,7 @@ ${googleFontsHead}
             border-bottom: 1px solid var(--border-subtle);
         }
         .card-header h3 {
-            font-size: 14px;
+            font-size: var(--text-sm);
             font-weight: 600;
             display: flex;
             align-items: center;
@@ -607,7 +596,7 @@ ${googleFontsHead}
             content: '';
             position: absolute;
             inset: 0;
-            background: linear-gradient(105deg, transparent 40%, rgba(255,255,255,0.04) 50%, transparent 60%);
+            background: linear-gradient(105deg, transparent 40%, color-mix(in srgb, var(--foreground) 4%, transparent) 50%, transparent 60%);
             animation: shimmer 2.4s ease-in-out infinite;
             background-size: 200% 100%;
         }
@@ -616,7 +605,7 @@ ${googleFontsHead}
             100% { background-position: -200% 0; }
         }
         .placeholder-icon {
-            font-size: 40px;
+            font-size: var(--text-4xl);
             opacity: 0.4;
             animation: pulse-icon 2s ease-in-out infinite;
         }
@@ -625,19 +614,19 @@ ${googleFontsHead}
             50%       { opacity: 0.65; transform: scale(1.08); }
         }
         .placeholder-label {
-            font-size: 14px;
+            font-size: var(--text-sm);
             font-weight: 500;
             letter-spacing: 0.02em;
         }
         .placeholder-sub {
-            font-size: 12px;
+            font-size: var(--text-xs);
             opacity: 0.6;
         }
         .no-video {
             padding: 60px 20px;
             text-align: center;
             color: var(--muted-foreground);
-            font-size: 14px;
+            font-size: var(--text-sm);
         }
         /* ── Video bar (status + copy link) ── */
         .video-bar {
@@ -650,15 +639,15 @@ ${googleFontsHead}
         .status {
             display: inline-block;
             padding: 3px 14px;
-            border-radius: 20px;
-            font-size: 11px;
+            border-radius: var(--radius-full);
+            font-size: var(--text-xs);
             font-weight: 600;
             letter-spacing: 0.05em;
         }
-        .status-READY     { background: var(--accent-green-glow); color: var(--accent-green); border: 1px solid rgba(61,168,130,0.25); }
-        .status-PROCESSING { background: #C8972A14;                color: var(--accent-amber); border: 1px solid rgba(200,151,42,0.25); }
-        .status-UPLOADING  { background: #4F8ECC14;                color: var(--accent-blue);  border: 1px solid rgba(79,142,204,0.25); }
-        .status-ERROR      { background: var(--accent-red-glow);   color: var(--accent-red);   border: 1px solid rgba(224,82,99,0.25); }
+        .status-READY     { background: var(--accent-green-glow); color: var(--accent-green); border: 1px solid color-mix(in srgb, var(--accent-green) 25%, transparent); }
+        .status-PROCESSING { background: var(--accent-amber-glow); color: var(--accent-amber); border: 1px solid color-mix(in srgb, var(--accent-amber) 25%, transparent); }
+        .status-UPLOADING  { background: var(--accent-blue-glow);  color: var(--accent-blue);  border: 1px solid color-mix(in srgb, var(--accent-blue) 25%, transparent); }
+        .status-ERROR      { background: var(--accent-red-glow);   color: var(--accent-red);   border: 1px solid color-mix(in srgb, var(--accent-red) 25%, transparent); }
         /* Copy link button */
         .copy-link {
             display: inline-flex;
@@ -667,9 +656,9 @@ ${googleFontsHead}
             background: var(--secondary);
             color: var(--foreground);
             border: 1px solid var(--border);
-            border-radius: 8px;
+            border-radius: var(--radius-lg);
             padding: 6px 14px;
-            font-size: 12px;
+            font-size: var(--text-xs);
             font-weight: 500;
             cursor: pointer;
             transition: all 0.2s;
@@ -680,7 +669,7 @@ ${googleFontsHead}
         .copy-link.copied {
             background: var(--accent-green-glow);
             color: var(--accent-green);
-            border-color: rgba(52,211,153,0.3);
+            border-color: color-mix(in srgb, var(--accent-green) 30%, transparent);
         }
         /* ── Metadata rows ── */
         .meta-row {
@@ -692,13 +681,13 @@ ${googleFontsHead}
             border-bottom: 1px solid var(--border-subtle);
         }
         .meta-row:last-child { border-bottom: none; }
-        .meta-icon { font-size: 15px; line-height: 1; }
+        .meta-icon { font-size: var(--text-base); line-height: 1; }
         .meta-label {
-            font-size: 13px;
+            font-size: var(--text-sm);
             color: var(--muted-foreground);
         }
         .meta-value {
-            font-size: 13px;
+            font-size: var(--text-sm);
             font-weight: 500;
             color: var(--foreground);
             min-width: 0;
@@ -717,19 +706,19 @@ ${googleFontsHead}
             align-items: center;
             gap: 10px;
             padding: 14px 20px;
-            border-radius: var(--radius);
+            border-radius: var(--radius-xl);
             background: var(--accent-red-glow);
-            border: 1px solid rgba(224,82,99,0.25);
+            border: 1px solid color-mix(in srgb, var(--accent-red) 25%, transparent);
             margin-bottom: 20px;
         }
-        .alert-banner .alert-icon { font-size: 20px; flex-shrink: 0; }
+        .alert-banner .alert-icon { font-size: var(--text-xl); flex-shrink: 0; }
         .alert-banner .alert-title {
-            font-size: 13px;
+            font-size: var(--text-sm);
             font-weight: 600;
             color: var(--accent-red);
         }
         .alert-banner .alert-detail {
-            font-size: 13px;
+            font-size: var(--text-sm);
             color: var(--muted-foreground);
         }
         /* ── Footer ── */
@@ -740,7 +729,7 @@ ${googleFontsHead}
             margin-top: 8px;
         }
         .footer .logo {
-            font-size: 13px;
+            font-size: var(--text-sm);
             font-weight: 600;
             color: var(--muted-foreground);
             letter-spacing: 1px;
@@ -754,9 +743,9 @@ ${googleFontsHead}
                 padding-bottom: 16px;
                 margin-bottom: 20px;
             }
-            .topbar-title { font-size: 17px; }
+            .topbar-title { font-size: var(--text-lg); }
 
-            .clip-title-block h1 { font-size: 18px; }
+            .clip-title-block h1 { font-size: var(--text-lg); }
 
             /* Card header: allow wrapping */
             .card-header {
@@ -779,11 +768,11 @@ ${googleFontsHead}
             }
             .meta-label {
                 grid-column: 2;
-                font-size: 11px;
+                font-size: var(--text-xs);
                 text-transform: uppercase;
                 letter-spacing: 0.5px;
             }
-            .meta-value { grid-column: 2; font-size: 13px; }
+            .meta-value { grid-column: 2; font-size: var(--text-sm); }
             .meta-icon { grid-row: span 2; align-self: start; padding-top: 2px; }
 
             /* Alert banner */
@@ -823,7 +812,7 @@ ${googleFontsHead}
                     playback-id="${escapeHtml(muxPlaybackId)}"
                     ${MUX_ENV_KEY ? `env-key="${escapeHtml(MUX_ENV_KEY)}"` : ''}
                     metadata-video-title="${escapeHtml(displayTitle)}"
-                    accent-color="#4a9eff"
+                    accent-color="#4a9eff" /* keep in sync with --accent-blue in tokens.css — custom-element attribute, cannot reference a CSS var */
                     preload="auto"
                   ></mux-player>`
                 : `<div class="video-placeholder" id="video-placeholder">
@@ -866,7 +855,7 @@ ${googleFontsHead}
         <div class="card">
             <div class="card-header"><h3>📝 Transcript</h3></div>
             <div style="padding:16px">
-                <p style="font-size:14px;line-height:1.6;color:var(--foreground);white-space:pre-wrap;max-height:300px;overflow-y:auto">${escapeHtml(clip.transcript)}</p>
+                <p style="font-size:var(--text-sm);line-height:1.6;color:var(--foreground);white-space:pre-wrap;max-height:300px;overflow-y:auto">${escapeHtml(clip.transcript)}</p>
             </div>
         </div>
         ` : ''}
@@ -953,7 +942,7 @@ ${googleFontsHead}
                         player.setAttribute('playback-id', data.muxPlaybackId);
                         if (envKey) player.setAttribute('env-key', envKey);
                         player.setAttribute('metadata-video-title', videoTitle);
-                        player.setAttribute('accent-color', '#4a9eff');
+                        player.setAttribute('accent-color', '#4a9eff'); // keep in sync with --accent-blue in tokens.css
                         player.setAttribute('preload', 'auto');
                         player.style.width = '100%';
                         player.style.display = 'block';

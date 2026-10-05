@@ -16,11 +16,11 @@ const buttons = [
 
 export function QuickActions({ onAction }: QuickActionsProps) {
   return (
-    <div className="bg-(--card) border border-(--border-subtle) rounded-(--radius) overflow-hidden mb-8">
+    <div className="bg-(--card) border border-(--border-subtle) rounded-(--radius-xl) overflow-hidden mb-8">
 
       <div className={panelHeader}>
 
-        <h2 className="text-lg font-semibold flex items-center gap-2">⚡ Quick Actions</h2>
+        <h2 className="text-(--text-lg) font-semibold flex items-center gap-2">⚡ Quick Actions</h2>
         <span className={subTextPanelHeader}>
           Test the API
         </span>
@@ -31,11 +31,11 @@ export function QuickActions({ onAction }: QuickActionsProps) {
           <button
             key={btn.key}
             onClick={() => onAction(btn.key)}
-            className="flex flex-col items-center gap-1 px-4 py-4 rounded-lg text-sm font-medium bg-(--secondary) border border-(--border) text-(--secondary-foreground) hover:bg-(--secondary-dark-shade) hover:border-(--accent-blue) hover:-translate-y-px transition-all cursor-pointer"
+            className="flex flex-col items-center gap-1 px-4 py-4 rounded-(--radius-lg) text-(--text-sm) font-medium bg-(--secondary) border border-(--border) text-(--secondary-foreground) hover:bg-(--secondary-dark-shade) hover:border-(--accent-blue) hover:-translate-y-px transition-all cursor-pointer"
           >
-            <span className="text-xl">{btn.icon}</span>
+            <span className="text-(--text-xl)">{btn.icon}</span>
             {btn.label}
-            <span className="text-[11px] text-(--secondary-foreground)">{btn.sub}</span>
+            <span className="text-(--text-xs) text-(--secondary-foreground)">{btn.sub}</span>
           </button>
         ))}
       </div>

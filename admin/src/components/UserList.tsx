@@ -68,7 +68,7 @@ function formatLoginAge(dateStr: string): string {
 
 // Shared Tailwind class string for status pill badges (ONLINE / OFFLINE / NEVER SEEN)
 const pillBase =
-  "shrink-0 inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold" as const;
+  "shrink-0 inline-flex items-center px-2 py-0.5 rounded-(--radius-md) text-(--text-xs) font-semibold" as const;
 
 // ─── Main Component ──────────────────────────────────────────────────
 
@@ -109,10 +109,10 @@ export function UserList({
   }
 
   return (
-    <div className="bg-(--card) border border-(--border-subtle) rounded-(--radius) overflow-hidden">
+    <div className="bg-(--card) border border-(--border-subtle) rounded-(--radius-xl) overflow-hidden">
       {/* Panel header — "Users [count]" */}
       <div className={panelHeader}>
-        <h2 className="text-lg font-semibold text-(--text-foreground) items-center gap-2">
+        <h2 className="text-(--text-lg) font-semibold text-(--foreground) items-center gap-2">
           <Users className="w-[1em] h-[1em]" /> Users{" "}
           <span className={subTextPanelHeader}>{users?.length ?? 0}</span>
         </h2>
@@ -184,12 +184,13 @@ function UserRow({
       {/* ── Collapsed row — always visible ── */}
       <button
         onClick={onToggle}
+        aria-expanded={isOpen}
         className="w-full flex items-center gap-3 px-4 py-3 hover:bg-(--card-hover) transition-colors text-left"
       >
         {/* Avatar with initials + online dot */}
         <div className="relative shrink-0">
           <div
-            className="w-9 h-9 rounded-[10px] flex items-center justify-center font-bold text-sm"
+            className="w-9 h-9 rounded-(--radius-lg) flex items-center justify-center font-bold text-(--text-sm)"
             style={{
               background: s.bg,
               color: s.text,
@@ -199,18 +200,18 @@ function UserRow({
             {initials}
           </div>
           {user.isOnline && (
-            <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-(--accent-green) border-2 border-(--card)" />
+            <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-(--radius-full) bg-(--accent-green) border-2 border-(--card)" />
           )}
         </div>
 
         {/* Name */}
-        <span className="flex-1 min-w-0 text-sm font-semibold truncate">
+        <span className="flex-1 min-w-0 text-(--text-sm) font-semibold truncate">
           {user.name}
         </span>
 
         {/* Team pill */}
         <span
-          className={`${pillBase} bg-(--base) text-(--secondary-foreground) border border(--border-subtle)`}
+          className={`${pillBase} bg-(--secondary) text-(--secondary-foreground) border border-(--border-subtle)`}
         >
           {user.team ?? "—"}
         </span>
@@ -263,7 +264,7 @@ function StatusPill({ user }: { user: User }) {
   if (user.lastLoginAt) {
     return (
       <span
-        className={`${pillBase} bg-(--accent-amber) text-(--black) border border-(--accent)`}
+        className={`${pillBase} bg-(--accent-amber-glow) text-(--accent-amber) border border-(--border-amber)`}
       >
         OFFLINE
       </span>
@@ -347,7 +348,7 @@ function UserDetails({
   ];
 
   return (
-    <div className="px-4 pb-3 pt-1 border-t border-(--border-subtle) bg-(--card-hover) text-xs text-(--muted-foreground) space-y-1.5">
+    <div className="px-4 pb-3 pt-1 border-t border-(--border-subtle) bg-(--card-hover) text-(--text-xs) text-(--muted-foreground) space-y-1.5">
       {rows.map(({ label, value }) => (
         <div key={label} className="flex items-center gap-2">
           <span className="w-20 shrink-0 font-medium text-(--foreground)/60">
@@ -371,7 +372,7 @@ function UserDetails({
           <span className="w-20 shrink-0 font-medium text-(--foreground)/60">
             iOS
           </span>
-          <span className="text-[11px] bg-(--accent-blue-glow) text-(--accent-blue) px-1.5 py-px rounded font-semibold">
+          <span className="text-(--text-xs) bg-(--accent-blue-glow) text-(--accent-blue) px-1.5 py-px rounded-(--radius-sm) font-semibold">
             Connected
           </span>
         </div>
@@ -387,7 +388,7 @@ function UserDetails({
             <select
               value={selectedCode}
               onChange={(e) => setSelectedCode(e.target.value)}
-              className="px-2 py-1 rounded text-xs bg-(--secondary) border border-(--border) text-(--foreground) focus:outline-none focus:border-(--accent-blue)"
+              className="px-2 py-1 rounded-(--radius-sm) text-(--text-xs) bg-(--secondary) border border-(--border) text-(--foreground) focus:outline-none focus:border-(--accent-blue)"
             >
               <option value="">None</option>
               {organizations?.map((org) => (
@@ -399,7 +400,7 @@ function UserDetails({
             <button
               onClick={handleSaveCompany}
               disabled={savingCompany}
-              className="px-2 py-1 rounded text-xs font-semibold bg-(--accent-blue) text-white hover:opacity-90 cursor-pointer disabled:opacity-50"
+              className="px-2 py-1 rounded-(--radius-sm) text-(--text-xs) font-semibold bg-(--accent-blue) text-white hover:opacity-90 cursor-pointer disabled:opacity-50"
             >
               {savingCompany ? "..." : "Save"}
             </button>
@@ -408,7 +409,7 @@ function UserDetails({
                 setEditingCompany(false);
                 setSelectedCode(user.companyCode ?? "");
               }}
-              className="px-2 py-1 rounded text-xs text-(--muted-foreground) hover:text-(--foreground) cursor-pointer"
+              className="px-2 py-1 rounded-(--radius-sm) text-(--text-xs) text-(--muted-foreground) hover:text-(--foreground) cursor-pointer"
             >
               Cancel
             </button>
@@ -423,7 +424,7 @@ function UserDetails({
             {onDeleteUser && (
               <button
                 onClick={() => setEditingCompany(true)}
-                className="text-[10px] text-(--accent-blue) hover:underline cursor-pointer"
+                className="text-(--text-xs) text-(--accent-blue) hover:underline cursor-pointer"
               >
                 Edit
               </button>
@@ -436,7 +437,7 @@ function UserDetails({
       {onDeleteUser && !isSelf && (
         <div className="pt-2 mt-2 border-t border-(--border-subtle)">
           {confirming && !deleting && (
-            <p className="text-xs text-(--accent-red) font-semibold mb-2">
+            <p className="text-(--text-xs) text-(--accent-red) font-semibold mb-2">
               ⚠️ This will permanently delete {user.name} and ALL their data.
               Click again to confirm.
             </p>
@@ -445,7 +446,7 @@ function UserDetails({
             <button
               onClick={handleDelete}
               disabled={deleting}
-              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-(--radius-lg) text-(--text-xs) font-semibold border transition-all cursor-pointer ${
                 confirming
                   ? "bg-(--accent-red) border-(--accent-red) text-white hover:opacity-90"
                   : "bg-(--secondary) border-(--border-subtle) text-(--muted-foreground) hover:bg-(--accent-red-glow) hover:border-(--accent-red)/50 hover:text-(--accent-red)"
@@ -461,7 +462,7 @@ function UserDetails({
             {confirming && !deleting && (
               <button
                 onClick={() => setConfirming(false)}
-                className="px-3 py-1.5 rounded-lg text-xs font-medium bg-(--secondary) border border-(--border-subtle) text-(--muted-foreground) hover:text-(--foreground) transition-all cursor-pointer"
+                className="px-3 py-1.5 rounded-(--radius-lg) text-(--text-xs) font-medium bg-(--secondary) border border-(--border-subtle) text-(--muted-foreground) hover:text-(--foreground) transition-all cursor-pointer"
               >
                 Cancel
               </button>
@@ -478,7 +479,7 @@ function UserDetails({
 /** Placeholder shown when the list is loading or has no items */
 function Empty({ icon, text }: { icon: React.ReactNode; text: string }) {
   return (
-    <div className="py-10 px-6 text-center text-(--muted-foreground) text-sm">
+    <div className="py-10 px-6 text-center text-(--muted-foreground) text-(--text-sm)">
       <div className="flex justify-center mb-2 opacity-50">{icon}</div>
       {text}
     </div>

@@ -71,10 +71,10 @@ export function AssetList({ assets, isLoading }: AssetListProps) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   return (
-    <div className="bg-(--card) border border-(--border-subtle) rounded-(--radius) overflow-hidden">
+    <div className="bg-(--card) border border-(--border-subtle) rounded-(--radius-xl) overflow-hidden">
       {/* Panel header — "📦 Assets [count]" */}
       <div className={panelHeader}>
-        <h2 className="text-lg font-semibold flex items-center gap-2">
+        <h2 className="text-(--text-lg) font-semibold flex items-center gap-2">
           📦 Assets{" "}
           <span className={subTextPanelHeader}>
             {assets?.length ?? 0}
@@ -143,17 +143,18 @@ function AssetRow({ asset, isExpanded, onToggle }: AssetRowProps) {
       {/* ── Collapsed row — always visible, click to toggle ── */}
       <button
         onClick={onToggle}
+        aria-expanded={isExpanded}
         className="flex items-center w-full px-6 py-4 hover:bg-(--card-hover) transition-colors cursor-pointer text-left bg-transparent border-0 text-inherit font-inherit"
       >
         {/* Status icon circle */}
-        <div className="w-10.5 h-10.5 rounded-[10px] bg-(--secondary) flex items-center justify-center text-base mr-3.5 shrink-0">
+        <div className="w-10.5 h-10.5 rounded-(--radius-lg) bg-(--secondary) flex items-center justify-center text-(--text-base) mr-3.5 shrink-0">
           {statusIcons[asset.status] ?? "📦"}
         </div>
 
         {/* Title + detail line */}
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold truncate">{title}</p>
-          <p className="text-xs text-(--muted-foreground) mt-0.5 flex items-center gap-2">
+          <p className="text-(--text-sm) font-semibold truncate">{title}</p>
+          <p className="text-(--text-xs) text-(--muted-foreground) mt-0.5 flex items-center gap-2">
             {details}
           </p>
         </div>
@@ -161,11 +162,11 @@ function AssetRow({ asset, isExpanded, onToggle }: AssetRowProps) {
         {/* Right side: badges + chevron */}
         <div className="shrink-0 flex items-center gap-2">
           {missingForm && (
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-(--accent-red-glow) text-(--accent-red)">
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-(--radius-md) text-(--text-xs) font-semibold bg-(--accent-red-glow) text-(--accent-red)">
               ⚠️ No Form
             </span>
           )}
-          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold ${statusClasses[asset.status] ?? ""}`}>
+          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-(--radius-md) text-(--text-xs) font-semibold ${statusClasses[asset.status] ?? ""}`}>
             {asset.status}
           </span>
           <ChevronDown
@@ -176,12 +177,12 @@ function AssetRow({ asset, isExpanded, onToggle }: AssetRowProps) {
 
       {/* ── Expanded detail panel ── */}
       {isExpanded && (
-        <div className="px-6 pb-4 pt-1 bg-(--muted)/30 border-t border-(--border-subtle)">
+        <div className="px-6 pb-4 pt-1 bg-(--muted-foreground)/10 border-t border-(--border-subtle)">
           {/* Missing form alert */}
           {missingForm && (
-            <div className="flex items-center gap-2 mb-4 px-4 py-2 rounded-lg bg-(--accent-red-glow) border border-(--accent-red)/25">
-              <span className="text-base">🚨</span>
-              <div className="text-xs">
+            <div className="flex items-center gap-2 mb-4 px-4 py-2 rounded-(--radius-lg) bg-(--accent-red-glow) border border-(--accent-red)/25">
+              <span className="text-(--text-base)">🚨</span>
+              <div className="text-(--text-xs)">
                 <span className="font-semibold text-(--accent-red)">NO CONTEXT FORM</span>
                 <span className="text-(--muted-foreground)"> Slug and description are missing for this asset.</span>
               </div>
@@ -196,14 +197,14 @@ function AssetRow({ asset, isExpanded, onToggle }: AssetRowProps) {
 
           {/* Footer: timestamp + clip viewer link */}
           <div className="flex items-center justify-between mt-2 pt-2 border-t border-(--border-subtle)">
-            <span className="text-[11px] text-(--muted-foreground)">
+            <span className="text-(--text-xs) text-(--muted-foreground)">
               {asset.createdAt ? new Date(asset.createdAt).toLocaleString() : ""}
             </span>
             <a
               href={clipUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-[11px] font-semibold text-(--card-foreground) hover:underline no-underline"
+              className="text-(--text-xs) font-semibold text-(--accent-blue) hover:underline no-underline"
             >
               Play Clip ↗
             </a>
@@ -220,8 +221,8 @@ function AssetRow({ asset, isExpanded, onToggle }: AssetRowProps) {
 function FormSection({ form }: { form: NonNullable<Asset["formResponse"]> }) {
   return (
     <div className="mb-3">
-      <h4 className="text-[11px] font-semibold text-(--muted-foreground) uppercase tracking-wider mb-2">Form Response</h4>
-      <div className="grid grid-cols-2 gap-x-6 gap-y-1.5 text-xs">
+      <h4 className="text-(--text-xs) font-semibold text-(--muted-foreground) uppercase tracking-wider mb-2">Form Response</h4>
+      <div className="grid grid-cols-2 gap-x-6 gap-y-1.5 text-(--text-xs)">
         {form.description && (
           <div className="col-span-2 max-w-[65ch]">
             <DetailRow label="Description" value={form.description} />
@@ -240,8 +241,8 @@ function FormSection({ form }: { form: NonNullable<Asset["formResponse"]> }) {
 function ClipSection({ clip }: { clip: NonNullable<Asset["clips"]>[number] }) {
   return (
     <div className="mb-3">
-      <h4 className="text-[11px] font-semibold text-(--muted-foreground) uppercase tracking-wider mb-2">Clip Details</h4>
-      <div className="grid grid-cols-2 gap-x-6 gap-y-1.5 text-xs">
+      <h4 className="text-(--text-xs) font-semibold text-(--muted-foreground) uppercase tracking-wider mb-2">Clip Details</h4>
+      <div className="grid grid-cols-2 gap-x-6 gap-y-1.5 text-(--text-xs)">
         {clip.resolution && <DetailRow label="Resolution" value={clip.resolution} />}
         {clip.codec && <DetailRow label="Codec" value={clip.codec} />}
         {clip.orientation && <DetailRow label="Orientation" value={clip.orientation} />}
@@ -267,8 +268,8 @@ function DetailRow({ label, value, className = "" }: { label: string; value: str
 /** Placeholder shown when the list is loading or has no items */
 function Empty({ icon, text }: { icon: string; text: string }) {
   return (
-    <div className="py-10 px-6 text-center text-(--muted-foreground) text-sm">
-      <div className="text-[32px] mb-2 opacity-50">{icon}</div>
+    <div className="py-10 px-6 text-center text-(--muted-foreground) text-(--text-sm)">
+      <div className="text-(--text-3xl) mb-2 opacity-50">{icon}</div>
       {text}
     </div>
   );

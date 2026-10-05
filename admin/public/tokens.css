@@ -1,0 +1,88 @@
+/*
+ * Fixer — Design Tokens
+ * ─────────────────────────────────────────────────────────────────────────
+ * THE SINGLE SOURCE OF TRUTH for color, radius, and type scale values used
+ * across BOTH web surfaces:
+ *   - Admin Dashboard  (admin/src — linked from admin/index.html)
+ *   - Clip Viewer page (server/src/routes/clips.js — linked at /tokens.css)
+ *
+ * This file lives in admin/public/ so Vite copies it byte-for-byte into
+ * server/public/ on build (the same mechanism already used for
+ * fixer-icon.png). Both apps load the exact same physical file over HTTP —
+ * there is no second copy to keep in sync.
+ *
+ * Spec: see /DESIGN.md at the repo root for rationale and usage guidance.
+ * To re-theme the app, change values HERE ONLY. Do not add another
+ * "theme-*.css" file or redefine any of these in a component.
+ *
+ * All radius and type values are intentionally even-pixel numbers.
+ * ─────────────────────────────────────────────────────────────────────────
+ */
+
+:root {
+  /* ── Fonts ── */
+  --font-sans: "Outfit", sans-serif;
+  --font-mono: "JetBrains Mono", monospace;
+
+  /* ── Page ── */
+  --background: #ffffff;
+  --foreground: #111111;
+
+  /* ── Cards ── */
+  --card: #ffffff;
+  --card-foreground: #111111;
+  --card-hover: #f3f1ed;
+
+  /* ── Secondary surfaces (status panels, section headers, neutral pills) ── */
+  --secondary: #ffffff;
+  --secondary-foreground: #111111;
+  --secondary-dark-shade: #544c83;
+
+  /* ── Muted text (timestamps, meta labels, captions) ── */
+  --muted-foreground: #4b5563;
+
+  /* ── Borders ── */
+  --border: #d4d0e8;
+  --border-subtle: #e8e5f0;
+  --border-blue: #4a9eff;
+  --border-green: #47c6a7;
+  --border-purple: #8576ee;
+  --border-amber: #f4d247;
+
+  /* ── Brand accent (primary action / focus) ── */
+  --accent: #8576ee;
+  --accent-foreground: #ffffff;
+  --ring: #8576ee;
+
+  /* ── Semantic status accents ── */
+  --accent-blue: #4a9eff;
+  --accent-green: #47c6a7;
+  --accent-amber: #f4d247;
+  --accent-red: #ea3343;
+  --accent-purple: #8576ee;
+
+  /* ── Low-opacity "glow" backgrounds — pair with the matching solid accent above ── */
+  --accent-blue-glow: #4a9eff18;
+  --accent-green-glow: #47c6a718;
+  --accent-amber-glow: #f4d24718;
+  --accent-red-glow: #ea334318;
+  --accent-purple-glow: #8576ee18;
+
+  /* ── Radius scale (even-pixel; matches Tailwind v4 defaults, now named/owned here) ── */
+  --radius-sm: 0.25rem;   /* 4px  — e.g. input checkboxes */
+  --radius-md: 0.375rem;  /* 6px  — e.g. inline controls, tags */
+  --radius-lg: 0.5rem;    /* 8px  — e.g. buttons, status chips */
+  --radius-xl: 0.75rem;   /* 12px — e.g. cards, panels (the project's primary container radius) */
+  --radius-2xl: 1rem;     /* 16px — e.g. prominent cards (login) */
+  --radius-full: 9999px;  /* pills, avatars, status dots */
+
+  /* ── Type scale (even-pixel floor of 12px — nothing should render smaller) ── */
+  --text-xs: 0.75rem;   /* 12px */
+  --text-sm: 0.875rem;  /* 14px */
+  --text-base: 1rem;    /* 16px */
+  --text-lg: 1.125rem;  /* 18px */
+  --text-xl: 1.25rem;   /* 20px */
+  --text-2xl: 1.5rem;   /* 24px */
+  --text-3xl: 2rem;     /* 32px — large stat numbers, empty-state icons */
+  --text-4xl: 2.5rem;   /* 40px — hero/placeholder icon on the Clip Viewer */
+}

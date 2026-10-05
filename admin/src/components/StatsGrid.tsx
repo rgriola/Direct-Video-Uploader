@@ -55,7 +55,7 @@ export function StatsGrid({ stats }: StatsGridProps) {
         return (
           <div
             key={card.label}
-            className="group relative overflow-hidden bg-(--card) border border-(--border-subtle) rounded-(--radius) px-6 py-5.5 transition-all hover:border-(--border) hover:-translate-y-0.5 hover:shadow-[0_4px_24px_rgba(0,0,0,0.3)]"
+            className="group relative overflow-hidden bg-(--card) border border-(--border-subtle) rounded-(--radius-xl) px-6 py-5.5 transition-all hover:border-(--border) hover:-translate-y-0.5 hover:shadow-[0_4px_24px_rgba(0,0,0,0.3)]"
           >
             {/* Top accent bar on hover */}
             <div
@@ -63,16 +63,16 @@ export function StatsGrid({ stats }: StatsGridProps) {
               style={{ background: `linear-gradient(90deg, ${accentVar(card.color)}, transparent)` }}
             />
 
-            <p className="text-xs text-(--muted-foreground) uppercase tracking-[0.8px] font-semibold mb-2 flex items-center gap-1">
+            <p className="text-(--text-xs) text-(--muted-foreground) uppercase tracking-[0.8px] font-semibold mb-2 flex items-center gap-1">
               {card.label}
             </p>
             <p
-              className="text-[32px] font-bold tracking-tight leading-none"
+              className="text-(--text-3xl) font-bold tracking-tight leading-none"
               style={{ color: accentVar(card.color) }}
             >
               {value}
             </p>
-            <p className="text-xs text-(--muted-foreground) mt-2">{detail}</p>
+            <p className="text-(--text-xs) text-(--muted-foreground) mt-2">{detail}</p>
           </div>
         );
       })}

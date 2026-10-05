@@ -1,83 +1,26 @@
-@import "tailwindcss";
-
 /* ═══════════════════════════════════════════════════════════
-   THEME A — "Clean Editorial"
-   Warm off-white background, purple header accent, clean lines.
-   Inspired by: Notion, Linear, Pitch
+   App stylesheet — Tailwind entry point + base/behavior rules.
+
+   This file intentionally defines NO color/radius/type values.
+   All design tokens live in admin/public/tokens.css (linked from
+   admin/index.html) — the single file shared with the server-rendered
+   Clip Viewer page. See /DESIGN.md for the full token spec and rationale.
    ═══════════════════════════════════════════════════════════ */
+@import "tailwindcss";
 @custom-variant dark (&:is(.dark *));
-
-:root {
-  --base: #5038f5;
-
-  --font-sans: "Outfit", sans-serif;
-  --font-mono: "JetBrains Mono", monospace;
-
-  /* ─── Page ─── */
-  --background: #ffffff;
-  --foreground: #111111;
-  --secondary-foreground: #111111;
-
-  /* ─── Cards ─── */
-  --card: #ffffff;
-  --card-foreground: #111111;
-  --card-hover: #f3f1ed;
-
-  /* ─── Popover ─── */
-  --popover: #ffffff;
-  --popover-foreground: #1a1a2e;
-
-  /* ─── Primary (buttons, links) ─── */
-  --primary: #483f7f;
-  --primary-foreground: #ffffff;
-
-  /* ─── Secondary (status panels, section headers) ─── */
-  --secondary: #ffffff;
-  --secondary-dark-shade: #352e5d;
-
-  /* ─── Muted ─── */
-  --muted: #9ca3af;
-  --muted-foreground: #4b5563;
-
-  /* ─── Accent ─── */
-  --accent: #8576ee;
-  --accent-foreground: #ffffff;
-
-  /* ─── Destructive ─── */
-  --destructive: #ea3343;
-  --destructive-foreground: #ffffff;
-
-  /* ─── Borders & Input ─── */
-  --border: #d4d0e8;
-  --border-subtle: #e8e5f0;
-  --input: #e8e5f0;
-  --ring: #8576ee;
-
-  --border-blue: #4a9eff;
-  --border-green: #47c6a7;
-  --border-purple: #8576ee;
-  --border-amber: #f4d247;
-
-  --radius: 0.75rem;
-
-  /* ─── Semantic Accent Palette ─── */
-  --accent-blue: #4a9eff;
-  --accent-green: #47c6a7;
-  --accent-amber: #f4d247;
-  --accent-red: #ea3343;
-  --accent-purple: #8576ee;
-
-  --accent-blue-glow: #4a9eff18;
-  --accent-green-glow: #47c6a718;
-  --accent-amber-glow: #f4d24718;
-  --accent-red-glow: #ea334318;
-  --accent-purple-glow: #8576ee18;
-}
 
 body {
   font-family: var(--font-sans);
   background: var(--background);
   color: var(--foreground);
+}
+
+/* ─── Focus visibility (WCAG 2.4.7) ───
+   Browsers' default focus ring is easy to lose against custom
+   backgrounds/borders; make it explicit and token-driven. */
+:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
 }
 
 /* ─── Scrollbar ─── */

@@ -1,5 +1,5 @@
 import type { Endpoint } from "@/lib/types";
-import { panelHeader } from "@/lib/types";
+import { panelHeader, subTextPanelHeader } from "@/lib/types";
 
 const methodClasses: Record<string, string> = {
   GET: "text-(--accent-green)",
@@ -23,30 +23,30 @@ const endpoints: Endpoint[] = [
 
 export function EndpointTable() {
   return (
-    <div className="bg-(--card) border border-(--border-subtle) rounded-(--radius) overflow-hidden">
+    <div className="bg-(--card) border border-(--border-subtle) rounded-(--radius-xl) overflow-hidden">
 
       <div className={panelHeader}>
 
-        <h2 className="text-lg font-semibold flex items-center gap-2">🗺️ API Endpoints</h2>
+        <h2 className="text-(--text-lg) font-semibold flex items-center gap-2">🗺️ API Endpoints</h2>
 
-        <span className="text-[11px] bg-(--secondary-dark-shade) text-(--secondary-foreground) px-2 py-2 rounded-[10px] font-semibold">
+        <span className={subTextPanelHeader}>
           {endpoints.length} routes
         </span>
       </div>
 
       <div className="overflow-x-auto">
-        <div className="grid grid-cols-[80px_1fr_1fr] max-[600px]:grid-cols-[60px_1fr] text-sm min-w-0">
+        <div className="grid grid-cols-[80px_1fr_1fr] max-[600px]:grid-cols-[60px_1fr] text-(--text-sm) min-w-0">
           {endpoints.map((ep) => (
             <div key={ep.path} className="contents group">
               <div className="px-6 max-[600px]:px-3 py-2 border-b border-(--border-subtle) flex items-center group-last:border-b-0 group-hover:bg-(--card-hover)">
-                <span className={`font-bold text-[11px] tracking-wide ${methodClasses[ep.method] ?? ""}`}>
+                <span className={`font-bold text-(--text-xs) tracking-wide ${methodClasses[ep.method] ?? ""}`}>
                   {ep.method}
                 </span>
               </div>
-              <div className="px-6 max-[600px]:px-3 py-2 border-b border-(--border-subtle) flex items-center font-mono text-xs text-(--foreground) group-last:border-b-0 group-hover:bg-(--card-hover) truncate">
+              <div className="px-6 max-[600px]:px-3 py-2 border-b border-(--border-subtle) flex items-center font-mono text-(--text-xs) text-(--foreground) group-last:border-b-0 group-hover:bg-(--card-hover) truncate">
                 {ep.path}
               </div>
-              <div className="px-6 py-2 border-b border-(--border-subtle) flex items-center text-xs text-(--muted-foreground) group-last:border-b-0 group-hover:bg-(--card-hover) max-[600px]:hidden">
+              <div className="px-6 py-2 border-b border-(--border-subtle) flex items-center text-(--text-xs) text-(--muted-foreground) group-last:border-b-0 group-hover:bg-(--card-hover) max-[600px]:hidden">
                 {ep.description}
               </div>
             </div>

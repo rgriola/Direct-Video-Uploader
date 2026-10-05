@@ -86,12 +86,12 @@ export function OrgPanel({ organizations, isLoading, onRefresh }: OrgPanelProps)
   }
 
   const inputClass =
-    "px-3 py-1.5 rounded-lg text-sm bg-(--secondary) border border-(--border) text-(--secondary-foreground) placeholder:text-(--secondary-foreground) focus:outline-none focus:border-(--accent-blue) transition-colors";
+    "px-3 py-1.5 rounded-(--radius-lg) text-(--text-sm) bg-(--secondary) border border-(--border) text-(--secondary-foreground) placeholder:text-(--secondary-foreground) focus:outline-none focus:border-(--accent-blue) transition-colors";
 
   return (
-    <div className="bg-(--card) border border-(--border-subtle) rounded-(--radius) overflow-hidden">
+    <div className="bg-(--card) border border-(--border-subtle) rounded-(--radius-xl) overflow-hidden">
       <div className={panelHeader}>
-        <h2 className="text-lg font-semibold flex items-center gap-2">
+        <h2 className="text-(--text-lg) font-semibold flex items-center gap-2">
           <Building2 className="w-5 h-5" /> Organizations
           <span className={subTextPanelHeader}>{organizations.length}</span>
         </h2>
@@ -99,11 +99,11 @@ export function OrgPanel({ organizations, isLoading, onRefresh }: OrgPanelProps)
 
       <div className="divide-y divide-(--border-subtle)">
         {isLoading && organizations.length === 0 && (
-          <div className="px-6 py-8 text-center text-(--muted-foreground) text-sm">Loading...</div>
+          <div className="px-6 py-8 text-center text-(--muted-foreground) text-(--text-sm)">Loading...</div>
         )}
 
         {!isLoading && organizations.length === 0 && (
-          <div className="px-6 py-8 text-center text-(--muted-foreground) text-sm">
+          <div className="px-6 py-8 text-center text-(--muted-foreground) text-(--text-sm)">
             No organizations yet. Create one below.
           </div>
         )}
@@ -129,13 +129,15 @@ export function OrgPanel({ organizations, isLoading, onRefresh }: OrgPanelProps)
                 />
                 <button
                   onClick={() => handleUpdate(org.companyCode)}
-                  className="p-1.5 rounded-md bg-(--accent-green)/15 text-(--accent-green) hover:bg-(--accent-green)/25 transition-colors cursor-pointer"
+                  aria-label="Save changes"
+                  className="p-1.5 rounded-(--radius-md) bg-(--accent-green)/15 text-(--accent-green) hover:bg-(--accent-green)/25 transition-colors cursor-pointer"
                 >
                   <Check className="w-4 h-4" />
                 </button>
                 <button
                   onClick={() => setEditingCode(null)}
-                  className="p-1.5 rounded-md bg-(--secondary) text-(--muted-foreground) hover:text-(--foreground) transition-colors cursor-pointer"
+                  aria-label="Cancel editing"
+                  className="p-1.5 rounded-(--radius-md) bg-(--secondary) text-(--muted-foreground) hover:text-(--foreground) transition-colors cursor-pointer"
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -144,13 +146,13 @@ export function OrgPanel({ organizations, isLoading, onRefresh }: OrgPanelProps)
               /* Display mode */
               <div className="flex items-center gap-3">
                 <div className="flex-1 min-w-0">
-                  <span className="text-sm font-medium text-(--foreground)">{org.companyName}</span>
-                  <span className="ml-2 px-2 py-0.5 rounded-md text-[11px] font-bold bg-(--accent-purple)/15 text-(--accent-purple) tracking-wider">
+                  <span className="text-(--text-sm) font-medium text-(--foreground)">{org.companyName}</span>
+                  <span className="ml-2 px-2 py-0.5 rounded-(--radius-md) text-(--text-xs) font-bold bg-(--accent-purple)/15 text-(--accent-purple) tracking-wider">
                     {org.companyCode}
                   </span>
                 </div>
 
-                <span className="flex items-center gap-1 text-xs text-(--muted-foreground) shrink-0">
+                <span className="flex items-center gap-1 text-(--text-xs) text-(--muted-foreground) shrink-0">
                   <Users className="w-3 h-3" /> {org.userCount}
                 </span>
 
@@ -160,8 +162,9 @@ export function OrgPanel({ organizations, isLoading, onRefresh }: OrgPanelProps)
                     setEditName(org.companyName);
                     setEditCode(org.companyCode);
                   }}
-                  className="p-1.5 rounded-md text-(--muted-foreground) hover:text-(--accent-blue) hover:bg-(--accent-blue)/10 transition-colors cursor-pointer"
+                  className="p-1.5 rounded-(--radius-md) text-(--muted-foreground) hover:text-(--accent-blue) hover:bg-(--accent-blue)/10 transition-colors cursor-pointer"
                   title="Edit"
+                  aria-label="Edit organization"
                 >
                   <Pencil className="w-3.5 h-3.5" />
                 </button>
@@ -170,13 +173,13 @@ export function OrgPanel({ organizations, isLoading, onRefresh }: OrgPanelProps)
                   <div className="flex items-center gap-1">
                     <button
                       onClick={() => handleDelete(org.companyCode)}
-                      className="px-2 py-1 rounded-md text-xs font-semibold bg-(--accent-red) text-white hover:opacity-90 transition-opacity cursor-pointer"
+                      className="px-2 py-1 rounded-(--radius-md) text-(--text-xs) font-semibold bg-(--accent-red) text-white hover:opacity-90 transition-opacity cursor-pointer"
                     >
                       Confirm
                     </button>
                     <button
                       onClick={() => setDeletingCode(null)}
-                      className="px-2 py-1 rounded-md text-xs text-(--muted-foreground) hover:text-(--foreground) cursor-pointer"
+                      className="px-2 py-1 rounded-(--radius-md) text-(--text-xs) text-(--muted-foreground) hover:text-(--foreground) cursor-pointer"
                     >
                       Cancel
                     </button>
@@ -184,8 +187,9 @@ export function OrgPanel({ organizations, isLoading, onRefresh }: OrgPanelProps)
                 ) : (
                   <button
                     onClick={() => handleDelete(org.companyCode)}
-                    className="p-1.5 rounded-md text-(--muted-foreground) hover:text-(--accent-red) hover:bg-(--accent-red)/10 transition-colors cursor-pointer"
+                    className="p-1.5 rounded-(--radius-md) text-(--muted-foreground) hover:text-(--accent-red) hover:bg-(--accent-red)/10 transition-colors cursor-pointer"
                     title="Delete"
+                    aria-label="Delete organization"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>
@@ -216,7 +220,7 @@ export function OrgPanel({ organizations, isLoading, onRefresh }: OrgPanelProps)
           <button
             type="submit"
             disabled={creating || !newName.trim() || !newCode.trim()}
-            className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm font-semibold bg-(--accent-blue) text-white hover:opacity-90 transition-opacity cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+            className="flex items-center gap-1 px-3 py-1.5 rounded-(--radius-lg) text-(--text-sm) font-semibold bg-(--accent-blue) text-white hover:opacity-90 transition-opacity cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Plus className="w-4 h-4" />
             {creating ? "Adding..." : "Add"}
