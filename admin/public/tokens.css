@@ -36,7 +36,7 @@
   /* ── Secondary surfaces (status panels, section headers, neutral pills) ── */
   --secondary: #ffffff;
   --secondary-foreground: #111111;
-  --secondary-dark-shade: #544c83;
+  --secondary-dark-shade: #7e72c6;
 
   /* ── Muted text (timestamps, meta labels, captions) ── */
   --muted-foreground: #4b5563;
