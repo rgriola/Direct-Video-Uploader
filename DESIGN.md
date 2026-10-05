@@ -182,3 +182,12 @@ and badges use `md` or `lg`; avatars/dots/status indicators use `full`.
   `tokens.css`, not duplicate the whole file.
 - **Don't** use arbitrary bracket values (`text-[11px]`, `rounded-[10px]`)
   for values that already have a scale step — use the named step instead.
+- **Don't** write a bare `text-(--text-xs)` (or any `--text-*` scale
+  token) on its own — Tailwind v4 treats unhinted `text-(--var)` as a
+  **color** utility, not font-size, so it silently compiles to an invalid
+  `color: var(--text-xs)` declaration that does nothing for size and can
+  clobber a real text color elsewhere on the same element (this exact bug
+  shipped once — a badge rendered with invisible/black text because of
+  it). Always use the explicit type hint: `text-(length:--text-xs)`.
+  Color tokens (`text-(--secondary)`, `text-(--accent-red)`, etc.) don't
+  need a hint — bare `text-(--var)` is already correct for color.

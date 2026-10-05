@@ -75,12 +75,12 @@ export function TriadStatusPanel({
   return (
     <div className="bg-(--card) border border-(--border-subtle) rounded-(--radius-xl) overflow-hidden mb-8">
       <div className={panelHeader}>
-        <h2 className="text-(--text-lg) font-semibold text-(--foreground) flex items-center gap-2">
+        <h2 className="text-(length:--text-lg) font-semibold text-(--foreground) flex items-center gap-2">
           🔺 Triad Status
         </h2>
         <div className="flex items-center gap-3">
           {/* iOS client indicator */}
-          <div className="flex items-center gap-1 text-(--text-xs) text-(--foreground)">
+          <div className="flex items-center gap-1 text-(length:--text-xs) text-(--foreground)">
             <span>📱</span>
             <span>
               {iosClients > 0 ? `${iosClients} iOS User` : "No iOS User"}
@@ -90,7 +90,7 @@ export function TriadStatusPanel({
           {/* WebSocket status badge */}
           <span
             className={cn(
-              "inline-flex items-center gap-1 px-3 py-0.5 rounded-(--radius-full) text-(--text-xs) font-semibold tracking-wide border",
+              "inline-flex items-center gap-1 px-3 py-0.5 rounded-(--radius-full) text-(length:--text-xs) font-semibold tracking-wide border",
               wsConnected
                 ? "bg-(--accent-green-glow) text-(--accent-green) border-[rgba(52,211,153,0.2)]"
                 : "bg-(--secondary) text-(--muted-foreground) border-(--border)",
@@ -121,21 +121,21 @@ export function TriadStatusPanel({
               key={svc.key}
               className="flex items-center gap-3 px-5 py-4 border-r border-(--border-subtle) last:border-r-0 max-[900px]:border-b max-[900px]:border-r-0"
             >
-              <div className="text-(--text-2xl)">{svc.icon}</div>
+              <div className="text-(length:--text-2xl)">{svc.icon}</div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
                   <span
                     className={`w-2 h-2 rounded-(--radius-full) shrink-0 ${isLoading ? "bg-(--muted-foreground)" : statusDot(status)}`}
                   />
-                  <span className="text-(--text-sm) font-semibold">{svc.label}</span>
+                  <span className="text-(length:--text-sm) font-semibold">{svc.label}</span>
 
                   <span
-                    className={`text-(--text-xs) font-semibold ${isLoading ? "text-(--muted-foreground)" : statusTextColor(status)}`}
+                    className={`text-(length:--text-xs) font-semibold ${isLoading ? "text-(--muted-foreground)" : statusTextColor(status)}`}
                   >
                     {isLoading ? "..." : statusLabel(status)}
                   </span>
                 </div>
-                <p className="text-(--text-xs) text-(--muted-foreground) mt-0.5 truncate">
+                <p className="text-(length:--text-xs) text-(--muted-foreground) mt-0.5 truncate">
                   {isLoading
                     ? svc.desc
                     : message

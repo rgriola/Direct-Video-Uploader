@@ -71,7 +71,7 @@ export function ChatHistory({ onClose }: ChatHistoryProps) {
   return (
     <div className="bg-(--card) border border-(--border-subtle) rounded-(--radius-xl) overflow-hidden mb-8">
       <div className={panelHeader}>
-        <h2 className="text-(--text-lg) font-semibold flex items-center gap-2">
+        <h2 className="text-(length:--text-lg) font-semibold flex items-center gap-2">
           💬 Chat History
           <span className={subTextPanelHeader}>
             {messages.length} messages
@@ -79,7 +79,7 @@ export function ChatHistory({ onClose }: ChatHistoryProps) {
         </h2>
         <button
           onClick={onClose}
-          className="px-2 py-1 rounded-(--radius-lg) text-(--text-xs) font-medium bg-(--card) border border-(--border) text-(--muted-foreground) hover:bg-(--card-hover) hover:text-(--foreground) transition-all cursor-pointer"
+          className="px-2 py-1 rounded-(--radius-lg) text-(length:--text-xs) font-medium bg-(--card) border border-(--border) text-(--muted-foreground) hover:bg-(--card-hover) hover:text-(--foreground) transition-all cursor-pointer"
         >
           Close
         </button>
@@ -87,18 +87,18 @@ export function ChatHistory({ onClose }: ChatHistoryProps) {
 
       <div className="max-h-100 overflow-y-auto scrollbar-hide">
         {loading ? (
-          <div className="py-10 text-center text-(--muted-foreground) text-(--text-sm)">
-            <div className="text-(--text-3xl) mb-2 opacity-50">💬</div>
+          <div className="py-10 text-center text-(--muted-foreground) text-(length:--text-sm)">
+            <div className="text-(length:--text-3xl) mb-2 opacity-50">💬</div>
             Loading messages...
           </div>
         ) : error ? (
-          <div className="py-10 text-center text-(--accent-red) text-(--text-sm)">
-            <div className="text-(--text-3xl) mb-2">❌</div>
+          <div className="py-10 text-center text-(--accent-red) text-(length:--text-sm)">
+            <div className="text-(length:--text-3xl) mb-2">❌</div>
             {error}
           </div>
         ) : messages.length === 0 ? (
-          <div className="py-10 text-center text-(--muted-foreground) text-(--text-sm)">
-            <div className="text-(--text-3xl) mb-2 opacity-50">💬</div>
+          <div className="py-10 text-center text-(--muted-foreground) text-(length:--text-sm)">
+            <div className="text-(length:--text-3xl) mb-2 opacity-50">💬</div>
             No messages yet. Send a text from the iOS app.
           </div>
         ) : (
@@ -107,13 +107,13 @@ export function ChatHistory({ onClose }: ChatHistoryProps) {
               key={msg.id}
               className="flex items-start gap-3 px-6 py-3 border-b border-(--border-subtle) last:border-b-0 hover:bg-(--card-hover) transition-colors"
             >
-              <span className="text-(--text-lg) shrink-0 mt-0.5">
+              <span className="text-(length:--text-lg) shrink-0 mt-0.5">
                 {directionIcon[msg.direction] ?? "💬"}
               </span>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 mb-0.5">
                   <span
-                    className="text-(--text-xs) font-bold px-1.5 py-px rounded-(--radius-sm)"
+                    className="text-(length:--text-xs) font-bold px-1.5 py-px rounded-(--radius-sm)"
                     style={{
                       color: typeColors[msg.messageType] ?? "var(--foreground)",
                       background: "var(--secondary)",
@@ -121,23 +121,23 @@ export function ChatHistory({ onClose }: ChatHistoryProps) {
                   >
                     {msg.messageType}
                   </span>
-                  <span className="text-(--text-xs) text-(--muted-foreground)">
+                  <span className="text-(length:--text-xs) text-(--muted-foreground)">
                     {msg.direction === "OUTGOING" ? "User →" : "← Server"}
                   </span>
-                  <span className="text-(--text-xs) text-(--muted-foreground)">
+                  <span className="text-(length:--text-xs) text-(--muted-foreground)">
                     {formatTime(msg.createdAt)}
                   </span>
                 </div>
-                <p className="text-(--text-sm) text-(--foreground) wrap-break-word">
+                <p className="text-(length:--text-sm) text-(--foreground) wrap-break-word">
                   {msg.content?.text ?? "(no text)"}
                 </p>
                 {msg.content?.fileName && (
-                  <p className="text-(--text-xs) text-(--muted-foreground) mt-0.5">
+                  <p className="text-(length:--text-xs) text-(--muted-foreground) mt-0.5">
                     📎 {msg.content.fileName}
                   </p>
                 )}
                 {msg.content?.mediasourceId && (
-                  <p className="text-(--text-xs) text-(--muted-foreground) mt-0.5">
+                  <p className="text-(length:--text-xs) text-(--muted-foreground) mt-0.5">
                     🆔 {msg.content.mediasourceId}
                   </p>
                 )}

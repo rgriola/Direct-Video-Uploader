@@ -15,8 +15,8 @@ export function Header({ onLogout, userName, userPhone, userCompany }: HeaderPro
           <img src="/fixer-icon.png" alt="Fixer" className="w-full h-full object-cover" />
         </div>
         <div>
-          <h1 className="text-(--text-lg) sm:text-(--text-2xl) font-bold tracking-tight">Fixer</h1>
-          <p className="text-(--text-xs) text-(--muted-foreground) mt-0.5 hidden sm:block">Server Dashboard · Live Data</p>
+          <h1 className="text-(length:--text-lg) sm:text-(length:--text-2xl) font-bold tracking-tight">Fixer</h1>
+          <p className="text-(length:--text-xs) text-(--muted-foreground) mt-0.5 hidden sm:block">Server Dashboard · Live Data</p>
         </div>
       </div>
 
@@ -24,9 +24,9 @@ export function Header({ onLogout, userName, userPhone, userCompany }: HeaderPro
         {/* Logged-in user identity */}
         {userName && (
           <div className="flex flex-col items-end leading-tight">
-            <span className="text-(--text-sm) sm:text-(--text-base) font-semibold text-(--foreground) whitespace-nowrap">{userName}</span>
-            {userPhone && <span className="text-(--text-xs) text-(--muted-foreground) mt-0.5 hidden sm:block">{userPhone}</span>}
-            {userCompany && <span className="text-(--text-xs) text-(--accent-purple) font-semibold hidden sm:block">{userCompany}</span>}
+            <span className="text-(length:--text-sm) sm:text-(length:--text-base) font-semibold text-(--foreground) whitespace-nowrap">{userName}</span>
+            {userPhone && <span className="text-(length:--text-xs) text-(--muted-foreground) mt-0.5 hidden sm:block">{userPhone}</span>}
+            {userCompany && <span className="text-(length:--text-xs) text-(--accent-purple) font-semibold hidden sm:block">{userCompany}</span>}
           </div>
         )}
 
@@ -34,7 +34,7 @@ export function Header({ onLogout, userName, userPhone, userCompany }: HeaderPro
         <button
           onClick={onLogout}
           aria-label="Log out"
-          className="flex items-center gap-1 px-3 py-2 rounded-(--radius-lg) text-(--text-sm) font-medium bg-(--card) border border-(--border) text-(--muted-foreground) hover:bg-(--card-hover) hover:text-(--accent-red) hover:border-(--accent-red)/50 transition-all cursor-pointer shrink-0"
+          className="flex items-center gap-1 px-3 py-2 rounded-(--radius-lg) text-(length:--text-sm) font-medium bg-(--card) border border-(--border) text-(--muted-foreground) hover:bg-(--card-hover) hover:text-(--accent-red) hover:border-(--accent-red)/50 transition-all cursor-pointer shrink-0"
         >
           <LogOut className="w-3.5 h-3.5" />
         </button>

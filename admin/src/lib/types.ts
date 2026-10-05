@@ -105,7 +105,7 @@ export const panelHeader =
   "bg-(--secondary) text-(--secondary-foreground) flex items-center justify-between px-6 py-4 border-b border-(--border-subtle)";
 
 export const subTextPanelHeader =
-  "text-(--text-xs) text-(--secondary) bg-(--secondary-dark-shade) px-2 py-2 rounded-(--radius-sm) font-semibold";
+  "text-(length:--text-xs) text-(--secondary) bg-(--secondary-dark-shade) px-2 py-2 rounded-(--radius-sm) font-semibold";
 
 export const userTeamText =
-  "hidden sm:inline-flex shrink-0 items-center px-2 py-0.5 rounded-(--radius-md) text-(--text-xs) font-semibold bg-(--secondary) text-(--muted-foreground)";
+  "hidden sm:inline-flex shrink-0 items-center px-2 py-0.5 rounded-(--radius-md) text-(length:--text-xs) font-semibold bg-(--secondary) text-(--muted-foreground)";

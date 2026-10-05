@@ -61,8 +61,8 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
             />
           </div>
           <div className="ml-auto text-right">
-            <h1 className="text-(--text-2xl) font-bold tracking-tight">Fixer</h1>
-            <p className="text-(--text-sm) text-(--muted-foreground) mt-1">
+            <h1 className="text-(length:--text-2xl) font-bold tracking-tight">Fixer</h1>
+            <p className="text-(length:--text-sm) text-(--muted-foreground) mt-1">
               Admin Dashboard
             </p>
           </div>
@@ -76,7 +76,7 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
           <div className="space-y-2">
             <label
               htmlFor="phone"
-              className="block text-(--text-sm) font-medium text-(--muted-foreground)"
+              className="block text-(length:--text-sm) font-medium text-(--muted-foreground)"
             >
               Phone Number
             </label>
@@ -93,14 +93,14 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
               maxLength={10}
               className="w-full px-4 py-2 rounded-(--radius-lg) 
               bg-(--secondary) border border-(--border) text-(--foreground) 
-              text-(--text-sm) placeholder:text-(--muted-foreground) focus:outline-none focus:ring-2 focus:ring-(--accent-blue) focus:border-transparent transition-all"
+              text-(length:--text-sm) placeholder:text-(--muted-foreground) focus:outline-none focus:ring-2 focus:ring-(--accent-blue) focus:border-transparent transition-all"
             />
           </div>
 
           <div className="space-y-2">
             <label
               htmlFor="pin"
-              className="block text-(--text-sm) font-medium text-(--muted-foreground)"
+              className="block text-(length:--text-sm) font-medium text-(--muted-foreground)"
             >
               PIN
             </label>
@@ -114,12 +114,12 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
               onChange={(e) => handlePinChange(e.target.value)}
               placeholder="••••"
               maxLength={8}
-              className="w-full px-4 py-2 rounded-(--radius-lg) bg-(--secondary) border border-(--border) text-(--foreground) text-(--text-sm) placeholder:text-(--muted-foreground) focus:outline-none focus:ring-2 focus:ring-(--accent-blue) focus:border-transparent transition-all"
+              className="w-full px-4 py-2 rounded-(--radius-lg) bg-(--secondary) border border-(--border) text-(--foreground) text-(length:--text-sm) placeholder:text-(--muted-foreground) focus:outline-none focus:ring-2 focus:ring-(--accent-blue) focus:border-transparent transition-all"
             />
           </div>
 
           {error && (
-            <p className="text-(--text-sm) text-(--accent-red) bg-(--accent-red-glow) border border-(--accent-red) rounded-(--radius-lg) px-3 py-2">
+            <p className="text-(length:--text-sm) text-(--accent-red) bg-(--accent-red-glow) border border-(--accent-red) rounded-(--radius-lg) px-3 py-2">
               {error}
             </p>
           )}
@@ -127,7 +127,7 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
           <button
             type="submit"
             disabled={loading}
-            className="w-full py-2 rounded-(--radius-lg) bg-(--accent-blue) text-white text-(--text-sm) font-semibold tracking-wide hover:opacity-90 active:opacity-75 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+            className="w-full py-2 rounded-(--radius-lg) bg-(--accent-blue) text-white text-(length:--text-sm) font-semibold tracking-wide hover:opacity-90 active:opacity-75 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
           >
             {loading ? "Signing in…" : "Sign In"}
           </button>

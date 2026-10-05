@@ -63,16 +63,16 @@ export function StatsGrid({ stats }: StatsGridProps) {
               style={{ background: `linear-gradient(90deg, ${accentVar(card.color)}, transparent)` }}
             />
 
-            <p className="text-(--text-xs) text-(--muted-foreground) uppercase tracking-[0.8px] font-semibold mb-2 flex items-center gap-1">
+            <p className="text-(length:--text-xs) text-(--muted-foreground) uppercase tracking-[0.8px] font-semibold mb-2 flex items-center gap-1">
               {card.label}
             </p>
             <p
-              className="text-(--text-3xl) font-bold tracking-tight leading-none"
+              className="text-(length:--text-3xl) font-bold tracking-tight leading-none"
               style={{ color: accentVar(card.color) }}
             >
               {value}
             </p>
-            <p className="text-(--text-xs) text-(--muted-foreground) mt-2">{detail}</p>
+            <p className="text-(length:--text-xs) text-(--muted-foreground) mt-2">{detail}</p>
           </div>
         );
       })}
