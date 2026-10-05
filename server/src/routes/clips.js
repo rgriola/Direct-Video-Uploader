@@ -20,6 +20,32 @@ function escapeHtml(str) {
         .replace(/'/g, '&#39;');
 }
 
+/**
+ * Compute a video's width/height ratio (as a decimal number) for sizing the
+ * player + its loading placeholder identically and without layout shift.
+ * Prefers the exact captured resolution (e.g. "1920x1080"); falls back to
+ * the coarse client-reported orientation; defaults to 16:9 landscape.
+ * Clamped to a sane range so bad/unexpected data can't produce an
+ * unusably thin or tall player.
+ */
+function computeVideoRatio(clip) {
+    const fromResolution = (resolution) => {
+        const match = /(\d+)\s*[x×]\s*(\d+)/i.exec(resolution || '');
+        if (!match) return null;
+        const w = parseInt(match[1], 10);
+        const h = parseInt(match[2], 10);
+        return (w > 0 && h > 0) ? w / h : null;
+    };
+    const fromOrientation = (orientation) => {
+        if (orientation === 'portrait') return 9 / 16;
+        if (orientation === 'square') return 1;
+        return 16 / 9; // landscape, unknown, or missing
+    };
+    const ratio = fromResolution(clip?.resolution) ?? fromOrientation(clip?.orientation);
+    const clamped = Math.min(Math.max(ratio, 9 / 21), 21 / 9);
+    return Math.round(clamped * 10000) / 10000;
+}
+
 export default async function clipRoutes(fastify) {
 
     // ─── Shared Styles ──────────────────────────────────────
@@ -348,6 +374,12 @@ ${googleFontsHead}
 
         const clip = asset.clips?.[0];
         const form = asset.formResponse;
+        // Width/height ratio for the player + its loading placeholder — computed
+        // once here so both the initial render and the "processing → ready"
+        // swap (see client script below) size the box identically. This is
+        // known from upload-time metadata, independent of Mux encoding status,
+        // so the player never changes size once the page has painted.
+        const videoRatio = computeVideoRatio(clip);
 
         // ── Asset-level metadata ──
         const assetRows = [];
@@ -569,18 +601,42 @@ ${googleFontsHead}
             align-items: center;
             gap: 6px;
         }
-        /* ── Video ── */
+        /* ── Video ──
+           .video-wrap is sized from --video-ratio (set per-request via inline
+           style, computed server-side from the clip's actual resolution/
+           orientation — see computeVideoRatio()). This keeps portrait and
+           landscape clips correctly letterboxed and capped to a sane share of
+           the viewport on both desktop and mobile, instead of the player
+           sizing itself from raw video pixels once metadata loads (which is
+           what let tall/vertical videos blow past the viewport). */
+        .video-wrap {
+            --video-max-h: 70vh;
+            position: relative;
+            width: min(100%, calc(var(--video-max-h) * var(--video-ratio, 1.7778)));
+            max-height: var(--video-max-h);
+            aspect-ratio: var(--video-ratio, 16 / 9);
+            margin: 0 auto;
+            background: var(--secondary);
+            overflow: hidden;
+        }
         .video-wrap mux-player {
             width: 100%;
+            height: 100%;
             display: block;
-            aspect-ratio: 16/9;
             --media-object-fit: contain;
             --media-object-position: center;
         }
-        /* Placeholder shown while Mux is processing — same 16:9 frame */
+        /* Loading placeholder — shown (a) while Mux is still processing the
+           upload, sized identically to the eventual player, and (b) as an
+           overlay on top of a just-inserted <mux-player> until it reports
+           it's actually ready to paint a frame, so there's always a visible
+           "this is loading" signal instead of a blank box. */
         .video-placeholder {
+            position: absolute;
+            inset: 0;
+            z-index: 2;
             width: 100%;
-            aspect-ratio: 16/9;
+            height: 100%;
             display: flex;
             flex-direction: column;
             align-items: center;
@@ -588,8 +644,12 @@ ${googleFontsHead}
             gap: 16px;
             background: var(--secondary);
             color: var(--muted-foreground);
-            position: relative;
             overflow: hidden;
+            transition: opacity 0.25s ease;
+        }
+        .video-placeholder.is-hidden {
+            opacity: 0;
+            pointer-events: none;
         }
         /* Subtle animated shimmer across the placeholder */
         .video-placeholder::after {
@@ -739,6 +799,11 @@ ${googleFontsHead}
         @media (max-width: 640px) {
             .container { padding: 16px 16px 48px; }
 
+            /* Mobile viewports are already narrow and often taller-than-wide
+               (especially in portrait), so give the player more vertical
+               room than on desktop — it's less likely to dominate the page. */
+            .video-wrap { --video-max-h: 80vh; }
+
             .topbar {
                 padding-bottom: 16px;
                 margin-bottom: 20px;
@@ -805,22 +870,29 @@ ${googleFontsHead}
         </div>
 
         <div class="card" id="video-card">
-            ${hasMuxPlayback
-                ? `<mux-player
+            <div class="video-wrap" style="--video-ratio: ${videoRatio}">
+                ${hasMuxPlayback
+                    ? `<!-- accent-color below must stay in sync with --accent-blue in tokens.css; a custom-element attribute can't reference a CSS var -->
+                  <mux-player
                     id="mux-player-el"
                     stream-type="on-demand"
                     playback-id="${escapeHtml(muxPlaybackId)}"
                     ${MUX_ENV_KEY ? `env-key="${escapeHtml(MUX_ENV_KEY)}"` : ''}
                     metadata-video-title="${escapeHtml(displayTitle)}"
-                    accent-color="#4a9eff" /* keep in sync with --accent-blue in tokens.css — custom-element attribute, cannot reference a CSS var */
+                    accent-color="#4a9eff"
                     preload="auto"
-                  ></mux-player>`
-                : `<div class="video-placeholder" id="video-placeholder">
+                  ></mux-player>
+                  <div class="video-placeholder" id="video-loading">
+                    <div class="placeholder-icon">🎬</div>
+                    <div class="placeholder-label">Loading video&hellip;</div>
+                  </div>`
+                    : `<div class="video-placeholder" id="video-placeholder">
                     <div class="placeholder-icon">🎬</div>
                     <div class="placeholder-label">Video Processing</div>
                     <div class="placeholder-sub" id="placeholder-status">${escapeHtml(asset.status)} &mdash; checking every 5s&hellip;</div>
                    </div>`
-            }
+                }
+            </div>
             <div class="video-bar">
                 <span class="status status-${escapeHtml(asset.status)}" id="status-pill">${escapeHtml(asset.status)}</span>
                 <button class="copy-link" onclick="copyLink(this)">📋 Copy Link</button>
@@ -872,6 +944,31 @@ ${googleFontsHead}
         </div>
     </div>
     <script>
+    // Hides a loading-placeholder overlay once its <mux-player> sibling is
+    // actually ready to show a frame (or after a safety timeout, in case the
+    // event never fires for some reason — better a stale overlay disappears
+    // late than one that's stuck forever).
+    function hideOverlayWhenReady(player, overlay) {
+        if (!player || !overlay) return;
+        let done = false;
+        const hide = () => {
+            if (done) return;
+            done = true;
+            overlay.classList.add('is-hidden');
+            setTimeout(() => overlay.remove(), 300);
+        };
+        player.addEventListener('loadeddata', hide, { once: true });
+        player.addEventListener('error', hide, { once: true });
+        setTimeout(hide, 8000);
+    }
+
+    // Wire up the loading overlay for the player rendered at page load (if any).
+    (function initialOverlay() {
+        const player  = document.getElementById('mux-player-el');
+        const overlay = document.getElementById('video-loading');
+        hideOverlayWhenReady(player, overlay);
+    })();
+
     function copyLink(btn) {
         navigator.clipboard.writeText(window.location.href).then(() => {
             btn.textContent = '✅ Copied!';
@@ -945,11 +1042,23 @@ ${googleFontsHead}
                         player.setAttribute('accent-color', '#4a9eff'); // keep in sync with --accent-blue in tokens.css
                         player.setAttribute('preload', 'auto');
                         player.style.width = '100%';
+                        player.style.height = '100%';
                         player.style.display = 'block';
-                        player.style.aspectRatio = '16/9';
 
-                        // Swap placeholder → player
-                        placeholder.replaceWith(player);
+                        // Insert the player behind the placeholder (.video-wrap
+                        // is already sized from --video-ratio, set at initial
+                        // render from the clip's real resolution/orientation —
+                        // no aspect-ratio to (re)compute here, so no layout
+                        // shift). Re-purpose the placeholder as a "loading
+                        // video…" overlay until the player reports a frame is
+                        // actually ready, then fade it out.
+                        const wrap = placeholder.parentElement;
+                        wrap.insertBefore(player, placeholder);
+                        placeholder.id = 'video-loading';
+                        placeholder.innerHTML =
+                            '<div class="placeholder-icon">🎬</div>' +
+                            '<div class="placeholder-label">Loading video&hellip;</div>';
+                        hideOverlayWhenReady(player, placeholder);
 
                         // Update status pill to READY
                         if (statusPill) {
