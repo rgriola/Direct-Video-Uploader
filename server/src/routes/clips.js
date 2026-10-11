@@ -892,7 +892,7 @@ ${googleFontsHead}
             </div>
             <div class="video-bar">
                 <span class="status status-${escapeHtml(asset.status)}" id="status-pill">${escapeHtml(asset.status)}</span>
-                <button class="copy-link" onclick="copyLink(this)">${copyLinkLabel}</button>
+                <button class="copy-link" id="copy-link-btn">${copyLinkLabel}</button>
             </div>
         </div>
 
@@ -990,6 +990,13 @@ ${googleFontsHead}
             }, 2000);
         });
     }
+
+    // Wired up here (instead of an inline onclick="" attribute) because the
+    // production CSP sets script-src-attr 'none' — inline event-handler
+    // attributes are silently blocked even though inline <script> tags are
+    // allowed, so onclick="copyLink(this)" never fired.
+    const copyLinkBtn = document.getElementById('copy-link-btn');
+    if (copyLinkBtn) copyLinkBtn.addEventListener('click', () => copyLink(copyLinkBtn));
 
     // ── Video readiness polling ───────────────────────────────────────
     // Only runs when the placeholder is visible (video not yet ready).
