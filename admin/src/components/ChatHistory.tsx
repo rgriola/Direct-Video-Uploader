@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { fetchMessages } from "@/lib/api";
-import { panelHeader } from "@/lib/types";
-import { subTextPanelHeader } from "@/lib/types";
+import { panelHeader, subTextPanelHeader } from "@/lib/types";
+import { Icon, type IconName } from "./Icon";
 
 interface Message {
   id: string;
@@ -17,9 +17,9 @@ interface ChatHistoryProps {
   onClose: () => void;
 }
 
-const directionIcon: Record<string, string> = {
-  OUTGOING: "📤",
-  INCOMING: "📥",
+const directionIcon: Record<string, IconName> = {
+  OUTGOING: "outgoing",
+  INCOMING: "incoming",
 };
 
 const typeColors: Record<string, string> = {
@@ -72,7 +72,7 @@ export function ChatHistory({ onClose }: ChatHistoryProps) {
     <div className="bg-(--card) border border-(--border-subtle) rounded-(--radius-xl) overflow-hidden mb-8">
       <div className={panelHeader}>
         <h2 className="text-(length:--text-lg) font-semibold flex items-center gap-2">
-          💬 Chat History
+          <Icon name="messages" /> Chat History
           <span className={subTextPanelHeader}>
             {messages.length} messages
           </span>
@@ -88,17 +88,17 @@ export function ChatHistory({ onClose }: ChatHistoryProps) {
       <div className="max-h-100 overflow-y-auto scrollbar-hide">
         {loading ? (
           <div className="py-10 text-center text-(--muted-foreground) text-(length:--text-sm)">
-            <div className="text-(length:--text-3xl) mb-2 opacity-50">💬</div>
+            <div className="text-(length:--text-3xl) mb-2 opacity-50 flex justify-center"><Icon name="messages" /></div>
             Loading messages...
           </div>
         ) : error ? (
           <div className="py-10 text-center text-(--accent-red) text-(length:--text-sm)">
-            <div className="text-(length:--text-3xl) mb-2">❌</div>
+            <div className="text-(length:--text-3xl) mb-2 flex justify-center"><Icon name="error" /></div>
             {error}
           </div>
         ) : messages.length === 0 ? (
           <div className="py-10 text-center text-(--muted-foreground) text-(length:--text-sm)">
-            <div className="text-(length:--text-3xl) mb-2 opacity-50">💬</div>
+            <div className="text-(length:--text-3xl) mb-2 opacity-50 flex justify-center"><Icon name="messages" /></div>
             No messages yet. Send a text from the iOS app.
           </div>
         ) : (
@@ -108,7 +108,7 @@ export function ChatHistory({ onClose }: ChatHistoryProps) {
               className="flex items-start gap-3 px-6 py-3 border-b border-(--border-subtle) last:border-b-0 hover:bg-(--card-hover) transition-colors"
             >
               <span className="text-(length:--text-lg) shrink-0 mt-0.5">
-                {directionIcon[msg.direction] ?? "💬"}
+                <Icon name={directionIcon[msg.direction] ?? "messages"} />
               </span>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 mb-0.5">
@@ -121,8 +121,10 @@ export function ChatHistory({ onClose }: ChatHistoryProps) {
                   >
                     {msg.messageType}
                   </span>
-                  <span className="text-(length:--text-xs) text-(--muted-foreground)">
-                    {msg.direction === "OUTGOING" ? "User →" : "← Server"}
+                  <span className="text-(length:--text-xs) text-(--muted-foreground) inline-flex items-center gap-1">
+                    {msg.direction === "OUTGOING"
+                      ? <>User <Icon name="arrowRight" /></>
+                      : <><Icon name="arrowLeft" /> Server</>}
                   </span>
                   <span className="text-(length:--text-xs) text-(--muted-foreground)">
                     {formatTime(msg.createdAt)}
@@ -132,13 +134,13 @@ export function ChatHistory({ onClose }: ChatHistoryProps) {
                   {msg.content?.text ?? "(no text)"}
                 </p>
                 {msg.content?.fileName && (
-                  <p className="text-(length:--text-xs) text-(--muted-foreground) mt-0.5">
-                    📎 {msg.content.fileName}
+                  <p className="text-(length:--text-xs) text-(--muted-foreground) mt-0.5 inline-flex items-center gap-1">
+                    <Icon name="attachment" /> {msg.content.fileName}
                   </p>
                 )}
                 {msg.content?.mediasourceId && (
-                  <p className="text-(length:--text-xs) text-(--muted-foreground) mt-0.5">
-                    🆔 {msg.content.mediasourceId}
+                  <p className="text-(length:--text-xs) text-(--muted-foreground) mt-0.5 inline-flex items-center gap-1">
+                    <Icon name="id" /> {msg.content.mediasourceId}
                   </p>
                 )}
               </div>

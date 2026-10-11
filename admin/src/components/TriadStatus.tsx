@@ -1,7 +1,7 @@
 import { cn } from "@/lib/utils";
 import type { TriadStatus as TriadStatusType } from "@/lib/types";
-import { panelHeader } from "@/lib/types";
-import { subTextPanelHeader } from "@/lib/types";
+import { panelHeader, subTextPanelHeader } from "@/lib/types";
+import { Icon, type IconName } from "./Icon";
 
 interface TriadStatusProps {
   triad?: TriadStatusType;
@@ -10,21 +10,21 @@ interface TriadStatusProps {
   iosClients?: number;
 }
 
-const serviceConfig = [
+const serviceConfig: { key: "database" | "server" | "ios" | "admin"; label: string; icon: IconName; desc: string }[] = [
   {
-    key: "database" as const,
+    key: "database",
     label: "Database",
-    icon: "🗄️",
+    icon: "database",
     desc: "PostgreSQL",
   },
   {
-    key: "server" as const,
+    key: "server",
     label: "Server",
-    icon: "⚡",
+    icon: "api",
     desc: "Fastify :3000",
   },
-  { key: "ios" as const, label: "iOS App", icon: "📱", desc: "Mobile Client" },
-  { key: "admin" as const, label: "Dashboard", icon: "📊", desc: "This Page" },
+  { key: "ios", label: "iOS App", icon: "device", desc: "Mobile Client" },
+  { key: "admin", label: "Dashboard", icon: "status", desc: "This Page" },
 ];
 
 function statusDot(status: string) {
@@ -76,12 +76,12 @@ export function TriadStatusPanel({
     <div className="bg-(--card) border border-(--border-subtle) rounded-(--radius-xl) overflow-hidden mb-8">
       <div className={panelHeader}>
         <h2 className="text-(length:--text-lg) font-semibold text-(--foreground) flex items-center gap-2">
-          🔺 Triad Status
+          <Icon name="triad" /> Triad Status
         </h2>
         <div className="flex items-center gap-3">
           {/* iOS client indicator */}
           <div className="flex items-center gap-1 text-(length:--text-xs) text-(--foreground)">
-            <span>📱</span>
+            <Icon name="device" />
             <span>
               {iosClients > 0 ? `${iosClients} iOS User` : "No iOS User"}
             </span>
@@ -121,7 +121,7 @@ export function TriadStatusPanel({
               key={svc.key}
               className="flex items-center gap-3 px-5 py-4 border-r border-(--border-subtle) last:border-r-0 max-[900px]:border-b max-[900px]:border-r-0"
             >
-              <div className="text-(length:--text-2xl)">{svc.icon}</div>
+              <div className="text-(length:--text-2xl)"><Icon name={svc.icon} /></div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
                   <span

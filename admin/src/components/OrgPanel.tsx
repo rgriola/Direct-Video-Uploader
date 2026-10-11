@@ -3,7 +3,7 @@ import { toast } from "sonner";
 import { createOrganization, updateOrganization, deleteOrganization } from "@/lib/api";
 import type { Organization } from "@/lib/types";
 import { panelHeader, subTextPanelHeader } from "@/lib/types";
-import { Building2, Plus, Pencil, Trash2, X, Check, Users } from "lucide-react";
+import { Icon } from "./Icon";
 
 interface OrgPanelProps {
   organizations: Organization[];
@@ -92,7 +92,7 @@ export function OrgPanel({ organizations, isLoading, onRefresh }: OrgPanelProps)
     <div className="bg-(--card) border border-(--border-subtle) rounded-(--radius-xl) overflow-hidden">
       <div className={panelHeader}>
         <h2 className="text-(length:--text-lg) font-semibold flex items-center gap-2">
-          <Building2 className="w-5 h-5" /> Organizations
+          <Icon name="organization" className="w-5 h-5" /> Organizations
           <span className={subTextPanelHeader}>{organizations.length}</span>
         </h2>
       </div>
@@ -132,14 +132,14 @@ export function OrgPanel({ organizations, isLoading, onRefresh }: OrgPanelProps)
                   aria-label="Save changes"
                   className="p-1.5 rounded-(--radius-md) bg-(--accent-green)/15 text-(--accent-green) hover:bg-(--accent-green)/25 transition-colors cursor-pointer"
                 >
-                  <Check className="w-4 h-4" />
+                  <Icon name="confirm" className="w-4 h-4" />
                 </button>
                 <button
                   onClick={() => setEditingCode(null)}
                   aria-label="Cancel editing"
                   className="p-1.5 rounded-(--radius-md) bg-(--secondary) text-(--muted-foreground) hover:text-(--foreground) transition-colors cursor-pointer"
                 >
-                  <X className="w-4 h-4" />
+                  <Icon name="close" className="w-4 h-4" />
                 </button>
               </div>
             ) : (
@@ -153,7 +153,7 @@ export function OrgPanel({ organizations, isLoading, onRefresh }: OrgPanelProps)
                 </div>
 
                 <span className="flex items-center gap-1 text-(length:--text-xs) text-(--muted-foreground) shrink-0">
-                  <Users className="w-3 h-3" /> {org.userCount}
+                  <Icon name="users" className="w-3 h-3" /> {org.userCount}
                 </span>
 
                 <button
@@ -166,7 +166,7 @@ export function OrgPanel({ organizations, isLoading, onRefresh }: OrgPanelProps)
                   title="Edit"
                   aria-label="Edit organization"
                 >
-                  <Pencil className="w-3.5 h-3.5" />
+                  <Icon name="edit" className="w-3.5 h-3.5" />
                 </button>
 
                 {deletingCode === org.companyCode ? (
@@ -191,7 +191,7 @@ export function OrgPanel({ organizations, isLoading, onRefresh }: OrgPanelProps)
                     title="Delete"
                     aria-label="Delete organization"
                   >
-                    <Trash2 className="w-3.5 h-3.5" />
+                    <Icon name="delete" className="w-3.5 h-3.5" />
                   </button>
                 )}
               </div>
@@ -222,7 +222,7 @@ export function OrgPanel({ organizations, isLoading, onRefresh }: OrgPanelProps)
             disabled={creating || !newName.trim() || !newCode.trim()}
             className="flex items-center gap-1 px-3 py-1.5 rounded-(--radius-lg) text-(length:--text-sm) font-semibold bg-(--accent-blue) text-white hover:opacity-90 transition-opacity cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            <Plus className="w-4 h-4" />
+            <Icon name="add" className="w-4 h-4" />
             {creating ? "Adding..." : "Add"}
           </button>
         </div>

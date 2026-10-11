@@ -1,5 +1,6 @@
 import type { Endpoint } from "@/lib/types";
 import { panelHeader, subTextPanelHeader } from "@/lib/types";
+import { Icon } from "./Icon";
 
 const methodClasses: Record<string, string> = {
   GET: "text-(--accent-green)",
@@ -27,7 +28,7 @@ export function EndpointTable() {
 
       <div className={panelHeader}>
 
-        <h2 className="text-(length:--text-lg) font-semibold flex items-center gap-2">🗺️ API Endpoints</h2>
+        <h2 className="text-(length:--text-lg) font-semibold flex items-center gap-2"><Icon name="endpoints" /> API Endpoints</h2>
 
         <span className={subTextPanelHeader}>
           {endpoints.length} routes

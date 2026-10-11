@@ -1,4 +1,5 @@
 import type { Stats } from "@/lib/types";
+import { Icon, type IconName } from "./Icon";
 
 interface StatsGridProps {
   stats?: Stats;
@@ -7,7 +8,8 @@ interface StatsGridProps {
 const cards = [
   {
     key: "users" as const,
-    label: "👥 Users",
+    icon: "users" as IconName,
+    label: "Users",
     color: "blue",
     detailFn: (s: Stats) => {
       const parts: string[] = [];
@@ -18,7 +20,8 @@ const cards = [
   },
   {
     key: "assets" as const,
-    label: "📦 Assets",
+    icon: "assets" as IconName,
+    label: "Assets",
     color: "green",
     detailFn: (s: Stats) => {
       const parts: string[] = [];
@@ -29,13 +32,15 @@ const cards = [
   },
   {
     key: "messages" as const,
-    label: "💬 Messages",
+    icon: "messages" as IconName,
+    label: "Messages",
     color: "amber",
     detailFn: () => "all time",
   },
   {
     key: "clips" as const,
-    label: "🎬 Clips",
+    icon: "clips" as IconName,
+    label: "Clips",
     color: "purple",
     detailFn: (s: Stats) => `${s.readyAssets} ready asset${s.readyAssets !== 1 ? "s" : ""}`,
   },
@@ -54,7 +59,7 @@ export function StatsGrid({ stats }: StatsGridProps) {
 
         return (
           <div
-            key={card.label}
+            key={card.key}
             className="group relative overflow-hidden bg-(--card) border border-(--border-subtle) rounded-(--radius-xl) px-6 py-5.5 transition-all hover:border-(--border) hover:-translate-y-0.5 hover:shadow-[0_4px_24px_rgba(0,0,0,0.3)]"
           >
             {/* Top accent bar on hover */}
@@ -64,7 +69,7 @@ export function StatsGrid({ stats }: StatsGridProps) {
             />
 
             <p className="text-(length:--text-xs) text-(--muted-foreground) uppercase tracking-[0.8px] font-semibold mb-2 flex items-center gap-1">
-              {card.label}
+              <Icon name={card.icon} /> {card.label}
             </p>
             <p
               className="text-(length:--text-3xl) font-bold tracking-tight leading-none"

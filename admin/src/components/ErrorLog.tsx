@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { fetchErrors } from "@/lib/api";
-import { panelHeader } from "@/lib/types";
-import { subTextPanelHeader } from "@/lib/types";
+import { panelHeader, subTextPanelHeader } from "@/lib/types";
+import { Icon } from "./Icon";
 
 interface ErrorEntry {
     id: string;
@@ -20,11 +20,13 @@ const severityColors: Record<string, string> = {
     INFO: "bg-(--accent-blue-glow) text-(--accent-blue)",
 };
 
-const severityIcons: Record<string, string> = {
-    CRITICAL: "🔴",
-    ERROR: "🟠",
-    WARNING: "🟡",
-    INFO: "🔵",
+/** Dot color for the severity marker — reuses the same text-color half of
+ * severityColors so the dot and the badge next to it always match. */
+const severityDotColors: Record<string, string> = {
+    CRITICAL: "text-(--accent-red)",
+    ERROR: "text-(--accent-red)",
+    WARNING: "text-(--accent-amber)",
+    INFO: "text-(--accent-blue)",
 };
 
 export function ErrorLog() {
@@ -42,7 +44,7 @@ export function ErrorLog() {
             <div className={panelHeader}>
 
                 <h2 className="text-(length:--text-lg) font-semibold flex items-center gap-2">
-                    ⚠️ Error Log{" "}
+                    <Icon name="warning" /> Error Log{" "}
                     <span className={subTextPanelHeader}>
                         {errors.length}
                     </span>
@@ -60,7 +62,9 @@ export function ErrorLog() {
                             key={err.id}
                             className="flex items-start gap-3 px-6 py-3 border-b border-(--border-subtle) last:border-b-0"
                         >
-                            <span className="text-(length:--text-sm) mt-0.5 shrink-0">{severityIcons[err.severity] ?? "⚪"}</span>
+                            <span className={`text-(length:--text-sm) mt-0.5 shrink-0 ${severityDotColors[err.severity] ?? "text-(--muted-foreground)"}`}>
+                                <Icon name="dot" fill="currentColor" />
+                            </span>
                             <div className="flex-1 min-w-0">
                                 <div className="flex items-center gap-2 mb-0.5">
                                     <span
@@ -88,7 +92,7 @@ export function ErrorLog() {
 function Empty({ text }: { text: string }) {
     return (
         <div className="py-10 px-6 text-center text-(--muted-foreground) text-(length:--text-sm)">
-            <div className="text-(length:--text-3xl) mb-2 opacity-50">✅</div>
+            <div className="text-(length:--text-3xl) mb-2 opacity-50 flex justify-center"><Icon name="success" /></div>
             {text}
         </div>
     );

@@ -17,11 +17,11 @@
  */
 
 import { useState } from "react";
-import { ChevronDown, Trash2, Building2, Users } from "lucide-react";
 import { updateUser } from "@/lib/api";
 import { toast } from "sonner";
 import type { User, Organization } from "@/lib/types";
 import { panelHeader, subTextPanelHeader } from "@/lib/types";
+import { Icon } from "./Icon";
 
 // ─── Avatar Configuration ────────────────────────────────────────────
 //
@@ -113,17 +113,17 @@ export function UserList({
       {/* Panel header — "Users [count]" */}
       <div className={panelHeader}>
         <h2 className="text-(length:--text-lg) font-semibold text-(--foreground) items-center gap-2">
-          <Users className="w-[1em] h-[1em]" /> Users{" "}
+          <Icon name="users" /> Users{" "}
           <span className={subTextPanelHeader}>{users?.length ?? 0}</span>
         </h2>
       </div>
 
       <div>
         {isLoading ? (
-          <Empty icon={<Users className="w-8 h-8" />} text="Loading users..." />
+          <Empty icon={<Icon name="users" size={32} />} text="Loading users..." />
         ) : !sorted.length ? (
           <Empty
-            icon={<Users className="w-8 h-8" />}
+            icon={<Icon name="users" size={32} />}
             text="No users registered yet."
           />
         ) : (
@@ -229,7 +229,8 @@ function UserRow({
         <StatusPill user={user} />
 
         {/* Chevron — rotates when expanded */}
-        <ChevronDown
+        <Icon
+          name="expand"
           className={`shrink-0 w-4 h-4 text-(--muted-foreground) transition-transform ${isOpen ? "rotate-180" : ""}`}
         />
       </button>
@@ -334,13 +335,15 @@ function UserDetails({
   }
 
   const rows = [
-    { label: "Phone", value: `📱 ${user.phoneNumber}` },
+    { label: "Phone", icon: "device" as const, value: user.phoneNumber },
     {
       label: "Assets",
+      icon: null,
       value: `${user.assetCount ?? 0} asset${user.assetCount !== 1 ? "s" : ""}`,
     },
     {
       label: "Last login",
+      icon: null,
       value: user.lastLoginAt
         ? formatLoginAge(user.lastLoginAt)
         : "Never logged in",
@@ -349,12 +352,14 @@ function UserDetails({
 
   return (
     <div className="px-4 pb-3 pt-1 border-t border-(--border-subtle) bg-(--card-hover) text-(length:--text-xs) text-(--muted-foreground) space-y-1.5">
-      {rows.map(({ label, value }) => (
+      {rows.map(({ label, icon, value }) => (
         <div key={label} className="flex items-center gap-2">
           <span className="w-20 shrink-0 font-medium text-(--foreground)/60">
             {label}
           </span>
-          <span>{value}</span>
+          <span className="inline-flex items-center gap-1">
+            {icon && <Icon name={icon} />} {value}
+          </span>
         </div>
       ))}
 
@@ -381,7 +386,7 @@ function UserDetails({
       {/* Company — display + admin edit */}
       <div className="flex items-center gap-2">
         <span className="w-20 shrink-0 font-medium text-(--foreground)/60 flex items-center gap-1">
-          <Building2 className="w-3 h-3" /> Company
+          <Icon name="organization" /> Company
         </span>
         {editingCompany ? (
           <div className="flex items-center gap-1.5">
@@ -437,8 +442,8 @@ function UserDetails({
       {onDeleteUser && !isSelf && (
         <div className="pt-2 mt-2 border-t border-(--border-subtle)">
           {confirming && !deleting && (
-            <p className="text-(length:--text-xs) text-(--accent-red) font-semibold mb-2">
-              ⚠️ This will permanently delete {user.name} and ALL their data.
+            <p className="text-(length:--text-xs) text-(--accent-red) font-semibold mb-2 inline-flex items-start gap-1">
+              <Icon name="warning" /> This will permanently delete {user.name} and ALL their data.
               Click again to confirm.
             </p>
           )}
@@ -452,7 +457,7 @@ function UserDetails({
                   : "bg-(--secondary) border-(--border-subtle) text-(--muted-foreground) hover:bg-(--accent-red-glow) hover:border-(--accent-red)/50 hover:text-(--accent-red)"
               } disabled:opacity-50 disabled:cursor-not-allowed`}
             >
-              <Trash2 className="w-3 h-3" />
+              <Icon name="delete" className="w-3 h-3" />
               {deleting
                 ? "Deleting..."
                 : confirming

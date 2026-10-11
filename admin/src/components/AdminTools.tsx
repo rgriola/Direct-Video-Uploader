@@ -2,6 +2,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { nuclearReset, createUser } from "@/lib/api";
 import { panelHeader, subTextPanelHeader } from "@/lib/types";
+import { Icon } from "./Icon";
 
 export function AdminTools({ onReset }: { onReset: () => void }) {
   return (
@@ -10,7 +11,7 @@ export function AdminTools({ onReset }: { onReset: () => void }) {
         <div className={panelHeader}>
 
         <h2 className="text-(length:--text-lg) font-semibold flex items-center gap-2">
-          🔧 Admin Tools
+          <Icon name="tools" /> Admin Tools
         </h2>
         <span className={subTextPanelHeader}>
           Demo Management
@@ -55,16 +56,16 @@ function NuclearReset({ onReset }: { onReset: () => void }) {
 
   return (
     <div className="flex flex-col gap-3">
-      <h3 className="text-(length:--text-sm) font-semibold text-(--muted-foreground) uppercase tracking-wide">
-        ☢️ Nuclear Reset
+      <h3 className="text-(length:--text-sm) font-semibold text-(--muted-foreground) uppercase tracking-wide inline-flex items-center gap-1">
+        <Icon name="nuclear" /> Nuclear Reset
       </h3>
       <p className="text-(length:--text-sm) text-(--muted-foreground) leading-relaxed">
         Wipe all assets, clips, Mux videos, chat messages, form responses, and
         error logs. <strong>User accounts are preserved.</strong>
       </p>
       {confirming && !running && (
-        <p className="text-(length:--text-xs) text-(--accent-red) font-semibold">
-          ⚠️ This cannot be undone. Click again to confirm.
+        <p className="text-(length:--text-xs) text-(--accent-red) font-semibold inline-flex items-center gap-1">
+          <Icon name="warning" /> This cannot be undone. Click again to confirm.
         </p>
       )}
       <div className="flex gap-2">
@@ -135,8 +136,8 @@ function CreateUser() {
 
   return (
     <div className="flex flex-col gap-3">
-      <h3 className="text-(length:--text-sm) font-semibold text-(--muted-foreground) uppercase tracking-wide">
-        👤 Create Demo User
+      <h3 className="text-(length:--text-sm) font-semibold text-(--muted-foreground) uppercase tracking-wide inline-flex items-center gap-1">
+        <Icon name="user" /> Create Demo User
       </h3>
       <p className="text-(length:--text-sm) text-(--muted-foreground)">
         PIN defaults to <strong>0000</strong>, role defaults to <strong>USER</strong>.

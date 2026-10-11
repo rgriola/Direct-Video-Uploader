@@ -9,6 +9,7 @@ import { MUX_ENV_KEY } from '../lib/mux.js';
 import { verifyPin, hashPin, dbRetry } from '../lib/utils.js';
 import { redactCompanyCode, redactPersonName, redactPhoneNumber } from '../lib/redact.js';
 import { CLIP_COOKIE_NAME, clipCookieOpts } from '../lib/clipAuth.js';
+import { icon } from '../lib/icons.js';
 
 /** Escape HTML special characters to prevent XSS (#5). */
 function escapeHtml(str) {
@@ -132,7 +133,7 @@ ${googleFontsHead}
 <style>${loginPageCSS}</style>
 </head><body>
 <div class="card">
-    <div class="logo"><span>🎬</span></div>
+    <div class="logo"><span>${icon('clips', { size: '2em' })}</span></div>
     <h1>Sign in to view this clip</h1>
     ${error ? `<div class="error">${escapeHtml(error)}</div>` : ''}
     <form method="POST" action="/clips/login">
@@ -345,7 +346,7 @@ ${googleFontsHead}
                     <link rel="stylesheet" href="/tokens.css">
                     <style>body{background:var(--background);color:var(--foreground);font-family:var(--font-sans);display:flex;align-items:center;justify-content:center;height:100vh;margin:0;flex-direction:column;gap:12px}
                     h1{font-size:var(--text-2xl);opacity:0.7}p{font-size:var(--text-sm);opacity:0.4}a{color:var(--accent-blue)}</style></head>
-                    <body><h1>🔒 Access Denied</h1><p>This clip belongs to a different organization.</p>
+                    <body><h1>${icon('locked', { size: '1.2em' })} Access Denied</h1><p>This clip belongs to a different organization.</p>
                     <a href="/clips/login">Sign in with a different account</a></body></html>
                 `);
                 return;
@@ -374,76 +375,76 @@ ${googleFontsHead}
 
         // ── Asset-level metadata ──
         const assetRows = [];
-        assetRows.push({ icon: '🆔', label: 'Asset ID', value: asset.id });
-        if (asset.mediasourceId) assetRows.push({ icon: '📡', label: 'Mediasource ID', value: asset.mediasourceId });
-        if (asset.mediasourceUrl) assetRows.push({ icon: '🌐', label: 'Mediasource URL', value: asset.mediasourceUrl });
-        if (asset.originalFileName) assetRows.push({ icon: '📄', label: 'Original File', value: asset.originalFileName });
-        if (asset.user) assetRows.push({ icon: '👤', label: 'Uploaded By', value: `${asset.user.name}${asset.user.team ? ' · ' + asset.user.team : ''}` });
-        if (asset.user?.organization?.companyName) assetRows.push({ icon: '🏢', label: 'Organization', value: asset.user.organization.companyName });
-        assetRows.push({ icon: '📊', label: 'Status', value: asset.status });
-        if (asset.clipCount) assetRows.push({ icon: '🎞', label: 'Clip Count', value: String(asset.clipCount) });
+        assetRows.push({ icon: 'id', label: 'Asset ID', value: asset.id });
+        if (asset.mediasourceId) assetRows.push({ icon: 'activity', label: 'Mediasource ID', value: asset.mediasourceId });
+        if (asset.mediasourceUrl) assetRows.push({ icon: 'url', label: 'Mediasource URL', value: asset.mediasourceUrl });
+        if (asset.originalFileName) assetRows.push({ icon: 'file', label: 'Original File', value: asset.originalFileName });
+        if (asset.user) assetRows.push({ icon: 'user', label: 'Uploaded By', value: `${asset.user.name}${asset.user.team ? ' · ' + asset.user.team : ''}` });
+        if (asset.user?.organization?.companyName) assetRows.push({ icon: 'organization', label: 'Organization', value: asset.user.organization.companyName });
+        assetRows.push({ icon: 'status', label: 'Status', value: asset.status });
+        if (asset.clipCount) assetRows.push({ icon: 'clipCount', label: 'Clip Count', value: String(asset.clipCount) });
         if (asset.totalDuration) {
             const m = Math.floor(asset.totalDuration / 60);
             const s = asset.totalDuration % 60;
-            assetRows.push({ icon: '⏱', label: 'Total Duration', value: `${m}:${String(s).padStart(2, '0')}` });
+            assetRows.push({ icon: 'duration', label: 'Total Duration', value: `${m}:${String(s).padStart(2, '0')}` });
         }
-        assetRows.push({ icon: '📅', label: 'Created', value: new Date(asset.createdAt).toLocaleString() });
-        assetRows.push({ icon: '🔄', label: 'Updated', value: new Date(asset.updatedAt).toLocaleString() });
+        assetRows.push({ icon: 'date', label: 'Created', value: new Date(asset.createdAt).toLocaleString() });
+        assetRows.push({ icon: 'refresh', label: 'Updated', value: new Date(asset.updatedAt).toLocaleString() });
 
         // ── Clip-level metadata (video technical) ──
         const clipRows = [];
         if (clip) {
-            clipRows.push({ icon: '🆔', label: 'Clip ID', value: clip.id });
-            if (clip.originalFileName) clipRows.push({ icon: '📄', label: 'Original File', value: clip.originalFileName });
-            if (clip.codec) clipRows.push({ icon: '🎥', label: 'Codec', value: clip.codec });
-            if (clip.resolution) clipRows.push({ icon: '📐', label: 'Resolution', value: clip.resolution });
-            if (clip.orientation) clipRows.push({ icon: '↔️', label: 'Orientation', value: clip.orientation });
+            clipRows.push({ icon: 'id', label: 'Clip ID', value: clip.id });
+            if (clip.originalFileName) clipRows.push({ icon: 'file', label: 'Original File', value: clip.originalFileName });
+            if (clip.codec) clipRows.push({ icon: 'video', label: 'Codec', value: clip.codec });
+            if (clip.resolution) clipRows.push({ icon: 'resolution', label: 'Resolution', value: clip.resolution });
+            if (clip.orientation) clipRows.push({ icon: 'orientation', label: 'Orientation', value: clip.orientation });
             if (clip.duration) {
                 const min = Math.floor(clip.duration / 60);
                 const sec = clip.duration % 60;
-                clipRows.push({ icon: '⏱', label: 'Duration', value: `${min}:${String(sec).padStart(2, '0')}` });
+                clipRows.push({ icon: 'duration', label: 'Duration', value: `${min}:${String(sec).padStart(2, '0')}` });
             }
             if (clip.fileSize) {
                 const bytes = Number(clip.fileSize);
                 const mb = bytes / 1_000_000;
-                clipRows.push({ icon: '📁', label: 'File Size', value: mb >= 1000 ? `${(mb / 1000).toFixed(2)} GB` : `${mb.toFixed(1)} MB` });
+                clipRows.push({ icon: 'fileSize', label: 'File Size', value: mb >= 1000 ? `${(mb / 1000).toFixed(2)} GB` : `${mb.toFixed(1)} MB` });
             }
-            if (clip.deviceModel) clipRows.push({ icon: '📱', label: 'Device', value: clip.deviceModel });
-            if (clip.osVersion) clipRows.push({ icon: '⚙️', label: 'OS Version', value: clip.osVersion });
-            if (clip.capturedAt) clipRows.push({ icon: '🕐', label: 'Captured At', value: new Date(clip.capturedAt).toLocaleString() });
+            if (clip.deviceModel) clipRows.push({ icon: 'device', label: 'Device', value: clip.deviceModel });
+            if (clip.osVersion) clipRows.push({ icon: 'settings', label: 'OS Version', value: clip.osVersion });
+            if (clip.capturedAt) clipRows.push({ icon: 'time', label: 'Captured At', value: new Date(clip.capturedAt).toLocaleString() });
             if (clip.gpsLat && clip.gpsLon) {
                 const lat = clip.gpsLat.toFixed(6);
                 const lon = clip.gpsLon.toFixed(6);
-                clipRows.push({ icon: '📍', label: 'GPS', value: `${lat}, ${lon}`, link: `https://maps.google.com/?q=${lat},${lon}` });
+                clipRows.push({ icon: 'gps', label: 'GPS', value: `${lat}, ${lon}`, link: `https://maps.google.com/?q=${lat},${lon}` });
             }
-            if (clip.gpsAltitude != null) clipRows.push({ icon: '⛰️', label: 'Altitude', value: `${clip.gpsAltitude.toFixed(1)} m` });
-            clipRows.push({ icon: '📊', label: 'Clip Status', value: clip.status });
-            if (clip.storageUrl) clipRows.push({ icon: '💾', label: 'Storage URL', value: clip.storageUrl });
-            if (clip.streamUrl) clipRows.push({ icon: '📺', label: 'Stream URL', value: clip.streamUrl });
-            if (clip.muxAssetId) clipRows.push({ icon: '🎬', label: 'Mux Asset ID', value: clip.muxAssetId });
-            if (clip.muxPlaybackId) clipRows.push({ icon: '▶️', label: 'Mux Playback ID', value: clip.muxPlaybackId });
-            if (clip.muxUploadId) clipRows.push({ icon: '📤', label: 'Mux Upload ID', value: clip.muxUploadId });
-            clipRows.push({ icon: '📅', label: 'Clip Created', value: new Date(clip.createdAt).toLocaleString() });
+            if (clip.gpsAltitude != null) clipRows.push({ icon: 'altitude', label: 'Altitude', value: `${clip.gpsAltitude.toFixed(1)} m` });
+            clipRows.push({ icon: 'status', label: 'Clip Status', value: clip.status });
+            if (clip.storageUrl) clipRows.push({ icon: 'storage', label: 'Storage URL', value: clip.storageUrl });
+            if (clip.streamUrl) clipRows.push({ icon: 'stream', label: 'Stream URL', value: clip.streamUrl });
+            if (clip.muxAssetId) clipRows.push({ icon: 'clips', label: 'Mux Asset ID', value: clip.muxAssetId });
+            if (clip.muxPlaybackId) clipRows.push({ icon: 'play', label: 'Mux Playback ID', value: clip.muxPlaybackId });
+            if (clip.muxUploadId) clipRows.push({ icon: 'outgoing', label: 'Mux Upload ID', value: clip.muxUploadId });
+            clipRows.push({ icon: 'date', label: 'Clip Created', value: new Date(clip.createdAt).toLocaleString() });
         }
 
         // ── Form response metadata ──
         const formRows = [];
         if (form) {
-            formRows.push({ icon: '🆔', label: 'Form ID', value: form.id });
-            if (form.slug) formRows.push({ icon: '🏷', label: 'Slug / Title', value: form.slug });
-            if (form.type) formRows.push({ icon: '📋', label: 'Type', value: form.type });
-            if (form.priority) formRows.push({ icon: '🔺', label: 'Priority', value: form.priority });
-            if (form.description) formRows.push({ icon: '📝', label: 'Description', value: form.description });
-            if (form.extra) formRows.push({ icon: '📦', label: 'Extra Data', value: JSON.stringify(form.extra) });
-            formRows.push({ icon: '📅', label: 'Submitted', value: new Date(form.submittedAt).toLocaleString() });
+            formRows.push({ icon: 'id', label: 'Form ID', value: form.id });
+            if (form.slug) formRows.push({ icon: 'tag', label: 'Slug / Title', value: form.slug });
+            if (form.type) formRows.push({ icon: 'form', label: 'Type', value: form.type });
+            if (form.priority) formRows.push({ icon: 'priority', label: 'Priority', value: form.priority });
+            if (form.description) formRows.push({ icon: 'description', label: 'Description', value: form.description });
+            if (form.extra) formRows.push({ icon: 'assets', label: 'Extra Data', value: JSON.stringify(form.extra) });
+            formRows.push({ icon: 'date', label: 'Submitted', value: new Date(form.submittedAt).toLocaleString() });
         }
 
         // Build HTML helper
         const renderRows = (rows) => rows.map(r => {
             const val = r.link
-                ? `<a href="${escapeHtml(r.link)}" target="_blank" rel="noopener" style="color:var(--accent-blue);text-decoration:underline;text-underline-offset:2px">${escapeHtml(r.value)} ↗</a>`
+                ? `<a href="${escapeHtml(r.link)}" target="_blank" rel="noopener" style="color:var(--accent-blue);text-decoration:underline;text-underline-offset:2px">${escapeHtml(r.value)} ${icon('arrowUpRight', { size: '0.85em' })}</a>`
                 : escapeHtml(r.value);
-            return `<div class="meta-row"><span class="meta-icon">${r.icon}</span><span class="meta-label">${escapeHtml(r.label)}</span><span class="meta-value">${val}</span></div>`;
+            return `<div class="meta-row"><span class="meta-icon">${icon(r.icon)}</span><span class="meta-label">${escapeHtml(r.label)}</span><span class="meta-value">${val}</span></div>`;
         }).join('\n');
 
         const hasMuxPlayback = !!(clip?.muxPlaybackId);
@@ -460,6 +461,11 @@ ${googleFontsHead}
             : '';
 
         const googleFontsLink = `<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet"><link rel="stylesheet" href="/tokens.css">`;
+
+        // Precomputed copy-link button labels (client-side JS below sets these
+        // via innerHTML since they contain the inline icon SVG).
+        const copyLinkLabel = `${icon('copy', { size: '0.9em' })} Copy Link`;
+        const copyLinkCopiedLabel = `${icon('success', { size: '0.9em' })} Copied!`;
 
         const html = `<!DOCTYPE html>
 <html lang="en">
@@ -857,7 +863,7 @@ ${googleFontsHead}
                 <h1>${escapeHtml(displayTitle)}</h1>
                 ${asset.mediasourceId ? `<div class="msid">#${escapeHtml(asset.mediasourceId)}</div>` : ''}
             </div>
-            <a href="/" class="dashboard-link">← Dashboard</a>
+            <a href="/" class="dashboard-link">${icon('arrowLeft', { size: '0.85em' })} Dashboard</a>
         </div>
 
         <div class="card" id="video-card">
@@ -874,11 +880,11 @@ ${googleFontsHead}
                     preload="auto"
                   ></mux-player>
                   <div class="video-placeholder" id="video-loading">
-                    <div class="placeholder-icon">🎬</div>
+                    <div class="placeholder-icon">${icon('clips', { size: '2.5em' })}</div>
                     <div class="placeholder-label">Loading video&hellip;</div>
                   </div>`
                     : `<div class="video-placeholder" id="video-placeholder">
-                    <div class="placeholder-icon">🎬</div>
+                    <div class="placeholder-icon">${icon('clips', { size: '2.5em' })}</div>
                     <div class="placeholder-label">Video Processing</div>
                     <div class="placeholder-sub" id="placeholder-status">${escapeHtml(asset.status)} &mdash; checking every 5s&hellip;</div>
                    </div>`
@@ -886,13 +892,13 @@ ${googleFontsHead}
             </div>
             <div class="video-bar">
                 <span class="status status-${escapeHtml(asset.status)}" id="status-pill">${escapeHtml(asset.status)}</span>
-                <button class="copy-link" onclick="copyLink(this)">📋 Copy Link</button>
+                <button class="copy-link" onclick="copyLink(this)">${copyLinkLabel}</button>
             </div>
         </div>
 
         ${!form && asset.status === 'READY' ? `
         <div class="alert-banner">
-            <span class="alert-icon">🚨</span>
+            <span class="alert-icon">${icon('alert')}</span>
             <div>
                 <div class="alert-title">NO CONTEXT FORM</div>
                 <div class="alert-detail">Slug and description are missing for this asset.</div>
@@ -902,21 +908,21 @@ ${googleFontsHead}
 
         ${clipRows.length > 0 ? `
         <div class="card">
-            <div class="card-header"><h3>🎥 Video / Clip</h3></div>
+            <div class="card-header"><h3>${icon('video', { size: '0.9em' })} Video / Clip</h3></div>
             ${renderRows(clipRows)}
         </div>
         ` : ''}
 
         ${formRows.length > 0 ? `
         <div class="card">
-            <div class="card-header"><h3>📋 Context Form</h3></div>
+            <div class="card-header"><h3>${icon('form', { size: '0.9em' })} Context Form</h3></div>
             ${renderRows(formRows)}
         </div>
         ` : ''}
 
         ${clip?.transcript ? `
         <div class="card">
-            <div class="card-header"><h3>📝 Transcript</h3></div>
+            <div class="card-header"><h3>${icon('transcript', { size: '0.9em' })} Transcript</h3></div>
             <div style="padding:16px">
                 <p style="font-size:var(--text-sm);line-height:1.6;color:var(--foreground);white-space:pre-wrap;max-height:300px;overflow-y:auto">${escapeHtml(clip.transcript)}</p>
             </div>
@@ -925,7 +931,7 @@ ${googleFontsHead}
 
         ${assetRows.length > 0 ? `
         <div class="card">
-            <div class="card-header"><h3>📦 Asset</h3></div>
+            <div class="card-header"><h3>${icon('assets', { size: '0.9em' })} Asset</h3></div>
             ${renderRows(assetRows)}
         </div>
         ` : ''}
@@ -962,10 +968,10 @@ ${googleFontsHead}
 
     function copyLink(btn) {
         navigator.clipboard.writeText(window.location.href).then(() => {
-            btn.textContent = '✅ Copied!';
+            btn.innerHTML = '${copyLinkCopiedLabel}';
             btn.classList.add('copied');
             setTimeout(() => {
-                btn.textContent = '📋 Copy Link';
+                btn.innerHTML = '${copyLinkLabel}';
                 btn.classList.remove('copied');
             }, 2000);
         }).catch(() => {
@@ -976,10 +982,10 @@ ${googleFontsHead}
             tmp.select();
             document.execCommand('copy');
             document.body.removeChild(tmp);
-            btn.textContent = '✅ Copied!';
+            btn.innerHTML = '${copyLinkCopiedLabel}';
             btn.classList.add('copied');
             setTimeout(() => {
-                btn.textContent = '📋 Copy Link';
+                btn.innerHTML = '${copyLinkLabel}';
                 btn.classList.remove('copied');
             }, 2000);
         });
@@ -1047,7 +1053,7 @@ ${googleFontsHead}
                         wrap.insertBefore(player, placeholder);
                         placeholder.id = 'video-loading';
                         placeholder.innerHTML =
-                            '<div class="placeholder-icon">🎬</div>' +
+                            '<div class="placeholder-icon">${icon('clips', { size: '2.5em' })}</div>' +
                             '<div class="placeholder-label">Loading video&hellip;</div>';
                         hideOverlayWhenReady(player, placeholder);
 

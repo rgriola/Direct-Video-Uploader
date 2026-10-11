@@ -1,4 +1,4 @@
-import { LogOut } from "lucide-react";
+import { Icon } from "./Icon";
 
 interface HeaderProps {
   onLogout: () => void;
@@ -36,7 +36,7 @@ export function Header({ onLogout, userName, userPhone, userCompany }: HeaderPro
           aria-label="Log out"
           className="flex items-center gap-1 px-3 py-2 rounded-(--radius-lg) text-(length:--text-sm) font-medium bg-(--card) border border-(--border) text-(--muted-foreground) hover:bg-(--card-hover) hover:text-(--accent-red) hover:border-(--accent-red)/50 transition-all cursor-pointer shrink-0"
         >
-          <LogOut className="w-3.5 h-3.5" />
+          <Icon name="logout" className="w-3.5 h-3.5" />
         </button>
       </div>
     </header>

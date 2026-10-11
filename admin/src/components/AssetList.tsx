@@ -19,22 +19,22 @@
  */
 
 import { useState } from "react";
-import { ChevronDown } from "lucide-react";
 import type { Asset } from "@/lib/types";
 import { panelHeader, subTextPanelHeader } from "@/lib/types";
+import { Icon, type IconName } from "./Icon";
 
 // ─── Status Configuration ────────────────────────────────────────────
 //
 // Maps asset.status values to visual indicators used in AssetRow.
-//   statusIcons   → emoji inside the colored circle
+//   statusIcons   → icon name shown inside the colored circle
 //   statusClasses → Tailwind classes for the status pill badge
 //   priorityColors → text color for the priority field in form response
 
-const statusIcons: Record<string, string> = {
-  READY: "✅",
-  PROCESSING: "⏳",
-  UPLOADING: "📤",
-  ERROR: "❌",
+const statusIcons: Record<string, IconName> = {
+  READY: "success",
+  PROCESSING: "processing",
+  UPLOADING: "outgoing",
+  ERROR: "error",
 };
 
 const statusClasses: Record<string, string> = {
@@ -72,10 +72,10 @@ export function AssetList({ assets, isLoading }: AssetListProps) {
 
   return (
     <div className="bg-(--card) border border-(--border-subtle) rounded-(--radius-xl) overflow-hidden">
-      {/* Panel header — "📦 Assets [count]" */}
+      {/* Panel header — "Assets [count]" */}
       <div className={panelHeader}>
         <h2 className="text-(length:--text-lg) font-semibold flex items-center gap-2">
-          📦 Assets{" "}
+          <Icon name="assets" /> Assets{" "}
           <span className={subTextPanelHeader}>
             {assets?.length ?? 0}
           </span>
@@ -85,9 +85,9 @@ export function AssetList({ assets, isLoading }: AssetListProps) {
       {/* Scrollable list — max 400px, then scrolls */}
       <div className="max-h-100 overflow-y-auto scrollbar-hide">
         {isLoading ? (
-          <Empty icon="📦" text="Loading assets..." />
+          <Empty icon="assets" text="Loading assets..." />
         ) : !assets?.length ? (
-          <Empty icon="📦" text="No Assets on the server. Uploaded Video will appear here." />
+          <Empty icon="assets" text="No Assets on the server. Uploaded Video will appear here." />
         ) : (
           assets.map((asset) => (
             <AssetRow
@@ -122,14 +122,13 @@ function AssetRow({ asset, isExpanded, onToggle }: AssetRowProps) {
   // Title: show slug if available, fall back to mediasource ID, then asset ID
   const title = asset.formResponse?.slug || asset.mediasourceId || asset.id;
 
-  // One-line summary: "#100000017 · 1 clip · 2:05 · 1920x1080 · by Rod Griola · 📋 Form"
+  // One-line summary: "#100000017 · 1 clip · 2:05 · 1920x1080 · by Rod Griola"
   const details = [
     asset.mediasourceId ? `#${asset.mediasourceId}` : null,
     asset.clipCount ? `${asset.clipCount} clip${asset.clipCount !== 1 ? "s" : ""}` : null,
     formatDuration(asset.totalDuration) || null,
     clip?.resolution ?? null,
     `by ${asset.user?.name ?? "Unknown"}`,
-    asset.formResponse ? "📋 Form" : null,
   ]
     .filter(Boolean)
     .join(" · ");
@@ -148,7 +147,7 @@ function AssetRow({ asset, isExpanded, onToggle }: AssetRowProps) {
       >
         {/* Status icon circle */}
         <div className="w-10.5 h-10.5 rounded-(--radius-lg) bg-(--secondary) flex items-center justify-center text-(length:--text-base) mr-3.5 shrink-0">
-          {statusIcons[asset.status] ?? "📦"}
+          <Icon name={statusIcons[asset.status] ?? "assets"} />
         </div>
 
         {/* Title + detail line */}
@@ -156,6 +155,11 @@ function AssetRow({ asset, isExpanded, onToggle }: AssetRowProps) {
           <p className="text-(length:--text-sm) font-semibold truncate">{title}</p>
           <p className="text-(length:--text-xs) text-(--muted-foreground) mt-0.5 flex items-center gap-2">
             {details}
+            {asset.formResponse && (
+              <span className="inline-flex items-center gap-1 shrink-0">
+                <Icon name="form" /> Form
+              </span>
+            )}
           </p>
         </div>
 
@@ -163,13 +167,14 @@ function AssetRow({ asset, isExpanded, onToggle }: AssetRowProps) {
         <div className="shrink-0 flex items-center gap-2">
           {missingForm && (
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-(--radius-md) text-(length:--text-xs) font-semibold bg-(--accent-red-glow) text-(--accent-red)">
-              ⚠️ No Form
+              <Icon name="warning" /> No Form
             </span>
           )}
           <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-(--radius-md) text-(length:--text-xs) font-semibold ${statusClasses[asset.status] ?? ""}`}>
             {asset.status}
           </span>
-          <ChevronDown
+          <Icon
+            name="expand"
             className={`shrink-0 w-4 h-4 text-(--muted-foreground) transition-transform ${isExpanded ? "rotate-180" : ""}`}
           />
         </div>
@@ -181,7 +186,7 @@ function AssetRow({ asset, isExpanded, onToggle }: AssetRowProps) {
           {/* Missing form alert */}
           {missingForm && (
             <div className="flex items-center gap-2 mb-4 px-4 py-2 rounded-(--radius-lg) bg-(--accent-red-glow) border border-(--accent-red)/25">
-              <span className="text-(length:--text-base)">🚨</span>
+              <span className="text-(length:--text-base)"><Icon name="alert" /></span>
               <div className="text-(length:--text-xs)">
                 <span className="font-semibold text-(--accent-red)">NO CONTEXT FORM</span>
                 <span className="text-(--muted-foreground)"> Slug and description are missing for this asset.</span>
@@ -204,9 +209,9 @@ function AssetRow({ asset, isExpanded, onToggle }: AssetRowProps) {
               href={clipUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-(length:--text-xs) font-semibold text-(--accent-blue) hover:underline no-underline"
+              className="text-(length:--text-xs) font-semibold text-(--accent-blue) hover:underline no-underline inline-flex items-center gap-1"
             >
-              Play Clip ↗
+              Play Clip <Icon name="arrowUpRight" />
             </a>
           </div>
         </div>
@@ -266,10 +271,10 @@ function DetailRow({ label, value, className = "" }: { label: string; value: str
 }
 
 /** Placeholder shown when the list is loading or has no items */
-function Empty({ icon, text }: { icon: string; text: string }) {
+function Empty({ icon, text }: { icon: IconName; text: string }) {
   return (
     <div className="py-10 px-6 text-center text-(--muted-foreground) text-(length:--text-sm)">
-      <div className="text-(length:--text-3xl) mb-2 opacity-50">{icon}</div>
+      <div className="text-(length:--text-3xl) mb-2 opacity-50 flex justify-center"><Icon name={icon} /></div>
       {text}
     </div>
   );

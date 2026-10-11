@@ -1,5 +1,6 @@
 import type { LogEntry } from "@/lib/types";
 import { panelHeader } from "@/lib/types";
+import { Icon } from "./Icon";
 
 const typeClasses: Record<string, string> = {
   ws: "bg-(--accent-purple-glow) text-(--accent-purple)",
@@ -20,7 +21,7 @@ export function ActivityLog({ logs, onClear }: ActivityLogProps) {
 
       <div className={panelHeader}>
 
-        <h2 className="text-(length:--text-lg) font-semibold flex items-center gap-2">📡 Activity Log</h2>
+        <h2 className="text-(length:--text-lg) font-semibold flex items-center gap-2"><Icon name="activity" /> Activity Log</h2>
         <button
           onClick={onClear}
           className="px-2 py-1 rounded-(--radius-lg) text-(length:--text-xs) font-medium bg-(--card) border border-(--border) text-(--muted-foreground) hover:bg-(--card-hover) hover:text-(--foreground) transition-all cursor-pointer"
@@ -32,7 +33,7 @@ export function ActivityLog({ logs, onClear }: ActivityLogProps) {
       <div className="max-h-75 overflow-y-auto scrollbar-hide px-6 py-4 font-mono text-(length:--text-xs) leading-[1.8]">
         {logs.length === 0 ? (
           <div className="py-10 text-center text-(--muted-foreground) text-(length:--text-sm) font-sans">
-            <div className="text-(length:--text-3xl) mb-2 opacity-50">📡</div>
+            <div className="text-(length:--text-3xl) mb-2 opacity-50 flex justify-center"><Icon name="activity" /></div>
             Waiting for activity...
           </div>
         ) : (
