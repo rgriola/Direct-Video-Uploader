@@ -4,8 +4,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 const originalNodeEnv = process.env.NODE_ENV;
 const originalPublicUrl = process.env.PUBLIC_URL;
 const originalPort = process.env.PORT;
+const originalExtraOrigins = process.env.EXTRA_CORS_ORIGINS;
 
-async function loadConfig({ nodeEnv, publicUrl, port }) {
+async function loadConfig({ nodeEnv, publicUrl, port, extraOrigins }) {
     if (nodeEnv === undefined) delete process.env.NODE_ENV;
     else process.env.NODE_ENV = nodeEnv;
 
@@ -14,6 +15,9 @@ async function loadConfig({ nodeEnv, publicUrl, port }) {
 
     if (port === undefined) delete process.env.PORT;
     else process.env.PORT = port;
+
+    if (extraOrigins === undefined) delete process.env.EXTRA_CORS_ORIGINS;
+    else process.env.EXTRA_CORS_ORIGINS = extraOrigins;
 
     vi.resetModules();
     return import('../lib/config.js');
@@ -28,6 +32,9 @@ afterEach(() => {
 
     if (originalPort === undefined) delete process.env.PORT;
     else process.env.PORT = originalPort;
+
+    if (originalExtraOrigins === undefined) delete process.env.EXTRA_CORS_ORIGINS;
+    else process.env.EXTRA_CORS_ORIGINS = originalExtraOrigins;
 
     vi.resetModules();
 });
@@ -75,5 +82,39 @@ describe('lib/config', () => {
             'https://custom.example.com',
             'https://www.custom.example.com',
         ]);
+    });
+
+    it('appends EXTRA_CORS_ORIGINS in production', async () => {
+        const config = await loadConfig({
+            nodeEnv: 'production',
+            publicUrl: undefined,
+            port: undefined,
+            extraOrigins: 'https://dev.ms-fixer.com, https://another.example.com',
+        });
+
+        expect(config.CORS_ORIGINS).toEqual([
+            'https://ms-fixer.com',
+            'https://www.ms-fixer.com',
+            'https://dev.ms-fixer.com',
+            'https://another.example.com',
+        ]);
+        expect(config.WS_CORS_ORIGINS).toEqual([
+            'https://ms-fixer.com',
+            'https://www.ms-fixer.com',
+            'https://dev.ms-fixer.com',
+            'https://another.example.com',
+        ]);
+    });
+
+    it('ignores EXTRA_CORS_ORIGINS in development', async () => {
+        const config = await loadConfig({
+            nodeEnv: 'development',
+            publicUrl: undefined,
+            port: undefined,
+            extraOrigins: 'https://dev.ms-fixer.com',
+        });
+
+        expect(config.CORS_ORIGINS).toBe(true);
+        expect(config.WS_CORS_ORIGINS).toBe('*');
     });
 });

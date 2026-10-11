@@ -35,3 +35,19 @@
 - Line Length should be no more that 60 charecters
 
 - Web Accessibility from w3.org should be observed  
+
+
+Needs Password
+sudo cp /etc/cloudflared/config.yml /etc/cloudflared/config.yml.bak
+  -  Backs up the current config (in case we need to roll back).
+
+sudo cp /tmp/cloudflared-config-new.yml /etc/cloudflared/config.yml
+  -  Installs the new config (adds ms-fixer.com alongside dev.ms-fixer.com, both routing to your local Fastify server on port 3000).
+
+sudo launchctl kickstart -k system/com.cloudflare.cloudflared
+   - Restarts the cloudflared background service so it picks up the change.
+
+Confirm clean start
+sudo launchctl list | grep cloudflared
+tail -20 /Library/Logs/com.cloudflare.cloudflared.out.log
+

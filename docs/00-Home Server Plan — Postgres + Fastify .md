@@ -190,3 +190,18 @@ Cloudflare edge → outbound TLS tunnel from MacBook Air (`cloudflared`, no open
 - `~/Library/LaunchAgents/com.msfixer.fastify.plist`
 - `~/Library/LaunchAgents/com.msfixer.pgdump.plist`
 - `docs/HOME_SERVER_RUNBOOK.md`
+
+---
+
+## Addendum — October 11, 2026: production domain cutover
+
+Cloud Run's data was confirmed to be demo-only and was deleted by Rod, clearing the way to cut the apex domain over to the home server (previously `ms-fixer.com` still pointed at Cloud Run/Cloud SQL as a fallback while `dev.ms-fixer.com` carried the home-server traffic; the iOS Release build calls `ms-fixer.com` directly for API/WebSocket, so a redirect-only approach wasn't viable).
+
+- [x] `cloudflared tunnel route dns -f fixer-dev ms-fixer.com` — overwrote the apex A record (previously `142.250.72.19`, Cloud Run) with a CNAME to the `fixer-dev` tunnel
+- [x] Added `ms-fixer.com` as a second ingress hostname (alongside `dev.ms-fixer.com`) in both `~/.cloudflared/config.yml` and `/etc/cloudflared/config.yml` (system service, applied via `sudo` + `launchctl kickstart -k system/com.cloudflare.cloudflared`)
+- [x] Extended all 5 Cloudflare Zero Trust Access applications (Dev App, API Bypass, Clips Bypass, Uploads Bypass, SocketIO Bypass) with an additional public hostname entry for `ms-fixer.com`, mirroring each existing `dev.ms-fixer.com` path pattern
+- [x] `server/.env`: `PUBLIC_URL` switched from `https://dev.ms-fixer.com` to `https://ms-fixer.com`; added `EXTRA_CORS_ORIGINS="https://dev.ms-fixer.com"` so the dev hostname remains a valid CORS/WebSocket origin
+- [x] `server/src/lib/config.js`: added `EXTRA_CORS_ORIGINS` (comma-separated) support so `CORS_ORIGINS`/`WS_CORS_ORIGINS` aren't limited to a single `PUBLIC_URL` + its `www.` variant — covered by new tests in `server/src/__tests__/config.test.js`
+- [x] Restarted the `com.msfixer.fastify` LaunchAgent to pick up the new `.env`; verified locally that CORS now allows `https://ms-fixer.com` and `https://dev.ms-fixer.com` but rejects arbitrary origins
+- [x] Verified in-browser: `https://ms-fixer.com/` now shows the Cloudflare Access OTP gate (previously went straight to the app's own login, i.e. unprotected by Zero Trust) and successfully logs in through to the admin dashboard
+- Cloud Run is now fully orphaned (no DNS points to it for either hostname) — decommissioning it is a separate, not-yet-scheduled decision

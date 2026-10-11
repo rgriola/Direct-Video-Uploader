@@ -68,3 +68,5 @@ mux-mediasource-fixer.env
 
 # Stray FFmpeg MPEG-TS captures (*.ts = Transport Stream, not TypeScript)
 output.ts
+
+01-first-file.md

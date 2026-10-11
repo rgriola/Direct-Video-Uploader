@@ -1,6 +1,8 @@
-# Home Server Runbook — dev.ms-fixer.com
+# Home Server Runbook — ms-fixer.com / dev.ms-fixer.com
 
 Operational reference for the MacBook Air home server hosting Postgres 18 + Fastify, exposed via Cloudflare Tunnel. See `00-Home Server Plan — Postgres + Fastify .md` for the full setup history and rationale.
+
+**Domains:** As of Oct 11, 2026 the apex `ms-fixer.com` (production, used by the iOS Release build and the public site) and `dev.ms-fixer.com` (kept as a secondary/testing hostname) both route through the same Cloudflare Tunnel to this home server. Cloud Run no longer receives any traffic for either hostname.
 
 ## Services running on this Mac
 
@@ -40,7 +42,8 @@ cd ~/apps/direct-video-uploader/server && npx prisma generate
 
 ```bash
 curl http://127.0.0.1:3000/api/health          # local
-curl https://dev.ms-fixer.com/api/health       # through tunnel (should bypass Cloudflare Access)
+curl https://ms-fixer.com/api/health           # through tunnel, production domain (should bypass Cloudflare Access)
+curl https://dev.ms-fixer.com/api/health       # through tunnel, secondary domain (should bypass Cloudflare Access)
 ```
 
 `lsof -iTCP:5432 -sTCP:LISTEN` and `lsof -iTCP:3000 -sTCP:LISTEN` should both show `localhost` only, never `*`.
@@ -94,14 +97,14 @@ Verify row counts against the live DB before treating the restore as authoritati
 
 ## Monitoring
 
-- Uptime: UptimeRobot free tier, monitoring `https://dev.ms-fixer.com/api/health` every 5 minutes.
-- Cloudflare Access protects the dashboard (site root) — bypassed for `/api/*`, `/socket.io/*`, `/uploads/*`, `/clips/*`.
+- Uptime: UptimeRobot free tier, monitoring `https://ms-fixer.com/api/health` every 5 minutes (also safe to point at `https://dev.ms-fixer.com/api/health`, same backend).
+- Cloudflare Access protects the dashboard (site root) on both `ms-fixer.com` and `dev.ms-fixer.com` — bypassed for `/api/*`, `/socket.io/*`, `/uploads/*`, `/clips/*` on each.
 
 ## Rollback (see main plan doc for full detail)
 
-- iOS: switch Debug scheme back to Cloud Run URL
+- iOS: switch Debug scheme back to Cloud Run URL; Release build uses `ms-fixer.com` directly, so a DNS-level rollback (below) is required to revert production traffic
 - Home: `launchctl unload ~/Library/LaunchAgents/com.msfixer.fastify.plist` + `brew services stop postgresql@18`
-- Cloudflare: delete `dev.ms-fixer.com` DNS or `cloudflared tunnel delete fixer-dev`
+- Cloudflare: delete the `ms-fixer.com` and/or `dev.ms-fixer.com` DNS routes (or `cloudflared tunnel delete fixer-dev`), and remove the corresponding public hostname from each of the 5 Zero Trust Access applications
 
 ## Viewing Database 
 - cd ~/apps/direct-video-uploader/server

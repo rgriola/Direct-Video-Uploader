@@ -172,9 +172,9 @@ cd ios && xcodegen generate
 
 | User          | Phone        | PIN    | Role  |
 | ------------- | ------------ | ------ | ----- |
-| Rod Griola    | `9176717330` | `3218` | ADMIN |
-| David Burgess | `5055034455` | `1234` | USER  |
-| Carrie Smith  | `5055551234` | `1234` | USER  |
+| Rod Griola    | `9176717330` | `3xxx` | ADMIN |
+| David Burgess | `5055034455` | `xxxx` | USER  |
+| Carrie Smith  | `5055551234` | `xxxx` | USER  |
 
 ---
 
@@ -219,11 +219,12 @@ The project is fully containerized and uses **Google Cloud Build** for automated
 
 ## Home Server (Cloudflare Tunnel)
 
-For pre-production development, the Fastify server and Postgres 18 run on a home MacBook Air instead of Cloud Run/Cloud SQL, exposed via a **Cloudflare Tunnel** at `dev.ms-fixer.com`. Postgres stays loopback-only (SCRAM auth, no open ports); only the Fastify server is tunneled out.
+The Fastify server and Postgres 18 run on a home MacBook Air instead of Cloud Run/Cloud SQL, exposed via a **Cloudflare Tunnel**. Both the production domain `ms-fixer.com` and the secondary/testing domain `dev.ms-fixer.com` route to this home server (Cloud Run no longer receives traffic for either). Postgres stays loopback-only (SCRAM auth, no open ports); only the Fastify server is tunneled out.
 
 - **Services**: `brew services` manages Postgres 18; a `launchd` `LaunchAgent` (`~/Library/LaunchAgents/com.msfixer.fastify.plist`) keeps Fastify running (`KeepAlive`, auto-restart).
-- **Tunnel**: `cloudflared` runs as a system `LaunchDaemon`, config at `/etc/cloudflared/config.yml`, routing `dev.ms-fixer.com` → `http://localhost:3000`.
-- **Access control**: Cloudflare Zero Trust protects the admin dashboard (site root) with email one-time-PIN login. `/api/*`, `/socket.io/*`, `/uploads/*`, and `/clips/*` bypass Access (already gated by the app's own JWT/cookie auth).
+- **Tunnel**: `cloudflared` runs as a system `LaunchDaemon`, config at `/etc/cloudflared/config.yml`, routing both `ms-fixer.com` and `dev.ms-fixer.com` → `http://localhost:3000`.
+- **Access control**: Cloudflare Zero Trust protects the admin dashboard (site root) with email one-time-PIN login, on both domains. `/api/*`, `/socket.io/*`, `/uploads/*`, and `/clips/*` bypass Access on both domains (already gated by the app's own JWT/cookie auth).
+- **CORS/WebSocket origins**: `PUBLIC_URL` (defaults to `https://ms-fixer.com`) plus its `www.` variant are always allowed; additional origins (e.g. `https://dev.ms-fixer.com`) can be added via the comma-separated `EXTRA_CORS_ORIGINS` env var.
 - **Migrations**: schema changes go through `prisma migrate dev` locally, then `prisma migrate deploy` on the home server (not `db push`, to avoid destructive drift on real data).
 - **Backups**: nightly `pg_dump` with 7-day local retention, encrypted offsite copy.
 
