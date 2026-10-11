@@ -53,6 +53,20 @@ export async function login(phoneNumber: string, pin: string) {
   });
 }
 
+/**
+ * Clear the shared Clip Viewer cookie that `/api/auth/login` sets alongside
+ * the Dashboard's bearer token, so logging out of the Dashboard also signs
+ * the browser out of the Clip Viewer. Best-effort: logout should still
+ * proceed locally even if this network call fails.
+ */
+export async function logoutClipSession() {
+  try {
+    await fetch("/clips/logout", { method: "POST" });
+  } catch {
+    // Ignore — local logout (clearing the bearer token) still happens.
+  }
+}
+
 export async function fetchMe() {
   return api<{ user: User }>("GET", "/api/auth/me");
 }

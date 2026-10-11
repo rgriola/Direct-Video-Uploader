@@ -4,6 +4,7 @@
  */
 import prisma from '../lib/prisma.js';
 import { verifyPin, hashPin, dbRetry } from '../lib/utils.js';
+import { CLIP_COOKIE_NAME, clipCookieOpts } from '../lib/clipAuth.js';
 
 export default async function authRoutes(fastify) {
     // Auth responses should never be cached by intermediaries or clients.
@@ -108,6 +109,12 @@ export default async function authRoutes(fastify) {
             },
             { expiresIn: '7d' }
         );
+
+        // Unify sign-in with the Clip Viewer: set the same HttpOnly cookie
+        // the Clip Viewer's own /clips/login sets, so a Dashboard (or iOS,
+        // harmlessly) login also authenticates /clips/* in the same browser
+        // without a second sign-in.
+        reply.setCookie(CLIP_COOKIE_NAME, token, clipCookieOpts(request.protocol === 'https'));
 
         return {
             token,

@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster, toast } from "sonner";
 
-import { setToken, getToken, fetchHealth, fetchMe, cleanupAssets, deleteUser } from "@/lib/api";
+import { setToken, getToken, fetchHealth, fetchMe, cleanupAssets, deleteUser, logoutClipSession } from "@/lib/api";
 import { useStats, useUsers, useAssets, useRefreshDashboard, useTriadStatus, useOrganizations } from "@/hooks/use-dashboard";
 import { useSocket } from "@/hooks/use-socket";
 
@@ -194,6 +194,7 @@ function Dashboard() {
           setUserName(null);
           setUserPhone(null);
           setUserCompany(null);
+          void logoutClipSession();
         }}
         userName={userName}
         userPhone={userPhone}

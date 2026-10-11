@@ -8,6 +8,7 @@ import prisma from '../lib/prisma.js';
 import { MUX_ENV_KEY } from '../lib/mux.js';
 import { verifyPin, hashPin, dbRetry } from '../lib/utils.js';
 import { redactCompanyCode, redactPersonName, redactPhoneNumber } from '../lib/redact.js';
+import { CLIP_COOKIE_NAME, clipCookieOpts } from '../lib/clipAuth.js';
 
 /** Escape HTML special characters to prevent XSS (#5). */
 function escapeHtml(str) {
@@ -84,26 +85,16 @@ export default async function clipRoutes(fastify) {
     `;
     const googleFontsHead = '<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet"><link rel="stylesheet" href="/tokens.css">';
 
-    // Cookie options — HttpOnly, 7-day expiry, scoped to /clips
-    const COOKIE_NAME = 'fixer_clip_token';
-    const cookieOpts = (isSecure) => ({
-        path: '/clips',
-        httpOnly: true,
-        secure: isSecure,
-        sameSite: 'lax',
-        maxAge: 7 * 24 * 60 * 60, // 7 days in seconds
-    });
-
     // ─── Helper: verify clip cookie ─────────────────────────
     async function verifyClipCookie(request, reply) {
-        const token = request.cookies?.[COOKIE_NAME];
+        const token = request.cookies?.[CLIP_COOKIE_NAME];
         if (!token) return null;
         try {
             const decoded = fastify.jwt.verify(token);
             request.user = decoded;
             return decoded;
         } catch {
-            reply.clearCookie(COOKIE_NAME, { path: '/clips' });
+            reply.clearCookie(CLIP_COOKIE_NAME, { path: '/clips' });
             return null;
         }
     }
@@ -226,7 +217,7 @@ ${googleFontsHead}
 
         // Set HttpOnly cookie
         const isSecure = request.protocol === 'https';
-        reply.setCookie(COOKIE_NAME, token, cookieOpts(isSecure));
+        reply.setCookie(CLIP_COOKIE_NAME, token, clipCookieOpts(isSecure));
 
         request.log.info(
             {
@@ -246,7 +237,7 @@ ${googleFontsHead}
      * Clear the clip viewer cookie.
      */
     fastify.post('/clips/logout', async (request, reply) => {
-        reply.clearCookie(COOKIE_NAME, { path: '/clips' });
+        reply.clearCookie(CLIP_COOKIE_NAME, { path: '/clips' });
         return reply.redirect('/clips/login');
     });
 
