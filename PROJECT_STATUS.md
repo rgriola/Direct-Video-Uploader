@@ -2,6 +2,8 @@ May 10, 2026 - 4:26pm - GitHub Copilot (GPT-5.3-Codex)
 
 # Direct Video Uploader — Project Status
 
+**iOS readiness planning (October 28, 2026):** The [iOS 27 Readiness Plan](docs/IOS_27_READINESS_PLAN.md) tracks the new native-readiness workstream, decisions, and release gates. Execution has not started; historical status below is preserved as context.
+
 > **Last Updated:** May 10, 2026 · PT
 > **Current Phase:** Phase 4 (QA + Rollout) — iOS UI/UX refresh validation and release-readiness checks
 > **Overall Progress:** ████████████████████ 100% (Phase 2) · Phase 3 complete · Phase 4 in progress

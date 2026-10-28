@@ -51,3 +51,16 @@ Confirm clean start
 sudo launchctl list | grep cloudflared
 tail -20 /Library/Logs/com.cloudflare.cloudflared.out.log
 
+*** Task 
+I would like to update the Dashboard and Clip Player Icons with simular Tailwind Icons. Please evaluate and plan this implementation. I will review prior to coding. 
+
+*** Goal
+Move away from cartoonish to more professional look. 
+
+*** Instructions
+- Find instance of emoji type icons in login, dashboard and clip viewer pages. 
+- Identify similar icons from Tailwind. Alternatively we could use Google Icons. 
+- Icons should match the Font size of the text it is paired with
+- create a unified Icon file so changing icons can be easily done, no hard coded Icons
+
+I am trying to move away from the emoji type icons.  

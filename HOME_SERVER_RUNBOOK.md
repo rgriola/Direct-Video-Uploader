@@ -50,10 +50,15 @@ curl https://dev.ms-fixer.com/api/health       # through tunnel, secondary domai
 
 ## Rebuilding the admin dashboard
 
-The dashboard (`admin/`) builds into `server/public/` (gitignored — build artifact, not committed):
+The dashboard (`admin/`) builds into `server/public/` (gitignored — build artifact, not committed).
+**The restart is required, not optional:** `server/src/index.js` serves `server/public/` via
+`@fastify/static` with `wildcard: false`, which registers a route per file only at process
+startup. A rebuild emits new content-hashed filenames, so a running server has no route for
+them until it restarts — skipping the restart leaves the dashboard showing a blank page (its
+JS bundle 404s).
 ```bash
 cd ~/apps/direct-video-uploader/admin
-npm ci && npm run build
+npm ci && npm run build:check   # tsc type-check + vite build
 launchctl unload ~/Library/LaunchAgents/com.msfixer.fastify.plist
 launchctl load ~/Library/LaunchAgents/com.msfixer.fastify.plist
 ```

@@ -8,6 +8,8 @@ The UX is intentionally modeled after text messaging work-flow: Opening the app 
 
 > **Status:** Phase 3 (~99%) — Mux pipeline operational, Slack integration live, Apple Speech transcription, admin tools, archive, video trim, stability hardening complete. See `PROJECT_STATUS.md` for full details.
 
+**Native readiness roadmap (October 28, 2026):** See the [iOS 27 Readiness Plan](docs/IOS_27_READINESS_PLAN.md) for phased work, acceptance gates, and progress checklists. Historical progress above does not establish current iOS 27 readiness.
+
 ---
 
 ## Architecture
@@ -228,7 +230,7 @@ The Fastify server and Postgres 18 run on a home MacBook Air instead of Cloud Ru
 - **Migrations**: schema changes go through `prisma migrate dev` locally, then `prisma migrate deploy` on the home server (not `db push`, to avoid destructive drift on real data).
 - **Backups**: nightly `pg_dump` with 7-day local retention, encrypted offsite copy.
 
-Full runbook: `docs/HOME_SERVER_RUNBOOK.md`.
+Full runbook: [Home Server Runbook](HOME_SERVER_RUNBOOK.md).
 
 ---
 
@@ -250,4 +252,3 @@ Full runbook: `docs/HOME_SERVER_RUNBOOK.md`.
 ## License
 
 Private — internal use only. No open-source license. Contact the author for usage terms.
-
