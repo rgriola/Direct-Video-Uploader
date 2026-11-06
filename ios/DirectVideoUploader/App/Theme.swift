@@ -73,6 +73,10 @@ enum Theme {
     static let black = Color(hex: "#111111")
     static let white = Color(hex: "#F5F5F5")
     static let purple = Color(hex: "#8576EE")
+    /// Purple for text on light/dark backgrounds (≥ 4.5:1 contrast).
+    static let purpleText = adaptive("#5B4BD1", "#A99FF5")
+    /// Purple fill behind white text (≥ 4.5:1 contrast).
+    static let purpleFill = Color(hex: "#5B4BD1")
     static let blue = Color(hex: "#007AFF")
     static let green = Color(hex: "#30D158")
     static let red = Color(hex: "#FF453A")

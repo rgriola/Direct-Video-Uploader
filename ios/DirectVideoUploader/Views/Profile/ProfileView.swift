@@ -46,12 +46,6 @@ struct ProfileView: View {
                 }
             }
         }
-        .onReceive(
-            NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)
-        ) { _ in
-            // User may have changed permissions in Settings.app
-            permissions.refreshStatuses()
-        }
         .confirmationDialog(
             "Reset onboarding?",
             isPresented: $showOnboardingResetConfirm,
@@ -111,15 +105,14 @@ struct ProfileView: View {
             sectionHeader("Permissions")
 
             VStack(spacing: 0) {
-                // Photo Library toggle
-                permissionRow(
+                PermissionRow(
                     icon: "photo.on.rectangle.angled",
                     title: "Photo Library",
-                    subtitle: "Access your video library",
+                    subtitle: "Upload originals and re-upload from Archive",
                     statusLabel: permissions.photoLibraryLabel,
-                    isGranted: permissions.isPhotoLibraryGranted,
-                    isDenied: permissions.photoLibraryStatus == .denied,
-                    isLimited: permissions.photoLibraryStatus == .limited
+                    state: permissions.photoLibraryRowState,
+                    actionHint: permissions.photoLibraryStatus == .notDetermined
+                        ? "Asks for access" : "Opens Settings"
                 ) {
                     Task { await permissions.requestPhotoLibrary() }
                 }
@@ -128,15 +121,14 @@ struct ProfileView: View {
                     .background(Theme.glassBorder)
                     .padding(.leading, 52)
 
-                // Speech Recognition toggle
-                permissionRow(
+                PermissionRow(
                     icon: "mic.fill",
                     title: "Speech Recognition",
                     subtitle: "Transcribe video audio",
                     statusLabel: permissions.speechLabel,
-                    isGranted: permissions.isSpeechGranted,
-                    isDenied: permissions.speechStatus == .denied,
-                    isLimited: false
+                    state: permissions.speechRowState,
+                    actionHint: permissions.speechStatus == .notDetermined
+                        ? "Asks for access" : "Opens Settings"
                 ) {
                     Task { await permissions.requestSpeechRecognition() }
                 }
@@ -251,68 +243,7 @@ struct ProfileView: View {
             .foregroundStyle(Theme.secondaryText)
             .padding(.horizontal, Theme.space4)
             .padding(.bottom, Theme.space8)
-    }
-
-    private func permissionRow(
-        icon: String,
-        title: String,
-        subtitle: String,
-        statusLabel: String,
-        isGranted: Bool,
-        isDenied: Bool,
-        isLimited: Bool,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            HStack(spacing: Theme.space12) {
-                // Icon
-                Image(systemName: icon)
-                    .font(Theme.icon16)
-                    .foregroundStyle(
-                        isGranted ? Theme.green : (isDenied ? Theme.red : Theme.tertiaryText)
-                    )
-                    .frame(width: 32, height: 32)
-
-                // Labels
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title)
-                        .font(Theme.font16Medium)
-                        .foregroundStyle(Theme.primaryText)
-                    Text(subtitle)
-                        .font(Theme.font13Regular)
-                        .foregroundStyle(Theme.secondaryText)
-                }
-
-                Spacer()
-
-                // Status pill
-                HStack(spacing: 5) {
-                    Circle()
-                        .fill(
-                            statusDotColor(
-                                isGranted: isGranted, isDenied: isDenied, isLimited: isLimited)
-                        )
-                        .frame(width: 8, height: 8)
-                    Text(statusLabel)
-                        .font(Theme.font13Medium)
-                        .foregroundStyle(Theme.secondaryText)
-                }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 5)
-                .background(Theme.glassOverlay, in: Capsule())
-
-                // Chevron — hint that tapping opens Settings (unless not yet asked)
-                if isGranted || isDenied {
-                    Image(systemName: "arrow.up.forward.app")
-                        .font(Theme.icon13)
-                        .foregroundStyle(Theme.tertiaryText)
-                }
-            }
-            .padding(.horizontal, Theme.space16)
-            .padding(.vertical, 14)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
+            .accessibilityAddTraits(.isHeader)
     }
 
     private func infoRow(icon: String, label: String, value: String) -> some View {
@@ -336,13 +267,6 @@ struct ProfileView: View {
         }
         .padding(.horizontal, Theme.space16)
         .padding(.vertical, Theme.space12)
-    }
-
-    private func statusDotColor(isGranted: Bool, isDenied: Bool, isLimited: Bool) -> Color {
-        if isGranted && !isLimited { return Theme.green }
-        if isLimited { return Theme.amber }
-        if isDenied { return Theme.red }
-        return Theme.tertiaryText  // not determined
     }
 
     private var userInitial: String {

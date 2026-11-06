@@ -194,7 +194,8 @@ Only APIs that **remove** code or risk.
 - One **Permissions** screen in the app's theme after login, reusing the Profile permission-row design.
   - **Photo Library** is marked *Recommended* and explains that access lets the app upload originals and re-upload from Archive.
   - **Speech Recognition** is marked *Optional*.
-  - **Continue** is always available. Persist that the screen was seen with `@AppStorage`; both permissions stay available from Profile.
+  - A single neutral **Continue** button shows the system prompt for each undecided permission (Photo Library first); people decline in the system dialog. There is no skip/close and no "Allow" label (App Review Guideline 5.1.1(iv), decided Nov 6, 2026). Persist that the screen was seen with `@AppStorage`; both permissions stay available from Profile.
+  - Presented from `ChatView` after the walkthrough and guide close (or at launch when onboarding is already complete), never over another sheet.
 - Show the screen once to new and existing users while either permission is still undecided (`.notDetermined`).
 - **Limited:** Explain that originals and Archive re-upload work only for selected videos; offer to manage the selection or open Settings.
 - **Denied** and **Restricted:** Show **Open Settings** on the Permissions screen and in Profile. Recheck status whenever the app becomes active.
@@ -205,13 +206,15 @@ Only APIs that **remove** code or risk.
 - [x] Original retrieval: with access, write the `.video` `PHAssetResource` to a temp file via `PHAssetResourceManager` with network access allowed (iCloud) and progress; use the original filename and `PHAsset` metadata (`OriginalVideoLoader`). A failed original load shows an error and never falls back to an edited copy.
 - [x] Trim: skip export when the range is the full duration and upload the original; otherwise export from the original, copy its metadata explicitly, and verify on device *(device verification pending)*
 - [x] Save trimmed copy to Photos after a successful upload (`PHAssetCreationRequest`); add `NSPhotoLibraryAddUsageDescription` and request add-only access if read/write access is not granted; a save failure must not fail the upload. The new item's identifier is linked to the upload for Archive re-upload.
-- [ ] `PermissionManager`: inject the authorization provider for tests; make it the sole source of Speech authorization, including `TranscriptionService`; refresh status app-wide when the app becomes active (concurrency specialist)
-- [ ] Extract a shared permission row from `ProfileView`; build the Permissions screen and its presentation in `ContentView` (accessibility specialist: VoiceOver, Dynamic Type, focus)
+- [x] `PermissionManager`: inject the authorization provider (`PermissionAuthorizing`) for tests; make it the sole source of Speech authorization, including `TranscriptionService`; refresh status app-wide when the app becomes active (`ContentView`). Concurrency review: no issues.
+- [x] Extract a shared `PermissionRow` from `ProfileView`; build `PermissionsView` and its presentation in `ChatView`. Accessibility review applied: status as VoiceOver value, contrast-safe `Theme.purpleText`/`purpleFill`, stacked layout and scaled icon at accessibility text sizes, 44 pt targets, header traits.
 - [x] Archive retry: use the original resource, not `.current`; request access when undecided; with Limited or denied access, or when the original is not found, open the picker instead of showing an error
 - [x] Trimmed re-upload (revised): instead of persisting trim ranges, trimmed copies are saved to Photos and linked to the upload. Automatic retry only uses a Photos video whose length matches the uploaded clip's `duration` (±1 s), so a legacy record pointing at an untrimmed source falls back to the picker. Limit: a trim removing less than about 1 s isn't detected.
 - [x] Swift Testing: full-range trim detection, duration matching (legacy no-auto-retry rule), metadata merge and trimmed-duration rules (`UploadFidelityTests`)
-- [ ] Swift Testing: permission status mapping and presentation decision (with the Permissions screen)
+- [x] Swift Testing: permission status mapping, row states, presentation decision, undecided-only requests and `TranscriptionService` authorization (`PermissionTests`, fake authorizer). 41/41 tests pass on the iOS 27 simulator; Debug and Release builds pass.
 - [ ] Device matrix (fresh install for each case): Allow Full, Limited, Don't Allow, Speech Allow/Don't Allow, Continue without deciding, change in Settings while backgrounded, upgrade from a build where onboarding was already completed; in each Photo Library state, upload untrimmed, trimmed, iCloud-only and Photos-edited videos, and Archive re-upload. Compare uploaded bytes and metadata with the original exported from Photos.
+
+> **Follow-up (accessibility):** `Theme` fonts use fixed `.system(size:)`, so text app-wide doesn't scale with Dynamic Type. Map each font token to a text style (`relativeTo:`) as an app-wide change.
 
 > **Later (not Step 1):** split `ChatViewModel.swift`, iOS UI redesign around "upload only", and remove `NSAllowsArbitraryLoads: true` now that the server is HTTPS via the tunnel.
 

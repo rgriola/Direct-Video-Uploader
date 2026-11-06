@@ -6,6 +6,7 @@ struct ContentView: View {
     @Environment(AuthService.self) private var auth
     @Environment(WebSocketService.self) private var ws
     @Environment(AppearanceService.self) private var appearance
+    @Environment(PermissionManager.self) private var permissions
     @Environment(\.scenePhase) private var scenePhase
     @State private var backgroundDisconnectTask: Task<Void, Never>?
     @State private var sessionCheckComplete = false
@@ -71,6 +72,8 @@ struct ContentView: View {
         .onChange(of: scenePhase) { _, newPhase in
             switch newPhase {
             case .active:
+                // Permissions may have changed in Settings or from a prompt elsewhere in the app.
+                permissions.refreshStatuses()
                 // Cancel pending disconnect — user came back quickly
                 backgroundDisconnectTask?.cancel()
                 backgroundDisconnectTask = nil

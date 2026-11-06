@@ -33,6 +33,12 @@ final class TranscriptionService {
     var state: TranscriptionState = .idle
     var progress: Double = 0  // 0.0–1.0 estimate
 
+    private let authorizer: any PermissionAuthorizing
+
+    init(authorizer: any PermissionAuthorizing = SystemPermissionAuthorizer()) {
+        self.authorizer = authorizer
+    }
+
     // MARK: - Public API
 
     /// Transcribe the audio track of a video file.
@@ -185,11 +191,11 @@ final class TranscriptionService {
 
     // MARK: - Authorization
 
-    private nonisolated func requestAuthorization() async -> Bool {
-        await withCheckedContinuation { continuation in
-            SFSpeechRecognizer.requestAuthorization { status in
-                continuation.resume(returning: status == .authorized)
-            }
+    func requestAuthorization() async -> Bool {
+        switch authorizer.speechStatus() {
+        case .authorized: return true
+        case .notDetermined: return await authorizer.requestSpeech() == .authorized
+        default: return false
         }
     }
 }

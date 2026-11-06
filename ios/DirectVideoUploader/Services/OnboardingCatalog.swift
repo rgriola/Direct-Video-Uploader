@@ -62,5 +62,6 @@ enum OnboardingCatalog {
      static func resetForQA() {
           UserDefaults.standard.set(false, forKey: completionKey)
           UserDefaults.standard.set(false, forKey: legacyInstructionsKey)
+          UserDefaults.standard.set(false, forKey: PermissionsPrompt.seenKey)
      }
 }
