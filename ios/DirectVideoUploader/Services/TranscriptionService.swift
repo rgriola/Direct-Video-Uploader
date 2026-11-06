@@ -1,4 +1,5 @@
 import Speech
+import Synchronization
 import AVFoundation
 
 /// Timestamped word segment from speech recognition.
@@ -154,22 +155,16 @@ final class TranscriptionService {
         request: SFSpeechURLRecognitionRequest
     ) async throws -> TranscriptionResult? {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<TranscriptionResult?, Error>) in
-            // Use a class-based box so the flag is reference-typed and safe
-            // to capture in the Sendable closure.
-            final class ResumeGuard: @unchecked Sendable {
-                var hasResumed = false
-            }
-            let guard_ = ResumeGuard()
+            let gate = ResumeGate()
 
             recognizer.recognitionTask(with: request) { result, error in
-                guard !guard_.hasResumed else { return }
                 if let error {
-                    guard_.hasResumed = true
+                    guard gate.claim() else { return }
                     continuation.resume(throwing: error)
                     return
                 }
                 if let result, result.isFinal {
-                    guard_.hasResumed = true
+                    guard gate.claim() else { return }
                     let text = result.bestTranscription.formattedString
                     if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                         continuation.resume(returning: nil)
@@ -196,6 +191,20 @@ final class TranscriptionService {
         case .authorized: return true
         case .notDetermined: return await authorizer.requestSpeech() == .authorized
         default: return false
+        }
+    }
+}
+
+/// Lets exactly one recognition callback resume the continuation.
+private final class ResumeGate: Sendable {
+    private let resumed = Mutex(false)
+
+    /// Returns true the first time only.
+    func claim() -> Bool {
+        resumed.withLock { resumed in
+            guard !resumed else { return false }
+            resumed = true
+            return true
         }
     }
 }

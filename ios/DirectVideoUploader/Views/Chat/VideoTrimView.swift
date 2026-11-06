@@ -196,15 +196,11 @@ struct VideoTrimView: View {
                         }
                     }
                 )
-                await MainActor.run {
-                    isExporting = false
-                    onFinished(.trimmed(outputURL))
-                }
+                isExporting = false
+                onFinished(.trimmed(outputURL))
             } catch {
-                await MainActor.run {
-                    isExporting = false
-                    exportError = error.localizedDescription
-                }
+                isExporting = false
+                exportError = error.localizedDescription
             }
         }
     }
@@ -647,8 +643,6 @@ enum PassthroughExporter {
         } else {
             fileType = .mov
         }
-        session.outputFileType = fileType
-
         // Carry the original's capture date, location and camera details into the copy.
         if let sourceMetadata = try? await asset.load(.metadata), !sourceMetadata.isEmpty {
             session.metadata = sourceMetadata
@@ -664,35 +658,31 @@ enum PassthroughExporter {
         try FileManager.default.createDirectory(at: destFolder, withIntermediateDirectories: true)
         let destURL = destFolder.appendingPathComponent(editedName)
 
-        session.outputURL = destURL
-
         // Set trim range
         let start = CMTime(seconds: startTime, preferredTimescale: 600)
         let end = CMTime(seconds: endTime, preferredTimescale: 600)
         session.timeRange = CMTimeRange(start: start, end: end)
 
-        // Export with progress polling via async Task
-        nonisolated(unsafe) let pollSession = session
+        let states = session.states(updateInterval: 0.1)
         let progressTask = Task {
-            while !Task.isCancelled {
-                onProgress?(Double(pollSession.progress))
-                try? await Task.sleep(for: .milliseconds(100))
+            for await state in states {
+                if case .exporting(let progress) = state {
+                    onProgress?(progress.fractionCompleted)
+                }
             }
         }
-        await session.export()
-        progressTask.cancel()
-        onProgress?(1.0)
+        defer { progressTask.cancel() }
 
-        switch session.status {
-        case .completed:
-            return destURL
-        case .cancelled:
+        do {
+            try await session.export(to: destURL, as: fileType)
+        } catch is CancellationError {
             try? FileManager.default.removeItem(at: destFolder)
             throw ExportError.cancelled
-        default:
+        } catch {
             try? FileManager.default.removeItem(at: destFolder)
-            throw ExportError.exportFailed(
-                session.error?.localizedDescription ?? "Unknown export error")
+            throw ExportError.exportFailed(error.localizedDescription)
         }
+        onProgress?(1.0)
+        return destURL
     }
 }

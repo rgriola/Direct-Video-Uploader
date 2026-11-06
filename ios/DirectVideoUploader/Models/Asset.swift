@@ -2,7 +2,7 @@ import Foundation
 
 // MARK: - Asset
 
-struct Asset: Codable, Identifiable {
+struct Asset: Codable, Identifiable, Sendable {
     let id: String
     let mediasourceId: String?
     let mediasourceUrl: String?
@@ -16,13 +16,13 @@ struct Asset: Codable, Identifiable {
     let formResponse: FormResponse?
 }
 
-struct AssetUser: Codable {
+struct AssetUser: Codable, Sendable {
     let id: String
     let name: String
     let phoneNumber: String?
 }
 
-enum AssetStatus: String, Codable {
+enum AssetStatus: String, Codable, Sendable {
     case uploading = "UPLOADING"
     case processing = "PROCESSING"
     case ready = "READY"
@@ -49,7 +49,7 @@ enum AssetStatus: String, Codable {
 
 // MARK: - Clip
 
-struct Clip: Codable, Identifiable {
+struct Clip: Codable, Identifiable, Sendable {
     let id: String
     let clipIndex: Int?
     let originalFileName: String?
@@ -74,21 +74,21 @@ struct Clip: Codable, Identifiable {
 
 // MARK: - Create Asset
 
-struct CreateAssetRequest: Codable {
+struct CreateAssetRequest: Codable, Sendable {
     let fileName: String
 }
 
-struct CreateAssetResponse: Codable {
+struct CreateAssetResponse: Codable, Sendable {
     let asset: Asset
 }
 
-struct AssetDetailResponse: Codable {
+struct AssetDetailResponse: Codable, Sendable {
     let asset: Asset
 }
 
 // MARK: - Form Response
 
-struct FormResponse: Codable {
+struct FormResponse: Codable, Sendable {
     let id: String
     let assetId: String?
     let slug: String?
@@ -100,6 +100,6 @@ struct FormResponse: Codable {
 
 // MARK: - My Assets Response
 
-struct MyAssetsResponse: Codable {
+struct MyAssetsResponse: Codable, Sendable {
     let assets: [Asset]
 }

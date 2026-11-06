@@ -519,20 +519,18 @@ final class WebSocketService {
         pingWatchdog = Task { [weak self] in
             try? await Task.sleep(for: .seconds(self?.pingWatchdogInterval ?? 45))
             guard !Task.isCancelled else { return }
-            await MainActor.run { [weak self] in
-                guard let self, self.state == .connected else { return }
-                print(
-                    "⏰ [WS] Ping watchdog fired — no server ping in \(Int(self.pingWatchdogInterval))s, connection is zombie"
-                )
-                self.cleanupConnection()
-                self.reconnectAttempt += 1
-                if self.reconnectAttempt <= self.maxReconnectAttempts, let token = self.token {
-                    self.onReconnecting?(self.reconnectAttempt, self.maxReconnectAttempts)
-                    self.connect(token: token)
-                } else {
-                    self.startNetworkMonitor()
-                    self.onConnectionLost?()
-                }
+            guard let self, self.state == .connected else { return }
+            print(
+                "⏰ [WS] Ping watchdog fired — no server ping in \(Int(self.pingWatchdogInterval))s, connection is zombie"
+            )
+            self.cleanupConnection()
+            self.reconnectAttempt += 1
+            if self.reconnectAttempt <= self.maxReconnectAttempts, let token = self.token {
+                self.onReconnecting?(self.reconnectAttempt, self.maxReconnectAttempts)
+                self.connect(token: token)
+            } else {
+                self.startNetworkMonitor()
+                self.onConnectionLost?()
             }
         }
     }

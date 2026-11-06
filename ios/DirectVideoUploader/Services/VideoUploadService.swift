@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 import Observation
 import Photos
 
@@ -223,11 +224,13 @@ final class VideoUploadService: NSObject {
 
 // MARK: - Upload Delegate (Progress Tracking)
 
-private final class UploadDelegate: NSObject, URLSessionTaskDelegate, URLSessionDataDelegate, @unchecked Sendable {
+/// URLSession calls the delegate on its own serial queue; the response buffer is still
+/// behind a `Mutex` so the class is checked `Sendable`.
+private final class UploadDelegate: NSObject, URLSessionTaskDelegate, URLSessionDataDelegate, Sendable {
     let onProgress: @Sendable (Double) -> Void
     let onComplete: @Sendable (Data?, URLResponse?, (any Error)?) -> Void
     
-    private var responseData = Data()
+    private let responseData = Mutex(Data())
     
     init(onProgress: @escaping @Sendable (Double) -> Void, onComplete: @escaping @Sendable (Data?, URLResponse?, (any Error)?) -> Void) {
         self.onProgress = onProgress
@@ -240,7 +243,7 @@ private final class UploadDelegate: NSObject, URLSessionTaskDelegate, URLSession
     }
     
     func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
-        responseData.append(data)
+        responseData.withLock { $0.append(data) }
     }
     
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
@@ -248,7 +251,7 @@ private final class UploadDelegate: NSObject, URLSessionTaskDelegate, URLSession
         if let error {
             onComplete(nil, nil, error)
         } else {
-            onComplete(responseData, task.response, nil)
+            onComplete(responseData.withLock { $0 }, task.response, nil)
         }
     }
     

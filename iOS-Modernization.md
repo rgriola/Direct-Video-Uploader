@@ -128,18 +128,20 @@ XcodeGen 2.46 rewrites the app product's existing `explicitFileType` metadata to
 | `Services/WebSocketService.swift:489,522` | `NWPathMonitor` on a private queue + `MainActor.run` | Acceptable as is. Optionally wrap in an `AsyncStream<NWPath>`. |
 | `Views/Chat/VideoLibraryView.swift:287` | `Task.detached` for temp-file delete | **Keep.** Legitimate off-main file I/O. |
 
-- [ ] Mark the immutable `Codable` models (`ChatMessage`, `Asset`, `Clip`, `User`, `FormResponse`, …) as `Sendable`
-- [ ] `SentUploadInfo` holds a `UIImage`, so keep it main-actor-only
-- [ ] Grep gate: `@unchecked|nonisolated\(unsafe\)|DispatchQueue\.main|MainActor\.run` should return only justified hits
+- [x] Mark the immutable `Codable` models (`ChatMessage`, `Asset`, `Clip`, `User`, `FormResponse`, …) as `Sendable`
+- [x] `SentUploadInfo` holds a `UIImage`, so keep it main-actor-only
+- [x] Grep gate: `@unchecked|nonisolated\(unsafe\)|DispatchQueue\.main|MainActor\.run` should return only justified hits *(zero hits, Nov 6, 2026)*
+
+**Done (Nov 6, 2026):** `UploadDelegate` and the transcription resume guard use `Mutex` (checked `Sendable`); `DVUDateFormatting` uses `Date.ISO8601FormatStyle`; `ContextFormView` focus uses a cancellable `.task`; the walkthrough defers with `Task { @MainActor in }`; redundant `MainActor.run` hops removed from `VideoTrimView` and the `WebSocketService` ping watchdog (both already main-actor); `Theme`'s dynamic color reads `UIScreen` only on the main thread. `NWPathMonitor` and `Task.detached` file delete kept as planned. Clean Debug and Release builds have zero Swift warnings; 41/41 tests pass; concurrency review found no issues.
 
 ### 1.3 Adopt iOS 18 APIs That Replace Workarounds
 
 Only APIs that **remove** code or risk.
 
-- [ ] `AVAssetExportSession.export(to:as:)` + `states(updateInterval:)` replaces the polling loop in `PassthroughExporter` / `VideoTrimView`
-- [ ] `Synchronization.Mutex` replaces the hand-rolled `@unchecked Sendable` guards
-- [ ] Review `withCheckedContinuation` wrappers (`VideoUploadService:188`, `ArchiveRowView:668`, `VideoLibraryView:309`, `TranscriptionService`, `PermissionManager`). Use native async APIs where they exist, and confirm every path resumes exactly once
-- [ ] **Keep** the background `URLSession` + delegate upload. Step 4 changes *where* it uploads to, not *how*
+- [x] `AVAssetExportSession.export(to:as:)` + `states(updateInterval:)` replaces the polling loop in `PassthroughExporter` / `VideoTrimView`
+- [x] `Synchronization.Mutex` replaces the hand-rolled `@unchecked Sendable` guards
+- [x] Review `withCheckedContinuation` wrappers. Remaining: background upload delegate (no async API for background sessions), `OriginalVideoLoader` (`PHAssetResourceManager`), `TranscriptionService` recognition (`ResumeGate`) and `SFSpeechRecognizer.requestAuthorization` (no async API). Each resumes exactly once (concurrency review).
+- [x] **Keep** the background `URLSession` + delegate upload. Step 4 changes *where* it uploads to, not *how*
 
 ### 1.4 Test Target & Regression
 
@@ -155,8 +157,8 @@ Only APIs that **remove** code or risk.
 
 **Manual regression on a physical device, after each sub-step:**
 - [ ] Login (phone + PIN + company code), Keychain restore, legacy token migration
-- [ ] Permission prompts and denied states: Photos, Camera, Location, Speech, Mic
-- [ ] Onboarding (fresh install)
+- [x] Permission prompts and denied states: Photos, Camera, Location, Speech, Mic
+- [x] Onboarding (fresh install)
 - [ ] Library pick: PHAsset fast path and Transferable fallback
 - [ ] Trim → passthrough export → upload
 - [ ] Upload: create asset (POST) → Mux direct upload (background PUT). Background the app mid-upload
@@ -201,7 +203,7 @@ Only APIs that **remove** code or risk.
 - **Denied** and **Restricted:** Show **Open Settings** on the Permissions screen and in Profile. Recheck status whenever the app becomes active.
 
 **Tasks**
-- [ ] Device check: confirm `itemIdentifier` is `nil` without `photoLibrary:`, whether `.automatic` transcodes, and whether passthrough export keeps metadata; test an iCloud-only video and one edited in Photos
+- [x] Device check: confirm `itemIdentifier` is `nil` without `photoLibrary:`, whether `.automatic` transcodes, and whether passthrough export keeps metadata; test an iCloud-only video and one edited in Photos
 - [x] Picker: create with `photoLibrary: .shared()` and `preferredItemEncoding: .current`
 - [x] Original retrieval: with access, write the `.video` `PHAssetResource` to a temp file via `PHAssetResourceManager` with network access allowed (iCloud) and progress; use the original filename and `PHAsset` metadata (`OriginalVideoLoader`). A failed original load shows an error and never falls back to an edited copy.
 - [x] Trim: skip export when the range is the full duration and upload the original; otherwise export from the original, copy its metadata explicitly, and verify on device *(device verification pending)*
@@ -212,7 +214,7 @@ Only APIs that **remove** code or risk.
 - [x] Trimmed re-upload (revised): instead of persisting trim ranges, trimmed copies are saved to Photos and linked to the upload. Automatic retry only uses a Photos video whose length matches the uploaded clip's `duration` (±1 s), so a legacy record pointing at an untrimmed source falls back to the picker. Limit: a trim removing less than about 1 s isn't detected.
 - [x] Swift Testing: full-range trim detection, duration matching (legacy no-auto-retry rule), metadata merge and trimmed-duration rules (`UploadFidelityTests`)
 - [x] Swift Testing: permission status mapping, row states, presentation decision, undecided-only requests and `TranscriptionService` authorization (`PermissionTests`, fake authorizer). 41/41 tests pass on the iOS 27 simulator; Debug and Release builds pass.
-- [ ] Device matrix (fresh install for each case): Allow Full, Limited, Don't Allow, Speech Allow/Don't Allow, Continue without deciding, change in Settings while backgrounded, upgrade from a build where onboarding was already completed; in each Photo Library state, upload untrimmed, trimmed, iCloud-only and Photos-edited videos, and Archive re-upload. Compare uploaded bytes and metadata with the original exported from Photos.
+- [x] Device matrix (fresh install for each case): Allow Full, Limited, Don't Allow, Speech Allow/Don't Allow, Continue without deciding, change in Settings while backgrounded, upgrade from a build where onboarding was already completed; in each Photo Library state, upload untrimmed, trimmed, iCloud-only and Photos-edited videos, and Archive re-upload. Compare uploaded bytes and metadata with the original exported from Photos. *(Passed on device, Nov 6, 2026.)*
 
 > **Follow-up (accessibility):** `Theme` fonts use fixed `.system(size:)`, so text app-wide doesn't scale with Dynamic Type. Map each font token to a text style (`relativeTo:`) as an app-wide change.
 

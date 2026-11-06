@@ -90,7 +90,8 @@ struct OnboardingWalkthroughView: View {
           dismiss()
 
           guard openGuide else { return }
-          DispatchQueue.main.async {
+          // Defer one turn so the guide sheet is requested after this sheet starts dismissing.
+          Task { @MainActor in
                onOpenGuide()
           }
      }

@@ -45,9 +45,14 @@ enum Theme {
                 return current
             }
 
-            let screen = UIScreen.main.traitCollection.userInterfaceStyle
-            if screen == .dark || screen == .light {
-                return screen
+            // UIColor providers can run off the main thread; UIScreen is main-actor only.
+            if Thread.isMainThread {
+                let screen = MainActor.assumeIsolated {
+                    UIScreen.main.traitCollection.userInterfaceStyle
+                }
+                if screen == .dark || screen == .light {
+                    return screen
+                }
             }
 
             return .light
