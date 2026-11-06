@@ -95,7 +95,7 @@ final class TranscriptionService {
         }
 
         // Attempt 2: On-device fallback (works offline, different model)
-        if #available(iOS 16, *), recognizer.supportsOnDeviceRecognition {
+        if recognizer.supportsOnDeviceRecognition {
             print("🎙️ [Transcribe] Server-based found no speech, trying on-device model...")
             if let onDeviceResult = await attemptRecognition(recognizer: recognizer, videoURL: videoURL, onDevice: true) {
                 return onDeviceResult
@@ -120,9 +120,7 @@ final class TranscriptionService {
         request.contextualStrings = ["mediasource", "Mediasource", "b-roll", "B-roll", "slug", "standup", "Fixer", "breaking"]
 
         if onDevice {
-            if #available(iOS 16, *) {
-                request.requiresOnDeviceRecognition = true
-            }
+            request.requiresOnDeviceRecognition = true
             print("🎙️ [Transcribe] Using on-device recognition")
         } else {
             print("🎙️ [Transcribe] Using server-based recognition")
