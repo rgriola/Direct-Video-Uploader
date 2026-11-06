@@ -268,7 +268,7 @@ struct VideoBubble: View {
 
 extension StagedVideo {
     /// Generate a thumbnail from a video file URL.
-    static func generateThumbnail(from url: URL) async -> UIImage? {
+    @concurrent nonisolated static func generateThumbnail(from url: URL) async -> UIImage? {
         let asset = AVURLAsset(url: url)
         let generator = AVAssetImageGenerator(asset: asset)
         generator.appliesPreferredTrackTransform = true

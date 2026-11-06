@@ -5,7 +5,7 @@ import Foundation
 ///
 /// Server sends message codes + params, while iOS resolves final display text.
 /// This keeps rendering style and copy behavior in one iOS-owned code path.
-enum MessageCatalog {
+nonisolated enum MessageCatalog {
      static let schemaVersion = 1
 
      private static let greetingTemplates: [String] = [

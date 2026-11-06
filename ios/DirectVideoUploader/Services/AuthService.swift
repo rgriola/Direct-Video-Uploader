@@ -114,7 +114,7 @@ final class AuthService {
 
 // MARK: - Errors
 
-enum AuthError: LocalizedError {
+nonisolated enum AuthError: LocalizedError {
     case invalidResponse
     case loginFailed(String)
     case notAuthenticated
@@ -130,7 +130,7 @@ enum AuthError: LocalizedError {
     }
 }
 
-struct ErrorResponse: Codable {
+nonisolated struct ErrorResponse: Codable {
     let error: String?
     let message: String?
 }

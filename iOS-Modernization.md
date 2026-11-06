@@ -106,10 +106,10 @@ flowchart TD
 - [x] Regenerate with XcodeGen. Confirm the effective app target is `18.6` for both Debug and Release, with no conflicting project/target overrides
 - [x] Keep `SWIFT_VERSION = 6.0`. A separate `SWIFT_STRICT_CONCURRENCY` setting is not needed because Swift 6 mode already includes it
 - [x] Remove target-level `DEVELOPMENT_TEAM: xxxxxxxxxx` from `project.yml` so the target inherits the existing base-level team
-- [ ] Remove iOS 18.6-and-earlier availability branches only when their behavior is covered by tests and the relevant specialist reviews
-- [ ] Decide separately whether to point the Debug server default at `https://dev.ms-fixer.com`; retain the current local defaults until then
-- [ ] **Optional decision:** Swift 6.2 "approachable concurrency" (`SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`). Recommendation: **not now.** The code already uses explicit `@MainActor`.
-- [ ] Commit: "iOS 18.6 deployment target and baseline tests"
+- [x] Remove iOS 18.6-and-earlier availability branches only when their behavior is covered by tests and the relevant specialist reviews *(Nov 6, 2026: the three remaining checks — iOS 16 on-device speech, iOS 18 `symbolEffect` — were always true at 18.6; no `#available` remains)*
+- [x] Decide separately whether to point the Debug server default at `https://dev.ms-fixer.com` *(Nov 6, 2026: yes — Debug defaults to dev for simulator and device; the login-screen override and `DVU_SERVER_URL` still take priority for a local server)*
+- [x] **Optional decision:** Swift 6.2 "approachable concurrency" (`SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`). *(Nov 6, 2026: adopted, with `SWIFT_APPROACHABLE_CONCURRENCY = YES`, for both targets. Value types, Codable models and background helpers are marked `nonisolated`; previously off-main async work (`OriginalVideoLoader`, `PassthroughExporter`, `VideoMetadataExtractor`, speech recognition) is `@concurrent`; system callbacks are `@Sendable`. Zero warnings; 41/41 tests pass. Needs a full device regression pass because isolation mistakes here surface as runtime crashes, not compile errors.)*
+- [x] Commit: "iOS 18.6 deployment target and baseline tests" *(landed in `8206766`)*
 
 XcodeGen 2.46 rewrites the app product's existing `explicitFileType` metadata to `lastKnownFileType`; the pre-existing value was retained after regeneration. Check it when regenerating the project again.
 
@@ -153,7 +153,7 @@ Only APIs that **remove** code or risk.
   - [x] `DVUDateFormatting`
 - [x] Configure CI to run the Swift tests on an available iOS 18.6+ iPhone simulator
 - [ ] Verify the CI job on GitHub and run the suite on an iOS 18.6 simulator or device
-- [ ] Before 1.2, capture a fresh baseline (screen recordings of key flows) in `ios/baseline-artifacts/`
+- [ ] ~~Before 1.2, capture a fresh baseline (screen recordings of key flows) in `ios/baseline-artifacts/`~~ *(skipped: 1.2 shipped first; device regression covers it)*
 
 **Manual regression on a physical device, after each sub-step:**
 - [ ] Login (phone + PIN + company code), Keychain restore, legacy token migration

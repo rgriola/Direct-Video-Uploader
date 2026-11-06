@@ -452,7 +452,7 @@ struct VideoLibraryView: View {
 
 /// Loads a video file from PhotosPicker into a temporary location,
 /// preserving the original filename from the system.
-struct VideoTransferable: Transferable {
+nonisolated struct VideoTransferable: Transferable {
     let url: URL
 
     static var transferRepresentation: some TransferRepresentation {

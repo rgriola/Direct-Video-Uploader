@@ -3,7 +3,7 @@ import Synchronization
 import AVFoundation
 
 /// Timestamped word segment from speech recognition.
-struct TranscriptSegment: Codable, Sendable {
+nonisolated struct TranscriptSegment: Codable, Sendable {
     let word: String
     let start: Double    // seconds from video start
     let end: Double      // start + duration
@@ -11,7 +11,7 @@ struct TranscriptSegment: Codable, Sendable {
 }
 
 /// Result from transcription — plain text + per-word timestamps.
-struct TranscriptionResult: Sendable {
+nonisolated struct TranscriptionResult: Sendable {
     let text: String
     let segments: [TranscriptSegment]
 }
@@ -83,7 +83,7 @@ final class TranscriptionService {
     /// Runs the full recognition pipeline off the main actor.
     /// Creates SFSpeechRecognizer internally to avoid sending non-Sendable types across actors.
     /// Strategy: server-based first (more accurate), then on-device fallback.
-    private nonisolated func runRecognitionPipeline(videoURL: URL) async -> TranscriptionResult? {
+    @concurrent private nonisolated func runRecognitionPipeline(videoURL: URL) async -> TranscriptionResult? {
         guard let recognizer = SFSpeechRecognizer(), recognizer.isAvailable else {
             print("❌ [Transcribe] Speech recognizer unavailable for this locale")
             return nil
@@ -108,7 +108,7 @@ final class TranscriptionService {
 
     /// Single recognition attempt — returns nil if no speech found.
     /// Runs entirely nonisolated to avoid sending non-Sendable Speech types across actors.
-    private nonisolated func attemptRecognition(
+    @concurrent private nonisolated func attemptRecognition(
         recognizer: SFSpeechRecognizer,
         videoURL: URL,
         onDevice: Bool
@@ -148,14 +148,14 @@ final class TranscriptionService {
 
     /// Runs the speech recognition task in a nonisolated context so the
     /// callback closure doesn't cross actor boundaries.
-    private nonisolated func performRecognition(
+    @concurrent private nonisolated func performRecognition(
         recognizer: SFSpeechRecognizer,
         request: SFSpeechURLRecognitionRequest
     ) async throws -> TranscriptionResult? {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<TranscriptionResult?, Error>) in
             let gate = ResumeGate()
 
-            recognizer.recognitionTask(with: request) { result, error in
+            recognizer.recognitionTask(with: request) { @Sendable result, error in
                 if let error {
                     guard gate.claim() else { return }
                     continuation.resume(throwing: error)
@@ -194,7 +194,7 @@ final class TranscriptionService {
 }
 
 /// Lets exactly one recognition callback resume the continuation.
-private final class ResumeGate: Sendable {
+private nonisolated final class ResumeGate: Sendable {
     private let resumed = Mutex(false)
 
     /// Returns true the first time only.

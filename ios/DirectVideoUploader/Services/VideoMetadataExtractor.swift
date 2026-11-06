@@ -2,7 +2,7 @@ import AVFoundation
 import UIKit
 
 /// Extracts real metadata from a local video file using AVAsset.
-struct VideoMetadata: Codable {
+nonisolated struct VideoMetadata: Codable {
     let duration: Int          // seconds
     let resolution: String     // e.g. "3840×2160"
     let codec: String          // e.g. "HEVC / H.265"
@@ -15,10 +15,10 @@ struct VideoMetadata: Codable {
     let gpsAltitude: Double?
 }
 
-enum VideoMetadataExtractor {
+nonisolated enum VideoMetadataExtractor {
     
     /// Extract metadata from a local video file URL.
-    static func extract(from url: URL) async -> VideoMetadata {
+    @concurrent static func extract(from url: URL) async -> VideoMetadata {
         let asset = AVURLAsset(url: url)
         
         // Duration

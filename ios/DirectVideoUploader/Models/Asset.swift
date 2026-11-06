@@ -2,7 +2,7 @@ import Foundation
 
 // MARK: - Asset
 
-struct Asset: Codable, Identifiable, Sendable {
+nonisolated struct Asset: Codable, Identifiable, Sendable {
     let id: String
     let mediasourceId: String?
     let mediasourceUrl: String?
@@ -16,13 +16,13 @@ struct Asset: Codable, Identifiable, Sendable {
     let formResponse: FormResponse?
 }
 
-struct AssetUser: Codable, Sendable {
+nonisolated struct AssetUser: Codable, Sendable {
     let id: String
     let name: String
     let phoneNumber: String?
 }
 
-enum AssetStatus: String, Codable, Sendable {
+nonisolated enum AssetStatus: String, Codable, Sendable {
     case uploading = "UPLOADING"
     case processing = "PROCESSING"
     case ready = "READY"
@@ -49,7 +49,7 @@ enum AssetStatus: String, Codable, Sendable {
 
 // MARK: - Clip
 
-struct Clip: Codable, Identifiable, Sendable {
+nonisolated struct Clip: Codable, Identifiable, Sendable {
     let id: String
     let clipIndex: Int?
     let originalFileName: String?
@@ -74,21 +74,21 @@ struct Clip: Codable, Identifiable, Sendable {
 
 // MARK: - Create Asset
 
-struct CreateAssetRequest: Codable, Sendable {
+nonisolated struct CreateAssetRequest: Codable, Sendable {
     let fileName: String
 }
 
-struct CreateAssetResponse: Codable, Sendable {
+nonisolated struct CreateAssetResponse: Codable, Sendable {
     let asset: Asset
 }
 
-struct AssetDetailResponse: Codable, Sendable {
+nonisolated struct AssetDetailResponse: Codable, Sendable {
     let asset: Asset
 }
 
 // MARK: - Form Response
 
-struct FormResponse: Codable, Sendable {
+nonisolated struct FormResponse: Codable, Sendable {
     let id: String
     let assetId: String?
     let slug: String?
@@ -100,6 +100,6 @@ struct FormResponse: Codable, Sendable {
 
 // MARK: - My Assets Response
 
-struct MyAssetsResponse: Codable, Sendable {
+nonisolated struct MyAssetsResponse: Codable, Sendable {
     let assets: [Asset]
 }

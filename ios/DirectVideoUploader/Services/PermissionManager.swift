@@ -3,7 +3,7 @@ import Speech
 import UIKit
 
 /// Reads and requests the system permissions the app uses. Injected so tests can supply fixed statuses.
-protocol PermissionAuthorizing: Sendable {
+nonisolated protocol PermissionAuthorizing: Sendable {
     func photoLibraryStatus() -> PHAuthorizationStatus
     func speechStatus() -> SFSpeechRecognizerAuthorizationStatus
     func requestPhotoLibrary() async -> PHAuthorizationStatus
@@ -12,7 +12,7 @@ protocol PermissionAuthorizing: Sendable {
 
 /// The real system authorization calls. Nonisolated: the Speech callback arrives on a
 /// background queue and must not inherit main-actor isolation.
-struct SystemPermissionAuthorizer: PermissionAuthorizing {
+nonisolated struct SystemPermissionAuthorizer: PermissionAuthorizing {
     func photoLibraryStatus() -> PHAuthorizationStatus {
         PHPhotoLibrary.authorizationStatus(for: .readWrite)
     }
@@ -27,7 +27,7 @@ struct SystemPermissionAuthorizer: PermissionAuthorizing {
 
     func requestSpeech() async -> SFSpeechRecognizerAuthorizationStatus {
         await withCheckedContinuation { continuation in
-            SFSpeechRecognizer.requestAuthorization { status in
+            SFSpeechRecognizer.requestAuthorization { @Sendable status in
                 continuation.resume(returning: status)
             }
         }
@@ -35,7 +35,7 @@ struct SystemPermissionAuthorizer: PermissionAuthorizing {
 }
 
 /// Whether to show the onboarding Permissions screen.
-enum PermissionsPrompt {
+nonisolated enum PermissionsPrompt {
     static let seenKey = "hasSeenPermissionsPrompt"
 
     /// Shown once, and only while at least one permission hasn't been decided.

@@ -33,7 +33,7 @@ enum Theme {
     /// Change this one line to restyle every font in the app.
     static let fontFamily: FontFamily = .system
 
-    private static func resolvedInterfaceStyle(from traits: UITraitCollection)
+    nonisolated private static func resolvedInterfaceStyle(from traits: UITraitCollection)
         -> UIUserInterfaceStyle
     {
         switch traits.userInterfaceStyle {
@@ -61,9 +61,10 @@ enum Theme {
         }
     }
 
-    private static func adaptive(_ lightHex: String, _ darkHex: String) -> Color {
+    /// Nonisolated: UIKit resolves dynamic colors on whatever thread draws.
+    nonisolated private static func adaptive(_ lightHex: String, _ darkHex: String) -> Color {
         Color(
-            uiColor: UIColor { traits in
+            uiColor: UIColor { @Sendable traits in
                 let style = resolvedInterfaceStyle(from: traits)
                 let hex = style == .dark ? darkHex : lightHex
                 return UIColor(hex: hex)
@@ -252,7 +253,7 @@ enum Theme {
 
 // MARK: - Color Extension
 
-extension Color {
+nonisolated extension Color {
     init(hex: String) {
         let hex = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
         var int: UInt64 = 0
@@ -276,7 +277,7 @@ extension Color {
     }
 }
 
-extension UIColor {
+nonisolated extension UIColor {
     fileprivate convenience init(hex: String) {
         let sanitized = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
         var value: UInt64 = 0

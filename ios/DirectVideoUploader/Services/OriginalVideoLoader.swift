@@ -4,7 +4,7 @@ import Photos
 import Synchronization
 
 /// An untouched original copied out of the Photos library, ready to upload.
-struct LoadedOriginalVideo: Sendable {
+nonisolated struct LoadedOriginalVideo: Sendable {
     let fileURL: URL
     let fileName: String
     let metadata: VideoMetadata
@@ -15,7 +15,7 @@ struct LoadedOriginalVideo: Sendable {
 ///
 /// Photos delivers callbacks on background queues, so everything here is nonisolated and
 /// only Sendable values (identifiers, URLs, dates) cross into and out of these functions.
-enum OriginalVideoLoader {
+nonisolated enum OriginalVideoLoader {
 
     enum LoaderError: LocalizedError {
         case assetNotFound
@@ -78,7 +78,7 @@ enum OriginalVideoLoader {
     /// Copies the camera's original bytes (the `.video` resource, ignoring Photos edits) into a
     /// unique temporary folder, downloading from iCloud when needed. Metadata comes from the
     /// original file, with Photos' capture date and location filling any gaps.
-    static func loadOriginal(
+    @concurrent static func loadOriginal(
         localIdentifier: String,
         progress: (@Sendable (Double) -> Void)? = nil
     ) async throws -> LoadedOriginalVideo {
@@ -129,7 +129,7 @@ enum OriginalVideoLoader {
 
     /// Streams a resource to disk. Unlike `writeData`, cancelling the task stops the
     /// request, so abandoned iCloud downloads don't keep running.
-    private static func writeResource(
+    @concurrent private static func writeResource(
         _ resource: PHAssetResource, to destination: URL, options: PHAssetResourceRequestOptions
     ) async throws {
         guard FileManager.default.createFile(atPath: destination.path, contents: nil) else {
@@ -175,7 +175,7 @@ enum OriginalVideoLoader {
 
     /// Adds a video to Photos as a new item and returns its local identifier.
     /// The file is copied, so the caller still owns `fileURL`.
-    static func saveVideoToPhotos(
+    @concurrent static func saveVideoToPhotos(
         fileURL: URL,
         fileName: String,
         creationDate: Date?,
@@ -212,7 +212,7 @@ enum OriginalVideoLoader {
 }
 
 /// Carries the placeholder identifier out of the Photos change block, which runs on a background queue.
-private final class CreatedAssetIdentifier: Sendable {
+private nonisolated final class CreatedAssetIdentifier: Sendable {
     private let storage = Mutex<String?>(nil)
 
     func set(_ identifier: String?) {
@@ -225,7 +225,7 @@ private final class CreatedAssetIdentifier: Sendable {
 }
 
 /// Thread-safe handle to an in-flight Photos data request so it can be cancelled from any queue.
-private final class ResourceRequest: Sendable {
+private nonisolated final class ResourceRequest: Sendable {
     private struct State {
         var id: PHAssetResourceDataRequestID?
         var cancelled = false
@@ -261,7 +261,7 @@ private final class ResourceRequest: Sendable {
 
 // MARK: - Metadata Helpers
 
-extension VideoMetadata {
+nonisolated extension VideoMetadata {
     /// Fills capture date and GPS only where the file itself had none.
     func fillingMissing(
         capturedAt: String?, gpsLat: Double?, gpsLon: Double?, gpsAltitude: Double?

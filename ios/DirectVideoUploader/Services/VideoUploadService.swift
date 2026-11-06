@@ -43,7 +43,7 @@ enum PHAssetIdentifierStore {
 // MARK: - Persisted Form State
 
 /// Saved to disk so the app can restore the context form after crash/kill.
-struct PendingForm: Codable {
+nonisolated struct PendingForm: Codable {
     let assetId: String
     let originalFileName: String?
     let capturedAt: String?
@@ -226,7 +226,7 @@ final class VideoUploadService: NSObject {
 
 /// URLSession calls the delegate on its own serial queue; the response buffer is still
 /// behind a `Mutex` so the class is checked `Sendable`.
-private final class UploadDelegate: NSObject, URLSessionTaskDelegate, URLSessionDataDelegate, Sendable {
+private nonisolated final class UploadDelegate: NSObject, URLSessionTaskDelegate, URLSessionDataDelegate, Sendable {
     let onProgress: @Sendable (Double) -> Void
     let onComplete: @Sendable (Data?, URLResponse?, (any Error)?) -> Void
     
@@ -263,14 +263,14 @@ private final class UploadDelegate: NSObject, URLSessionTaskDelegate, URLSession
 
 // MARK: - Mux Upload Response
 
-struct MuxUploadResponse {
+nonisolated struct MuxUploadResponse {
     let clipId: String
     let muxUploadId: String
 }
 
 // MARK: - Errors
 
-enum UploadError: LocalizedError {
+nonisolated enum UploadError: LocalizedError {
     case invalidResponse
     case serverError(Int, String)
     case fileNotFound

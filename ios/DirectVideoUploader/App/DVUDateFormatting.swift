@@ -1,7 +1,7 @@
 import Foundation
 
 /// Shared date formatters — avoids creating new instances on every call.
-enum DVUDateFormatting {
+nonisolated enum DVUDateFormatting {
     // MARK: - Cached Formatters
 
     private static let isoFull = Date.ISO8601FormatStyle(includingFractionalSeconds: true)

@@ -15,7 +15,7 @@ enum TrimOutcome {
 }
 
 /// Decides whether a trim selection actually removes footage.
-enum TrimRange {
+nonisolated enum TrimRange {
     /// Selections within this distance of either end count as untouched (under two frames at 30 fps).
     static let fullLengthTolerance: Double = 0.05
 
@@ -597,7 +597,7 @@ private struct TrimScrubberView: View {
 
 /// Exports a trimmed video using AVAssetExportPresetPassthrough — zero re-encoding.
 /// The output is a byte-for-byte copy of the original bitstream within the trim range.
-enum PassthroughExporter {
+nonisolated enum PassthroughExporter {
 
     enum ExportError: LocalizedError {
         case noCompatibleFileType
@@ -614,7 +614,7 @@ enum PassthroughExporter {
         }
     }
 
-    static func export(
+    @concurrent static func export(
         source: URL,
         originalFileName: String,
         startTime: Double,

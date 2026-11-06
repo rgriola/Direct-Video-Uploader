@@ -572,7 +572,7 @@ final class WebSocketService {
 
 // MARK: - Errors
 
-enum WebSocketError: LocalizedError {
+nonisolated enum WebSocketError: LocalizedError {
     case handshakeFailed
     case notConnected
 

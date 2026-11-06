@@ -2,7 +2,7 @@ import Foundation
 
 // MARK: - User
 
-struct User: Codable, Identifiable, Sendable {
+nonisolated struct User: Codable, Identifiable, Sendable {
     let id: String
     let phoneNumber: String
     let name: String
@@ -15,17 +15,17 @@ struct User: Codable, Identifiable, Sendable {
 
 // MARK: - Auth
 
-struct LoginRequest: Codable, Sendable {
+nonisolated struct LoginRequest: Codable, Sendable {
     let phoneNumber: String
     let pin: String
     let companyCode: String
 }
 
-struct LoginResponse: Codable, Sendable {
+nonisolated struct LoginResponse: Codable, Sendable {
     let token: String
     let user: User
 }
 
-struct MeResponse: Codable, Sendable {
+nonisolated struct MeResponse: Codable, Sendable {
     let user: User
 }

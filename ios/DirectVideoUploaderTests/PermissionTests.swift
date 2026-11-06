@@ -5,7 +5,7 @@ import Testing
 @testable import DirectVideoUploader
 
 /// Fixed-status authorizer that records which system prompts were requested.
-final class FakePermissionAuthorizer: PermissionAuthorizing {
+nonisolated final class FakePermissionAuthorizer: PermissionAuthorizing {
     struct State {
         var photo: PHAuthorizationStatus
         var speech: SFSpeechRecognizerAuthorizationStatus
