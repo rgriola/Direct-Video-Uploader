@@ -90,6 +90,10 @@ enum MessageCatalog {
           "IOS_MUX_READY_FOLLOWUP":
                "You're a rock star. Send another video when ready.",
           "IOS_UPLOAD_CANCELLED": "Upload cancelled.",
+          "IOS_TRIM_SAVE_DENIED":
+               "Your trimmed video uploaded, but it wasn't saved to Photos because Photo Library access is off.",
+          "IOS_TRIM_SAVE_FAILED":
+               "Your trimmed video uploaded, but it couldn't be saved to Photos: {reason}",
           "IOS_CONNECTIVITY_BLOCKING":
                "Connection interrupted while {operation}. Upload and metadata sync are paused until reconnection.",
           "IOS_CONNECTIVITY_RECOVERED":

@@ -40,8 +40,9 @@ The UX is intentionally modeled after text messaging work-flow: Opening the app 
 
 ```
 Direct-Video-Uploader/
-├── ios/                    # iOS app (SwiftUI, iOS 17+)
+├── ios/                    # iOS app (SwiftUI, iOS 18.6+)
 │   ├── project.yml         # XcodeGen project definition
+│   ├── DirectVideoUploaderTests/ # Swift Testing regression tests
 │   └── DirectVideoUploader/
 │       ├── App/            # Entry point, Theme.swift, DVUDateFormatting.swift
 │       ├── Models/         # User, Asset, ChatMessage, ServerConfig
@@ -77,7 +78,7 @@ Direct-Video-Uploader/
 
 - **Node.js** 20+ and **npm**
 - **PostgreSQL 18** (Homebrew recommended for local dev: `brew install postgresql@18`; Prisma manages schema)
-- **Xcode 16+** with iOS 17 SDK (for the iOS app)
+- **Xcode** with an iOS SDK compatible with iOS 18.6, plus **XcodeGen** (verified with Xcode 27.2)
 - Optional: Mux account, Slack bot token
 
 ### 1. Setup
@@ -110,11 +111,27 @@ This single command launches the **Triad** — database, API server (`:3000`), a
 ### 3. Build iOS App
 
 ```bash
-cd ios && xcodegen generate
-# Open DirectVideoUploader.xcodeproj in Xcode, build to device
+xcodegen generate --spec ios/project.yml
+# Open ios/DirectVideoUploader.xcodeproj in Xcode, build to device
 ```
 
 > **Tip:** For tethered device testing, update `ServerConfig.swift` with your Mac's LAN IP.
+
+The unit tests host the app, which can restore a saved session and contact its configured server. Use a fresh, disposable simulator rather than one containing real credentials or data:
+
+```bash
+xcrun simctl list runtimes
+xcrun simctl list devicetypes
+test_simulator="$(xcrun simctl create 'Fixer Unit Tests' \
+  'com.apple.CoreSimulator.SimDeviceType.iPhone-17e' \
+  'com.apple.CoreSimulator.SimRuntime.iOS-27-0')"
+xcodebuild -project ios/DirectVideoUploader.xcodeproj -scheme DirectVideoUploader \
+  -destination "platform=iOS Simulator,id=$test_simulator" CODE_SIGNING_ALLOWED=NO test
+xcrun simctl shutdown "$test_simulator"
+xcrun simctl delete "$test_simulator"
+```
+
+Replace the device type and runtime with installed iPhone options if needed. If testing is interrupted, shut down and delete only the simulator identified by `test_simulator`. CI runs the same suite on its newest available iOS 18.6+ iPhone simulator. These tests do not replace the physical-device regression checklist in the [iOS modernization plan](iOS-Modernization.md).
 
 ---
 

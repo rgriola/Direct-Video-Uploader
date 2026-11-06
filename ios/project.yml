@@ -3,7 +3,7 @@ name: DirectVideoUploader
 options:
   bundleIdPrefix: com.directvideo
   deploymentTarget:
-    iOS: "17.0"
+    iOS: "18.6"
   xcodeVersion: "16.0"
 
 settings:
@@ -20,6 +20,9 @@ targets:
     platform: iOS
     sources:
       - DirectVideoUploader
+    scheme:
+      testTargets:
+        - DirectVideoUploaderTests
     settings:
       base:
         INFOPLIST_KEY_CFBundleDisplayName: Fixer
@@ -31,18 +34,23 @@ targets:
         INFOPLIST_KEY_UILaunchScreen_ImageRespectsSafeAreaInsets: NO
         INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
-        INFOPLIST_KEY_NSPhotoLibraryUsageDescription: "Select videos to upload to the newsroom server."
+        INFOPLIST_KEY_NSPhotoLibraryUsageDescription: "Upload original videos from your library to the newsroom server."
+        INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription: "Save trimmed videos to your Photo Library."
         INFOPLIST_KEY_NSCameraUsageDescription: "Record video to upload to the newsroom server."
         INFOPLIST_KEY_NSLocationWhenInUseUsageDescription: "Attach GPS coordinates to your video upload."
         INFOPLIST_KEY_NSSpeechRecognitionUsageDescription: "Transcribe audio from your uploaded videos for searchable captions."
         INFOPLIST_KEY_NSMicrophoneUsageDescription: "Required by the speech recognition framework for audio processing."
+        IPHONEOS_DEPLOYMENT_TARGET: "18.6"
         PRODUCT_BUNDLE_IDENTIFIER: com.directvideo.uploader
+        SUPPORTED_PLATFORMS: "iphoneos iphonesimulator"
+        SUPPORTS_MACCATALYST: NO
+        SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: NO
+        SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD: NO
         TARGETED_DEVICE_FAMILY: "1"
         GENERATE_INFOPLIST_FILE: YES
 
         CODE_SIGN_IDENTITY: "Apple Development"
         CODE_SIGN_STYLE: Automatic
-        DEVELOPMENT_TEAM: xxxxxxxxxx
     info:
       path: DirectVideoUploader/Info.plist
       properties:
@@ -53,3 +61,16 @@ targets:
         UILaunchScreen:
           UIColorName: LaunchBg
           UIImageName: launchscreen
+
+  DirectVideoUploaderTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - DirectVideoUploaderTests
+      - DirectVideoUploader/App/DVUDateFormatting.swift
+    dependencies:
+      - target: DirectVideoUploader
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.directvideo.uploader.tests
+        GENERATE_INFOPLIST_FILE: YES

@@ -81,12 +81,14 @@ struct ChatView: View {
         }
         .sheet(isPresented: $showVideoLibrary) {
             VideoLibraryView(
-                onConfirm: { fileURL, fileName, metadata, phAssetId in
+                onConfirm: { picked in
                     showVideoLibrary = false
                     Task {
                         await viewModel?.stageVideo(
-                            fileURL: fileURL, fileName: fileName, metadata: metadata,
-                            phAssetIdentifier: phAssetId)
+                            fileURL: picked.fileURL, fileName: picked.fileName,
+                            metadata: picked.metadata,
+                            phAssetIdentifier: picked.phAssetIdentifier,
+                            isTrimmed: picked.isTrimmed)
                     }
                 },
                 onDismiss: {

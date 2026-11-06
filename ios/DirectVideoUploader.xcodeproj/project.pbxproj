@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		1180A5A70A26DEDC5C34B59B /* DVUDateFormatting.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4DBB133385999B4E09A826F7 /* DVUDateFormatting.swift */; };
 		169D8BAC6DCF93E8BA23331B /* OnboardingStepView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D9A41DBC2D0BD1F47AF7EE95 /* OnboardingStepView.swift */; };
 		257DDBB48613A0897D5754F0 /* VideoLibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC53E361C83E04580CF05221 /* VideoLibraryView.swift */; };
 		25F4475ABDC354FFB218DC4B /* VideoUploadService.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA58877C26F0C09FF7DFA4DC /* VideoUploadService.swift */; };
@@ -16,6 +17,7 @@
 		37912629DFC4719F11FEB3F5 /* MetadataView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2796AFC62F34F3182D7CCE1C /* MetadataView.swift */; };
 		4B254383C12F662D1C19C869 /* ChatButtonStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = E40A97DC8EDA46629FA1ACA5 /* ChatButtonStyle.swift */; };
 		52DEC1E47DF5649ABBBC6F20 /* PermissionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 744BF6B02789CE656827F003 /* PermissionManager.swift */; };
+		58439F211DD0E7B94E6BBB6E /* OriginalVideoLoader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 897A61AF6BF471E837E565AE /* OriginalVideoLoader.swift */; };
 		5D78B58E2BE37233E19AA1F9 /* PhotosView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02302BA1984533BE8F7E4F3E /* PhotosView.swift */; };
 		610ABA84479B55060D56C3FD /* TranscriptionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = E0F22B2B9DC29CAFA863CDB2 /* TranscriptionService.swift */; };
 		6D33A3123AE13D1CADF387DC /* ChatViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66AE6120B342F8FBF6D9F832 /* ChatViewModel.swift */; };
@@ -30,12 +32,15 @@
 		8CDB0858FD44667AD9882E4D /* VideoBubble.swift in Sources */ = {isa = PBXBuildFile; fileRef = B136E4B9F4C6D88E9009D569 /* VideoBubble.swift */; };
 		94EB8482D6F7158958A03393 /* InputBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF5B8A623A0F5AA9CA07EA1A /* InputBar.swift */; };
 		958C853DDA42C7E81E258AC7 /* DVUDateFormatting.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4DBB133385999B4E09A826F7 /* DVUDateFormatting.swift */; };
+		9C749D1F06E03EF78A32DA0D /* MessageBehaviorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17AEE28CC906D032D1BD31D0 /* MessageBehaviorTests.swift */; };
 		9F8F876E364EA40959AE53BD /* InstructionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1D2E1E9A55D56991D3BA689 /* InstructionsView.swift */; };
+		A03DEE56B0012BF04210CFB7 /* ModelDecodingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF22B93B635C47AD22888777 /* ModelDecodingTests.swift */; };
 		A9F088643DC2986469FFC84B /* ContextFormView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3899E53553FC5E50293A8E8 /* ContextFormView.swift */; };
 		B232F6B18466FB01AFDF1784 /* RetryHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CB447F960F2A8A21F7DA5C5 /* RetryHelper.swift */; };
 		B23CA5DB5C7678A863AC8029 /* VideoMetadataExtractor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E996DE4500DDFF0790F62F0 /* VideoMetadataExtractor.swift */; };
 		B4C8A94E9D6FEE5A35C487AF /* KeychainHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2F7D1991BA8E3668878BC47 /* KeychainHelper.swift */; };
 		BB8D6AF27EE9A0B211E28483 /* ArchiveListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7A81292325663F81C4B8772 /* ArchiveListView.swift */; };
+		BBA09A91B5233D09E3031DF3 /* UploadFidelityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF9E9EFEDAF41E029941061B /* UploadFidelityTests.swift */; };
 		C43AFC93CF4984D2A3C2DA9A /* ProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 571C0C62391282912FB69E9F /* ProfileView.swift */; };
 		C580ED7D08982A24440B91B7 /* OnboardingCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = B32A4BA1AD50B50D44528EF2 /* OnboardingCatalog.swift */; };
 		CC1C0E76EF9FE58674443EC5 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A7F3BED43E9CB3FFE330020 /* Theme.swift */; };
@@ -45,16 +50,29 @@
 		E2AB9C60B42CFBE53F549879 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = CC7AA7D72D102A4BC8F6B464 /* Assets.xcassets */; };
 		E2AE05593A1911192268E5FB /* ChatHeaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49E974DDC963928102FA291B /* ChatHeaderView.swift */; };
 		E6DDF3D43DC556C9E5C75AAF /* MessageBubble.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B7EEEC345EAFF2EE3EFD9CA /* MessageBubble.swift */; };
+		EBEC000F1AAA3C0BD3EE4858 /* DVUDateFormattingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF68B53E9AF4B264A2643194 /* DVUDateFormattingTests.swift */; };
 		F10D6B52A7FB3C74ADB93160 /* OnboardingWalkthroughView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC50492C0045E1B5334C32ED /* OnboardingWalkthroughView.swift */; };
 		F35DE01BD68A069A3CB04989 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 894318625F91A1D2462249FE /* ContentView.swift */; };
 		FD85A83F2B113BB394A15D3E /* ChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1FF094BA3F6CC3D1003E121 /* ChatView.swift */; };
 		FFF7BA9E6503EB34CC477CFF /* AppearanceService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6174AE8F4469952EC7041C1A /* AppearanceService.swift */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		F9F86D173A667BF65C460C4B /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 0CC166FC5FFC5266E300EF0B /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 49FA393813097910E5C66B21;
+			remoteInfo = DirectVideoUploader;
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileReference section */
 		02302BA1984533BE8F7E4F3E /* PhotosView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotosView.swift; sourceTree = "<group>"; };
 		0813D4F9F9F55CFAE78F08B5 /* WebSocketService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebSocketService.swift; sourceTree = "<group>"; };
 		0E996DE4500DDFF0790F62F0 /* VideoMetadataExtractor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoMetadataExtractor.swift; sourceTree = "<group>"; };
+		11D39EE8D05CC894E99A1322 /* DirectVideoUploaderTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = DirectVideoUploaderTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		17AEE28CC906D032D1BD31D0 /* MessageBehaviorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageBehaviorTests.swift; sourceTree = "<group>"; };
 		2796AFC62F34F3182D7CCE1C /* MetadataView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetadataView.swift; sourceTree = "<group>"; };
 		2B7EEEC345EAFF2EE3EFD9CA /* MessageBubble.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageBubble.swift; sourceTree = "<group>"; };
 		2F9DE735EEFFFCC798CA054C /* Asset.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Asset.swift; sourceTree = "<group>"; };
@@ -72,6 +90,7 @@
 		7CB447F960F2A8A21F7DA5C5 /* RetryHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RetryHelper.swift; sourceTree = "<group>"; };
 		86A11FF4693D09E9320E8C07 /* AuthService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthService.swift; sourceTree = "<group>"; };
 		894318625F91A1D2462249FE /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		897A61AF6BF471E837E565AE /* OriginalVideoLoader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OriginalVideoLoader.swift; sourceTree = "<group>"; };
 		89F6F2F5DBBEE529E69418D7 /* SlackShareSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SlackShareSheet.swift; sourceTree = "<group>"; };
 		971135FDDFCC6553BD6FD5DC /* MessagePolicyCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessagePolicyCoordinator.swift; sourceTree = "<group>"; };
 		AAA58A3F30BFA24CE268AD67 /* LoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginView.swift; sourceTree = "<group>"; };
@@ -82,10 +101,13 @@
 		CC18F5FFC74280EFFEB0BE65 /* ChatMessage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatMessage.swift; sourceTree = "<group>"; };
 		CC7AA7D72D102A4BC8F6B464 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		CE10509FD1B4B7983FB58B3D /* DirectVideoUploaderApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DirectVideoUploaderApp.swift; sourceTree = "<group>"; };
+		CF22B93B635C47AD22888777 /* ModelDecodingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelDecodingTests.swift; sourceTree = "<group>"; };
+		CF68B53E9AF4B264A2643194 /* DVUDateFormattingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DVUDateFormattingTests.swift; sourceTree = "<group>"; };
 		D1D2E1E9A55D56991D3BA689 /* InstructionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InstructionsView.swift; sourceTree = "<group>"; };
 		D56F342EB8CB3B26EC77BBF3 /* ServerConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerConfig.swift; sourceTree = "<group>"; };
 		D9A41DBC2D0BD1F47AF7EE95 /* OnboardingStepView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingStepView.swift; sourceTree = "<group>"; };
 		DC2A1D0A89F18984A90B5686 /* ConversationSummaryBubble.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationSummaryBubble.swift; sourceTree = "<group>"; };
+		DF9E9EFEDAF41E029941061B /* UploadFidelityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UploadFidelityTests.swift; sourceTree = "<group>"; };
 		E0F22B2B9DC29CAFA863CDB2 /* TranscriptionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptionService.swift; sourceTree = "<group>"; };
 		E2F7D1991BA8E3668878BC47 /* KeychainHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainHelper.swift; sourceTree = "<group>"; };
 		E3899E53553FC5E50293A8E8 /* ContextFormView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContextFormView.swift; sourceTree = "<group>"; };
@@ -95,10 +117,21 @@
 		EC50492C0045E1B5334C32ED /* OnboardingWalkthroughView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingWalkthroughView.swift; sourceTree = "<group>"; };
 		EF5B8A623A0F5AA9CA07EA1A /* InputBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InputBar.swift; sourceTree = "<group>"; };
 		F1FF094BA3F6CC3D1003E121 /* ChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatView.swift; sourceTree = "<group>"; };
-		FF11D8E240B8AF1F2DFFB68B /* DirectVideoUploader.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = DirectVideoUploader.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		FF11D8E240B8AF1F2DFFB68B /* DirectVideoUploader.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = DirectVideoUploader.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
+		0A6481ED3975CF016618D9E5 /* DirectVideoUploaderTests */ = {
+			isa = PBXGroup;
+			children = (
+				CF68B53E9AF4B264A2643194 /* DVUDateFormattingTests.swift */,
+				17AEE28CC906D032D1BD31D0 /* MessageBehaviorTests.swift */,
+				CF22B93B635C47AD22888777 /* ModelDecodingTests.swift */,
+				DF9E9EFEDAF41E029941061B /* UploadFidelityTests.swift */,
+			);
+			path = DirectVideoUploaderTests;
+			sourceTree = "<group>";
+		};
 		111EDB16AC2A10DDB6D30662 /* Archive */ = {
 			isa = PBXGroup;
 			children = (
@@ -118,6 +151,7 @@
 				AD0ED0DC26FB3DB82C03DDF6 /* MessageCatalog.swift */,
 				971135FDDFCC6553BD6FD5DC /* MessagePolicyCoordinator.swift */,
 				B32A4BA1AD50B50D44528EF2 /* OnboardingCatalog.swift */,
+				897A61AF6BF471E837E565AE /* OriginalVideoLoader.swift */,
 				744BF6B02789CE656827F003 /* PermissionManager.swift */,
 				E0F22B2B9DC29CAFA863CDB2 /* TranscriptionService.swift */,
 				0E996DE4500DDFF0790F62F0 /* VideoMetadataExtractor.swift */,
@@ -131,6 +165,7 @@
 			isa = PBXGroup;
 			children = (
 				C26051BCDF417085C92C74B4 /* DirectVideoUploader */,
+				0A6481ED3975CF016618D9E5 /* DirectVideoUploaderTests */,
 				5743955FF4CE584D1C05A446 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -171,6 +206,7 @@
 			isa = PBXGroup;
 			children = (
 				FF11D8E240B8AF1F2DFFB68B /* DirectVideoUploader.app */,
+				11D39EE8D05CC894E99A1322 /* DirectVideoUploaderTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -298,6 +334,24 @@
 			productReference = FF11D8E240B8AF1F2DFFB68B /* DirectVideoUploader.app */;
 			productType = "com.apple.product-type.application";
 		};
+		B87A93323F2C05CF01D9D78B /* DirectVideoUploaderTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = EC69A2EF27CC5BFA27790585 /* Build configuration list for PBXNativeTarget "DirectVideoUploaderTests" */;
+			buildPhases = (
+				04B9594065F6017A647328D8 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				5B5F386367985F569934301C /* PBXTargetDependency */,
+			);
+			name = DirectVideoUploaderTests;
+			packageProductDependencies = (
+			);
+			productName = DirectVideoUploaderTests;
+			productReference = 11D39EE8D05CC894E99A1322 /* DirectVideoUploaderTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -308,6 +362,10 @@
 				LastUpgradeCheck = 1600;
 				TargetAttributes = {
 					49FA393813097910E5C66B21 = {
+						DevelopmentTeam = LW5P4PVL96;
+						ProvisioningStyle = Automatic;
+					};
+					B87A93323F2C05CF01D9D78B = {
 						DevelopmentTeam = LW5P4PVL96;
 						ProvisioningStyle = Automatic;
 					};
@@ -328,6 +386,7 @@
 			projectRoot = "";
 			targets = (
 				49FA393813097910E5C66B21 /* DirectVideoUploader */,
+				B87A93323F2C05CF01D9D78B /* DirectVideoUploaderTests */,
 			);
 		};
 /* End PBXProject section */
@@ -344,6 +403,18 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		04B9594065F6017A647328D8 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				1180A5A70A26DEDC5C34B59B /* DVUDateFormatting.swift in Sources */,
+				EBEC000F1AAA3C0BD3EE4858 /* DVUDateFormattingTests.swift in Sources */,
+				9C749D1F06E03EF78A32DA0D /* MessageBehaviorTests.swift in Sources */,
+				A03DEE56B0012BF04210CFB7 /* ModelDecodingTests.swift in Sources */,
+				BBA09A91B5233D09E3031DF3 /* UploadFidelityTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		741F7EB8730A6006097DE5B9 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -374,6 +445,7 @@
 				C580ED7D08982A24440B91B7 /* OnboardingCatalog.swift in Sources */,
 				169D8BAC6DCF93E8BA23331B /* OnboardingStepView.swift in Sources */,
 				F10D6B52A7FB3C74ADB93160 /* OnboardingWalkthroughView.swift in Sources */,
+				58439F211DD0E7B94E6BBB6E /* OriginalVideoLoader.swift in Sources */,
 				52DEC1E47DF5649ABBBC6F20 /* PermissionManager.swift in Sources */,
 				5D78B58E2BE37233E19AA1F9 /* PhotosView.swift in Sources */,
 				C43AFC93CF4984D2A3C2DA9A /* ProfileView.swift in Sources */,
@@ -393,6 +465,14 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		5B5F386367985F569934301C /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 49FA393813097910E5C66B21 /* DirectVideoUploader */;
+			targetProxy = F9F86D173A667BF65C460C4B /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		0C0562BD3ECF0FEAB9B38D0D /* Debug */ = {
@@ -449,7 +529,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.6;
 				MARKETING_VERSION = 1.0.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
@@ -467,13 +547,15 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = DirectVideoUploader/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Fixer;
 				INFOPLIST_KEY_NSCameraUsageDescription = "Record video to upload to the newsroom server.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Attach GPS coordinates to your video upload.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Required by the speech recognition framework for audio processing.";
-				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Select videos to upload to the newsroom server.";
+				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Save trimmed videos to your Photo Library.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Upload original videos from your library to the newsroom server.";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Transcribe audio from your uploaded videos for searchable captions.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -483,28 +565,52 @@
 				INFOPLIST_KEY_UILaunchScreen_ImageRespectsSafeAreaInsets = NO;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.6;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.directvideo.uploader;
 				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
 				TARGETED_DEVICE_FAMILY = 1;
 			};
 			name = Release;
+		};
+		650F6801B70AF99B9228562A /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.directvideo.uploader.tests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/DirectVideoUploader.app/DirectVideoUploader";
+			};
+			name = Debug;
 		};
 		879FE13B58EC87DEDADD7F4A /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = DirectVideoUploader/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Fixer;
 				INFOPLIST_KEY_NSCameraUsageDescription = "Record video to upload to the newsroom server.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Attach GPS coordinates to your video upload.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Required by the speech recognition framework for audio processing.";
-				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Select videos to upload to the newsroom server.";
+				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Save trimmed videos to your Photo Library.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Upload original videos from your library to the newsroom server.";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Transcribe audio from your uploaded videos for searchable captions.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -514,12 +620,17 @@
 				INFOPLIST_KEY_UILaunchScreen_ImageRespectsSafeAreaInsets = NO;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.6;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.directvideo.uploader;
 				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
 				TARGETED_DEVICE_FAMILY = 1;
 			};
 			name = Debug;
@@ -572,7 +683,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.6;
 				MARKETING_VERSION = 1.0.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
@@ -584,6 +695,23 @@
 			};
 			name = Release;
 		};
+		ECBD36888C7B20ADCC666F2F /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.directvideo.uploader.tests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/DirectVideoUploader.app/DirectVideoUploader";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -592,6 +720,15 @@
 			buildConfigurations = (
 				0C0562BD3ECF0FEAB9B38D0D /* Debug */,
 				B6E83B12A0C9BA0C1E067557 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		EC69A2EF27CC5BFA27790585 /* Build configuration list for PBXNativeTarget "DirectVideoUploaderTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				650F6801B70AF99B9228562A /* Debug */,
+				ECBD36888C7B20ADCC666F2F /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;

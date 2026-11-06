@@ -6,13 +6,33 @@ import UIKit
 
 // MARK: - Public API (unchanged contract)
 
+/// Result of the trim screen.
+enum TrimOutcome {
+    /// Nothing was cut; upload the original file as-is.
+    case fullLength
+    /// A passthrough copy of the selected range.
+    case trimmed(URL)
+}
+
+/// Decides whether a trim selection actually removes footage.
+enum TrimRange {
+    /// Selections within this distance of either end count as untouched (under two frames at 30 fps).
+    static let fullLengthTolerance: Double = 0.05
+
+    static func isFullLength(start: Double, end: Double, duration: Double) -> Bool {
+        guard duration > 0 else { return true }
+        return start <= fullLengthTolerance && end >= duration - fullLengthTolerance
+    }
+}
+
 /// Lossless video trim UI using AVFoundation passthrough export.
 /// Shows a filmstrip scrubber, draggable trim handles, and an inline player preview.
 /// The trimmed output has identical quality to the original — no re-encoding.
+/// When the full length is kept, no copy is made and the original is uploaded.
 struct VideoTrimView: View {
     let videoURL: URL
     let originalFileName: String
-    var onTrimmed: (URL) -> Void
+    var onFinished: (TrimOutcome) -> Void
     var onCancel: () -> Void
 
     @State private var vm = TrimViewModel()
@@ -156,6 +176,10 @@ struct VideoTrimView: View {
 
     private func handleExport() {
         vm.pause()
+        if TrimRange.isFullLength(start: vm.trimStart, end: vm.trimEnd, duration: vm.duration) {
+            onFinished(.fullLength)
+            return
+        }
         isExporting = true
         exportProgress = 0
 
@@ -174,7 +198,7 @@ struct VideoTrimView: View {
                 )
                 await MainActor.run {
                     isExporting = false
-                    onTrimmed(outputURL)
+                    onFinished(.trimmed(outputURL))
                 }
             } catch {
                 await MainActor.run {
@@ -625,12 +649,20 @@ enum PassthroughExporter {
         }
         session.outputFileType = fileType
 
+        // Carry the original's capture date, location and camera details into the copy.
+        if let sourceMetadata = try? await asset.load(.metadata), !sourceMetadata.isEmpty {
+            session.metadata = sourceMetadata
+        }
+
         // Build trimmed output filename
         let name = (originalFileName as NSString).deletingPathExtension
         let outExt = fileType == .mp4 ? "mp4" : "mov"
         let editedName = "\(name)-edited.\(outExt)"
-        let destURL = FileManager.default.temporaryDirectory.appendingPathComponent(editedName)
-        try? FileManager.default.removeItem(at: destURL)
+        // A unique folder per export, so re-trimming can't replace a copy that's still uploading.
+        let destFolder = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: destFolder, withIntermediateDirectories: true)
+        let destURL = destFolder.appendingPathComponent(editedName)
 
         session.outputURL = destURL
 
@@ -655,8 +687,10 @@ enum PassthroughExporter {
         case .completed:
             return destURL
         case .cancelled:
+            try? FileManager.default.removeItem(at: destFolder)
             throw ExportError.cancelled
         default:
+            try? FileManager.default.removeItem(at: destFolder)
             throw ExportError.exportFailed(
                 session.error?.localizedDescription ?? "Unknown export error")
         }

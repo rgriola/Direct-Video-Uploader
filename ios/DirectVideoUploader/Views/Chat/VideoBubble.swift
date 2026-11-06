@@ -16,6 +16,8 @@ struct StagedVideo {
     let createdDate: String?      // formatted display string
     let thumbnail: UIImage?
     let metadata: VideoMetadata
+    /// A trimmed copy that isn't in Photos yet; saved there after a successful upload.
+    var isTrimmed: Bool = false
 }
 
 /// Unified video bubble — handles staged preview, uploading progress, and sent confirmation

@@ -22,6 +22,8 @@ struct ArchiveRowView: View {
     @State private var reuploadProgress: Double = 0
     @State private var reuploadError: String?
     @State private var reuploadComplete = false
+    @State private var showReuploadPicker = false
+    @State private var reuploadNotice: String?
 
     /// Asset has no form response and user hasn't just submitted one
     private var needsDetails: Bool {
@@ -48,8 +50,8 @@ struct ArchiveRowView: View {
 
     private var rowStatus: RowStatus {
         if needsDetails { return .needsDetails }
-        if asset.status == .error || isStuckProcessing { return .failed }
         if isReuploadingVideo { return .reuploading }
+        if asset.status == .error || isStuckProcessing { return .failed }
         if asset.status == .processing { return .processing }
         return .ready
     }
@@ -293,22 +295,14 @@ struct ArchiveRowView: View {
                                 Task { await handleAutoReupload() }
                             }
                         } else {
-                            PhotosPicker(
-                                selection: $selectedVideoItem,
-                                matching: .videos
+                            archiveButton(
+                                icon: "arrow.clockwise.circle.fill",
+                                label: "Re-upload (pick video)",
+                                color: Theme.red
                             ) {
-                                HStack(spacing: 4) {
-                                    Image(systemName: "arrow.clockwise.circle.fill")
-                                    Text("Re-upload (pick video)")
-                                }
-                                .font(Theme.font13Semibold)
-                                .foregroundStyle(Theme.red)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, Theme.buttonPaddingV)
-                                .background(Theme.red.opacity(0.15))
-                                .clipShape(RoundedRectangle(cornerRadius: Theme.buttonCornerRadius))
+                                reuploadNotice = nil
+                                showReuploadPicker = true
                             }
-                            .buttonStyle(.plain)
                         }
                     case .reuploading:
                         // Show progress with thumbnail during re-upload
@@ -389,6 +383,12 @@ struct ArchiveRowView: View {
                         }
                     }
 
+                    if let reuploadNotice, reuploadError == nil {
+                        Label(reuploadNotice, systemImage: "exclamationmark.triangle.fill")
+                            .font(Theme.font11Semibold)
+                            .foregroundStyle(Theme.warningText)
+                    }
+
                     // Re-upload error
                     if let reuploadError {
                         Text(reuploadError)
@@ -431,6 +431,13 @@ struct ArchiveRowView: View {
                 }
             )
         }
+        .photosPicker(
+            isPresented: $showReuploadPicker,
+            selection: $selectedVideoItem,
+            matching: .videos,
+            preferredItemEncoding: .current,
+            photoLibrary: .shared()
+        )
         .onChange(of: selectedVideoItem) { _, newItem in
             guard let newItem else { return }
             selectedVideoItem = nil
@@ -461,6 +468,7 @@ struct ArchiveRowView: View {
         Button(action: action) {
             HStack(spacing: 4) {
                 Image(systemName: icon)
+                    .accessibilityHidden(true)
                 Text(label)
             }
             .font(Theme.font13Semibold)
@@ -504,51 +512,78 @@ struct ArchiveRowView: View {
 
     // MARK: - Re-upload
 
-    /// Auto re-upload using stored PHAsset identifier or auto-discovery by capturedAt
+    /// Auto re-upload of the camera original, found by stored Photos identifier or by capture date.
+    /// A Photos video only counts as a match when its length equals the uploaded clip's, so the
+    /// untrimmed source of a trimmed upload is never sent. Otherwise the person picks the video.
     private func handleAutoReupload() async {
+        guard !isReuploadingVideo else { return }
         isReuploadingVideo = true
         reuploadProgress = 0
         reuploadError = nil
+        reuploadNotice = nil
+
+        let status = await OriginalVideoLoader.requestReadWriteAccessIfNeeded()
+        guard OriginalVideoLoader.canRead(status) else {
+            askToPickVideo("Photo Library access is off, so pick the video to re-upload.")
+            return
+        }
+
+        guard let identifier = findMatchingOriginal() else {
+            askToPickVideo("Couldn't find a matching video in Photos. Pick the video to re-upload.")
+            return
+        }
+
         defer { if reuploadError != nil { isReuploadingVideo = false } }
 
         do {
-            // Strategy 1: Use stored PHAsset identifier
-            if let phId = PHAssetIdentifierStore.identifier(for: asset.id) {
-                let fetchResult = PHAsset.fetchAssets(withLocalIdentifiers: [phId], options: nil)
-                if let phAsset = fetchResult.firstObject {
-                    print("📷 [Archive] Found video by stored PHAsset ID")
-                    let tempURL = try await exportVideoToTemp(phAsset: phAsset)
-                    defer { try? FileManager.default.removeItem(at: tempURL) }
-                    try await performUpload(fileURL: tempURL)
-                    return
-                }
-            }
-
-            // Strategy 2: Auto-discover by capturedAt date from clip metadata
-            if let capturedAtStr = asset.clips?.first?.capturedAt,
-                let capturedDate = DVUDateFormatting.parseISO(capturedAtStr)
-            {
-                let phAsset = discoverPHAsset(
-                    capturedAt: capturedDate, duration: asset.clips?.first?.duration)
-                if let phAsset {
-                    print("📷 [Archive] Auto-discovered video by capturedAt: \(capturedAtStr)")
-                    // Save for future re-uploads
-                    PHAssetIdentifierStore.save(
-                        assetId: asset.id, phAssetIdentifier: phAsset.localIdentifier)
-                    let tempURL = try await exportVideoToTemp(phAsset: phAsset)
-                    defer { try? FileManager.default.removeItem(at: tempURL) }
-                    try await performUpload(fileURL: tempURL)
-                    return
-                }
-            }
-
-            // Both strategies failed
-            reuploadError = "Original video no longer in Library."
-
+            try await uploadOriginal(localIdentifier: identifier)
         } catch {
             reuploadError = "Re-upload failed: \(error.localizedDescription)"
             print("❌ [Archive] Auto re-upload failed: \(error)")
         }
+    }
+
+    /// Photos identifier of a video with the same length as the uploaded clip, if one exists.
+    private func findMatchingOriginal() -> String? {
+        let clipDuration = asset.clips?.first?.duration
+
+        // Strategy 1: stored identifier (saved at upload, or the saved trimmed copy)
+        if let storedId = PHAssetIdentifierStore.identifier(for: asset.id),
+            let photosDuration = OriginalVideoLoader.duration(ofAssetWithIdentifier: storedId)
+        {
+            if OriginalVideoLoader.isSameLength(
+                photosDuration: photosDuration, clipDuration: clipDuration)
+            {
+                print("📷 [Archive] Found video by stored PHAsset ID")
+                return storedId
+            }
+            print("⚠️ [Archive] Stored PHAsset length differs from the uploaded clip; skipping")
+        }
+
+        // Strategy 2: auto-discover by capturedAt date from clip metadata
+        if let capturedAtStr = asset.clips?.first?.capturedAt,
+            let capturedDate = DVUDateFormatting.parseISO(capturedAtStr),
+            let phAsset = discoverPHAsset(capturedAt: capturedDate, duration: clipDuration),
+            OriginalVideoLoader.isSameLength(
+                photosDuration: phAsset.duration, clipDuration: clipDuration)
+        {
+            print("📷 [Archive] Auto-discovered video by capturedAt: \(capturedAtStr)")
+            PHAssetIdentifierStore.save(
+                assetId: asset.id, phAssetIdentifier: phAsset.localIdentifier)
+            return phAsset.localIdentifier
+        }
+
+        return nil
+    }
+
+    private func askToPickVideo(_ message: String) {
+        isReuploadingVideo = false
+        reuploadNotice = message
+        // The picker takes VoiceOver focus, so speak the reason before it opens.
+        var announcement = AttributedString(message)
+        announcement.accessibilitySpeechAnnouncementPriority = .high
+        AccessibilityNotification.Announcement(announcement).post()
+        showReuploadPicker = true
     }
 
     /// Search Photos library for a video matching the capturedAt date and optional duration
@@ -588,41 +623,54 @@ struct ArchiveRowView: View {
         return results.firstObject
     }
 
-    /// Fallback re-upload using PhotosPicker selection
+    /// Re-upload of a video the person picked: the camera original when Photos access allows it,
+    /// otherwise the picker's copy of the current version (no transcoding).
     private func handleReupload(item: PhotosPickerItem) async {
+        guard !isReuploadingVideo else { return }
         isReuploadingVideo = true
         reuploadProgress = 0
         reuploadError = nil
+        reuploadNotice = nil
         defer { if reuploadError != nil { isReuploadingVideo = false } }
 
         do {
-            // Resolve PHAsset from picker item — avoids loading full video into memory
-            guard let phId = item.itemIdentifier else {
-                reuploadError = "Could not identify selected video"
+            let status = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+            if OriginalVideoLoader.canRead(status),
+                let identifier = item.itemIdentifier,
+                OriginalVideoLoader.duration(ofAssetWithIdentifier: identifier) != nil
+            {
+                PHAssetIdentifierStore.save(assetId: asset.id, phAssetIdentifier: identifier)
+                try await uploadOriginal(localIdentifier: identifier)
                 return
             }
-            let fetchResult = PHAsset.fetchAssets(withLocalIdentifiers: [phId], options: nil)
-            guard let phAsset = fetchResult.firstObject else {
+
+            guard let movie = try await item.loadTransferable(type: VideoTransferable.self) else {
                 reuploadError = "Could not load video from Photos library"
                 return
             }
-
-            // Save the new PHAsset identifier for future re-uploads
-            PHAssetIdentifierStore.save(
-                assetId: asset.id, phAssetIdentifier: phAsset.localIdentifier)
-
-            let tempURL = try await exportVideoToTemp(phAsset: phAsset)
-            defer { try? FileManager.default.removeItem(at: tempURL) }
-            try await performUpload(fileURL: tempURL)
+            defer { try? FileManager.default.removeItem(at: movie.url.deletingLastPathComponent()) }
+            try await performUpload(fileURL: movie.url, metadata: nil)
         } catch {
             reuploadError = "Re-upload failed: \(error.localizedDescription)"
             print("❌ [Archive] Re-upload failed: \(error)")
         }
     }
 
+    /// Copies the camera original out of Photos (downloading from iCloud if needed) and uploads it.
+    private func uploadOriginal(localIdentifier: String) async throws {
+        let original = try await OriginalVideoLoader.loadOriginal(localIdentifier: localIdentifier)
+        defer { try? FileManager.default.removeItem(at: original.fileURL.deletingLastPathComponent()) }
+        try await performUpload(fileURL: original.fileURL, metadata: original.metadata)
+    }
+
     /// Shared upload logic for both auto and manual re-upload
-    private func performUpload(fileURL: URL) async throws {
-        let metadata = await VideoMetadataExtractor.extract(from: fileURL)
+    private func performUpload(fileURL: URL, metadata: VideoMetadata?) async throws {
+        let resolvedMetadata: VideoMetadata
+        if let metadata {
+            resolvedMetadata = metadata
+        } else {
+            resolvedMetadata = await VideoMetadataExtractor.extract(from: fileURL)
+        }
 
         guard let token = auth.token else {
             reuploadError = "Not authenticated"
@@ -637,15 +685,15 @@ struct ArchiveRowView: View {
                 reuploadProgress = uploader.uploadProgress
             }
         }
+        defer { progressTask.cancel() }
 
         let _ = try await uploader.uploadViaMux(
             assetId: asset.id,
             fileURL: fileURL,
             token: token,
-            metadata: metadata
+            metadata: resolvedMetadata
         )
 
-        progressTask.cancel()
         reuploadProgress = 1.0
         reuploadComplete = true
         isReuploadingVideo = false
@@ -653,55 +701,5 @@ struct ArchiveRowView: View {
 
         try? await Task.sleep(for: .seconds(2))
         onFormSubmitted?()
-    }
-
-    /// Export a PHAsset video to a temporary file URL
-    private func exportVideoToTemp(phAsset: PHAsset) async throws -> URL {
-        let fileName = asset.originalFileName ?? "reupload.mov"
-        return try await phAssetToTempFile(phAsset: phAsset, fileName: fileName)
-    }
-}
-
-/// Standalone (non-actor-isolated) export so the PHImageManager callback
-/// doesn't trigger a main-actor assertion in Swift 6.
-private func phAssetToTempFile(phAsset: PHAsset, fileName: String) async throws -> URL {
-    try await withCheckedThrowingContinuation { continuation in
-        var resumed = false
-        let options = PHVideoRequestOptions()
-        options.isNetworkAccessAllowed = true
-        options.deliveryMode = .highQualityFormat
-
-        PHImageManager.default().requestAVAsset(forVideo: phAsset, options: options) {
-            avAsset, _, _ in
-            guard !resumed else { return }
-            resumed = true
-
-            guard let urlAsset = avAsset as? AVURLAsset else {
-                continuation.resume(throwing: ReuploadError.videoExportFailed)
-                return
-            }
-
-            let subdir = FileManager.default.temporaryDirectory
-                .appendingPathComponent(UUID().uuidString)
-            try? FileManager.default.createDirectory(at: subdir, withIntermediateDirectories: true)
-            let tempURL = subdir.appendingPathComponent(fileName)
-
-            do {
-                try FileManager.default.copyItem(at: urlAsset.url, to: tempURL)
-                continuation.resume(returning: tempURL)
-            } catch {
-                continuation.resume(throwing: error)
-            }
-        }
-    }
-}
-
-private enum ReuploadError: LocalizedError {
-    case videoExportFailed
-
-    var errorDescription: String? {
-        switch self {
-        case .videoExportFailed: return "Could not export video from Photos library"
-        }
     }
 }

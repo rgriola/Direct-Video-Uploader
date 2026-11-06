@@ -105,6 +105,8 @@ enum Theme {
     // Text hierarchy
     static let primaryText = adaptive("#111111", "#F5F5F5")
     static let secondaryText = adaptive("#616167", "#98989D")
+    /// Warning text that keeps 4.5:1 contrast on light and dark card backgrounds.
+    static let warningText = adaptive("#8A6D00", "#FFD60A")
     static let tertiaryText = adaptive("#8A8A90", "#636366")
     static let lightText = adaptive("#2A2A2E", "#E5E5EA")
     static let metaText = adaptive("#4A4A4F", "#EBEBF5")

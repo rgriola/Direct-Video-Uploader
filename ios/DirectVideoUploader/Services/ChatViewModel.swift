@@ -1018,8 +1018,10 @@ final class ChatViewModel {
 
     // MARK: - Upload Video
 
-    func uploadVideo(assetId: String, fileURL: URL, metadata: VideoMetadata? = nil) async {
-        guard let token = auth.token else { return }
+    /// Returns true when the file finished uploading.
+    @discardableResult
+    func uploadVideo(assetId: String, fileURL: URL, metadata: VideoMetadata? = nil) async -> Bool {
+        guard let token = auth.token else { return false }
         isUploading = true
         uploadProgress = 0
         defer { isUploading = false }
@@ -1041,6 +1043,8 @@ final class ChatViewModel {
             print(
                 "✅ [Upload] Mux direct upload completed for asset: \(assetId), clipId: \(muxResult.clipId)"
             )
+            progressTask.cancel()
+            return true
         } catch {
             print("❌ [Upload] Failed for asset \(assetId): \(error)")
             _ = promoteStage(for: assetId, to: .failed)
@@ -1065,6 +1069,7 @@ final class ChatViewModel {
         }
 
         progressTask.cancel()
+        return false
     }
 
     // MARK: - Send Transcript
@@ -1099,7 +1104,8 @@ final class ChatViewModel {
 
     /// Stage a video for preview in chat — called after user confirms in the library picker.
     func stageVideo(
-        fileURL: URL, fileName: String, metadata: VideoMetadata, phAssetIdentifier: String? = nil
+        fileURL: URL, fileName: String, metadata: VideoMetadata, phAssetIdentifier: String? = nil,
+        isTrimmed: Bool = false
     ) async {
         // If a conversation is archived, start fresh
         if isArchived {
@@ -1109,8 +1115,9 @@ final class ChatViewModel {
         isProcessingVideo = true
         defer { isProcessingVideo = false }
 
-        // Store PHAsset identifier for re-upload recovery
-        self.pendingPHAssetIdentifier = phAssetIdentifier
+        // Store PHAsset identifier for re-upload recovery. A trimmed copy gets its own
+        // identifier once it's saved to Photos; the untrimmed source must never be linked.
+        self.pendingPHAssetIdentifier = isTrimmed ? nil : phAssetIdentifier
 
         // Generate thumbnail from video
         let thumbnail = await StagedVideo.generateThumbnail(from: fileURL)
@@ -1126,7 +1133,8 @@ final class ChatViewModel {
             fileName: fileName,
             createdDate: createdDate,
             thumbnail: thumbnail,
-            metadata: metadata
+            metadata: metadata,
+            isTrimmed: isTrimmed
         )
     }
 
@@ -1142,26 +1150,31 @@ final class ChatViewModel {
         let fileURL = staged.tempFileURL
         let fileName = staged.fileName
         let metadata = staged.metadata
+        let isTrimmed = staged.isTrimmed
 
         prepareStagedContext(staged)
 
         uploadTask = Task {
+            defer { cleanupTempFile(fileURL) }
             guard let asset = await createAsset(fileName: fileName, fileURL: fileURL) else {
                 return
             }
             print("✅ Asset created: \(asset.mediasourceId ?? asset.id)")
 
             savePHAssetIdentifier(for: asset.id)
-            await uploadVideo(assetId: asset.id, fileURL: fileURL, metadata: metadata)
+            let uploaded = await uploadVideo(assetId: asset.id, fileURL: fileURL, metadata: metadata)
 
             guard !Task.isCancelled else { return }
+
+            if uploaded && isTrimmed {
+                await saveTrimmedCopyToPhotos(
+                    fileURL: fileURL, fileName: fileName, metadata: metadata, assetId: asset.id)
+            }
 
             if transcribeOnUpload {
                 await transcribeAndReport(assetId: asset.id, fileURL: fileURL)
                 transcribeOnUpload = false
             }
-
-            cleanupTempFile(fileURL)
         }
         await uploadTask?.value
         uploadTask = nil
@@ -1222,6 +1235,40 @@ final class ChatViewModel {
             PHAssetIdentifierStore.save(assetId: assetId, phAssetIdentifier: phId)
         }
         pendingPHAssetIdentifier = nil
+    }
+
+    /// Adds an uploaded trimmed copy to Photos and links it for Archive re-upload.
+    /// Failures don't affect the upload; they're reported as a chat bubble.
+    private func saveTrimmedCopyToPhotos(
+        fileURL: URL, fileName: String, metadata: VideoMetadata, assetId: String
+    ) async {
+        let creationDate = metadata.capturedAt.flatMap { DVUDateFormatting.parseISO($0) }
+        do {
+            let identifier = try await OriginalVideoLoader.saveVideoToPhotos(
+                fileURL: fileURL,
+                fileName: fileName,
+                creationDate: creationDate,
+                latitude: metadata.gpsLat,
+                longitude: metadata.gpsLon,
+                altitude: metadata.gpsAltitude
+            )
+            PHAssetIdentifierStore.save(assetId: assetId, phAssetIdentifier: identifier)
+            print("✅ [Photos] Saved trimmed copy \(fileName) for asset \(assetId)")
+        } catch OriginalVideoLoader.LoaderError.addAccessDenied {
+            appendErrorBubble(
+                "Your trimmed video uploaded, but it wasn't saved to Photos because Photo Library access is off.",
+                assetId: assetId,
+                code: "IOS_TRIM_SAVE_DENIED"
+            )
+        } catch {
+            print("❌ [Photos] Failed to save trimmed copy: \(error)")
+            appendErrorBubble(
+                "Your trimmed video uploaded, but it couldn't be saved to Photos: \(error.localizedDescription)",
+                assetId: assetId,
+                code: "IOS_TRIM_SAVE_FAILED",
+                params: ["reason": error.localizedDescription]
+            )
+        }
     }
 
     /// Transcribe audio and update the status bubble in-place.
@@ -1301,9 +1348,17 @@ final class ChatViewModel {
         }
     }
 
-    /// Clean up the temporary video file after upload + transcription.
+    /// Clean up the temporary video file after upload + transcription, including the
+    /// per-load folder (`tmp/<UUID>/`) it was copied or exported into.
     private func cleanupTempFile(_ url: URL) {
         try? FileManager.default.removeItem(at: url)
+        let tempDir = FileManager.default.temporaryDirectory.standardizedFileURL
+        let parent = url.standardizedFileURL.deletingLastPathComponent()
+        if parent.deletingLastPathComponent().path == tempDir.path,
+            UUID(uuidString: parent.lastPathComponent) != nil
+        {
+            try? FileManager.default.removeItem(at: parent)
+        }
     }
 
     // MARK: - Cancel Form (skip details → archive)

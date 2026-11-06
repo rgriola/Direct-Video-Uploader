@@ -59,7 +59,7 @@ To sign in to Fixer you'll need three things — your admin will provide all of 
 → Make sure you're tapping the link on your **iPhone**, not your Mac. The link only works on iOS.
 
 **"Unable to Install"**
-→ Your iPhone needs **iOS 17 or later**. Check: Settings → General → About → iOS Version. If you're on iOS 16 or earlier, update first.
+→ Builds from the iOS modernization branch require **iOS 18.6 or later**. Check: Settings → General → About → iOS Version. If you're on an earlier version, update first.
 
 **"TestFlight says the build expired"**
 → Builds expire after 90 days. Let me know and I'll push a new one.
