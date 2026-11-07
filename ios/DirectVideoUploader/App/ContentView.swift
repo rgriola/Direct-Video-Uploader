@@ -61,9 +61,7 @@ struct ContentView: View {
                     // fetchMe already calls logout() on 401/403;
                     // any other error (network down) also forces login
                     // so the user doesn't get stuck on a blank profile.
-                    print(
-                        "⚠️ [Session] Restore failed: \(error.localizedDescription) — clearing session"
-                    )
+                    Log.error("⚠️ [Session] Restore failed: \(Log.describe(error)) — clearing session", logger: Log.auth)
                     auth.logout()
                 }
             }
@@ -80,7 +78,7 @@ struct ContentView: View {
                 // Reconnect only when fully disconnected. If we're already in
                 // .connecting, allow that in-flight attempt to finish.
                 if auth.isAuthenticated, let token = auth.token, ws.isDisconnected {
-                    print("🔄 [Scene] Returned to foreground — reconnecting WebSocket")
+                    Log.debug("🔄 [Scene] Returned to foreground — reconnecting WebSocket", logger: Log.app)
                     ws.reconnectFromForeground(token: token)
                 }
             case .background:
@@ -89,7 +87,7 @@ struct ContentView: View {
                     backgroundDisconnectTask = Task {
                         try? await Task.sleep(for: .seconds(30))
                         guard !Task.isCancelled else { return }
-                        print("💤 [Scene] Background timeout — closing WebSocket")
+                        Log.debug("💤 [Scene] Background timeout — closing WebSocket", logger: Log.app)
                         ws.backgroundDisconnect()
                     }
                 }

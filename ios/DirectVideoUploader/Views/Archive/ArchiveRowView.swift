@@ -501,12 +501,12 @@ struct ArchiveRowView: View {
                 // Update local state immediately — switches to Ready + Details button
                 formSubmitted = true
                 submittedFormData = formData
-                print("✅ [Archive] Form submitted for asset: \(asset.id)")
+                Log.debug("✅ [Archive] Form submitted for asset: \(asset.id)", logger: Log.media)
                 // Refresh parent list so server data is in sync
                 onFormSubmitted?()
             }
         } catch {
-            print("❌ [Archive] Form submit failed: \(error.localizedDescription)")
+            Log.error("❌ [Archive] Form submit failed: \(Log.describe(error))", logger: Log.media)
         }
     }
 
@@ -539,7 +539,7 @@ struct ArchiveRowView: View {
             try await uploadOriginal(localIdentifier: identifier)
         } catch {
             reuploadError = "Re-upload failed: \(error.localizedDescription)"
-            print("❌ [Archive] Auto re-upload failed: \(error)")
+            Log.error("❌ [Archive] Auto re-upload failed: \(Log.describe(error))", logger: Log.media)
         }
     }
 
@@ -554,10 +554,10 @@ struct ArchiveRowView: View {
             if OriginalVideoLoader.isSameLength(
                 photosDuration: photosDuration, clipDuration: clipDuration)
             {
-                print("📷 [Archive] Found video by stored PHAsset ID")
+                Log.debug("📷 [Archive] Found video by stored PHAsset ID", logger: Log.media)
                 return storedId
             }
-            print("⚠️ [Archive] Stored PHAsset length differs from the uploaded clip; skipping")
+            Log.error("⚠️ [Archive] Stored PHAsset length differs from the uploaded clip; skipping", logger: Log.media)
         }
 
         // Strategy 2: auto-discover by capturedAt date from clip metadata
@@ -567,7 +567,7 @@ struct ArchiveRowView: View {
             OriginalVideoLoader.isSameLength(
                 photosDuration: phAsset.duration, clipDuration: clipDuration)
         {
-            print("📷 [Archive] Auto-discovered video by capturedAt: \(capturedAtStr)")
+            Log.debug("📷 [Archive] Auto-discovered video by capturedAt: \(capturedAtStr)", logger: Log.media)
             PHAssetIdentifierStore.save(
                 assetId: asset.id, phAssetIdentifier: phAsset.localIdentifier)
             return phAsset.localIdentifier
@@ -652,7 +652,7 @@ struct ArchiveRowView: View {
             try await performUpload(fileURL: movie.url, metadata: nil)
         } catch {
             reuploadError = "Re-upload failed: \(error.localizedDescription)"
-            print("❌ [Archive] Re-upload failed: \(error)")
+            Log.error("❌ [Archive] Re-upload failed: \(Log.describe(error))", logger: Log.media)
         }
     }
 
@@ -697,7 +697,7 @@ struct ArchiveRowView: View {
         reuploadProgress = 1.0
         reuploadComplete = true
         isReuploadingVideo = false
-        print("✅ [Archive] Re-upload complete for asset: \(asset.id)")
+        Log.debug("✅ [Archive] Re-upload complete for asset: \(asset.id)", logger: Log.media)
 
         try? await Task.sleep(for: .seconds(2))
         onFormSubmitted?()

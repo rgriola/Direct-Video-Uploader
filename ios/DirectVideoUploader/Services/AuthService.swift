@@ -37,7 +37,7 @@ final class AuthService {
         defer { isLoading = false }
         
         let url = ServerConfig.loginURL
-        print("🔐 [Auth] Attempting login to: \(url.absoluteString)")
+        Log.debug("🔐 [Auth] Attempting login to: \(url.absoluteString)", logger: Log.auth)
         
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -47,14 +47,13 @@ final class AuthService {
         request.httpBody = try JSONEncoder().encode(body)
         
         let (data, response) = try await URLSession.shared.data(for: request)
-        print("🔐 [Auth] Response received: \(String(data: data, encoding: .utf8)?.prefix(200) ?? "nil")")
         
         guard let httpResponse = response as? HTTPURLResponse else {
-            print("🔐 [Auth] ❌ Invalid response (not HTTP)")
+            Log.error("🔐 [Auth] ❌ Invalid response (not HTTP)", logger: Log.auth)
             throw AuthError.invalidResponse
         }
         
-        print("🔐 [Auth] HTTP status: \(httpResponse.statusCode)")
+        Log.debug("🔐 [Auth] HTTP status: \(httpResponse.statusCode)", logger: Log.auth)
         
         guard httpResponse.statusCode == 200 else {
             let errorBody = try? JSONDecoder().decode(ErrorResponse.self, from: data)

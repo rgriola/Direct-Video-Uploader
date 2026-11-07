@@ -145,7 +145,7 @@ final class ChatViewModel {
         ws.onUploadComplete = { [weak self] data in
             guard let self else { return }
             let assetId = data["assetId"] as? String ?? ""
-            print("✅ Upload complete for asset: \(assetId)")
+            Log.debug("✅ [Upload] Upload complete for asset: \(assetId)", logger: Log.upload)
 
             self.clearBlockingConnectivityIssueIfNeeded(assetId: assetId)
 
@@ -272,7 +272,7 @@ final class ChatViewModel {
                 )
             }
 
-            print("✅ [Mux Ready] Asset \(assetId ?? "?") confirmed on Mediasource")
+            Log.debug("✅ [Mux Ready] Asset \(assetId ?? "?") confirmed on Mediasource", logger: Log.upload)
 
             let previousStage = self.promoteStage(for: assetId, to: .ready)
             if previousStage != .failed,
@@ -775,7 +775,7 @@ final class ChatViewModel {
             if isConnectivityIssue(error) {
                 noteBlockingConnectivityIssue(operation: "syncing workflow state", assetId: assetId)
             }
-            print("⚠️ [Reconnect] State reconcile skipped: \(error.localizedDescription)")
+            Log.error("⚠️ [Reconnect] State reconcile skipped: \(Log.describe(error))", logger: Log.network)
         }
     }
 
@@ -791,9 +791,7 @@ final class ChatViewModel {
         guard messagePolicy.shouldPresent(message, source: source) else {
             if shouldDebugCode {
                 let identity = message.assetId ?? message.content.mediasourceId ?? "n/a"
-                print(
-                    "⚠️ [Chat] Dropped message by policy: code=\(message.content.code ?? "n/a") source=\(source) target=\(identity)"
-                )
+                Log.error("⚠️ [Chat] Dropped message by policy: code=\(message.content.code ?? "n/a") source=\(source) target=\(identity)", logger: Log.app)
             }
             return
         }
@@ -802,9 +800,7 @@ final class ChatViewModel {
 
         if shouldDebugCode {
             let identity = message.assetId ?? message.content.mediasourceId ?? "n/a"
-            print(
-                "💬 [Chat] Appended message: code=\(message.content.code ?? "n/a") source=\(source) target=\(identity) total=\(messages.count)"
-            )
+            Log.debug("💬 [Chat] Appended message: code=\(message.content.code ?? "n/a") source=\(source) target=\(identity) total=\(messages.count)", logger: Log.app)
         }
     }
 
@@ -949,8 +945,7 @@ final class ChatViewModel {
                 let statusCode = (httpResponse as? HTTPURLResponse)?.statusCode ?? 0
 
                 guard statusCode >= 200, statusCode < 300 else {
-                    let body = String(data: data, encoding: .utf8) ?? "(empty)"
-                    print("❌ createAsset HTTP \(statusCode): \(body)")
+                    Log.error("❌ [Upload] createAsset HTTP \(statusCode)", logger: Log.upload)
                     throw NSError(
                         domain: "createAsset", code: statusCode,
                         userInfo: [NSLocalizedDescriptionKey: "Server returned \(statusCode)"])
@@ -1040,13 +1035,11 @@ final class ChatViewModel {
             // iOS handles network interruptions automatically (waitsForConnectivity).
             let muxResult = try await uploader.uploadViaMux(
                 assetId: assetId, fileURL: fileURL, token: token, metadata: metadata)
-            print(
-                "✅ [Upload] Mux direct upload completed for asset: \(assetId), clipId: \(muxResult.clipId)"
-            )
+            Log.debug("✅ [Upload] Mux direct upload completed for asset: \(assetId), clipId: \(muxResult.clipId)", logger: Log.upload)
             progressTask.cancel()
             return true
         } catch {
-            print("❌ [Upload] Failed for asset \(assetId): \(error)")
+            Log.error("❌ [Upload] Failed for asset \(assetId): \(Log.describe(error))", logger: Log.upload)
             _ = promoteStage(for: assetId, to: .failed)
             if isConnectivityIssue(error) {
                 noteBlockingConnectivityIssue(operation: "uploading video", assetId: assetId)
@@ -1092,10 +1085,10 @@ final class ChatViewModel {
         do {
             let (_, response) = try await URLSession.shared.data(for: request)
             if let http = response as? HTTPURLResponse, http.statusCode == 200 {
-                print("✅ Transcript saved for asset \(assetId) (\(result.segments.count) segments)")
+                Log.debug("✅ [Transcribe] Transcript saved for asset \(assetId) (\(result.segments.count) segments)", logger: Log.transcription)
             }
         } catch {
-            print("⚠️ Failed to save transcript: \(error)")
+            Log.error("⚠️ [Transcribe] Failed to save transcript: \(Log.describe(error))", logger: Log.transcription)
             // Non-fatal — don't show error bubble for transcript failure
         }
     }
@@ -1159,7 +1152,7 @@ final class ChatViewModel {
             guard let asset = await createAsset(fileName: fileName, fileURL: fileURL) else {
                 return
             }
-            print("✅ Asset created: \(asset.mediasourceId ?? asset.id)")
+            Log.debug("✅ [Upload] Asset created: \(asset.mediasourceId ?? asset.id)", logger: Log.upload)
 
             savePHAssetIdentifier(for: asset.id)
             let uploaded = await uploadVideo(assetId: asset.id, fileURL: fileURL, metadata: metadata)
@@ -1253,7 +1246,7 @@ final class ChatViewModel {
                 altitude: metadata.gpsAltitude
             )
             PHAssetIdentifierStore.save(assetId: assetId, phAssetIdentifier: identifier)
-            print("✅ [Photos] Saved trimmed copy \(fileName) for asset \(assetId)")
+            Log.debug("✅ [Photos] Saved trimmed copy \(fileName) for asset \(assetId)", logger: Log.media)
         } catch OriginalVideoLoader.LoaderError.addAccessDenied {
             appendErrorBubble(
                 "Your trimmed video uploaded, but it wasn't saved to Photos because Photo Library access is off.",
@@ -1261,7 +1254,7 @@ final class ChatViewModel {
                 code: "IOS_TRIM_SAVE_DENIED"
             )
         } catch {
-            print("❌ [Photos] Failed to save trimmed copy: \(error)")
+            Log.error("❌ [Photos] Failed to save trimmed copy: \(Log.describe(error))", logger: Log.media)
             appendErrorBubble(
                 "Your trimmed video uploaded, but it couldn't be saved to Photos: \(error.localizedDescription)",
                 assetId: assetId,
@@ -1411,7 +1404,7 @@ final class ChatViewModel {
             PendingForm.clear()
             clearBlockingConnectivityIssueIfNeeded(assetId: assetId)
         } catch {
-            print("❌ Failed to submit form:", error)
+            Log.error("❌ [Form] Failed to submit form: \(Log.describe(error))", logger: Log.upload)
             // Keep form open so user can retry — show error in chat too
             form.submitError = "Failed to send form. Please try again."
             if isConnectivityIssue(error) {
@@ -1466,7 +1459,7 @@ final class ChatViewModel {
             clearBlockingConnectivityIssueIfNeeded(assetId: assetId)
             reconcileWorkflowState(from: response.asset, source: .workflow)
         } catch {
-            print("❌ Failed to fetch asset detail:", error)
+            Log.error("❌ [Asset] Failed to fetch asset detail: \(Log.describe(error))", logger: Log.network)
             if isConnectivityIssue(error) {
                 noteBlockingConnectivityIssue(operation: "syncing metadata", assetId: assetId)
             } else {
@@ -1490,7 +1483,7 @@ final class ChatViewModel {
     private func checkPendingForm() {
         guard let pendingForm = PendingForm.load() else { return }
 
-        print("🔄 [Recovery] Found pending form for asset: \(pendingForm.assetId)")
+        Log.debug("🔄 [Recovery] Found pending form for asset: \(pendingForm.assetId)", logger: Log.app)
 
         Task {
             let request = auth.authenticatedRequest(for: ServerConfig.assetURL(pendingForm.assetId))
@@ -1503,20 +1496,18 @@ final class ChatViewModel {
                 {
                     if json.asset.formResponse != nil {
                         // Form already submitted — clear
-                        print(
-                            "🔄 [Recovery] Form already submitted for \(pendingForm.assetId) — clearing"
-                        )
+                        Log.debug("🔄 [Recovery] Form already submitted for \(pendingForm.assetId) — clearing", logger: Log.app)
                         PendingForm.clear()
                     } else {
                         // Restore form UI
-                        print("🔄 [Recovery] Restoring pending form for \(pendingForm.assetId)")
+                        Log.debug("🔄 [Recovery] Restoring pending form for \(pendingForm.assetId)", logger: Log.app)
                         restoreFormFromPending(pendingForm)
                     }
                 } else {
                     PendingForm.clear()
                 }
             } catch {
-                print("🔄 [Recovery] Could not check pending form: \(error.localizedDescription)")
+                Log.debug("🔄 [Recovery] Could not check pending form: \(Log.describe(error))", logger: Log.app)
             }
         }
     }
@@ -1630,7 +1621,7 @@ final class ChatViewModel {
                     self.slackThumbnails[messageId] = image
                 }
             } catch {
-                print("⚠️ Failed to download Slack thumbnail: \(error.localizedDescription)")
+                Log.error("⚠️ [Slack] Failed to download thumbnail: \(Log.describe(error))", logger: Log.network)
             }
         }
     }

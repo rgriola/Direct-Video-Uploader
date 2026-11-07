@@ -63,7 +63,7 @@ final class TranscriptionService {
         // 2. Run recognition (nonisolated — handles SFSpeechRecognizer internally)
         state = .transcribing
         progress = 0.1
-        print("🎙️ [Transcribe] Starting recognition for \(videoURL.lastPathComponent)...")
+        Log.debug("🎙️ [Transcribe] Starting recognition for \(videoURL.lastPathComponent)...", logger: Log.transcription)
 
         let result = await runRecognitionPipeline(videoURL: videoURL)
 
@@ -85,7 +85,7 @@ final class TranscriptionService {
     /// Strategy: server-based first (more accurate), then on-device fallback.
     @concurrent private nonisolated func runRecognitionPipeline(videoURL: URL) async -> TranscriptionResult? {
         guard let recognizer = SFSpeechRecognizer(), recognizer.isAvailable else {
-            print("❌ [Transcribe] Speech recognizer unavailable for this locale")
+            Log.error("❌ [Transcribe] Speech recognizer unavailable for this locale", logger: Log.transcription)
             return nil
         }
 
@@ -96,13 +96,13 @@ final class TranscriptionService {
 
         // Attempt 2: On-device fallback (works offline, different model)
         if recognizer.supportsOnDeviceRecognition {
-            print("🎙️ [Transcribe] Server-based found no speech, trying on-device model...")
+            Log.debug("🎙️ [Transcribe] Server-based found no speech, trying on-device model...", logger: Log.transcription)
             if let onDeviceResult = await attemptRecognition(recognizer: recognizer, videoURL: videoURL, onDevice: true) {
                 return onDeviceResult
             }
         }
 
-        print("🎙️ [Transcribe] No speech detected after both attempts")
+        Log.debug("🎙️ [Transcribe] No speech detected after both attempts", logger: Log.transcription)
         return nil
     }
 
@@ -121,25 +121,25 @@ final class TranscriptionService {
 
         if onDevice {
             request.requiresOnDeviceRecognition = true
-            print("🎙️ [Transcribe] Using on-device recognition")
+            Log.debug("🎙️ [Transcribe] Using on-device recognition", logger: Log.transcription)
         } else {
-            print("🎙️ [Transcribe] Using server-based recognition")
+            Log.debug("🎙️ [Transcribe] Using server-based recognition", logger: Log.transcription)
         }
 
         do {
             let result = try await performRecognition(recognizer: recognizer, request: request)
             if let result {
-                print("✅ [Transcribe] Got \(result.segments.count) segments (\(onDevice ? "on-device" : "server")), text: \"\(result.text.prefix(80))...\"")
+                Log.debug("✅ [Transcribe] Got \(result.segments.count) segments (\(onDevice ? "on-device" : "server"))", logger: Log.transcription)
             }
             return result
         } catch {
             let nsError = error as NSError
             // Error 203 = no speech — not a real error
             if nsError.domain == "kAFAssistantErrorDomain" && nsError.code == 203 {
-                print("🎙️ [Transcribe] No speech detected (\(onDevice ? "on-device" : "server"), error 203)")
+                Log.debug("🎙️ [Transcribe] No speech detected (\(onDevice ? "on-device" : "server"), error 203)", logger: Log.transcription)
                 return nil
             }
-            print("⚠️ [Transcribe] \(onDevice ? "On-device" : "Server") failed: \(error.localizedDescription) (domain: \(nsError.domain), code: \(nsError.code))")
+            Log.error("⚠️ [Transcribe] \(onDevice ? "On-device" : "Server") failed: \(Log.describe(error))", logger: Log.transcription)
             return nil
         }
     }

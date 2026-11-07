@@ -379,7 +379,7 @@ struct VideoLibraryView: View {
             usedPickerCopy = false
         } catch {
             guard !Task.isCancelled else { return }
-            print("❌ [Library] Failed to load original: \(error)")
+            Log.error("❌ [Library] Failed to load original: \(Log.describe(error))", logger: Log.media)
             loadError = "Couldn't load the original video: \(error.localizedDescription)"
         }
     }
@@ -408,7 +408,7 @@ struct VideoLibraryView: View {
             AccessibilityNotification.Announcement(Self.pickerCopyWarning).post()
         } catch {
             guard !Task.isCancelled else { return }
-            print("❌ [Library] Failed to load video: \(error)")
+            Log.error("❌ [Library] Failed to load video: \(Log.describe(error))", logger: Log.media)
             loadError = "Failed to load video: \(error.localizedDescription)"
         }
     }

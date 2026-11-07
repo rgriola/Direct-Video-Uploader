@@ -61,9 +61,9 @@ nonisolated struct PendingForm: Codable {
         do {
             let data = try JSONEncoder().encode(form)
             try data.write(to: storageURL, options: .atomic)
-            print("💾 [Form] Saved pending form state for asset: \(form.assetId)")
+            Log.debug("💾 [Form] Saved pending form state for asset: \(form.assetId)", logger: Log.upload)
         } catch {
-            print("⚠️ [Form] Failed to save pending form state: \(error)")
+            Log.error("⚠️ [Form] Failed to save pending form state: \(Log.describe(error))", logger: Log.upload)
         }
     }
     
@@ -73,7 +73,7 @@ nonisolated struct PendingForm: Codable {
             let data = try Data(contentsOf: storageURL)
             return try JSONDecoder().decode(PendingForm.self, from: data)
         } catch {
-            print("⚠️ [Form] Failed to load pending form state: \(error)")
+            Log.error("⚠️ [Form] Failed to load pending form state: \(Log.describe(error))", logger: Log.upload)
             clear()
             return nil
         }
@@ -81,7 +81,7 @@ nonisolated struct PendingForm: Codable {
     
     static func clear() {
         try? FileManager.default.removeItem(at: storageURL)
-        print("🗑️ [Form] Cleared pending form state")
+        Log.debug("🗑️ [Form] Cleared pending form state", logger: Log.upload)
     }
 }
 
@@ -107,7 +107,7 @@ final class VideoUploadService: NSObject {
         error = nil
         defer { isUploading = false }
         
-        print("📤 [Mux] Requesting direct upload URL for asset: \(assetId)")
+        Log.debug("📤 [Mux] Requesting direct upload URL for asset: \(assetId)", logger: Log.upload)
         
         // Step 1: Ask server for a Mux direct upload URL (fast — just metadata)
         let muxURL = ServerConfig.muxUploadURL(assetId)
@@ -147,7 +147,7 @@ final class VideoUploadService: NSObject {
         
         guard let httpResp = createResponse as? HTTPURLResponse, httpResp.statusCode == 200 else {
             let body = String(data: createData, encoding: .utf8) ?? "Unknown"
-            print("📤 [Mux] ❌ Failed to get upload URL: \(body)")
+            Log.error("📤 [Mux] ❌ Failed to get upload URL: HTTP \((createResponse as? HTTPURLResponse)?.statusCode ?? 0)", logger: Log.upload)
             throw UploadError.serverError((createResponse as? HTTPURLResponse)?.statusCode ?? 0, body)
         }
         
@@ -158,7 +158,7 @@ final class VideoUploadService: NSObject {
             throw UploadError.invalidResponse
         }
         
-        print("📤 [Mux] Got upload URL, uploading directly to Mux CDN...")
+        Log.debug("📤 [Mux] Got upload URL, uploading directly to Mux CDN...", logger: Log.upload)
         
         // Simple PUT to Mux direct upload URL (no tus headers needed)
         var putRequest = URLRequest(url: uploadUrl)
@@ -173,12 +173,12 @@ final class VideoUploadService: NSObject {
         guard let putHttp = putResponse as? HTTPURLResponse,
               (200...204).contains(putHttp.statusCode) else {
             let code = (putResponse as? HTTPURLResponse)?.statusCode ?? 0
-            print("📤 [Mux] ❌ PUT to Mux failed with status \(code)")
+            Log.error("📤 [Mux] ❌ PUT to Mux failed with status \(code)", logger: Log.upload)
             throw UploadError.serverError(code, "Mux upload failed")
         }
         
         uploadProgress = 1.0
-        print("📤 [Mux] ✅ Direct upload complete! Mux will process and notify via webhook.")
+        Log.debug("📤 [Mux] ✅ Direct upload complete! Mux will process and notify via webhook.", logger: Log.upload)
         
         return MuxUploadResponse(clipId: clipId, muxUploadId: json["muxUploadId"] as? String ?? "")
     }
@@ -257,7 +257,7 @@ private nonisolated final class UploadDelegate: NSObject, URLSessionTaskDelegate
     
     // Background session requires handling this to allow the session to reconnect
     func urlSession(_ session: URLSession, taskIsWaitingForConnectivity task: URLSessionTask) {
-        print("⏳ [Upload] Waiting for connectivity — upload will resume when network returns")
+        Log.debug("⏳ [Upload] Waiting for connectivity — upload will resume when network returns", logger: Log.upload)
     }
 }
 

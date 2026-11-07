@@ -34,6 +34,8 @@
 		8CDB0858FD44667AD9882E4D /* VideoBubble.swift in Sources */ = {isa = PBXBuildFile; fileRef = B136E4B9F4C6D88E9009D569 /* VideoBubble.swift */; };
 		94EB8482D6F7158958A03393 /* InputBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF5B8A623A0F5AA9CA07EA1A /* InputBar.swift */; };
 		958C853DDA42C7E81E258AC7 /* DVUDateFormatting.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4DBB133385999B4E09A826F7 /* DVUDateFormatting.swift */; };
+		96DC3023004885C6D827D556 /* DebugLogTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77D00A8D1DFCA0DE0632342A /* DebugLogTests.swift */; };
+		9BBB6F1B72D725E44BD68AC1 /* DebugLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 373E61FB61E12FD921DBF491 /* DebugLog.swift */; };
 		9C749D1F06E03EF78A32DA0D /* MessageBehaviorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17AEE28CC906D032D1BD31D0 /* MessageBehaviorTests.swift */; };
 		9F8F876E364EA40959AE53BD /* InstructionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1D2E1E9A55D56991D3BA689 /* InstructionsView.swift */; };
 		A03DEE56B0012BF04210CFB7 /* ModelDecodingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF22B93B635C47AD22888777 /* ModelDecodingTests.swift */; };
@@ -80,6 +82,7 @@
 		2796AFC62F34F3182D7CCE1C /* MetadataView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetadataView.swift; sourceTree = "<group>"; };
 		2B7EEEC345EAFF2EE3EFD9CA /* MessageBubble.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageBubble.swift; sourceTree = "<group>"; };
 		2F9DE735EEFFFCC798CA054C /* Asset.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Asset.swift; sourceTree = "<group>"; };
+		373E61FB61E12FD921DBF491 /* DebugLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugLog.swift; sourceTree = "<group>"; };
 		3A0611DEBA9BE67788466164 /* User.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = User.swift; sourceTree = "<group>"; };
 		3A7F3BED43E9CB3FFE330020 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		49E974DDC963928102FA291B /* ChatHeaderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatHeaderView.swift; sourceTree = "<group>"; };
@@ -91,6 +94,7 @@
 		66AE6120B342F8FBF6D9F832 /* ChatViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatViewModel.swift; sourceTree = "<group>"; };
 		6F12FE8A5DFBB6A96349CB07 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		744BF6B02789CE656827F003 /* PermissionManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionManager.swift; sourceTree = "<group>"; };
+		77D00A8D1DFCA0DE0632342A /* DebugLogTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugLogTests.swift; sourceTree = "<group>"; };
 		7CB447F960F2A8A21F7DA5C5 /* RetryHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RetryHelper.swift; sourceTree = "<group>"; };
 		86A11FF4693D09E9320E8C07 /* AuthService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthService.swift; sourceTree = "<group>"; };
 		89340492FFB11E5B32505025 /* PermissionRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionRow.swift; sourceTree = "<group>"; };
@@ -130,6 +134,7 @@
 		0A6481ED3975CF016618D9E5 /* DirectVideoUploaderTests */ = {
 			isa = PBXGroup;
 			children = (
+				77D00A8D1DFCA0DE0632342A /* DebugLogTests.swift */,
 				CF68B53E9AF4B264A2643194 /* DVUDateFormattingTests.swift */,
 				17AEE28CC906D032D1BD31D0 /* MessageBehaviorTests.swift */,
 				CF22B93B635C47AD22888777 /* ModelDecodingTests.swift */,
@@ -273,6 +278,7 @@
 			isa = PBXGroup;
 			children = (
 				894318625F91A1D2462249FE /* ContentView.swift */,
+				373E61FB61E12FD921DBF491 /* DebugLog.swift */,
 				CE10509FD1B4B7983FB58B3D /* DirectVideoUploaderApp.swift */,
 				4DBB133385999B4E09A826F7 /* DVUDateFormatting.swift */,
 				3A7F3BED43E9CB3FFE330020 /* Theme.swift */,
@@ -426,6 +432,7 @@
 			files = (
 				1180A5A70A26DEDC5C34B59B /* DVUDateFormatting.swift in Sources */,
 				EBEC000F1AAA3C0BD3EE4858 /* DVUDateFormattingTests.swift in Sources */,
+				96DC3023004885C6D827D556 /* DebugLogTests.swift in Sources */,
 				9C749D1F06E03EF78A32DA0D /* MessageBehaviorTests.swift in Sources */,
 				A03DEE56B0012BF04210CFB7 /* ModelDecodingTests.swift in Sources */,
 				594327BAB71F0FC1D863A84C /* PermissionTests.swift in Sources */,
@@ -451,6 +458,7 @@
 				A9F088643DC2986469FFC84B /* ContextFormView.swift in Sources */,
 				3397724BA17E25882518C0BD /* ConversationSummaryBubble.swift in Sources */,
 				958C853DDA42C7E81E258AC7 /* DVUDateFormatting.swift in Sources */,
+				9BBB6F1B72D725E44BD68AC1 /* DebugLog.swift in Sources */,
 				8479D08EF2DC76BFF0C2BDCF /* DirectVideoUploaderApp.swift in Sources */,
 				94EB8482D6F7158958A03393 /* InputBar.swift in Sources */,
 				9F8F876E364EA40959AE53BD /* InstructionsView.swift in Sources */,
