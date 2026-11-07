@@ -59,9 +59,9 @@
 ### 0.5 Versioned Migrations (CRITICAL)
 
 - [ ] Switch local dev to `prisma migrate dev` (PARTIAL: `db:migrate` script exists)
-- [ ] Generate baseline migration from current production schema
+- [x] Generate baseline migration from current production schema (`20260928133253_init`)
 - [x] Replace `db push` with `migrate deploy` in [render.yaml](render.yaml)
-- [ ] Commit `server/prisma/migrations/` directory
+- [x] Commit `server/prisma/migrations/` directory
 - [ ] Add migration review to PR checklist
 - [ ] Document rollback procedure
 

@@ -46,6 +46,7 @@ model User {
 enum UserRole {
   USER
   ADMIN
+  SUPER_ADMIN
 }
 
 enum UserStatus {

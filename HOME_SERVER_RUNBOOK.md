@@ -69,12 +69,24 @@ This DB uses Prisma migrations (not `db push`). Workflow:
 1. Edit `server/prisma/schema.prisma`
 2. Locally: `npx prisma migrate dev --name <description>` (creates + applies migration, needs a role with `CREATEDB` for the shadow DB — `fixer_app` intentionally lacks this; use the admin role via a one-off `DATABASE_URL` override if needed)
 3. On the home server: `npx prisma migrate deploy` (uses `fixer_app`, no shadow DB needed)
-4. If a migration was bootstrapped as the admin role, fix table ownership:
+4. Back up first (`scripts/pg-backup.sh`) whenever a migration changes data or types
+5. If a migration was bootstrapped as the admin role, fix table ownership:
    ```sql
    ALTER SCHEMA public OWNER TO fixer_app;
    -- then for any tables/sequences still owned by the admin role:
    ALTER TABLE public.<table> OWNER TO fixer_app;
    ```
+
+## Super Admin bootstrap
+
+`SUPER_ADMIN` can't be granted through the API. Set `SUPER_ADMIN_PHONE` (the account's
+phone number, digits as stored) in `server/.env`, then after `migrate deploy`:
+```bash
+cd ~/apps/direct-video-uploader/server
+npm run bootstrap:super-admin   # idempotent; exits 1 if unset or the account doesn't exist
+```
+To hand the role to someone else, change it directly in the database; the API refuses to
+modify a Super Admin.
 
 ## Backup & restore
 

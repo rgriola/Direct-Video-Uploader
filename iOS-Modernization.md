@@ -234,10 +234,11 @@ Only APIs that **remove** code or risk.
 
 ### 2.0 Prerequisite — Versioned Migrations (TASKS.md 0.5)
 
-- [ ] Baseline migration from the **home-server** database (now production-like): `prisma migrate diff --from-empty --to-schema-datamodel` → `migrations/0_init`, then `prisma migrate resolve --applied 0_init`
-- [ ] Commit `server/prisma/migrations/`
-- [ ] From now on: `prisma migrate deploy` only. Retire `db push` (the Home Server Plan Phase 3 still says `db push`)
-- [ ] Take a `pg_dump` before the first real migration
+- [x] Baseline migration: `migrations/20260928133253_init` (from `main`) matches `schema.prisma` and is applied on the home server (`prisma migrate status`: up to date)
+- [x] Commit `server/prisma/migrations/`
+- [x] Home server uses `prisma migrate deploy` only (runbook). Removed the `db:push` npm script
+- [ ] Cloud Build (`cloudbuild.yaml`) and the unused `scripts/render-build.sh` still run `db push --accept-data-loss`. Switching Cloud SQL to `migrate deploy` needs `prisma migrate resolve --applied 20260928133253_init` there first
+- [ ] Take a `pg_dump` before the first real migration (`scripts/pg-backup.sh`)
 
 ### 2.1 Roles & Super Admin Seed
 
@@ -247,15 +248,17 @@ Only APIs that **remove** code or risk.
 | `ADMIN` (Team Admin) | Own team only | See team videos, pause/unpause team videos, flag team videos for removal, add members, **promote USER → ADMIN within the team**, pause/unpause team members, create share links for team videos |
 | `USER` | Own records | Web access: view own videos, transcripts, form data, profile/PIN. Upload from iOS (and desktop in Step 4). Create share links for own videos *(confirm)* |
 
-- [ ] Migration: `ALTER TYPE "UserRole" ADD VALUE 'SUPER_ADMIN'`
-- [ ] **Seed Rod as Super Admin from an env var** (`SUPER_ADMIN_PHONE`), not a phone number hardcoded in source. A bootstrap script promotes that account on deploy
-- [ ] Existing `ADMIN` accounts become team-scoped Team Admins. Tell them first
-- [ ] Every `ADMIN` must belong to a team. Reject ADMIN promotion for users with no team
-- [ ] Guardrails:
-  - Only SUPER_ADMIN can create or demote ADMINs outside their own team
-  - Team Admin can't demote another Team Admin *(confirm)*
+- [x] Migration `20261107150000_add_super_admin_role`: `ALTER TYPE "UserRole" ADD VALUE 'SUPER_ADMIN'`
+- [x] **Seed Rod as Super Admin from an env var** (`SUPER_ADMIN_PHONE`): `npm run bootstrap:super-admin` (`server/src/scripts/bootstrap-super-admin.js`, idempotent). Rod's account removed from `seed.js`
+- [x] Role helpers in `server/src/lib/roles.js` (`isAdminRole`, `isSuperAdmin`, `checkRoleChange`). Every former `role === 'ADMIN'` check (server + dashboard) now also accepts SUPER_ADMIN
+- [ ] Existing `ADMIN` accounts become team-scoped Team Admins (lands with 2.3). Tell them first. One current ADMIN has no organization
+- [x] Every `ADMIN` must belong to an organization: promotion requires `companyCode`, and `PATCH /api/admin/users/:id` can't clear an admin's organization
+- [x] `PATCH /api/admin/users/:id/role` `{ role: 'USER' | 'ADMIN' }` with guardrails:
+  - Only SUPER_ADMIN can change roles outside their own organization (team admins get **404**)
+  - Team Admin **can** promote and demote other Team Admins in their organization *(decided)*
   - Nobody can grant `SUPER_ADMIN` through the API (env/script only)
-  - The last SUPER_ADMIN can't be demoted or paused
+  - A SUPER_ADMIN's role can't be changed through the API, so the last one can't be demoted. Pausing is guarded in 2.2
+  - Nobody can change their own role
 
 ### 2.2 Pause, Flag & Remove (Soft Delete)
 
@@ -269,7 +272,7 @@ Only APIs that **remove** code or risk.
 | `Asset.moderation` | Set by | Visible to | Reversible |
 | --- | --- | --- | --- |
 | `ACTIVE` (default) | — | Owner, team admins, super admin | — |
-| `PAUSED` | Team Admin, Super Admin | Team admins, super admin (greyed out). Hidden from owner's list *(confirm)* | Yes, unpause |
+| `PAUSED` | Team Admin, Super Admin | Team admins, super admin (greyed out). Stays in owner's list marked **Paused**, with playback and share links disabled *(decided)* | Yes, unpause |
 | `FLAGGED_FOR_REMOVAL` | Team Admin, Super Admin | Super admin removal queue | Yes, Super Admin can restore |
 | `REMOVED` | **Super Admin only** | Nobody (audit row kept) | No. Original file and Mux asset are deleted |
 
@@ -287,7 +290,7 @@ Only APIs that **remove** code or risk.
   - USER → `{ userId }`
 - [ ] Apply it to every list/detail query in `admin.js` and `assets.js`. Remove the ad-hoc filter at `admin.js:148`
 - [ ] Out-of-scope IDs return **404**, not 403
-- [ ] **Open question: what is a "team"?** The schema has both `Organization` (`companyCode`) and a free-text `User.team` field. Assumption: **team = Organization**. If a team is a sub-group inside an org, it needs a real `Team` table instead of the free-text field
+- [x] **Decided: team = Organization** (`companyCode`). The free-text `User.team` field is a label only
 
 ### 2.4 Real-Time (Socket.IO) Scoping
 
@@ -297,7 +300,7 @@ Only APIs that **remove** code or risk.
 ### 2.5 Tests
 
 - [ ] Role × endpoint matrix (3 roles × 2 teams × each route → 200/403/404)
-- [ ] Escalation and guardrail tests (2.1)
+- [x] Escalation and guardrail tests (2.1): `admin-role-routes.test.js`, `roles.test.js`, `bootstrap-super-admin.test.js`
 - [ ] Moderation visibility tests (paused/flagged/removed hidden correctly)
 - [ ] Update `admin-routes.test.js` / `assets-routes.test.js`
 

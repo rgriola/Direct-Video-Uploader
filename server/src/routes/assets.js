@@ -6,6 +6,7 @@ import { randomUUID } from 'crypto';
 import prisma from '../lib/prisma.js';
 import { generateMediasourceId, dbRetry, parseClientMetadata, serializeClip, notifyUserSockets } from '../lib/utils.js';
 import { isMuxEnabled, createDirectUpload } from '../lib/mux.js';
+import { isAdminRole } from '../lib/roles.js';
 
 // Allowed video MIME types — kept for reference if local upload is re-enabled
 const ALLOWED_VIDEO_MIMES = new Set([
@@ -247,7 +248,7 @@ export default async function assetRoutes(fastify) {
         }
 
         // Ownership check — only asset owner or admin can view details (A6)
-        if (asset.userId !== request.user.id && request.user.role !== 'ADMIN') {
+        if (asset.userId !== request.user.id && !isAdminRole(request.user.role)) {
             return reply.status(403).send({ error: 'Access denied' });
         }
 

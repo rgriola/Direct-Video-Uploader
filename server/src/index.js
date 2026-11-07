@@ -35,6 +35,7 @@ import { startMuxSync, stopMuxSync } from './jobs/mux-sync.js';
 import { startUploadCleanup, stopUploadCleanup } from './jobs/upload-cleanup.js';
 import { CORS_ORIGINS, WS_CORS_ORIGINS } from './lib/config.js';
 import prisma from './lib/prisma.js';
+import { isAdminRole } from './lib/roles.js';
 
 // ─── Global Crash Protection ─────────────────────────────
 // Prevent the process from dying on unhandled errors (Render shows 502 when this happens)
@@ -237,7 +238,7 @@ const docsGuard = async (request, reply) => {
         select: { role: true, status: true },
     });
 
-    if (!user || user.status !== 'ACTIVE' || user.role !== 'ADMIN') {
+    if (!user || user.status !== 'ACTIVE' || !isAdminRole(user.role)) {
         return reply.status(403).send({ error: 'Admin access required' });
     }
 };
@@ -349,7 +350,7 @@ fastify.setErrorHandler((err, request, reply) => {
 
 // Admin authorization — requires authenticate to run first (A5)
 fastify.decorate('authorizeAdmin', async function (request, reply) {
-    if (request.user?.role !== 'ADMIN') {
+    if (!isAdminRole(request.user?.role)) {
         reply.status(403).send({ error: 'Admin access required' });
     }
 });
