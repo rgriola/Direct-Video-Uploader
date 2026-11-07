@@ -216,7 +216,90 @@ Only APIs that **remove** code or risk.
 - [x] Swift Testing: permission status mapping, row states, presentation decision, undecided-only requests and `TranscriptionService` authorization (`PermissionTests`, fake authorizer). 41/41 tests pass on the iOS 27 simulator; Debug and Release builds pass.
 - [x] Device matrix (fresh install for each case): Allow Full, Limited, Don't Allow, Speech Allow/Don't Allow, Continue without deciding, change in Settings while backgrounded, upgrade from a build where onboarding was already completed; in each Photo Library state, upload untrimmed, trimmed, iCloud-only and Photos-edited videos, and Archive re-upload. Compare uploaded bytes and metadata with the original exported from Photos. *(Passed on device, Nov 6, 2026.)*
 
-> **Follow-up (accessibility):** `Theme` fonts use fixed `.system(size:)`, so text app-wide doesn't scale with Dynamic Type. Map each font token to a text style (`relativeTo:`) as an app-wide change.
+### 1.6 Accessibility
+
+**Objective:** Meet Apple's Human Interface Guidelines and the App Store Accessibility Nutrition Labels for VoiceOver, Voice Control, Larger Text, Sufficient Contrast, Differentiate Without Color and Reduced Motion. Preserve the visual design.
+
+**Definition of done:**
+- Every interactive control has a hit area of at least 44×44 pt and a meaningful VoiceOver label.
+- Every flow, including trimming, can be completed with VoiceOver, Voice Control and Switch Control.
+- Text scales with Dynamic Type up to AX5 without clipping.
+- Text and icons meet WCAG AA contrast (4.5:1 for text, 3:1 for large text and icons) in light and dark mode.
+- The accessibility specialist reviews every SwiftUI change, as the project rules require.
+
+**Audit (Nov 7, 2026, from the code; sizes are estimates).** 25 controls are below 44 pt.
+
+| Priority | Screen | Controls | Estimated hit area |
+| --- | --- | --- | --- |
+| High | Chat input (`InputBar:20, :43`) | Attach (+), Send | ~32×38 |
+| High | Staged video (`VideoBubble:63, :180, :192`) | Remove ✕, Transcribe toggle, Upload | ~24×28, ~28×28, ~32×38 |
+| High | Trim (`VideoTrimView:481, :503, :121`) | Left/right trim handles, Next | 18×60, 18×60, ~55×22 |
+| High | Library footer (`VideoLibraryView:198`) | Confirm ✓ | ~32×38 |
+| Medium | Trim (`VideoTrimView:107, :530`) | Cancel, playhead | ~55×22, 24×68 |
+| Medium | Chat (`ChatButtonStyle:11`, `ChatHeaderView:59`) | Metadata/View pills, Instructions | ~100×31, ~24×24 |
+| Medium | Archive (`ArchiveRowView:468, :263`, `ArchiveListView:54, :100`) | Re-upload/View/Slack/Details pills, Copy transcript, Refresh, Retry | ~⅓ row×31, ~14×15, ~22×24, ~35×15 |
+| Medium | Context form (`ContextFormView:206`) | Priority buttons | ~70×35 |
+| Medium | Onboarding (`OnboardingWalkthroughView:25`) | Skip | ~28×15 |
+| Low | Onboarding, Slack, Login (Debug only) | Open Full Guide, Share to Slack (~43 tall), server Save/Reset/edit | Mostly ~31 tall or less |
+
+Other issues found on the same controls:
+- Icon-only buttons have no `accessibilityLabel`: Attach, Send, Remove, Upload, Instructions (read aloud as "service dog"), Copy, Refresh and the ✕ close buttons.
+- **Trim handles and playhead can't be used with VoiceOver or Switch Control.** They only respond to drag gestures.
+- **Missing traits and values:**
+  - The video play/pause tap area isn't announced as a button.
+  - The Transcribe toggle and the Priority buttons have no on/off or selected state.
+  - Archive rows don't say whether they're expanded or collapsed.
+- Archive "Details" can't be tapped but is still announced as a button.
+- The trim screen's Next button reads ">>" aloud.
+
+Compliant: system toolbars, tab bar, alerts and confirmation dialogs, the full-width primary buttons (Sign In, Continue, Send form, Next, Logout, Got it), `PermissionRow` and Profile rows.
+
+**Plan**
+
+*Phase A: touch targets and labels (no visual change)*
+- [ ] Add a shared `IconButton(systemName:label:)` with a 44×44 frame, `contentShape` and a required label. Use it for the 7 icon-only buttons.
+- [ ] Add `.frame(minHeight: 44)` once in `ChatActionButton` and once in `archiveButton`, which fixes 8 call sites.
+- [ ] Use `.toolbar` for the trim screen's Cancel/Next, or give them a 44 pt minimum height. Label Next as "Next".
+- [ ] Fix the remaining text buttons: Skip, Retry, Open Full Guide, Share to Slack, Priority, and the Debug server controls.
+- [ ] Add `.contentShape(Rectangle())` to every `.buttonStyle(.plain)` row so taps on empty space register (Archive row).
+- [ ] Size minimum targets with `@ScaledMetric` so they grow with text size.
+
+*Phase B: VoiceOver and Voice Control semantics*
+- [ ] Trim: make each trim handle and the playhead adjustable with `.accessibilityAdjustableAction`, in steps of about 0.5 s or 1 s, announcing the time as the value. Hide the filmstrip tap-to-seek from VoiceOver. Widen the handles' hit areas, and decide which handle wins where they overlap at the 1 s minimum.
+- [ ] Add traits and values:
+  - Video tap: the button trait and a Play/Pause label.
+  - Transcribe: toggle semantics.
+  - Priority: the selected trait.
+  - Archive rows: an expanded/collapsed value.
+  - Disabled "Details": `.disabled(true)`.
+- [ ] Group composite rows (message bubbles, Archive rows, Metadata rows) into single elements with a label and value, and add custom actions for secondary buttons.
+- [ ] Announce status changes such as upload progress milestones, upload complete or failed, transcription done and reconnecting. Use `AccessibilityNotification.Announcement`, throttled.
+- [ ] Manage focus: when a sheet opens, move VoiceOver focus to its title; after an error, move focus to the error message.
+- [ ] Voice Control: make sure each visible label matches its spoken name (no "plus.circle.fill").
+
+*Phase C: Dynamic Type and layout*
+- [ ] Map each `Theme` font token to a text style (`.system(.body)` or `relativeTo:`), and cap the size only where the layout truly requires it.
+- [ ] At accessibility sizes, switch horizontal layouts to vertical with `ViewThatFits` or `dynamicTypeSize.isAccessibilitySize`, as `PermissionRow` already does. Pay particular attention to the chat input, Archive pills, context form and trim toolbar.
+- [ ] Scale fixed icon frames with `@ScaledMetric`.
+
+*Phase D: color, motion and preferences*
+- [ ] Contrast check of every `Theme` color pair in light and dark mode. Known issues: `secondaryText` on the always-black picker footer, and brand `purple` used as text. Use `purpleText` and `purpleFill`.
+- [ ] Differentiate Without Color: status dots, the upload error state and the Priority selection need a symbol or text as well as color.
+- [ ] Reduce Motion: skip `symbolEffect` bounces and animated transitions when `accessibilityReduceMotion` is on.
+- [ ] Respect Increase Contrast (`colorSchemeContrast`) and Reduce Transparency (`.ultraThinMaterial` overlays).
+
+*Phase E: verification*
+- [ ] Run Xcode Accessibility Inspector audits on every screen in light and dark mode at AX5.
+- [ ] Add a UI test smoke check that calls `XCUIApplication().performAccessibilityAudit()` on the main screens (iOS 17+) in CI.
+- [ ] Manual device passes:
+  - VoiceOver: login, then pick, trim, upload, form, Archive re-upload, Slack share.
+  - Voice Control and Switch Control: the same flow.
+  - Larger Text at AX5.
+  - Bold Text.
+  - Reduce Motion.
+- [ ] Fill in the App Store Connect Accessibility Nutrition Labels once each item above passes.
+
+**Order:** Phase A and the trim part of Phase B first, because they block core upload flows. Then Phase C, which affects the whole app (do it after the "upload only" UI redesign if that comes first). Then D and E.
 
 > **Later (not Step 1):** split `ChatViewModel.swift`, iOS UI redesign around "upload only", and remove `NSAllowsArbitraryLoads: true` now that the server is HTTPS via the tunnel.
 
