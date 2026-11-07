@@ -61,7 +61,9 @@ struct ChatHeaderView: View {
                             .font(Theme.icon20)
                             .foregroundStyle(Theme.purple)
                             .symbolEffect(.bounce.up.wholeSymbol, options: .nonRepeating)
+                            .tapTarget()
                     }
+                    .accessibilityLabel("Instructions")
                 }
             }
             .padding(.horizontal, 16)

@@ -1,10 +1,13 @@
 import Fastify from 'fastify';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { requireRole } from '../lib/authorization.js';
 
 const prismaMock = {
     user: {
         findUnique: vi.fn(),
+        findFirst: vi.fn(),
         update: vi.fn(),
+        updateMany: vi.fn(),
     },
     organization: {
         findUnique: vi.fn(),
@@ -15,7 +18,6 @@ vi.mock('../lib/prisma.js', () => ({ default: prismaMock }));
 vi.mock('../lib/mux.js', () => ({ isMuxEnabled: false, deleteMuxAsset: vi.fn() }));
 
 let adminRoutes;
-let isAdminRole;
 let app;
 let actor;
 
@@ -32,12 +34,13 @@ function patchRole(id, body) {
 
 beforeAll(async () => {
     ({ default: adminRoutes } = await import('../routes/admin.js'));
-    ({ isAdminRole } = await import('../lib/roles.js'));
 });
 
 beforeEach(async () => {
     vi.clearAllMocks();
     actor = TEAM_ADMIN;
+    prismaMock.user.findFirst.mockResolvedValue(null);
+    prismaMock.user.updateMany.mockResolvedValue({ count: 1 });
     prismaMock.user.update.mockImplementation(async ({ where, data }) => ({
         id: where.id, name: 'Pat Reporter', companyCode: 'NEWS', ...data,
     }));
@@ -46,11 +49,7 @@ beforeEach(async () => {
     app.decorate('authenticate', async (request) => {
         request.user = { ...actor };
     });
-    app.decorate('authorizeAdmin', async (request, reply) => {
-        if (!isAdminRole(request.user?.role)) {
-            return reply.status(403).send({ error: 'Admin access required' });
-        }
-    });
+    app.decorate('requireRole', requireRole);
     app.decorate('io', { of: () => ({ sockets: new Map() }) });
     app.decorate('userSockets', new Map());
     app.decorate('iosSockets', new Set());
@@ -64,20 +63,20 @@ afterEach(async () => {
 
 describe('PATCH /api/admin/users/:id/role', () => {
     it('lets a team admin promote a user in their organization', async () => {
-        prismaMock.user.findUnique.mockResolvedValue(target());
+        prismaMock.user.findFirst.mockResolvedValue(target());
 
         const res = await patchRole('user-1', { role: 'ADMIN' });
 
         expect(res.statusCode).toBe(200);
         expect(res.json().user.role).toBe('ADMIN');
-        expect(prismaMock.user.update).toHaveBeenCalledWith(expect.objectContaining({
-            where: { id: 'user-1' },
+        expect(prismaMock.user.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+            where: { id: 'user-1', companyCode: 'NEWS', role: 'USER' },
             data: { role: 'ADMIN' },
         }));
     });
 
     it('lets a team admin demote another team admin in their organization', async () => {
-        prismaMock.user.findUnique.mockResolvedValue(target({ id: 'admin-2', role: 'ADMIN' }));
+        prismaMock.user.findFirst.mockResolvedValue(target({ id: 'admin-2', role: 'ADMIN' }));
 
         const res = await patchRole('admin-2', { role: 'USER' });
 
@@ -85,25 +84,25 @@ describe('PATCH /api/admin/users/:id/role', () => {
         expect(res.json().user.role).toBe('USER');
     });
 
-    it('matches organizations case-insensitively', async () => {
-        prismaMock.user.findUnique.mockResolvedValue(target({ companyCode: 'news' }));
-
-        const res = await patchRole('user-1', { role: 'ADMIN' });
-
-        expect(res.statusCode).toBe(200);
-    });
-
-    it('returns 404 when a team admin targets another organization', async () => {
-        prismaMock.user.findUnique.mockResolvedValue(target({ companyCode: 'OTHER' }));
+    it('does not merge organizations whose codes differ only in case', async () => {
+        prismaMock.user.findFirst.mockResolvedValue(target({ companyCode: 'news' }));
 
         const res = await patchRole('user-1', { role: 'ADMIN' });
 
         expect(res.statusCode).toBe(404);
-        expect(prismaMock.user.update).not.toHaveBeenCalled();
+    });
+
+    it('returns 404 when a team admin targets another organization', async () => {
+        prismaMock.user.findFirst.mockResolvedValue(target({ companyCode: 'OTHER' }));
+
+        const res = await patchRole('user-1', { role: 'ADMIN' });
+
+        expect(res.statusCode).toBe(404);
+        expect(prismaMock.user.updateMany).not.toHaveBeenCalled();
     });
 
     it('returns 404 when a team admin targets a user with no organization', async () => {
-        prismaMock.user.findUnique.mockResolvedValue(target({ companyCode: null }));
+        prismaMock.user.findFirst.mockResolvedValue(target({ companyCode: null }));
 
         const res = await patchRole('user-1', { role: 'USER' });
 
@@ -111,7 +110,7 @@ describe('PATCH /api/admin/users/:id/role', () => {
     });
 
     it('returns 404 for an unknown user', async () => {
-        prismaMock.user.findUnique.mockResolvedValue(null);
+        prismaMock.user.findFirst.mockResolvedValue(null);
 
         const res = await patchRole('missing', { role: 'ADMIN' });
 
@@ -120,7 +119,7 @@ describe('PATCH /api/admin/users/:id/role', () => {
 
     it('lets the super admin change roles in any organization', async () => {
         actor = SUPER;
-        prismaMock.user.findUnique.mockResolvedValue(target({ companyCode: 'OTHER' }));
+        prismaMock.user.findFirst.mockResolvedValue(target({ companyCode: 'OTHER' }));
 
         const res = await patchRole('user-1', { role: 'ADMIN' });
 
@@ -129,58 +128,85 @@ describe('PATCH /api/admin/users/:id/role', () => {
 
     it('rejects granting SUPER_ADMIN through the API', async () => {
         actor = SUPER;
-        prismaMock.user.findUnique.mockResolvedValue(target());
+        prismaMock.user.findFirst.mockResolvedValue(target());
 
         const res = await patchRole('user-1', { role: 'SUPER_ADMIN' });
 
         expect(res.statusCode).toBe(400);
-        expect(prismaMock.user.update).not.toHaveBeenCalled();
+        expect(prismaMock.user.updateMany).not.toHaveBeenCalled();
     });
 
     it('rejects a missing or unknown role', async () => {
-        prismaMock.user.findUnique.mockResolvedValue(target());
+        prismaMock.user.findFirst.mockResolvedValue(target());
 
         expect((await patchRole('user-1', {})).statusCode).toBe(400);
         expect((await patchRole('user-1', { role: 'OWNER' })).statusCode).toBe(400);
-        expect(prismaMock.user.update).not.toHaveBeenCalled();
+        expect(prismaMock.user.updateMany).not.toHaveBeenCalled();
     });
 
     it("refuses to change the super admin's role", async () => {
         actor = SUPER;
-        prismaMock.user.findUnique.mockResolvedValue(target({ id: 'super-2', role: 'SUPER_ADMIN' }));
+        prismaMock.user.findFirst.mockResolvedValue(target({ id: 'super-2', role: 'SUPER_ADMIN' }));
 
         const res = await patchRole('super-2', { role: 'USER' });
 
         expect(res.statusCode).toBe(403);
-        expect(prismaMock.user.update).not.toHaveBeenCalled();
+        expect(prismaMock.user.updateMany).not.toHaveBeenCalled();
     });
 
     it('refuses to let an admin change their own role', async () => {
-        prismaMock.user.findUnique.mockResolvedValue(target({ id: 'admin-1', role: 'ADMIN' }));
+        prismaMock.user.findFirst.mockResolvedValue(target({ id: 'admin-1', role: 'ADMIN' }));
 
         const res = await patchRole('admin-1', { role: 'USER' });
 
         expect(res.statusCode).toBe(400);
-        expect(prismaMock.user.update).not.toHaveBeenCalled();
+        expect(prismaMock.user.updateMany).not.toHaveBeenCalled();
     });
 
     it('requires an organization before promoting to ADMIN', async () => {
         actor = SUPER;
-        prismaMock.user.findUnique.mockResolvedValue(target({ companyCode: null }));
+        prismaMock.user.findFirst.mockResolvedValue(target({ companyCode: null }));
 
         const res = await patchRole('user-1', { role: 'ADMIN' });
 
         expect(res.statusCode).toBe(400);
-        expect(prismaMock.user.update).not.toHaveBeenCalled();
+        expect(prismaMock.user.updateMany).not.toHaveBeenCalled();
     });
 
     it('does not write when the role is unchanged', async () => {
-        prismaMock.user.findUnique.mockResolvedValue(target({ role: 'ADMIN', id: 'admin-2' }));
+        prismaMock.user.findFirst.mockResolvedValue(target({ role: 'ADMIN', id: 'admin-2' }));
 
         const res = await patchRole('admin-2', { role: 'ADMIN' });
 
         expect(res.statusCode).toBe(200);
-        expect(prismaMock.user.update).not.toHaveBeenCalled();
+        expect(prismaMock.user.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('does not change a role after the target leaves the allowed scope', async () => {
+        prismaMock.user.findFirst.mockResolvedValue(target());
+        prismaMock.user.updateMany.mockResolvedValue({ count: 0 });
+
+        const res = await patchRole('user-1', { role: 'ADMIN' });
+
+        expect(res.statusCode).toBe(404);
+        expect(prismaMock.user.updateMany).toHaveBeenCalledWith({
+            where: { id: 'user-1', companyCode: 'NEWS', role: 'USER' },
+            data: { role: 'ADMIN' },
+        });
+    });
+
+    it('does not promote a user whose organization changed before the write', async () => {
+        actor = SUPER;
+        prismaMock.user.findFirst.mockResolvedValue(target());
+        prismaMock.user.updateMany.mockResolvedValue({ count: 0 });
+
+        const res = await patchRole('user-1', { role: 'ADMIN' });
+
+        expect(res.statusCode).toBe(404);
+        expect(prismaMock.user.updateMany).toHaveBeenCalledWith({
+            where: { id: 'user-1', role: 'USER', companyCode: 'NEWS' },
+            data: { role: 'ADMIN' },
+        });
     });
 
     it('rejects non-admin callers', async () => {
@@ -189,13 +215,14 @@ describe('PATCH /api/admin/users/:id/role', () => {
         const res = await patchRole('user-1', { role: 'ADMIN' });
 
         expect(res.statusCode).toBe(403);
-        expect(prismaMock.user.findUnique).not.toHaveBeenCalled();
+        expect(prismaMock.user.findFirst).not.toHaveBeenCalled();
     });
 });
 
 describe('PATCH /api/admin/users/:id organization guard', () => {
     it('refuses to remove the organization from an admin', async () => {
-        prismaMock.user.findUnique.mockResolvedValue(target({ id: 'admin-2', role: 'ADMIN' }));
+        actor = SUPER;
+        prismaMock.user.findFirst.mockResolvedValue(target({ id: 'admin-2', role: 'ADMIN' }));
 
         const res = await app.inject({
             method: 'PATCH', url: '/api/admin/users/admin-2', payload: { companyCode: null },
@@ -203,5 +230,37 @@ describe('PATCH /api/admin/users/:id organization guard', () => {
 
         expect(res.statusCode).toBe(400);
         expect(prismaMock.user.update).not.toHaveBeenCalled();
+    });
+
+    it('does not remove an organization if the user was concurrently promoted', async () => {
+        actor = SUPER;
+        prismaMock.user.findFirst.mockResolvedValue(target());
+        prismaMock.user.update.mockRejectedValueOnce(Object.assign(new Error('Record not found'), { code: 'P2025' }));
+
+        const res = await app.inject({
+            method: 'PATCH', url: '/api/admin/users/user-1', payload: { companyCode: null },
+        });
+
+        expect(res.statusCode).toBe(404);
+        expect(prismaMock.user.update).toHaveBeenCalledWith({
+            where: { id: 'user-1', role: 'USER' },
+            data: { companyCode: null },
+            include: { organization: true },
+        });
+    });
+
+    it('conditions team profile edits on the target role and organization', async () => {
+        prismaMock.user.findFirst.mockResolvedValue(target());
+
+        const res = await app.inject({
+            method: 'PATCH', url: '/api/admin/users/user-1', payload: { name: 'Changed' },
+        });
+
+        expect(res.statusCode).toBe(200);
+        expect(prismaMock.user.update).toHaveBeenCalledWith({
+            where: { id: 'user-1', companyCode: 'NEWS', role: 'USER' },
+            data: { name: 'Changed' },
+            include: { organization: true },
+        });
     });
 });

@@ -4,43 +4,227 @@ import PhotosUI
 // May 10, 2026 - 1:55pm - GitHub Copilot (GPT-5.3-Codex)
 import SwiftUI
 
+enum ArchiveRetryError: Error {
+    case intentChanged
+}
+
+@MainActor
+enum ArchiveRetryVideoLoad {
+    static func resolve(
+        _ result: Result<VideoTransferable?, any Error>,
+        validate: () throws -> Void
+    ) throws -> VideoTransferable? {
+        do {
+            try validate()
+        } catch {
+            if case .success(let movie?) = result {
+                removeTemporaryVideoItem(movie.url.deletingLastPathComponent())
+            }
+            throw error
+        }
+        return try result.get()
+    }
+}
+
+@MainActor
+enum ArchiveRetryVerification {
+    static func resolve(
+        _ result: Result<ScopedPhotoAssociation?, any Error>,
+        validate: () throws -> Void,
+        onMissing: () -> Void,
+        onFailure: (any Error) -> Void
+    ) throws -> ScopedPhotoAssociation? {
+        try validate()
+        switch result {
+        case .success(let association):
+            if association == nil { onMissing() }
+            return association
+        case .failure(let error):
+            if error is ArchiveRetryError { throw error }
+            onFailure(error)
+            return nil
+        }
+    }
+}
+
+@MainActor
+enum ArchiveRetryPhotoLink {
+    enum Outcome: Sendable {
+        case committed(ScopedPhotoAssociation?)
+        case superseded
+        case associationChanged
+        case storageFailure(any Error)
+
+        var warningMessage: String? {
+            switch self {
+            case .committed(let association):
+                return association == nil
+                    ? "Upload finished without a verified Photos link. Choose the video manually if you retry."
+                    : nil
+            case .superseded:
+                return "Upload finished, but its saved Photos link wasn't changed because the upload changed. Choose the video manually if you retry."
+            case .associationChanged:
+                return "Upload finished, but its saved Photos link changed during the retry. Choose the video manually if you retry."
+            case .storageFailure:
+                return "Upload finished, but its saved Photos link couldn't be updated. Choose the video manually if you retry."
+            }
+        }
+
+        var completionAnnouncement: String {
+            if case .storageFailure(let error) = self, isDamagedPhotoAssociationStore(error) {
+                return "Re-upload complete, but saved photo links were damaged. If not already repaired, choose Repair saved photo links before retrying, then choose the video manually. Video processing continues."
+            }
+            if let warningMessage {
+                return "\(warningMessage) Video processing continues."
+            }
+            return "Re-upload complete. Video processing continues."
+        }
+    }
+
+    static func uploadAndCommit(
+        store: ScopedPHAssetIdentifierStore, snapshot: ScopedPhotoAssociationSnapshot,
+        assetId: String, scope: PendingFormScope, association: ScopedPhotoAssociation?,
+        isCurrent: @MainActor () -> Bool, onOutcome: @MainActor (Outcome) -> Void,
+        upload: @MainActor () async throws -> Void
+    ) async throws -> Outcome {
+        try await upload()
+        let outcome: Outcome
+        if Task.isCancelled || !isCurrent() {
+            outcome = .superseded
+        } else {
+            do {
+                outcome = try store.replaceIfUnchanged(
+                    assetId: assetId, association: association, for: scope, expected: snapshot)
+                    ? .committed(association) : .associationChanged
+            } catch {
+                outcome = .storageFailure(error)
+            }
+        }
+        // Publish while still on the same actor turn as the identity check and commit.
+        onOutcome(outcome)
+        return outcome
+    }
+}
+
+enum ArchiveReuploadNotice {
+    static let repairRequired =
+        "Saved photo links need repair. Choose Repair saved photo links before retrying."
+
+    static func preferred(
+        reuploadNotice: String?, refreshWarning: String?, photoWarning: String?,
+        readWarning: String?, displayedError: String?, isDamaged: Bool
+    ) -> String? {
+        if isDamaged { return repairRequired }
+        guard displayedError == nil else { return nil }
+        return reuploadNotice ?? refreshWarning ?? photoWarning ?? readWarning
+    }
+
+    static func distinctError(_ error: String?, isDamaged: Bool) -> String? {
+        if isDamaged && error == repairRequired { return nil }
+        return error
+    }
+}
+
+@MainActor
+struct ArchiveRetryVerificationProgress {
+    private(set) var operationID: UUID?
+    var isVerifying: Bool { operationID != nil }
+
+    mutating func begin(_ id: UUID) { operationID = id }
+
+    mutating func finish(_ id: UUID) {
+        if operationID == id { operationID = nil }
+    }
+
+    mutating func reset() { operationID = nil }
+}
+
 /// A single expandable row in the archive list showing upload metadata and actions.
 struct ArchiveRowView: View {
     let asset: Asset
-    var onFormSubmitted: (() -> Void)?
-    @Environment(WebSocketService.self) private var ws
+    var submittedFormData: [String: String]?
+    var restoreFocus = false
+    var restoreModalFocus: ArchiveModalFocusTarget?
+    var pendingReuploadSelection: ArchivePendingReuploadSelection?
+    let presentationState: FormPresentationState
+    let interaction: ArchiveInteractionState
+    let mediaTasks: ArchiveMediaTaskOwner
+    let assetSession: ArchiveSessionIdentity?
+    @Binding var refreshVersion: Int
+    var onAddDetails: () -> Void
+    var onUploadCompleted: () async -> ArchiveRefreshResult
+    var onFocusRestored: () -> Void
+    var onModalFocusRestored: () -> Void
+    var onPendingReuploadConsumed: (UUID) -> Bool
+    var onReuploadProgressFocus: () -> Void
+    var onRepairPhotoLinks: (UUID) -> Bool
+    var onShowSlack: (UUID) -> Void
+    var onPickVideo: (UUID, String, ScopedPhotoAssociationSnapshot) -> Bool
+    var onVisibilityChange: (UUID, Bool) -> Void
+    var onReuploadAnnouncement: (String) -> Void
+    var onReuploadCompletion: (String, Bool) -> Void
     @Environment(AuthService.self) private var auth
+    @State private var rowID = UUID()
     @State private var isExpanded = false
-    @State private var showSlackShare = false
-    @State private var showFormSheet = false
-    @State private var formSubmitted = false
-    @State private var submittedFormData: [String: String]?
+    @AccessibilityFocusState private var rowIsFocused: Bool
+    @AccessibilityFocusState private var reuploadProgressIsFocused: Bool
+    @AccessibilityFocusState private var reuploadActionIsFocused: Bool
+    @AccessibilityFocusState private var repairActionIsFocused: Bool
+    @AccessibilityFocusState private var addDetailsIsFocused: Bool
+    @AccessibilityFocusState private var slackActionIsFocused: Bool
 
     // Re-upload state
-    @State private var selectedVideoItem: PhotosPickerItem?
     @State private var isReuploadingVideo = false
     @State private var reuploadProgress: Double = 0
     @State private var reuploadError: String?
+    @State private var reuploadErrorRequiresRepair = false
     @State private var reuploadComplete = false
-    @State private var showReuploadPicker = false
+    @State private var reuploadCompletionRefreshVersion: Int?
     @State private var reuploadNotice: String?
+    @State private var reuploadRefreshWarning: String?
+    @State private var photoAssociationWarning: String?
+    @State private var photoAssociationReadWarning: String?
+    @State private var photoAssociationDamaged = false
+    @State private var verificationProgress = ArchiveRetryVerificationProgress()
+    @State private var reuploadSession: ArchiveSessionIdentity?
+
+    private var isVerifyingReupload: Bool { verificationProgress.isVerifying }
+
+    private var isArchiveActive: Bool {
+        presentationState.selectedTab == .archive
+            && presentationState.isSceneActive && interaction.sceneIsActive
+    }
+
+    private var isArchiveModalVisible: Bool {
+        interaction.hasModal(presentation: presentationState)
+    }
+
+    private var hasActiveChatUpload: Bool {
+        presentationState.isChatUploading(assetId: asset.id, scope: assetSession?.scope)
+    }
+
+    private var hasActiveArchiveUpload: Bool {
+        mediaTasks.isRunning(assetId: asset.id, scope: assetSession?.scope)
+    }
+
+    private var hasCompletedReupload: Bool {
+        reuploadComplete || mediaTasks.completedAssetIDs.contains(asset.id)
+            || mediaTasks.isFinishing(assetId: asset.id, scope: assetSession?.scope)
+    }
 
     /// Asset has no form response and user hasn't just submitted one
     private var needsDetails: Bool {
-        asset.formResponse == nil && !formSubmitted
+        asset.formResponse == nil && submittedFormData == nil
     }
 
-    /// Upload is stuck — status is PROCESSING and created > 5 minutes ago
+    /// Upload is stuck if it has not advanced beyond uploading or processing.
     var isStuckProcessing: Bool {
-        guard asset.status == .processing, !reuploadComplete else { return false }
-        guard let dateStr = asset.createdAt else { return true }
-        guard let created = DVUDateFormatting.parseISO(dateStr) else { return true }
-        return Date().timeIntervalSince(created) > 300  // 5 minutes
+        asset.status != .error && asset.needsUploadRecovery(at: Date())
     }
 
     /// Consolidated display state — single source of truth for both the badge and
     /// the action buttons section. Priority order matters: check in this sequence.
-    private enum RowStatus {
+    enum RowStatus {
         case needsDetails  // yellow — form not yet filled
         case failed  // red — error or stuck processing
         case reuploading  // blue — active re-upload in progress
@@ -49,21 +233,31 @@ struct ArchiveRowView: View {
     }
 
     private var rowStatus: RowStatus {
+        let completed = hasCompletedReupload
+        return Self.resolveStatus(
+            assetStatus: asset.status, needsDetails: needsDetails,
+            isStuck: isStuckProcessing,
+            isReuploading: isReuploadingVideo
+                || (hasActiveArchiveUpload && !completed),
+            hasReuploadError: reuploadError != nil || mediaTasks.retryMessages[asset.id] != nil
+                || presentationState.failedChatUploadAssetIDs.contains(asset.id),
+            reuploadComplete: completed,
+            isChatUploading: hasActiveChatUpload)
+    }
+
+    static func resolveStatus(
+        assetStatus: AssetStatus, needsDetails: Bool, isStuck: Bool,
+        isReuploading: Bool, hasReuploadError: Bool, reuploadComplete: Bool,
+        isChatUploading: Bool = false
+    ) -> RowStatus {
+        if isChatUploading { return .processing }
+        if isReuploading { return .reuploading }
+        if hasReuploadError { return .failed }
+        if reuploadComplete { return .processing }
+        if assetStatus == .error || isStuck { return .failed }
+        if assetStatus == .processing || assetStatus == .uploading { return .processing }
         if needsDetails { return .needsDetails }
-        if isReuploadingVideo { return .reuploading }
-        if asset.status == .error || isStuckProcessing { return .failed }
-        if asset.status == .processing { return .processing }
         return .ready
-    }
-
-    /// Whether we have a stored PHAsset identifier for auto-re-upload
-    private var hasSavedPHAsset: Bool {
-        PHAssetIdentifierStore.identifier(for: asset.id) != nil
-    }
-
-    /// Whether we can auto-discover the video by capturedAt date
-    private var canAutoDiscover: Bool {
-        asset.clips?.first?.capturedAt != nil
     }
 
     var body: some View {
@@ -126,24 +320,25 @@ struct ArchiveRowView: View {
                                     .frame(width: Theme.statusDotSize, height: Theme.statusDotSize)
                                 Text("Needs Details")
                                     .font(Theme.font11Semibold)
-                                    .foregroundStyle(Theme.yellow)
+                                    .foregroundStyle(Theme.warningText)
                             case .failed:
                                 Circle()
                                     .fill(Theme.red)
                                     .frame(width: Theme.statusDotSize, height: Theme.statusDotSize)
                                 Text("Upload Failed")
                                     .font(Theme.font11Semibold)
-                                    .foregroundStyle(Theme.red)
+                                    .foregroundStyle(Theme.errorText)
                             case .reuploading:
                                 ProgressView()
                                     .scaleEffect(0.6)
-                                Text("Uploading \(Int(reuploadProgress * 100))%")
+                                Text(isReuploadingVideo
+                                    ? "Uploading \(Int(reuploadProgress * 100))%" : "Re-uploading")
                                     .font(Theme.font11Semibold)
                                     .foregroundStyle(Theme.blue)
                             case .processing:
                                 ProgressView()
                                     .scaleEffect(0.6)
-                                Text("Processing")
+                                Text(hasActiveChatUpload ? "Uploading" : "Processing")
                                     .font(Theme.font11Semibold)
                                     .foregroundStyle(Theme.blue)
                             case .ready:
@@ -153,6 +348,11 @@ struct ArchiveRowView: View {
                                 Text("Ready")
                                     .font(Theme.font11Semibold)
                                     .foregroundStyle(Theme.green)
+                            }
+                            if needsDetails && rowStatus != .needsDetails {
+                                Text("Needs Details")
+                                    .font(Theme.font11Semibold)
+                                    .foregroundStyle(Theme.warningText)
                             }
                         }
                     }
@@ -172,8 +372,10 @@ struct ArchiveRowView: View {
                 }
                 .padding(.vertical, 12)
                 .padding(.horizontal, 16)
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .accessibilityFocused($rowIsFocused)
 
             // MARK: - Expanded Detail
             if isExpanded {
@@ -266,7 +468,9 @@ struct ArchiveRowView: View {
                                     Image(systemName: "doc.on.doc")
                                         .font(Theme.icon13)
                                         .foregroundStyle(Theme.secondaryText)
+                                        .tapTarget()
                                 }
+                                .accessibilityLabel("Copy transcript")
                             }
 
                             // Scrollable transcript text
@@ -284,96 +488,115 @@ struct ArchiveRowView: View {
                         }
                     }
                     // Action buttons — equal width
-                    switch rowStatus {
-                    case .failed:
-                        // Only show Re-upload when stuck
-                        if hasSavedPHAsset || canAutoDiscover {
-                            archiveButton(
-                                icon: "arrow.clockwise.circle.fill", label: "Re-upload",
-                                color: Theme.red
-                            ) {
-                                Task { await handleAutoReupload() }
-                            }
-                        } else {
+                    VStack(spacing: 8) {
+                        switch rowStatus {
+                        case .failed:
                             archiveButton(
                                 icon: "arrow.clockwise.circle.fill",
                                 label: "Re-upload (pick video)",
-                                color: Theme.red
+                                color: Theme.errorText
                             ) {
-                                reuploadNotice = nil
-                                showReuploadPicker = true
+                                beginReupload()
                             }
-                        }
-                    case .reuploading:
-                        // Show progress with thumbnail during re-upload
-                        HStack(spacing: 12) {
-                            // Small thumbnail
-                            if let thumbnailUrl = asset.clips?.first?.thumbnailUrl,
-                                let url = URL(string: thumbnailUrl)
-                            {
-                                AsyncImage(url: url) { image in
-                                    image.resizable().aspectRatio(contentMode: .fill)
-                                } placeholder: {
-                                    RoundedRectangle(cornerRadius: 6).fill(Theme.cardBg)
-                                }
-                                .frame(width: 36, height: 36)
-                                .clipShape(RoundedRectangle(cornerRadius: 6))
-                            } else {
-                                RoundedRectangle(cornerRadius: 6)
-                                    .fill(Theme.cardBg)
+                            .accessibilityFocused($reuploadActionIsFocused)
+                            .task(id: restoreModalFocus) {
+                                focusReuploadActionIfRequested()
+                            }
+                        case .reuploading:
+                            HStack(spacing: 12) {
+                                if let thumbnailUrl = asset.clips?.first?.thumbnailUrl,
+                                    let url = URL(string: thumbnailUrl)
+                                {
+                                    AsyncImage(url: url) { image in
+                                        image.resizable().aspectRatio(contentMode: .fill)
+                                    } placeholder: {
+                                        RoundedRectangle(cornerRadius: 6).fill(Theme.cardBg)
+                                    }
                                     .frame(width: 36, height: 36)
-                                    .overlay(
-                                        Image(systemName: "film").foregroundStyle(
-                                            Theme.tertiaryText
-                                        ).font(Theme.icon13))
-                            }
+                                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                                } else {
+                                    RoundedRectangle(cornerRadius: 6)
+                                        .fill(Theme.cardBg)
+                                        .frame(width: 36, height: 36)
+                                        .overlay(
+                                            Image(systemName: "film").foregroundStyle(
+                                                Theme.tertiaryText
+                                            ).font(Theme.icon13))
+                                }
 
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("Uploading \(Int(reuploadProgress * 100))%")
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(!isReuploadingVideo
+                                        ? "Re-upload in progress…"
+                                        : (isVerifyingReupload
+                                            ? "Verifying video…"
+                                            : "Uploading \(Int(reuploadProgress * 100))%"))
+                                        .font(Theme.font13Semibold)
+                                        .foregroundStyle(Theme.blue)
+                                    if isReuploadingVideo {
+                                        ProgressView(value: reuploadProgress)
+                                            .tint(Theme.blue)
+                                    } else {
+                                        ProgressView().tint(Theme.blue)
+                                    }
+                                }
+                            }
+                            .accessibilityElement(children: .ignore)
+                            .accessibilityLabel(
+                                isVerifyingReupload ? "Verifying video" : "Re-uploading video")
+                            .accessibilityValue(
+                                isVerifyingReupload || !isReuploadingVideo
+                                    ? "" : "\(Int(reuploadProgress * 100)) percent")
+                            .accessibilityFocused($reuploadProgressIsFocused)
+                            .task(id: restoreModalFocus) {
+                                guard restoreModalFocus == .reuploadProgress else { return }
+                                reuploadProgressIsFocused = true
+                                onModalFocusRestored()
+                            }
+                        case .processing:
+                            HStack(spacing: 8) {
+                                ProgressView()
+                                    .scaleEffect(0.7)
+                                Text(
+                                    hasActiveChatUpload
+                                        ? "Uploading in Chat\u{2026}"
+                                        : (asset.status == .uploading && !hasCompletedReupload
+                                            ? "Uploading\u{2026}" : "Processing on server\u{2026}"))
                                     .font(Theme.font13Semibold)
-                                    .foregroundStyle(Theme.blue)
-                                ProgressView(value: reuploadProgress)
-                                    .tint(Theme.blue)
+                                    .foregroundStyle(Theme.secondaryText)
                             }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, Theme.buttonPaddingV)
+                        case .needsDetails, .ready:
+                            EmptyView()
                         }
-                    case .processing:
-                        // Waiting for Mux to process
                         HStack(spacing: 8) {
-                            ProgressView()
-                                .scaleEffect(0.7)
-                            Text("Processing on server\u{2026}")
-                                .font(Theme.font13Semibold)
-                                .foregroundStyle(Theme.secondaryText)
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, Theme.buttonPaddingV)
-                    case .needsDetails, .ready:
-                        // Normal buttons: View, Slack, Details
-                        HStack(spacing: 8) {
-                            if let msId = asset.mediasourceId,
-                                let url = ServerConfig.clipURL(msId)
-                            {
+                            if rowStatus == .needsDetails || rowStatus == .ready {
+                                if let msId = asset.mediasourceId,
+                                    let url = ServerConfig.clipURL(msId)
+                                {
+                                    archiveButton(
+                                        icon: "play.circle.fill", label: "View", color: Theme.green
+                                    ) {
+                                        UIApplication.shared.open(url)
+                                    }
+                                }
+
                                 archiveButton(
-                                    icon: "play.circle.fill", label: "View", color: Theme.green
+                                    icon: "paperplane.fill", label: "Slack", color: Theme.purple
                                 ) {
-                                    UIApplication.shared.open(url)
+                                    onShowSlack(rowID)
+                                }
+                                .accessibilityFocused($slackActionIsFocused)
+                                .task(id: restoreModalFocus) {
+                                    guard restoreModalFocus == .slack else { return }
+                                    slackActionIsFocused = true
+                                    onModalFocusRestored()
                                 }
                             }
 
-                            archiveButton(
-                                icon: "paperplane.fill", label: "Slack", color: Theme.purple
-                            ) {
-                                showSlackShare = true
-                            }
-
-                            if rowStatus == .needsDetails {
-                                archiveButton(
-                                    icon: "square.and.pencil", label: "Add Details",
-                                    color: Theme.yellow
-                                ) {
-                                    showFormSheet = true
-                                }
-                            } else {
+                            if needsDetails {
+                                addDetailsButton.id("add-details-\(asset.id)")
+                            } else if rowStatus == .ready {
                                 archiveButton(
                                     icon: "checkmark.circle.fill", label: "Details",
                                     color: Theme.green.opacity(0.5)
@@ -383,17 +606,49 @@ struct ArchiveRowView: View {
                         }
                     }
 
-                    if let reuploadNotice, reuploadError == nil {
+                    if let reuploadNotice = ArchiveReuploadNotice.preferred(
+                        reuploadNotice: reuploadNotice, refreshWarning: reuploadRefreshWarning,
+                        photoWarning: photoAssociationWarning, readWarning: photoAssociationReadWarning,
+                        displayedError: reuploadError ?? mediaTasks.retryMessages[asset.id],
+                        isDamaged: photoAssociationDamaged) {
                         Label(reuploadNotice, systemImage: "exclamationmark.triangle.fill")
-                            .font(Theme.font11Semibold)
+                            .font(.footnote.weight(.semibold))
                             .foregroundStyle(Theme.warningText)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    if let associationWarning = mediaTasks.associationWarning(
+                        assetId: asset.id, scope: assetSession?.scope) {
+                        Label(associationWarning, systemImage: "exclamationmark.triangle.fill")
+                            .font(.footnote.weight(.semibold))
+                            .foregroundStyle(Theme.warningText)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
 
                     // Re-upload error
-                    if let reuploadError {
+                    if let reuploadError = ArchiveReuploadNotice.distinctError(
+                        reuploadError ?? mediaTasks.retryMessages[asset.id],
+                        isDamaged: photoAssociationDamaged) {
                         Text(reuploadError)
-                            .font(Theme.font11Semibold)
-                            .foregroundStyle(Theme.red)
+                            .font(.footnote.weight(.semibold))
+                            .foregroundStyle(Theme.errorText)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    if photoAssociationDamaged {
+                        Button("Repair saved photo links") {
+                            if !onRepairPhotoLinks(rowID) {
+                                onReuploadAnnouncement("Close the current sheet before repairing photo links.")
+                            }
+                        }
+                        .font(.footnote.weight(.semibold))
+                        .buttonStyle(.bordered)
+                        .tint(Theme.warningText)
+                        .accessibilityFocused($repairActionIsFocused)
+                        .task(id: restoreModalFocus) {
+                            guard restoreModalFocus == .repairPhotos else { return }
+                            repairActionIsFocused = true
+                            onModalFocusRestored()
+                        }
                     }
                 }
                 .padding(.horizontal, 16)
@@ -403,49 +658,96 @@ struct ArchiveRowView: View {
         }
         .background(Theme.cardBg)
         .clipShape(RoundedRectangle(cornerRadius: Theme.radiusMd))
-        .sheet(isPresented: $showSlackShare) {
-            SlackShareSheet(
-                mediasourceId: asset.mediasourceId,
-                originalFileName: asset.originalFileName,
-                onSend: { text in
-                    showSlackShare = false
-                    ws.sendMessage(text: text, assetId: asset.id)
-                },
-                onDismiss: { showSlackShare = false }
-            )
+        .onChange(of: restoreFocus) { _, shouldFocus in
+            if shouldFocus { restoreDetailsFocus() }
         }
-        .sheet(isPresented: $showFormSheet) {
-            ContextFormView(
-                fields: buildFormFields(),
-                originalFileName: asset.originalFileName,
-                capturedAt: asset.clips?.first?.capturedAt,
-                clipCount: asset.clipCount,
-                duration: asset.clips?.first?.duration,
-                thumbnail: nil,
-                onSubmit: { formData in
-                    showFormSheet = false
-                    Task { await submitFormFromArchive(formData: formData) }
-                },
-                onCancel: {
-                    showFormSheet = false
+        .onChange(of: restoreModalFocus) { _, target in
+            if let target { restoreModalFocusIfNeeded(target) }
+        }
+        .onChange(of: pendingReuploadSelection?.id) { _, _ in
+            consumePendingReuploadSelection()
+        }
+        .onChange(of: refreshVersion) { _, version in
+            reuploadRefreshWarning = nil
+            mediaTasks.clearCompletion(assetId: asset.id)
+            if let completedAt = reuploadCompletionRefreshVersion, version != completedAt {
+                reuploadComplete = false
+                reuploadCompletionRefreshVersion = nil
+            }
+        }
+        .onChange(of: assetSession?.scope) { _, _ in refreshPhotoAssociation() }
+        .onChange(of: assetSession?.generation) { _, _ in refreshPhotoAssociation() }
+        .onChange(of: assetSession?.serverURL) { _, _ in refreshPhotoAssociation() }
+        .onChange(of: mediaTasks.associationRevision) { _, _ in
+            let wasDamaged = photoAssociationDamaged
+            refreshPhotoAssociation()
+            if wasDamaged && !photoAssociationDamaged {
+                if reuploadErrorRequiresRepair {
+                    reuploadError = nil
+                    reuploadErrorRequiresRepair = false
                 }
-            )
+                mediaTasks.clearAssociationRepairFailure(assetId: asset.id)
+            }
         }
-        .photosPicker(
-            isPresented: $showReuploadPicker,
-            selection: $selectedVideoItem,
-            matching: .videos,
-            preferredItemEncoding: .current,
-            photoLibrary: .shared()
-        )
-        .onChange(of: selectedVideoItem) { _, newItem in
-            guard let newItem else { return }
-            selectedVideoItem = nil
-            Task { await handleReupload(item: newItem) }
+        .onChange(of: presentationState.isSceneActive) { _, isActive in
+            if isActive { refreshPhotoAssociation() }
+        }
+        .onAppear {
+            onVisibilityChange(rowID, true)
+            refreshPhotoAssociation()
+            if restoreFocus { restoreDetailsFocus() }
+            if let restoreModalFocus { restoreModalFocusIfNeeded(restoreModalFocus) }
+            consumePendingReuploadSelection()
+        }
+        .onDisappear {
+            onVisibilityChange(rowID, false)
         }
     }
 
     // MARK: - Helpers
+
+    private var addDetailsButton: some View {
+        archiveButton(icon: "square.and.pencil", label: "Add Details", color: Theme.yellow) {
+            onAddDetails()
+        }
+        .accessibilityFocused($addDetailsIsFocused)
+        .task(id: restoreFocus) {
+            if restoreFocus {
+                addDetailsIsFocused = true
+                onFocusRestored()
+            }
+        }
+    }
+
+    private func restoreDetailsFocus() {
+        if needsDetails {
+            isExpanded = true
+        } else {
+            rowIsFocused = true
+            onFocusRestored()
+        }
+    }
+
+    private func restoreModalFocusIfNeeded(_ target: ArchiveModalFocusTarget) {
+        if (target == .reupload && rowStatus == .failed)
+            || (target == .reuploadProgress && rowStatus == .reuploading)
+            || (target == .reuploadProgress && rowStatus == .failed)
+            || (target == .repairPhotos && (photoAssociationDamaged || rowStatus == .failed))
+            || (target == .slack && (rowStatus == .ready || rowStatus == .needsDetails)) {
+            isExpanded = true
+        } else {
+            rowIsFocused = true
+            onModalFocusRestored()
+        }
+    }
+
+    private func focusReuploadActionIfRequested() {
+        guard restoreModalFocus == .reupload
+                || (restoreModalFocus == .repairPhotos && !photoAssociationDamaged)
+                || (restoreModalFocus == .reuploadProgress && rowStatus == .failed) else { return }
+        reuploadActionIsFocused = true
+        onModalFocusRestored()
+    }
 
     @ViewBuilder
     private func metadataRow(label: String, value: String) -> some View {
@@ -477,6 +779,7 @@ struct ArchiveRowView: View {
             .padding(.vertical, Theme.buttonPaddingV)
             .background(color.opacity(0.15))
             .clipShape(RoundedRectangle(cornerRadius: Theme.buttonCornerRadius))
+            .tapTarget()
         }
         .buttonStyle(.plain)
     }
@@ -486,220 +789,490 @@ struct ArchiveRowView: View {
         return DVUDateFormatting.shortDate(dateStr)
     }
 
-    private func buildFormFields() -> [FormField] {
-        FormField.defaultVideoFields()
-    }
-
-    private func submitFormFromArchive(formData: [String: String]) async {
-        var request = auth.authenticatedRequest(for: ServerConfig.formURL(asset.id), method: "POST")
-        request.httpBody = try? JSONSerialization.data(withJSONObject: formData)
-
-        do {
-            let (_, response) = try await URLSession.shared.data(for: request)
-            if let http = response as? HTTPURLResponse, http.statusCode < 400 {
-                PendingForm.clear()
-                // Update local state immediately — switches to Ready + Details button
-                formSubmitted = true
-                submittedFormData = formData
-                Log.debug("✅ [Archive] Form submitted for asset: \(asset.id)", logger: Log.media)
-                // Refresh parent list so server data is in sync
-                onFormSubmitted?()
-            }
-        } catch {
-            Log.error("❌ [Archive] Form submit failed: \(Log.describe(error))", logger: Log.media)
-        }
-    }
-
     // MARK: - Re-upload
 
-    /// Auto re-upload of the camera original, found by stored Photos identifier or by capture date.
-    /// A Photos video only counts as a match when its length equals the uploaded clip's, so the
-    /// untrimmed source of a trimmed upload is never sent. Otherwise the person picks the video.
-    private func handleAutoReupload() async {
-        guard !isReuploadingVideo else { return }
-        isReuploadingVideo = true
-        reuploadProgress = 0
-        reuploadError = nil
-        reuploadNotice = nil
-
-        let status = await OriginalVideoLoader.requestReadWriteAccessIfNeeded()
-        guard OriginalVideoLoader.canRead(status) else {
-            askToPickVideo("Photo Library access is off, so pick the video to re-upload.")
-            return
-        }
-
-        guard let identifier = findMatchingOriginal() else {
-            askToPickVideo("Couldn't find a matching video in Photos. Pick the video to re-upload.")
-            return
-        }
-
-        defer { if reuploadError != nil { isReuploadingVideo = false } }
-
+    private func refreshPhotoAssociation() {
+        photoAssociationDamaged = false
+        guard let session = assetSession, session.isCurrent(auth) else { return }
         do {
-            try await uploadOriginal(localIdentifier: identifier)
+            _ = try ScopedPHAssetIdentifierStore.shared.association(
+                assetId: asset.id, for: session.scope)
+            photoAssociationReadWarning = nil
         } catch {
-            reuploadError = "Re-upload failed: \(error.localizedDescription)"
-            Log.error("❌ [Archive] Auto re-upload failed: \(Log.describe(error))", logger: Log.media)
+            Log.error("⚠️ [Archive] Could not read the saved photo association: \(Log.describe(error))", logger: Log.media)
+            photoAssociationDamaged = isDamagedPhotoAssociationStore(error)
+            photoAssociationReadWarning = photoAssociationDamaged
+                ? ArchiveReuploadNotice.repairRequired
+                : "Couldn't read the saved photo link. Unlock this device and try again."
         }
     }
 
-    /// Photos identifier of a video with the same length as the uploaded clip, if one exists.
-    private func findMatchingOriginal() -> String? {
-        let clipDuration = asset.clips?.first?.duration
-
-        // Strategy 1: stored identifier (saved at upload, or the saved trimmed copy)
-        if let storedId = PHAssetIdentifierStore.identifier(for: asset.id),
-            let photosDuration = OriginalVideoLoader.duration(ofAssetWithIdentifier: storedId)
-        {
-            if OriginalVideoLoader.isSameLength(
-                photosDuration: photosDuration, clipDuration: clipDuration)
-            {
-                Log.debug("📷 [Archive] Found video by stored PHAsset ID", logger: Log.media)
-                return storedId
-            }
-            Log.error("⚠️ [Archive] Stored PHAsset length differs from the uploaded clip; skipping", logger: Log.media)
+    private func beginReupload() {
+        guard !isReuploadingVideo, !hasActiveArchiveUpload, !hasActiveChatUpload else {
+            onReuploadAnnouncement("This upload is already in progress.")
+            return
         }
-
-        // Strategy 2: auto-discover by capturedAt date from clip metadata
-        if let capturedAtStr = asset.clips?.first?.capturedAt,
-            let capturedDate = DVUDateFormatting.parseISO(capturedAtStr),
-            let phAsset = discoverPHAsset(capturedAt: capturedDate, duration: clipDuration),
-            OriginalVideoLoader.isSameLength(
-                photosDuration: phAsset.duration, clipDuration: clipDuration)
-        {
-            Log.debug("📷 [Archive] Auto-discovered video by capturedAt: \(capturedAtStr)", logger: Log.media)
-            PHAssetIdentifierStore.save(
-                assetId: asset.id, phAssetIdentifier: phAsset.localIdentifier)
-            return phAsset.localIdentifier
+        guard let session = assetSession, session.isCurrent(auth) else {
+            reuploadSession = nil
+            failReupload("Your account or server changed. Refresh Archive before re-uploading.")
+            return
         }
-
-        return nil
+        reuploadSession = session
+        refreshPhotoAssociation()
+        if photoAssociationDamaged {
+            failReupload(ArchiveReuploadNotice.repairRequired, requiresAssociationRepair: true)
+            return
+        }
+        if let photoAssociationReadWarning {
+            failReupload(photoAssociationReadWarning)
+            return
+        }
+        presentReuploadPicker(
+            "Choose the correct original video or saved trim to re-upload.", session: session)
     }
 
-    private func askToPickVideo(_ message: String) {
-        isReuploadingVideo = false
-        reuploadNotice = message
-        // The picker takes VoiceOver focus, so speak the reason before it opens.
-        var announcement = AttributedString(message)
-        announcement.accessibilitySpeechAnnouncementPriority = .high
-        AccessibilityNotification.Announcement(announcement).post()
-        showReuploadPicker = true
+    private func presentReuploadPicker(_ message: String, session: ArchiveSessionIdentity) {
+        do {
+            let snapshot = try ScopedPHAssetIdentifierStore.shared.snapshot(
+                assetId: asset.id, for: session.scope)
+            let presented = onPickVideo(rowID, message, snapshot)
+            if !presented { deferReuploadPicker(message) }
+        } catch {
+            Log.error("⚠️ [Archive] Could not snapshot the saved photo association: \(Log.describe(error))", logger: Log.media)
+            photoAssociationDamaged = isDamagedPhotoAssociationStore(error)
+            let warning = photoAssociationDamaged
+                ? ArchiveReuploadNotice.repairRequired
+                : "Couldn't read the saved photo link. Unlock this device and try again."
+            photoAssociationReadWarning = warning
+            failReupload(warning, requiresAssociationRepair: photoAssociationDamaged)
+        }
     }
 
-    /// Search Photos library for a video matching the capturedAt date and optional duration
-    private func discoverPHAsset(capturedAt: Date, duration: Int?) -> PHAsset? {
-        let options = PHFetchOptions()
-        // Search within a 2-second window around the capture date
-        let startDate = capturedAt.addingTimeInterval(-1)
-        let endDate = capturedAt.addingTimeInterval(1)
-        options.predicate = NSPredicate(
-            format: "mediaType == %d AND creationDate >= %@ AND creationDate <= %@",
-            PHAssetMediaType.video.rawValue, startDate as NSDate, endDate as NSDate
-        )
-        options.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
-        options.fetchLimit = 5
-
-        let results = PHAsset.fetchAssets(with: options)
-
-        // If only one match, use it
-        if results.count == 1 {
-            return results.firstObject
+    private func consumePendingReuploadSelection() {
+        guard let pending = pendingReuploadSelection, pending.assetId == asset.id else { return }
+        guard onPendingReuploadConsumed(pending.id) else { return }
+        guard pending.session.isCurrent(auth), pending.intent.permits(asset),
+              pending.associationSnapshot.matches(assetId: asset.id, scope: pending.session.scope),
+              mediaTasks.intentIsCurrent(
+                pending.intent, assetId: asset.id, scope: pending.session.scope,
+                sessionGeneration: pending.session.generation),
+              !isReuploadingVideo,
+              !mediaTasks.isRunning(assetId: asset.id, scope: pending.session.scope),
+              !presentationState.isChatUploading(assetId: asset.id, scope: pending.session.scope) else {
+            onReuploadAnnouncement(
+                "The selected video wasn't used because this upload changed or a retry is already running.")
+            return
         }
-
-        // If multiple matches and we have duration, pick the closest match
-        if let duration, results.count > 1 {
-            var bestMatch: PHAsset?
-            var bestDiff = Double.infinity
-            results.enumerateObjects { phAsset, _, _ in
-                let diff = abs(phAsset.duration - Double(duration))
-                if diff < bestDiff {
-                    bestDiff = diff
-                    bestMatch = phAsset
+        reuploadSession = pending.session
+        let started = mediaTasks.start(
+            assetId: asset.id, scope: pending.session.scope,
+            sessionGeneration: pending.session.generation, intent: pending.intent,
+            onSuperseded: { _ in
+                guard pending.session.isCurrent(auth),
+                      !mediaTasks.isRunning(assetId: asset.id, scope: pending.session.scope)
+                else { return }
+                if presentationState.isChatUploading(assetId: asset.id, scope: pending.session.scope) {
+                    isReuploadingVideo = false
+                    verificationProgress.reset()
+                    return
                 }
+                abandonChangedRetry()
             }
-            return bestMatch
+        ) { operationID in
+            await handleReupload(
+                item: pending.item, session: pending.session, operationID: operationID,
+                associationSnapshot: pending.associationSnapshot)
         }
-
-        return results.firstObject
+        guard started else {
+            onReuploadAnnouncement(
+                "The selected video wasn't used because this upload changed or a retry is already running.")
+            return
+        }
+        startReuploadProgress(focusProgress: true)
     }
 
-    /// Re-upload of a video the person picked: the camera original when Photos access allows it,
-    /// otherwise the picker's copy of the current version (no transcoding).
-    private func handleReupload(item: PhotosPickerItem) async {
-        guard !isReuploadingVideo else { return }
-        isReuploadingVideo = true
-        reuploadProgress = 0
-        reuploadError = nil
-        reuploadNotice = nil
-        defer { if reuploadError != nil { isReuploadingVideo = false } }
+    private func deferReuploadPicker(_ message: String) {
+        let instruction = "\(message) When ready, choose Re-upload (pick video) in Archive."
+        reuploadNotice = instruction
+        onReuploadAnnouncement(instruction)
+    }
+
+    /// Upload the current representation explicitly selected in the picker.
+    private func handleReupload(
+        item: PhotosPickerItem, session: ArchiveSessionIdentity, operationID: UUID,
+        associationSnapshot: ScopedPhotoAssociationSnapshot
+    ) async {
+        guard ownsOperation(session, operationID) else { return }
 
         do {
-            let status = PHPhotoLibrary.authorizationStatus(for: .readWrite)
-            if OriginalVideoLoader.canRead(status),
-                let identifier = item.itemIdentifier,
-                OriginalVideoLoader.duration(ofAssetWithIdentifier: identifier) != nil
-            {
-                PHAssetIdentifierStore.save(assetId: asset.id, phAssetIdentifier: identifier)
-                try await uploadOriginal(localIdentifier: identifier)
+            let load: Result<VideoTransferable?, any Error>
+            do {
+                load = .success(try await item.loadTransferable(type: VideoTransferable.self))
+            } catch {
+                load = .failure(error)
+            }
+            let loaded = try ArchiveRetryVideoLoad.resolve(load) {
+                guard ownsOperation(session, operationID) else { throw UploadError.sessionChanged }
+                try requireCurrentIntent(session, operationID)
+            }
+            guard let movie = loaded else {
+                failReupload("Could not load video from Photos library")
                 return
+            }
+            defer { removeTemporaryVideoItem(movie.url.deletingLastPathComponent()) }
+            let metadata = await VideoMetadataExtractor.extract(from: movie.url)
+            guard ownsOperation(session, operationID) else { throw UploadError.sessionChanged }
+            try requireCurrentIntent(session, operationID)
+            guard OriginalVideoLoader.hasCompatibleDuration(
+                photosDuration: Double(metadata.duration),
+                clipDuration: asset.clips?.first?.duration) else {
+                throw PhotoAssociationError.durationMismatch
             }
 
-            guard let movie = try await item.loadTransferable(type: VideoTransferable.self) else {
-                reuploadError = "Could not load video from Photos library"
-                return
+            let verification: Result<ScopedPhotoAssociation?, any Error>
+            do {
+                verification = .success(try await verifiedAssociationForSelectedVideo(
+                    item: item, fileURL: movie.url, metadata: metadata,
+                    session: session, operationID: operationID))
+            } catch {
+                verification = .failure(error)
             }
-            defer { try? FileManager.default.removeItem(at: movie.url.deletingLastPathComponent()) }
-            try await performUpload(fileURL: movie.url, metadata: nil)
+            let association = try ArchiveRetryVerification.resolve(
+                verification,
+                validate: {
+                    guard ownsOperation(session, operationID) else { throw UploadError.sessionChanged }
+                    try requireCurrentIntent(session, operationID)
+                },
+                onMissing: {
+                    warnManualPhotoRetry(
+                        "The selected Photos version will upload as selected. Choose it again if you need to retry.")
+                },
+                onFailure: { error in
+                    Log.error("⚠️ [Archive] Could not verify the selected Photos version: \(Log.describe(error))", logger: Log.media)
+                    warnManualPhotoRetry(
+                        "The selected video can upload, but its Photos link couldn't be verified. Choose it again if you need to retry.")
+                }
+            )
+            try await performUpload(
+                fileURL: movie.url, metadata: metadata, session: session,
+                operationID: operationID, newAssociation: association,
+                associationSnapshot: associationSnapshot)
+        } catch PhotoAssociationError.durationMismatch {
+            guard ownsUnchangedOperation(session, operationID) else { return }
+            failReupload("That video's duration doesn't match this upload. Choose the saved video or trim.")
+        } catch ArchiveRetryError.intentChanged {
+            guard ownsOperation(session, operationID) else { return }
+            abandonChangedRetry()
         } catch {
-            reuploadError = "Re-upload failed: \(error.localizedDescription)"
+            guard ownsUnchangedOperation(session, operationID) else { return }
+            failReupload("Re-upload failed. Check your connection and try again.")
             Log.error("❌ [Archive] Re-upload failed: \(Log.describe(error))", logger: Log.media)
         }
     }
 
-    /// Copies the camera original out of Photos (downloading from iCloud if needed) and uploads it.
-    private func uploadOriginal(localIdentifier: String) async throws {
-        let original = try await OriginalVideoLoader.loadOriginal(localIdentifier: localIdentifier)
-        defer { try? FileManager.default.removeItem(at: original.fileURL.deletingLastPathComponent()) }
-        try await performUpload(fileURL: original.fileURL, metadata: original.metadata)
+    private func verifiedAssociationForSelectedVideo(
+        item: PhotosPickerItem, fileURL: URL, metadata: VideoMetadata,
+        session: ArchiveSessionIdentity, operationID: UUID
+    ) async throws -> ScopedPhotoAssociation? {
+        guard ownsOperation(session, operationID) else { throw UploadError.sessionChanged }
+        try requireCurrentIntent(session, operationID)
+        let status = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+        guard OriginalVideoLoader.canRead(status), let identifier = item.itemIdentifier,
+              OriginalVideoLoader.duration(ofAssetWithIdentifier: identifier) != nil else {
+            return nil
+        }
+        verificationProgress.begin(operationID)
+        defer { verificationProgress.finish(operationID) }
+        let selected = try await VideoContentFingerprint.calculate(for: fileURL)
+        guard ownsOperation(session, operationID) else { throw UploadError.sessionChanged }
+        try requireCurrentIntent(session, operationID)
+        let original = try await OriginalVideoLoader.loadOriginal(localIdentifier: identifier)
+        defer { removeTemporaryVideoItem(original.fileURL.deletingLastPathComponent()) }
+        guard ownsOperation(session, operationID) else { throw UploadError.sessionChanged }
+        try requireCurrentIntent(session, operationID)
+        let originalFingerprint = try await VideoContentFingerprint.calculate(for: original.fileURL)
+        guard ownsOperation(session, operationID) else { throw UploadError.sessionChanged }
+        try requireCurrentIntent(session, operationID)
+        return ManualPhotoRecovery.association(
+            identifier: identifier, selected: selected, original: originalFingerprint,
+            metadata: metadata)
     }
 
-    /// Shared upload logic for both auto and manual re-upload
-    private func performUpload(fileURL: URL, metadata: VideoMetadata?) async throws {
-        let resolvedMetadata: VideoMetadata
-        if let metadata {
-            resolvedMetadata = metadata
-        } else {
-            resolvedMetadata = await VideoMetadataExtractor.extract(from: fileURL)
-        }
+    private func warnManualPhotoRetry(_ message: String) {
+        photoAssociationWarning = message
+        onReuploadAnnouncement(message)
+    }
 
-        guard let token = auth.token else {
-            reuploadError = "Not authenticated"
-            return
+    private func publishPhotoLinkOutcome(
+        _ outcome: ArchiveRetryPhotoLink.Outcome, session: ArchiveSessionIdentity, operationID: UUID
+    ) {
+        guard ownsOperation(session, operationID) else { return }
+        switch outcome {
+        case .committed(let association):
+            mediaTasks.setAssociationWarning(
+                outcome.warningMessage, assetId: asset.id, scope: session.scope)
+            photoAssociationWarning = nil
+            if association == nil {
+                presentationState.photoAssociatedAssetIDs.remove(asset.id)
+            } else {
+                presentationState.photoAssociatedAssetIDs.insert(asset.id)
+            }
+            mediaTasks.associationChanged()
+        case .superseded, .associationChanged, .storageFailure:
+            if case .storageFailure(let error) = outcome {
+                Log.error("⚠️ [Archive] Could not update the photo association after upload: \(Log.describe(error))", logger: Log.media)
+                if isDamagedPhotoAssociationStore(error) {
+                    photoAssociationDamaged = true
+                    photoAssociationReadWarning = ArchiveReuploadNotice.repairRequired
+                }
+            }
+            if let warning = outcome.warningMessage {
+                mediaTasks.setAssociationWarning(warning, assetId: asset.id, scope: session.scope)
+            }
         }
+    }
 
+    /// Upload the selected video and retain a verified local photo link when available.
+    private func performUpload(
+        fileURL: URL, metadata: VideoMetadata, session: ArchiveSessionIdentity,
+        operationID: UUID, newAssociation: ScopedPhotoAssociation?,
+        associationSnapshot: ScopedPhotoAssociationSnapshot
+    ) async throws {
+        guard ownsOperation(session, operationID) else { throw UploadError.sessionChanged }
+        try requireCurrentIntent(session, operationID)
+        if !OriginalVideoLoader.hasCompatibleDuration(
+            photosDuration: Double(metadata.duration),
+            clipDuration: asset.clips?.first?.duration) {
+            throw PhotoAssociationError.durationMismatch
+        }
+        try requireCurrentIntent(session, operationID)
+        guard mediaTasks.markNetworkStarted(
+            assetId: asset.id, scope: session.scope, id: operationID
+        ) else { throw UploadError.sessionChanged }
         let uploader = VideoUploadService()
 
         let progressTask = Task {
-            while !Task.isCancelled {
+            while !Task.isCancelled, ownsOperation(session, operationID) {
                 try? await Task.sleep(for: .milliseconds(200))
+                guard !Task.isCancelled, ownsOperation(session, operationID) else { return }
                 reuploadProgress = uploader.uploadProgress
             }
         }
         defer { progressTask.cancel() }
 
-        let _ = try await uploader.uploadViaMux(
-            assetId: asset.id,
-            fileURL: fileURL,
-            token: token,
-            metadata: resolvedMetadata
+        let outcome = try await ArchiveRetryPhotoLink.uploadAndCommit(
+            store: .shared, snapshot: associationSnapshot, assetId: asset.id,
+            scope: session.scope, association: newAssociation,
+            isCurrent: {
+                ownsOperation(session, operationID)
+                    && mediaTasks.intentIsCurrent(
+                        assetId: asset.id, scope: session.scope, id: operationID)
+            },
+            onOutcome: { outcome in
+                publishPhotoLinkOutcome(outcome, session: session, operationID: operationID)
+            },
+            upload: {
+                _ = try await uploader.uploadViaMux(
+                    assetId: asset.id,
+                    fileURL: fileURL,
+                    token: session.token,
+                    serverURL: session.serverURL,
+                    metadata: metadata,
+                    isCurrent: { ownsOperation(session, operationID) },
+                    validateBeforeTransfer: { try requireCurrentIntent(session, operationID) }
+                )
+            }
         )
 
+        guard ownsOperation(session, operationID) else { throw UploadError.sessionChanged }
+        let restoreFocus = reuploadProgressIsFocused && isArchiveActive && !isArchiveModalVisible
         reuploadProgress = 1.0
+        reuploadCompletionRefreshVersion = refreshVersion
         reuploadComplete = true
         isReuploadingVideo = false
+        mediaTasks.recordCompletion(assetId: asset.id, scope: session.scope)
+        onReuploadCompletion(outcome.completionAnnouncement, restoreFocus)
         Log.debug("✅ [Archive] Re-upload complete for asset: \(asset.id)", logger: Log.media)
 
-        try? await Task.sleep(for: .seconds(2))
-        onFormSubmitted?()
+        let refreshed = await onUploadCompleted()
+        if case .failed = refreshed, ownsOperation(session, operationID) {
+            let message = "Upload finished, but its status couldn't be refreshed. Refresh Archive."
+            reuploadRefreshWarning = message
+        }
+    }
+
+    private func startReuploadProgress(focusProgress: Bool = false) {
+        let moveFocus = focusProgress
+            || (reuploadActionIsFocused && isArchiveActive && !isArchiveModalVisible)
+        isReuploadingVideo = true
+        verificationProgress.reset()
+        mediaTasks.beginRetry(assetId: asset.id)
+        reuploadProgress = 0
+        reuploadError = nil
+        reuploadErrorRequiresRepair = false
+        reuploadNotice = nil
+        reuploadRefreshWarning = nil
+        reuploadComplete = false
+        reuploadCompletionRefreshVersion = nil
+        onReuploadAnnouncement("Re-upload started.")
+        if moveFocus { onReuploadProgressFocus() }
+    }
+
+    private func ownsOperation(_ session: ArchiveSessionIdentity, _ id: UUID) -> Bool {
+        !Task.isCancelled && session.isCurrent(auth)
+            && !presentationState.isChatUploading(assetId: asset.id, scope: session.scope)
+            && mediaTasks.owns(assetId: asset.id, scope: session.scope, id: id)
+    }
+
+    private func requireCurrentIntent(_ session: ArchiveSessionIdentity, _ id: UUID) throws {
+        guard mediaTasks.intentIsCurrent(assetId: asset.id, scope: session.scope, id: id) else {
+            throw ArchiveRetryError.intentChanged
+        }
+    }
+
+    private func ownsUnchangedOperation(_ session: ArchiveSessionIdentity, _ id: UUID) -> Bool {
+        guard ownsOperation(session, id) else { return false }
+        guard mediaTasks.intentIsCurrent(assetId: asset.id, scope: session.scope, id: id) else {
+            abandonChangedRetry()
+            return false
+        }
+        return true
+    }
+
+    private func abandonChangedRetry() {
+        let restoreFocus = reuploadProgressIsFocused && isArchiveActive && !isArchiveModalVisible
+        let message = "This upload changed. Refresh Archive before retrying."
+        isReuploadingVideo = false
+        verificationProgress.reset()
+        reuploadError = nil
+        reuploadErrorRequiresRepair = false
+        reuploadNotice = message
+        mediaTasks.clearFailure(assetId: asset.id)
+        onReuploadAnnouncement(message)
+        if restoreFocus { rowIsFocused = true }
+    }
+
+    private func failReupload(_ message: String, requiresAssociationRepair: Bool = false) {
+        let restoreFocus = reuploadProgressIsFocused && isArchiveActive && !isArchiveModalVisible
+        isReuploadingVideo = false
+        guard reuploadSession?.isCurrent(auth) ?? true else { return }
+        reuploadError = message
+        reuploadErrorRequiresRepair = requiresAssociationRepair
+        if reuploadSession?.isCurrent(auth) == true {
+            if requiresAssociationRepair {
+                mediaTasks.requireAssociationRepair(assetId: asset.id, message: message)
+            } else {
+                mediaTasks.recordFailure(assetId: asset.id, message: message)
+            }
+        }
+        onReuploadAnnouncement(message)
+        if restoreFocus { reuploadActionIsFocused = true }
+    }
+}
+
+struct ArchiveFormPresentation: Identifiable {
+    let id = UUID()
+    let asset: Asset
+    let session: ArchiveSessionIdentity
+}
+
+struct ArchiveDetailsSheet: View {
+    let presentation: ArchiveFormPresentation
+    let onSubmitted: ([String: String]) -> Void
+
+    @Environment(AuthService.self) private var auth
+    @Environment(\.dismiss) private var dismiss
+    @State private var isActive = true
+    @State private var isSubmitting = false
+    @State private var isSubmitted = false
+    @State private var submitError: String?
+    @State private var errorRevision = 0
+
+    private var asset: Asset { presentation.asset }
+
+    var body: some View {
+        ContextFormView(
+            fields: FormField.defaultVideoFields(),
+            originalFileName: asset.originalFileName,
+            capturedAt: asset.clips?.first?.capturedAt,
+            clipCount: asset.clipCount,
+            duration: asset.clips?.first?.duration,
+            thumbnail: nil,
+            submitError: submitError,
+            errorRevision: errorRevision,
+            isSubmitting: isSubmitting,
+            submissionComplete: isSubmitted,
+            onSubmit: { formData in
+                submitError = nil
+                await submit(formData)
+            }
+        )
+        .onDisappear { isActive = false }
+    }
+
+    private func submit(_ formData: [String: String]) async {
+        guard !isSubmitting else { return }
+        guard presentation.session.isCurrent(auth),
+              let url = presentation.session.url(for: "/api/assets/\(asset.id)/form")
+        else {
+            submitError = "Your session changed. Sign in again to submit these details."
+            errorRevision += 1
+            return
+        }
+        let scope = presentation.session.scope
+        isSubmitting = true
+        defer { isSubmitting = false }
+        let isCurrent: @MainActor () -> Bool = {
+            presentation.session.isCurrent(auth)
+        }
+
+        let pendingRecord: PendingFormRecord?
+        let recoveryReadFailed: Bool
+        do {
+            pendingRecord = try PendingFormStore.shared.record(assetId: asset.id, for: scope)
+            recoveryReadFailed = false
+        } catch {
+            pendingRecord = nil
+            recoveryReadFailed = true
+            Log.error("⚠️ [Archive] Could not read saved recovery state: \(Log.describe(error))", logger: Log.media)
+        }
+        let request = auth.authenticatedRequest(for: url, method: "POST")
+
+        do {
+            let outcome = try await PendingFormSubmission(store: .shared).submit(
+                formData: formData, request: request, pendingRecord: pendingRecord,
+                scope: scope, assetId: asset.id, isCurrent: isCurrent)
+            if case .submittedRecoveryNotCleared(let error) = outcome {
+                Log.error("⚠️ [Archive] Failed to clear saved recovery state: \(Log.describe(error))", logger: Log.media)
+            }
+            guard isCurrent(), isActive else { return }
+            if case .sessionChanged = outcome { return }
+
+            isSubmitted = true
+            onSubmitted(formData)
+            Log.debug("✅ [Archive] Form submitted for asset: \(asset.id)", logger: Log.media)
+            if recoveryReadFailed {
+                submitError = "Details were sent, but saved recovery state couldn't be read. You can close this form."
+                errorRevision += 1
+            } else if case .submittedRecoveryNotCleared = outcome {
+                submitError = "Details were sent, but saved recovery state couldn't be updated. You can close this form."
+                errorRevision += 1
+            } else {
+                dismiss()
+            }
+        } catch {
+            if case FormSubmissionError.httpStatus(let status) = error {
+                Log.error("❌ [Archive] Form submit failed: HTTP \(status)", logger: Log.media)
+            } else {
+                Log.error("❌ [Archive] Form submit failed: \(Log.describe(error))", logger: Log.media)
+            }
+            guard isCurrent(), isActive else { return }
+            if case FormSubmissionError.inProgress = error {
+                submitError = "These details are already being sent. Wait and try again."
+            } else {
+                submitError = "Couldn't confirm the details were sent. Retry or check Archive."
+            }
+            errorRevision += 1
+        }
     }
 }

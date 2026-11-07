@@ -1,6 +1,7 @@
 // Last updated: May 9, 2026 - 8:14pm - GPT-5.3-Codex
 import Fastify from 'fastify';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { requireRole } from '../lib/authorization.js';
 
 const prismaMock = {
     $queryRaw: vi.fn(),
@@ -26,6 +27,7 @@ const prismaMock = {
     },
     user: {
         findUnique: vi.fn(),
+        findFirst: vi.fn(),
         create: vi.fn(),
         findMany: vi.fn(),
         updateMany: vi.fn(),
@@ -97,6 +99,7 @@ beforeEach(async () => {
     prismaMock.formResponse.deleteMany.mockResolvedValue({ count: 0 });
 
     prismaMock.user.findUnique.mockResolvedValue(null);
+    prismaMock.user.findFirst.mockResolvedValue(null);
     prismaMock.user.create.mockResolvedValue({
         id: 'user-new',
         name: 'New Reporter',
@@ -144,16 +147,12 @@ beforeEach(async () => {
         request.user = {
             id: 'admin-1',
             sub: 'admin-1',
-            role: 'ADMIN',
+            role: 'SUPER_ADMIN',
             companyCode: 'NEWS',
         };
     });
 
-    app.decorate('authorizeAdmin', async (request, reply) => {
-        if (request.user?.role !== 'ADMIN') {
-            return reply.status(403).send({ error: 'Admin access required' });
-        }
-    });
+    app.decorate('requireRole', requireRole);
 
     app.decorate('io', {
         of: () => ({ sockets: new Map([['s1', {}], ['s2', {}]]) }),
@@ -299,7 +298,7 @@ describe('admin routes deeper coverage', () => {
     });
 
     it('returns no changes error when editing user without any fields', async () => {
-        prismaMock.user.findUnique.mockResolvedValueOnce({
+        prismaMock.user.findFirst.mockResolvedValueOnce({
             id: 'user-1',
             name: 'Reporter',
             phoneNumber: '5055551000',

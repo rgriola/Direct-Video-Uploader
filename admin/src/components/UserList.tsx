@@ -438,8 +438,8 @@ function UserDetails({
         )}
       </div>
 
-      {/* Delete user — admin only, hidden for self */}
-      {onDeleteUser && !isSelf && (
+      {/* Delete user — Super Admin only, hidden for self and other Super Admins */}
+      {onDeleteUser && !isSelf && user.role !== "SUPER_ADMIN" && (
         <div className="pt-2 mt-2 border-t border-(--border-subtle)">
           {confirming && !deleting && (
             <p className="text-(length:--text-xs) text-(--accent-red) font-semibold mb-2 inline-flex items-start gap-1">

@@ -108,7 +108,7 @@ struct ProfileView: View {
                 PermissionRow(
                     icon: "photo.on.rectangle.angled",
                     title: "Photo Library",
-                    subtitle: "Upload originals and re-upload from Archive",
+                    subtitle: "Upload originals and save trims to Photos",
                     statusLabel: permissions.photoLibraryLabel,
                     state: permissions.photoLibraryRowState,
                     actionHint: permissions.photoLibraryStatus == .notDetermined

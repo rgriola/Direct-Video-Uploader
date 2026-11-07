@@ -18,10 +18,40 @@ enum TrimOutcome {
 nonisolated enum TrimRange {
     /// Selections within this distance of either end count as untouched (under two frames at 30 fps).
     static let fullLengthTolerance: Double = 0.05
+    /// Shortest selection the handles allow.
+    static let minimumDuration: Double = 1.0
 
     static func isFullLength(start: Double, end: Double, duration: Double) -> Bool {
         guard duration > 0 else { return true }
         return start <= fullLengthTolerance && end >= duration - fullLengthTolerance
+    }
+
+    /// VoiceOver swipe step for the trim handles and playhead, coarser for longer clips.
+    static func accessibilityStep(duration: Double) -> Double {
+        switch duration {
+        case ..<60: 0.5
+        case ..<300: 1
+        default: 5
+        }
+    }
+
+    static func nudgedStart(_ start: Double, end: Double, by delta: Double) -> Double {
+        min(max(start + delta, 0), max(end - minimumDuration, 0))
+    }
+
+    static func nudgedEnd(_ end: Double, start: Double, duration: Double, by delta: Double) -> Double {
+        max(min(end + delta, duration), min(start + minimumDuration, duration))
+    }
+
+    /// Spoken form of a time, e.g. "1 minute, 2.5 seconds".
+    static func spokenTime(_ seconds: Double) -> String {
+        let tenths = (max(seconds, 0) * 10).rounded() / 10
+        let isWhole = tenths.truncatingRemainder(dividingBy: 1) == 0
+        return Duration.milliseconds(Int64((tenths * 1000).rounded())).formatted(
+            .units(
+                allowed: [.minutes, .seconds], width: .wide,
+                fractionalPart: isWhole ? .hide : .show(length: 1))
+        )
     }
 }
 
@@ -32,13 +62,18 @@ nonisolated enum TrimRange {
 struct VideoTrimView: View {
     let videoURL: URL
     let originalFileName: String
+    let sourceLeases: TrimSourceLeases
     var onFinished: (TrimOutcome) -> Void
     var onCancel: () -> Void
+    var onTeardown: () -> Void
 
     @State private var vm = TrimViewModel()
     @State private var isExporting = false
     @State private var exportProgress: Double = 0
     @State private var exportError: String?
+    @State private var exportTask: Task<Void, Never>?
+    @State private var exportID: UUID?
+    @State private var isPresented = false
 
     var body: some View {
         ZStack {
@@ -64,6 +99,10 @@ struct VideoTrimView: View {
                         .animation(.easeInOut(duration: 0.2), value: vm.isPlaying)
                 }
                 .onTapGesture { vm.togglePlayPause() }
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(vm.isPlaying ? "Pause video" : "Play video")
+                .accessibilityAddTraits(.isButton)
+                .accessibilityAction { vm.togglePlayPause() }
                 .padding(.horizontal, 4)
 
                 Spacer(minLength: 12)
@@ -76,7 +115,8 @@ struct VideoTrimView: View {
                 // Filmstrip + trim handles
                 TrimScrubberView(vm: vm)
                     .frame(height: 60)
-                    .padding(.horizontal, 16)
+                    // Room for the outer half of the 44 pt handle hit areas at the screen edges.
+                    .padding(.horizontal, 28)
                     .padding(.bottom, 74)
             }
 
@@ -85,8 +125,23 @@ struct VideoTrimView: View {
                 exportOverlay
             }
         }
-        .onAppear { vm.load(url: videoURL) }
-        .onDisappear { vm.cleanup() }
+        .onAppear {
+            guard !isPresented else { return }
+            isPresented = true
+            sourceLeases.acquire(videoURL)
+            sourceLeases.acquire(videoURL)
+            vm.load(url: videoURL) { sourceLeases.release(videoURL) }
+        }
+        .onDisappear {
+            guard isPresented else { return }
+            isPresented = false
+            exportID = nil
+            exportTask?.cancel()
+            exportTask = nil
+            vm.cleanup()
+            onTeardown()
+            sourceLeases.release(videoURL)
+        }
         .alert(
             "Export Failed",
             isPresented: Binding(
@@ -104,9 +159,11 @@ struct VideoTrimView: View {
 
     private var trimToolbar: some View {
         HStack {
-            Button("Cancel") {
+            Button {
                 vm.pause()
                 onCancel()
+            } label: {
+                Text("Cancel").tapTarget()
             }
             .foregroundStyle(Theme.white)
 
@@ -118,15 +175,18 @@ struct VideoTrimView: View {
 
             Spacer()
 
-            Button("Next >>") {
+            Button {
                 handleExport()
+            } label: {
+                Text("Next >>").tapTarget()
             }
             .foregroundStyle(Theme.yellow)
             .fontWeight(.semibold)
             .disabled(isExporting)
+            .accessibilityLabel("Next")
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(.vertical, 2)
         .background(Theme.black)
     }
 
@@ -151,6 +211,9 @@ struct VideoTrimView: View {
                 .font(Theme.mono13Medium)
                 .foregroundStyle(Theme.yellow)
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Selected length")
+        .accessibilityValue(TrimRange.spokenTime(vm.trimEnd - vm.trimStart))
     }
 
     // MARK: - Export overlay
@@ -182,8 +245,18 @@ struct VideoTrimView: View {
         }
         isExporting = true
         exportProgress = 0
+        let id = UUID()
+        exportID = id
+        sourceLeases.acquire(videoURL)
 
-        Task {
+        exportTask = Task {
+            defer {
+                sourceLeases.release(videoURL)
+                if exportID == id {
+                    exportID = nil
+                    exportTask = nil
+                }
+            }
             do {
                 let outputURL = try await PassthroughExporter.export(
                     source: videoURL,
@@ -192,13 +265,18 @@ struct VideoTrimView: View {
                     endTime: vm.trimEnd,
                     onProgress: { progress in
                         Task { @MainActor in
-                            exportProgress = progress
+                            if exportID == id { exportProgress = progress }
                         }
                     }
                 )
+                guard !Task.isCancelled, exportID == id else {
+                    removeTemporaryVideoItem(outputURL.deletingLastPathComponent())
+                    return
+                }
                 isExporting = false
                 onFinished(.trimmed(outputURL))
             } catch {
+                guard !Task.isCancelled, exportID == id else { return }
                 isExporting = false
                 exportError = error.localizedDescription
             }
@@ -241,16 +319,17 @@ final class TrimViewModel {
     )
 
     static let thumbnailCount = 12
-    static let minimumTrimDuration: Double = 1.0
+    static let minimumTrimDuration = TrimRange.minimumDuration
 
     private let haptic = UIImpactFeedbackGenerator(style: .light)
 
-    func load(url: URL) {
+    func load(url: URL, onFinished: @escaping @MainActor () -> Void = {}) {
         loadTask?.cancel()
         let asset = AVURLAsset(url: url)
         self.asset = asset
 
         loadTask = Task { @MainActor in
+            defer { onFinished() }
             guard !Task.isCancelled else { return }
 
             await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
@@ -314,6 +393,8 @@ final class TrimViewModel {
         loadTask?.cancel()
         loadTask = nil
         player.pause()
+        player.replaceCurrentItem(with: nil)
+        asset = nil
         if let obs = timeObserver {
             player.removeTimeObserver(obs)
             timeObserver = nil
@@ -439,9 +520,11 @@ private struct TrimScrubberView: View {
 
     /// Which handle the user is currently dragging (if any).
     @State private var activeDrag: DragHandle?
+    @State private var dragOrigin: Double = 0
     private enum DragHandle { case start, end }
 
     private let handleWidth: CGFloat = 18
+    private let handleHitWidth: CGFloat = 44
     private let cornerRadius: CGFloat = 8
 
     var body: some View {
@@ -461,6 +544,7 @@ private struct TrimScrubberView: View {
                         let tappedTime = (location.x - handleWidth) / pxPerSec
                         vm.seekTo(tappedTime)
                     }
+                    .accessibilityHidden(true)
 
                 // Dimmed regions outside trim
                 dimRegion(
@@ -477,16 +561,52 @@ private struct TrimScrubberView: View {
                     leftX: leftX - handleWidth, rightX: rightX + handleWidth,
                     height: geo.size.height)
 
-                // Left handle
+                // Playhead hit target sits below the handles so a handle wins where they meet.
+                if vm.duration > 0 {
+                    Rectangle()
+                        .fill(Color.clear)
+                        .frame(width: handleHitWidth, height: geo.size.height + 8)
+                        .contentShape(Rectangle())
+                        .accessibilityElement()
+                        .accessibilityLabel("Playhead")
+                        .accessibilityValue(TrimRange.spokenTime(vm.currentTime))
+                        .accessibilityAdjustableAction { adjust(.playhead, $0) }
+                        .accessibilitySortPriority(2)
+                        .position(x: playX(pxPerSec), y: geo.size.height / 2)
+                        .gesture(
+                            DragGesture(minimumDistance: 0)
+                                .onChanged { val in
+                                    if vm.isPlaying { vm.pause() }
+                                    let newTime = clamp(
+                                        (val.location.x - handleWidth) / pxPerSec,
+                                        min: vm.trimStart, max: vm.trimEnd)
+                                    vm.currentTime = newTime
+                                    vm.seekTo(newTime)
+                                }
+                        )
+                }
+
+                // Handle hit areas extend outward from the selection, so they never overlap.
                 trimHandle(edge: .leading)
-                    .position(x: leftX - handleWidth / 2, y: geo.size.height / 2)
+                    .frame(width: handleHitWidth, height: geo.size.height, alignment: .trailing)
+                    .contentShape(Rectangle())
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("Trim start")
+                    .accessibilityValue(TrimRange.spokenTime(vm.trimStart))
+                    .accessibilityAdjustableAction { adjust(.start, $0) }
+                    .accessibilitySortPriority(3)
+                    .position(x: leftX - handleHitWidth / 2, y: geo.size.height / 2)
                     .gesture(
                         DragGesture(minimumDistance: 0)
                             .onChanged { val in
-                                if activeDrag == nil { vm.fireHaptic() }
+                                if activeDrag == nil {
+                                    vm.fireHaptic()
+                                    dragOrigin = vm.trimStart
+                                }
                                 activeDrag = .start
+                                // Relative to the touch-down point, so grabbing the wide hit area doesn't jump the handle.
                                 let newStart = clamp(
-                                    (val.location.x - handleWidth) / pxPerSec, min: 0,
+                                    dragOrigin + val.translation.width / pxPerSec, min: 0,
                                     max: vm.trimEnd - minTrim)
                                 vm.trimStart = newStart
                                 vm.seekToTrimStart()
@@ -499,16 +619,25 @@ private struct TrimScrubberView: View {
                             }
                     )
 
-                // Right handle
                 trimHandle(edge: .trailing)
-                    .position(x: rightX + handleWidth / 2, y: geo.size.height / 2)
+                    .frame(width: handleHitWidth, height: geo.size.height, alignment: .leading)
+                    .contentShape(Rectangle())
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("Trim end")
+                    .accessibilityValue(TrimRange.spokenTime(vm.trimEnd))
+                    .accessibilityAdjustableAction { adjust(.end, $0) }
+                    .accessibilitySortPriority(1)
+                    .position(x: rightX + handleHitWidth / 2, y: geo.size.height / 2)
                     .gesture(
                         DragGesture(minimumDistance: 0)
                             .onChanged { val in
-                                if activeDrag == nil { vm.fireHaptic() }
+                                if activeDrag == nil {
+                                    vm.fireHaptic()
+                                    dragOrigin = vm.trimEnd
+                                }
                                 activeDrag = .end
                                 let newEnd = clamp(
-                                    (val.location.x - handleWidth) / pxPerSec,
+                                    dragOrigin + val.translation.width / pxPerSec,
                                     min: vm.trimStart + minTrim, max: vm.duration)
                                 vm.trimEnd = newEnd
                                 vm.seekToTrimEnd()
@@ -521,38 +650,48 @@ private struct TrimScrubberView: View {
                             }
                     )
 
-                // Playhead indicator — draggable
+                // Visible playhead line, drawn above the handles
                 if vm.duration > 0 {
-                    let playX = handleWidth + vm.currentTime * pxPerSec
-                    // Wide invisible hit target
                     Rectangle()
-                        .fill(Color.clear)
-                        .frame(width: 24, height: geo.size.height + 8)
-                        .contentShape(Rectangle())
-                        .overlay {
-                            // Thin visible line centered in the hit target
-                            Rectangle()
-                                .fill(Theme.white)
-                                .frame(width: 2, height: geo.size.height + 8)
-                        }
-                        .position(x: playX, y: geo.size.height / 2)
-                        .gesture(
-                            DragGesture(minimumDistance: 0)
-                                .onChanged { val in
-                                    let wasPlaying = vm.isPlaying
-                                    if wasPlaying {
-                                        vm.player.pause()
-                                        vm.isPlaying = false
-                                    }
-                                    let newTime = clamp(
-                                        (val.location.x - handleWidth) / pxPerSec,
-                                        min: vm.trimStart, max: vm.trimEnd)
-                                    vm.currentTime = newTime
-                                    vm.seekTo(newTime)
-                                }
-                        )
+                        .fill(Theme.white)
+                        .frame(width: 2, height: geo.size.height + 8)
+                        .position(x: playX(pxPerSec), y: geo.size.height / 2)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
                 }
             }
+            .accessibilityElement(children: .contain)
+        }
+    }
+
+    private func playX(_ pxPerSec: Double) -> CGFloat {
+        handleWidth + vm.currentTime * pxPerSec
+    }
+
+    private enum AdjustTarget { case start, end, playhead }
+
+    /// VoiceOver swipe up/down on a handle or the playhead. Keeps playback paused so audio doesn't talk over speech.
+    private func adjust(_ target: AdjustTarget, _ direction: AccessibilityAdjustmentDirection) {
+        let step = TrimRange.accessibilityStep(duration: vm.duration)
+        let delta: Double
+        switch direction {
+        case .increment: delta = step
+        case .decrement: delta = -step
+        @unknown default: return
+        }
+        vm.pause()
+        switch target {
+        case .start:
+            vm.trimStart = TrimRange.nudgedStart(vm.trimStart, end: vm.trimEnd, by: delta)
+            vm.seekToTrimStart()
+        case .end:
+            vm.trimEnd = TrimRange.nudgedEnd(
+                vm.trimEnd, start: vm.trimStart, duration: vm.duration, by: delta)
+            vm.seekToTrimEnd()
+        case .playhead:
+            let newTime = clamp(vm.currentTime + delta, min: vm.trimStart, max: vm.trimEnd)
+            vm.currentTime = newTime
+            vm.seekTo(newTime)
         }
     }
 
@@ -656,6 +795,7 @@ nonisolated enum PassthroughExporter {
         endTime: Double,
         onProgress: (@Sendable (Double) -> Void)? = nil
     ) async throws -> URL {
+        try Task.checkCancellation()
         let asset = AVURLAsset(url: source)
 
         guard
@@ -682,15 +822,14 @@ nonisolated enum PassthroughExporter {
         if let sourceMetadata = try? await asset.load(.metadata), !sourceMetadata.isEmpty {
             session.metadata = sourceMetadata
         }
+        try Task.checkCancellation()
 
         // Build trimmed output filename
         let name = (originalFileName as NSString).deletingPathExtension
         let outExt = fileType == .mp4 ? "mp4" : "mov"
         let editedName = "\(name)-edited.\(outExt)"
         // A unique folder per export, so re-trimming can't replace a copy that's still uploading.
-        let destFolder = FileManager.default.temporaryDirectory
-            .appendingPathComponent(UUID().uuidString, isDirectory: true)
-        try FileManager.default.createDirectory(at: destFolder, withIntermediateDirectories: true)
+        let destFolder = try TemporaryVideoStorage.makeDirectory()
         let destURL = destFolder.appendingPathComponent(editedName)
 
         // Set trim range
@@ -710,11 +849,14 @@ nonisolated enum PassthroughExporter {
 
         do {
             try await session.export(to: destURL, as: fileType)
+            try Task.checkCancellation()
+            try TemporaryVideoStorage.applyProtection(to: destURL)
         } catch is CancellationError {
-            try? FileManager.default.removeItem(at: destFolder)
+            removeTemporaryVideoItem(destFolder)
             throw ExportError.cancelled
         } catch {
-            try? FileManager.default.removeItem(at: destFolder)
+            removeTemporaryVideoItem(destFolder)
+            if Task.isCancelled { throw ExportError.cancelled }
             throw ExportError.exportFailed(error.localizedDescription)
         }
         onProgress?(1.0)

@@ -117,6 +117,7 @@ enum Theme {
     static let secondaryText = adaptive("#616167", "#98989D")
     /// Warning text that keeps 4.5:1 contrast on light and dark card backgrounds.
     static let warningText = adaptive("#8A6D00", "#FFD60A")
+    static let errorText = adaptive("#B42318", "#FF8A80")
     static let tertiaryText = adaptive("#8A8A90", "#636366")
     static let lightText = adaptive("#2A2A2E", "#E5E5EA")
     static let metaText = adaptive("#4A4A4F", "#EBEBF5")
@@ -138,10 +139,10 @@ enum Theme {
     static let font11Medium = fontFamily.font(size: 11, weight: .medium)
     static let font11Semibold = fontFamily.font(size: 11, weight: .semibold)
 
-    // sm — 13pt: captions, badges, metadata labels, archive status
-    static let font13Regular = fontFamily.font(size: 13)
-    static let font13Medium = fontFamily.font(size: 13, weight: .medium)
-    static let font13Semibold = fontFamily.font(size: 13, weight: .semibold)
+    // sm — 12pt: captions, badges, metadata labels, archive status
+    static let font13Regular = fontFamily.font(size: 12)
+    static let font13Medium = fontFamily.font(size: 12, weight: .medium)
+    static let font13Semibold = fontFamily.font(size: 12, weight: .semibold)
 
     // md — 16pt: body, chat bubbles, buttons, nav, input fields, forms
     static let font16Regular = fontFamily.font(size: 16)
@@ -162,7 +163,7 @@ enum Theme {
     // ──────────────────────────────────────────────
 
     static let mono11Medium = fontFamily.mono(size: 11, weight: .medium)
-    static let mono13Medium = fontFamily.mono(size: 13, weight: .medium)
+    static let mono13Medium = fontFamily.mono(size: 12, weight: .medium)
     static let mono16Medium = fontFamily.mono(size: 16, weight: .medium)
     static let mono16Bold = fontFamily.mono(size: 16, weight: .bold)
 
@@ -174,7 +175,7 @@ enum Theme {
     // ──────────────────────────────────────────────
 
     static let icon11 = fontFamily.font(size: 11)
-    static let icon13 = fontFamily.font(size: 13)
+    static let icon13 = fontFamily.font(size: 12)
     static let icon16 = fontFamily.font(size: 16)
     static let icon20 = fontFamily.font(size: 20)
 

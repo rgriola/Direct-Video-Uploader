@@ -16,6 +16,104 @@ struct PickedVideo {
     let isTrimmed: Bool
 }
 
+private struct PendingTrimResult {
+    let sourceURL: URL
+    let outcome: TrimOutcome
+}
+
+enum VideoLibraryAutoConfirm: Equatable {
+    case wait
+    case stop
+    case reviewPickerCopy
+    case openTrim
+
+    static func decision(
+        isPending: Bool, isLoading: Bool, isReady: Bool,
+        usedPickerCopy: Bool, canPresent: Bool
+    ) -> Self {
+        guard isPending else { return .stop }
+        if isLoading { return .wait }
+        guard isReady else { return .stop }
+        if usedPickerCopy { return .reviewPickerCopy }
+        return canPresent ? .openTrim : .wait
+    }
+}
+
+/// Reads the shared presentation state at the time an async load completes.
+@MainActor
+struct VideoLibraryPresentationGate {
+    let presentationState: FormPresentationState
+
+    func canPresent(
+        showPhotoAlert: Bool, showTrimSheet: Bool, hasPendingTrimResult: Bool
+    ) -> Bool {
+        presentationState.canPresentChatForm && !showPhotoAlert
+            && !showTrimSheet && !hasPendingTrimResult
+    }
+}
+
+@MainActor
+@Observable
+final class TrimSourceLeases {
+    private var readers: [URL: Int] = [:]
+    @ObservationIgnored private var pendingRemoval: Set<URL> = []
+    @ObservationIgnored private var waiters: [URL: [CheckedContinuation<Void, Never>]] = [:]
+    @ObservationIgnored private let remove: (URL) -> Void
+
+    init(remove: @escaping (URL) -> Void = { url in
+        let temporaryDirectory = FileManager.default.temporaryDirectory.standardizedFileURL
+        let file = url.standardizedFileURL
+        guard file.path.hasPrefix(temporaryDirectory.path + "/") else { return }
+        let parent = file.deletingLastPathComponent()
+        let target = parent.path == temporaryDirectory.path ? file : parent
+        Task.detached(priority: .utility) { removeTemporaryVideoItem(target) }
+    }) {
+        self.remove = remove
+    }
+
+    func acquire(_ url: URL) {
+        readers[url, default: 0] += 1
+    }
+
+    func release(_ url: URL) {
+        guard let count = readers[url], count > 0 else {
+            Log.error("Trim source lease released without a reader", logger: Log.media)
+            return
+        }
+        if count > 1 {
+            readers[url] = count - 1
+            return
+        }
+        readers.removeValue(forKey: url)
+        if pendingRemoval.remove(url) != nil { remove(url) }
+        let continuations = waiters.removeValue(forKey: url) ?? []
+        continuations.forEach { $0.resume() }
+    }
+
+    func hasReaders(_ url: URL) -> Bool {
+        readers[url, default: 0] > 0
+    }
+
+    func isWaitingUntilUnused(_ url: URL) -> Bool {
+        !(waiters[url]?.isEmpty ?? true)
+    }
+
+    func removeWhenUnused(_ url: URL) {
+        if hasReaders(url) {
+            pendingRemoval.insert(url)
+        } else {
+            remove(url)
+        }
+    }
+
+    func waitUntilUnused(_ url: URL) async {
+        guard hasReaders(url) else { return }
+        await withCheckedContinuation { continuation in
+            waiters[url, default: []].append(continuation)
+        }
+    }
+}
+
 /// Custom video library sheet with inline PhotosPicker — iOS 26.3 style.
 /// Provides Clear / Confirm toolbar buttons and a footer with selection count + location info.
 /// With Photo Library access, the camera original is copied byte-for-byte (including from iCloud);
@@ -33,13 +131,23 @@ struct VideoLibraryView: View {
     @State private var showPhotoAlert = false
     @State private var downloadProgress: Double?
     @State private var usedPickerCopy = false
+    @State private var pendingPickerCopyWarning = false
+    @State private var pendingLoadErrorAnnouncement: String?
+    @State private var pendingConfirmFocus = false
+    @AccessibilityFocusState private var confirmIsFocused: Bool
     @State private var loadedAssetIdentifier: String?
     @State private var loadTask: Task<Void, Never>?
     /// Identifies the current load so a superseded one can't touch shared state.
     @State private var activeLoadID: UUID?
+    @State private var activeTrimID: UUID?
+    @State private var pendingTrimResult: PendingTrimResult?
+    @State private var trimHandoffID: UUID?
+    @State private var trimHandoffTask: Task<Void, Never>?
+    @State private var trimSourceLeases = TrimSourceLeases()
 
+    let presentationState: FormPresentationState
     /// Called when user finishes trimming (or keeps the full length) a selected video.
-    var onConfirm: (PickedVideo) -> Void
+    var onConfirm: (PickedVideo) -> Bool
     /// Called when user taps ✓ with nothing selected, or the sheet is dismissed.
     var onDismiss: () -> Void
 
@@ -74,6 +182,7 @@ struct VideoLibraryView: View {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Clear") {
                         pendingConfirm = false
+                        cancelTrimHandoff()
                         selectedItems.removeAll()
                         cleanUpLoadedVideo()
                     }
@@ -82,6 +191,7 @@ struct VideoLibraryView: View {
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
+                        cancelTrimHandoff()
                         cleanUpLoadedVideo()
                         onDismiss()
                     } label: {
@@ -95,6 +205,7 @@ struct VideoLibraryView: View {
             .onChange(of: selectedItems) { _, newItems in
                 if newItems.isEmpty {
                     pendingConfirm = false
+                    cancelTrimHandoff()
                     cleanUpLoadedVideo()
                 } else {
                     handleSelectionChange(newItems)
@@ -102,21 +213,49 @@ struct VideoLibraryView: View {
             }
         }
         .presentationDetents([.large])
+        .onChange(of: presentationState.generation) { _, _ in resumeLibraryPresentation() }
+        .onChange(of: showPhotoAlert) { _, _ in resumeLibraryPresentation() }
+        .onChange(of: isFinishingTrim) { _, _ in resumeLibraryPresentation() }
+        .onChange(of: loadError) { _, error in
+            pendingLoadErrorAnnouncement = error
+            announceLibraryNoticesIfPossible()
+        }
         // Swipe-to-dismiss skips the X button; presenting the trim cover also fires this, so skip it then.
         .onDisappear {
-            if !showTrimSheet { cleanUpLoadedVideo() }
+            if !showTrimSheet {
+                activeTrimID = nil
+                cancelTrimHandoff()
+                cleanUpLoadedVideo()
+            }
         }
-        .fullScreenCover(isPresented: $showTrimSheet) {
-            if let url = loadedVideoURL {
+        .fullScreenCover(isPresented: $showTrimSheet, onDismiss: finishTrimDismissal) {
+            if let url = loadedVideoURL, let trimID = activeTrimID {
                 VideoTrimView(
                     videoURL: url,
                     originalFileName: loadedFileName ?? url.lastPathComponent,
+                    sourceLeases: trimSourceLeases,
                     onFinished: { outcome in
+                        guard activeTrimID == trimID, loadedVideoURL == url else {
+                            if case .trimmed(let trimmedURL) = outcome {
+                                deleteIfTemporary(trimmedURL)
+                            }
+                            return
+                        }
+                        activeTrimID = nil
+                        pendingTrimResult = PendingTrimResult(sourceURL: url, outcome: outcome)
                         showTrimSheet = false
-                        handleTrimResult(outcome)
                     },
                     onCancel: {
+                        guard activeTrimID == trimID else { return }
+                        activeTrimID = nil
                         showTrimSheet = false
+                    },
+                    onTeardown: {
+                        guard activeTrimID == trimID else { return }
+                        activeTrimID = nil
+                        showTrimSheet = false
+                        cancelTrimHandoff()
+                        cleanUpLoadedVideo()
                     }
                 )
                 .ignoresSafeArea()
@@ -138,8 +277,9 @@ struct VideoLibraryView: View {
                 // Error banner
                 if let error = loadError {
                     Text(error)
-                        .font(Theme.font13Regular)
+                        .font(.footnote)
                         .foregroundStyle(Theme.red)
+                        .fixedSize(horizontal: false, vertical: true)
                         .padding(.horizontal, 16)
                         .padding(.vertical, 8)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -151,7 +291,7 @@ struct VideoLibraryView: View {
                         "Photos edits may be included. Allow Photo Library access in Settings to upload the original.",
                         systemImage: "exclamationmark.triangle.fill"
                     )
-                    .font(Theme.font13Regular)
+                    .font(.footnote)
                     .foregroundStyle(Theme.yellow)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 8)
@@ -176,6 +316,10 @@ struct VideoLibraryView: View {
                         .accessibilityLabel(downloadProgress == nil ? "Loading video" : "Downloading original")
                         .accessibilityValue(downloadProgress.map { "\(Int($0 * 100)) percent" } ?? "")
                         .accessibilityAddTraits(.updatesFrequently)
+                    } else if isFinishingTrim {
+                        Label("Finishing previous trim...", systemImage: "hourglass")
+                            .font(Theme.font13Medium)
+                            .foregroundStyle(Theme.secondaryText)
                     } else if loadedVideoURL != nil {
                         Label("video queued", systemImage: "video.fill")
                             .font(Theme.font13Medium)
@@ -200,7 +344,7 @@ struct VideoLibraryView: View {
                             ProgressView()
                                 .tint(Theme.white)
                                 .scaleEffect(0.8)
-                                .frame(width: 80, height: 36)
+                                .frame(width: 80, height: 44)
                         } else {
                             Image(systemName: "checkmark.circle.fill")
                                 .font(Theme.display32)
@@ -209,10 +353,13 @@ struct VideoLibraryView: View {
                                     Theme.white,
                                     isVideoReady ? Theme.purple : Theme.purple.opacity(0.4)
                                 )
+                                .tapTarget()
                         }
                     }
-                    .disabled(isLoadingMetadata && !pendingConfirm)
-                    .accessibilityLabel("Trim and stage video")
+                    .disabled((isLoadingMetadata && !pendingConfirm) || isFinishingTrim)
+                    .accessibilityLabel(loadError == nil ? "Trim and stage video" : "Retry loading video")
+                    .accessibilityHint(loadError == nil ? "" : "Tries to load the selected video again.")
+                    .accessibilityFocused($confirmIsFocused)
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
@@ -224,7 +371,11 @@ struct VideoLibraryView: View {
     // MARK: - Computed Properties
 
     private var isVideoReady: Bool {
-        loadedVideoURL != nil && loadedMetadata != nil
+        loadedVideoURL != nil && loadedMetadata != nil && !isFinishingTrim
+    }
+
+    private var isFinishingTrim: Bool {
+        trimHandoffID != nil || (loadedVideoURL.map { trimSourceLeases.hasReaders($0) } ?? false)
     }
 
     private static let pickerCopyWarning =
@@ -239,8 +390,14 @@ struct VideoLibraryView: View {
 
     private func handleConfirm() {
         if selectedItems.isEmpty {
+            cancelTrimHandoff()
             onDismiss()
         } else if isVideoReady {
+            guard canPresentTrim else {
+                pendingConfirm = true
+                return
+            }
+            activeTrimID = UUID()
             showTrimSheet = true
         } else if isLoadingMetadata || loadedVideoURL == nil {
             pendingConfirm = true
@@ -266,13 +423,34 @@ struct VideoLibraryView: View {
                 isTrimmed: false
             )
             releaseLoadedVideo()
-            onConfirm(picked)
+            cancelTrimHandoff()
+            let handoffID = UUID()
+            trimHandoffID = handoffID
+            trimHandoffTask = Task {
+                await trimSourceLeases.waitUntilUnused(originalURL)
+                guard !Task.isCancelled, trimHandoffID == handoffID else {
+                    deleteIfTemporary(originalURL)
+                    return
+                }
+                trimHandoffID = nil
+                trimHandoffTask = nil
+                if !onConfirm(picked) { deleteIfTemporary(picked.fileURL) }
+            }
 
         case .trimmed(let trimmedURL):
             releaseLoadedVideo()
             deleteIfTemporary(originalURL)
-            Task {
+            cancelTrimHandoff()
+            let handoffID = UUID()
+            trimHandoffID = handoffID
+            trimHandoffTask = Task {
                 let trimmedMetadata = await VideoMetadataExtractor.extract(from: trimmedURL)
+                guard !Task.isCancelled, trimHandoffID == handoffID else {
+                    deleteIfTemporary(trimmedURL)
+                    return
+                }
+                trimHandoffID = nil
+                trimHandoffTask = nil
                 let picked = PickedVideo(
                     fileURL: trimmedURL,
                     fileName: trimmedURL.lastPathComponent,
@@ -280,12 +458,13 @@ struct VideoLibraryView: View {
                     phAssetIdentifier: nil,
                     isTrimmed: true
                 )
-                onConfirm(picked)
+                if !onConfirm(picked) { deleteIfTemporary(picked.fileURL) }
             }
         }
     }
 
     private func handleSelectionChange(_ newItems: [PhotosPickerItem]) {
+        cancelTrimHandoff()
         // Clean up previous loaded video (if user re-selects)
         cleanUpLoadedVideo()
         loadError = nil
@@ -314,11 +493,7 @@ struct VideoLibraryView: View {
                     downloadProgress = nil
                 }
                 if pendingConfirm && activeLoadID == loadID && !Task.isCancelled {
-                    pendingConfirm = false
-                    // Only auto-confirm if loading succeeded — prevents infinite retry loop on failure
-                    if loadedVideoURL != nil {
-                        handleConfirm()
-                    }
+                    finishPendingConfirmationIfPossible()
                 }
             }
 
@@ -405,7 +580,8 @@ struct VideoLibraryView: View {
             loadedMetadata = metadata
             loadedAssetIdentifier = nil
             usedPickerCopy = true
-            AccessibilityNotification.Announcement(Self.pickerCopyWarning).post()
+            pendingPickerCopyWarning = true
+            announceLibraryNoticesIfPossible()
         } catch {
             guard !Task.isCancelled else { return }
             Log.error("❌ [Library] Failed to load video: \(Log.describe(error))", logger: Log.media)
@@ -414,10 +590,37 @@ struct VideoLibraryView: View {
     }
 
     /// Cancels loading and deletes the temporary copy.
+    private func cancelTrimHandoff() {
+        if let pendingTrimResult {
+            if case .trimmed(let url) = pendingTrimResult.outcome { deleteIfTemporary(url) }
+            self.pendingTrimResult = nil
+        }
+        trimHandoffID = nil
+        trimHandoffTask?.cancel()
+        trimHandoffTask = nil
+    }
+
+    private func finishTrimDismissal() {
+        guard let result = pendingTrimResult else {
+            pendingConfirmFocus = loadedVideoURL != nil
+            resumeLibraryPresentation()
+            return
+        }
+        pendingTrimResult = nil
+        guard loadedVideoURL == result.sourceURL else {
+            if case .trimmed(let url) = result.outcome { deleteIfTemporary(url) }
+            return
+        }
+        handleTrimResult(result.outcome)
+    }
+
     private func cleanUpLoadedVideo() {
         loadTask?.cancel()
         loadTask = nil
         activeLoadID = nil
+        pendingPickerCopyWarning = false
+        pendingLoadErrorAnnouncement = nil
+        pendingConfirmFocus = false
         if let url = loadedVideoURL {
             deleteIfTemporary(url)
         }
@@ -437,13 +640,51 @@ struct VideoLibraryView: View {
 
     /// Deletes a file (and its per-load folder) only if it lives in our temporary directory.
     private func deleteIfTemporary(_ url: URL) {
-        let tempDir = FileManager.default.temporaryDirectory.standardizedFileURL
-        let standardized = url.standardizedFileURL
-        guard standardized.path.hasPrefix(tempDir.path + "/") else { return }
-        let parent = standardized.deletingLastPathComponent()
-        let target = parent.path == tempDir.path ? standardized : parent
-        Task.detached(priority: .utility) {
-            try? FileManager.default.removeItem(at: target)
+        trimSourceLeases.removeWhenUnused(url)
+    }
+
+    private var canPresentTrim: Bool {
+        VideoLibraryPresentationGate(presentationState: presentationState).canPresent(
+            showPhotoAlert: showPhotoAlert, showTrimSheet: showTrimSheet,
+            hasPendingTrimResult: pendingTrimResult != nil)
+    }
+
+    private func resumeLibraryPresentation() {
+        announceLibraryNoticesIfPossible()
+        finishPendingConfirmationIfPossible()
+        if pendingConfirmFocus && canPresentTrim && isVideoReady {
+            pendingConfirmFocus = false
+            confirmIsFocused = true
+        }
+    }
+
+    private func finishPendingConfirmationIfPossible() {
+        switch VideoLibraryAutoConfirm.decision(
+            isPending: pendingConfirm, isLoading: isLoadingMetadata, isReady: isVideoReady,
+            usedPickerCopy: usedPickerCopy, canPresent: canPresentTrim
+        ) {
+        case .wait:
+            return
+        case .stop:
+            pendingConfirm = false
+        case .reviewPickerCopy:
+            pendingConfirm = false
+            announceLibraryNoticesIfPossible()
+        case .openTrim:
+            pendingConfirm = false
+            handleConfirm()
+        }
+    }
+
+    private func announceLibraryNoticesIfPossible() {
+        guard canPresentTrim else { return }
+        var notices: [String] = []
+        if pendingPickerCopyWarning { notices.append(Self.pickerCopyWarning) }
+        if let pendingLoadErrorAnnouncement { notices.append(pendingLoadErrorAnnouncement) }
+        pendingPickerCopyWarning = false
+        pendingLoadErrorAnnouncement = nil
+        if !notices.isEmpty {
+            AccessibilityNotification.Announcement(notices.joined(separator: " ")).post()
         }
     }
 }
@@ -461,12 +702,15 @@ nonisolated struct VideoTransferable: Transferable {
         } importing: { received in
             // Keep the original filename from the photo library (e.g. IMG_1245.MOV)
             let originalName = received.file.lastPathComponent
-            let subdir = FileManager.default.temporaryDirectory
-                .appendingPathComponent(UUID().uuidString)
-            try FileManager.default.createDirectory(at: subdir, withIntermediateDirectories: true)
+            let subdir = try TemporaryVideoStorage.makeDirectory()
             let tempURL = subdir.appendingPathComponent(originalName)
-            try FileManager.default.copyItem(at: received.file, to: tempURL)
-            return Self(url: tempURL)
+            do {
+                try await TemporaryVideoStorage.copy(from: received.file, to: tempURL)
+                return Self(url: tempURL)
+            } catch {
+                removeTemporaryVideoItem(subdir)
+                throw error
+            }
         }
     }
 }

@@ -65,24 +65,34 @@ launchctl load ~/Library/LaunchAgents/com.msfixer.fastify.plist
 
 ## Schema changes
 
+**Cloud Build caution:** `cloudbuild.yaml` still runs `prisma db push --accept-data-loss`.
+Confirm its trigger is disabled or replace and validate that workflow before a merge
+that could invoke it. The Cloud database's migration baseline has not been verified.
+
 This DB uses Prisma migrations (not `db push`). Workflow:
 1. Edit `server/prisma/schema.prisma`
 2. Locally: `npx prisma migrate dev --name <description>` (creates + applies migration, needs a role with `CREATEDB` for the shadow DB — `fixer_app` intentionally lacks this; use the admin role via a one-off `DATABASE_URL` override if needed)
 
-3. On the home server, from `server/` (the schema and the pinned Prisma version live there; running
+3. Back up first (`scripts/pg-backup.sh`) whenever a migration changes data or types
+4. On the home server, from `server/` (the schema and the pinned Prisma version live there; running
    from the repo root fails with "Could not find Prisma Schema" and makes `npx` download a different Prisma):
    ```bash
    cd ~/apps/direct-video-uploader/server
    npx prisma migrate status    # lists pending migrations
    npx prisma migrate deploy    # uses fixer_app, no shadow DB needed
    ```
-4. Back up first (`scripts/pg-backup.sh`) whenever a migration changes data or types
-5. If a migration was bootstrapped as the admin role, fix table ownership:
+5. If a migration was bootstrapped as the admin role, fix ownership — tables **and enum types**
+   (otherwise `ALTER TYPE` migrations fail with `must be owner of type`):
    ```sql
    ALTER SCHEMA public OWNER TO fixer_app;
-   -- then for any tables/sequences still owned by the admin role:
+   -- then for any tables/sequences/types still owned by the admin role:
    ALTER TABLE public.<table> OWNER TO fixer_app;
+   ALTER TYPE public."<EnumName>" OWNER TO fixer_app;
    ```
+   Check with `\dT+` and `\dt` in `psql -d directvideo`.
+6. If `migrate deploy` fails, Prisma records the migration as failed and blocks later deploys.
+   Once the cause is fixed (and the failed SQL didn't partially apply):
+   `npx prisma migrate resolve --rolled-back <migration_name>`, then `migrate deploy` again.
 
 ## Super Admin bootstrap
 
@@ -94,6 +104,42 @@ npm run bootstrap:super-admin   # idempotent; exits 1 if unset or the account do
 ```
 To hand the role to someone else, change it directly in the database; the API refuses to
 modify a Super Admin.
+
+## Step 2.3 rollout prerequisites
+
+- Assign the existing unassigned Team Admin to an organization and notify affected admins
+  before their global access becomes team-scoped.
+- Deploy the server update before distributing the iOS update. The updated client uses a
+  clip-specific transcript route that older servers do not provide; transcript delivery
+  will fail until the server is updated. Their legacy route can ignore a clip ID in the
+  request body.
+- HTTP scoping alone does not isolate global dashboard Socket.IO events, public Mux
+  playback URLs, or `/uploads/`. Do not treat this phase as end-to-end media isolation.
+- Do not re-upload while the original transfer may still be active: the existing Mux
+  idempotency flow can return the same waiting upload URL to both attempts. A failed
+  Mux status lookup now leaves the existing clip untouched; an upload already handed
+  to Mux processing is not replaced. If processing remains stuck, investigate the Mux
+  webhook and scheduled sync before attempting any manual repair. A reused waiting upload
+  can also retain earlier clip metadata, including location, when a different video is
+  selected. The workspace client stops a retry when it observes a changed asset, including
+  immediately before the PUT, but it cannot detect unfetched or cross-device changes.
+  Attempt and metadata binding remain release blockers.
+- Transcript receipts identify the requested clip, but do not yet prove it remains the
+  current attempt after a concurrent re-upload. Cross-device form edits are still
+  last-write-wins. Resolve upload-attempt coordination and versioned form conflicts
+  before relying on these workflows concurrently.
+- The workspace client saves trims to Photos before creating the server asset. Manual
+  recovery requires selecting and confirming a Photos representation. Verified v3 links
+  and older links are retained locally but are not automatically selected, because they
+  cannot establish the latest server upload attempt.
+  Temporary videos request protection until first unlock to support background uploads;
+  physical-device and locked-device validation are still required. Repeated live form
+  requests can reopen completed details, and resubmitting them can overwrite existing
+  details. See the iOS roadmap before distributing the client.
+- Verify or disable the Cloud Build and Render deployment triggers before merging. Both
+  build workflows use `prisma db push --accept-data-loss`; the cloud migration baselines
+  are unverified, and the Render workflow also seeds demo accounts.
+- Finish the physical-device checks described in `iOS-Modernization.md` before rollout.
 
 ## Backup & restore
 

@@ -34,13 +34,14 @@ nonisolated enum Log {
             case .invalidResponse: return .invalidResponse
             case .serverError(let status, _): return failure(forStatus: status)
             case .fileNotFound: return .notFound
+            case .sessionChanged: return .unauthorized
             }
         }
         if let error = error as? AuthError {
             switch error {
             case .invalidResponse: return .invalidResponse
-            case .loginFailed: return .rejected
-            case .notAuthenticated, .tokenExpired: return .unauthorized
+            case .loginFailed, .loginInProgress: return .rejected
+            case .notAuthenticated, .tokenExpired, .sessionChanged: return .unauthorized
             }
         }
         if error is WebSocketError { return .transport }
@@ -48,7 +49,7 @@ nonisolated enum Log {
             switch error {
             case .assetNotFound, .originalResourceMissing: return .notFound
             case .addAccessDenied: return .permission
-            case .saveFailed: return .media
+            case .invalidOriginalFilename: return .media
             }
         }
         if let error = error as? PassthroughExporter.ExportError {

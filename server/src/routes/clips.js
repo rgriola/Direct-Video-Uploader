@@ -10,7 +10,7 @@ import { verifyPin, hashPin, dbRetry } from '../lib/utils.js';
 import { redactCompanyCode, redactPersonName, redactPhoneNumber } from '../lib/redact.js';
 import { CLIP_COOKIE_NAME, clipCookieOpts } from '../lib/clipAuth.js';
 import { icon } from '../lib/icons.js';
-import { isAdminRole } from '../lib/roles.js';
+import { isSuperAdmin, sameOrganization } from '../lib/roles.js';
 
 /** Escape HTML special characters to prevent XSS (#5). */
 function escapeHtml(str) {
@@ -47,6 +47,17 @@ function computeVideoRatio(clip) {
     const ratio = fromResolution(clip?.resolution) ?? fromOrientation(clip?.orientation);
     const clamped = Math.min(Math.max(ratio, 9 / 21), 21 / 9);
     return Math.round(clamped * 10000) / 10000;
+}
+
+function sendClipNotFound(reply) {
+    return reply.status(404).type('text/html').send(`
+        <!DOCTYPE html>
+        <html><head><title>Not Found</title>
+        <link rel="stylesheet" href="/tokens.css">
+        <style>body{background:var(--background);color:var(--foreground);font-family:var(--font-sans);display:flex;align-items:center;justify-content:center;height:100vh;margin:0}
+        h1{font-size:var(--text-2xl);opacity:0.7}</style></head>
+        <body><h1>Clip not found</h1></body></html>
+    `);
 }
 
 export default async function clipRoutes(fastify) {
@@ -91,24 +102,35 @@ export default async function clipRoutes(fastify) {
     async function verifyClipCookie(request, reply) {
         const token = request.cookies?.[CLIP_COOKIE_NAME];
         if (!token) return null;
+        let decoded;
         try {
-            const decoded = fastify.jwt.verify(token);
-            request.user = decoded;
-            return decoded;
+            decoded = fastify.jwt.verify(token);
         } catch {
             reply.clearCookie(CLIP_COOKIE_NAME, { path: '/clips' });
             return null;
         }
+        if (!decoded?.id) {
+            reply.clearCookie(CLIP_COOKIE_NAME, { path: '/clips' });
+            return null;
+        }
+        const user = await prisma.user.findUnique({
+            where: { id: decoded.id },
+            select: { id: true, name: true, role: true, status: true, companyCode: true },
+        });
+        if (!user || user.status !== 'ACTIVE') {
+            reply.clearCookie(CLIP_COOKIE_NAME, { path: '/clips' });
+            return null;
+        }
+        request.user = user;
+        return user;
     }
 
     // ─── Helper: check org access ───────────────────────────
-    // Admins see everything; regular users only see clips from their org
-    function canAccessClip(viewer, clipUploaderCompanyCode) {
+    function canAccessClip(viewer, ownerId, ownerCompanyCode) {
         if (!viewer) return false;
-        if (isAdminRole(viewer.role)) return true;
-        if (!viewer.companyCode) return false;
-        if (!clipUploaderCompanyCode) return false;
-        return viewer.companyCode.toLowerCase() === clipUploaderCompanyCode.toLowerCase();
+        return isSuperAdmin(viewer.role)
+            || viewer.id === ownerId
+            || sameOrganization(viewer.companyCode, ownerCompanyCode);
     }
 
     /**
@@ -265,8 +287,8 @@ ${googleFontsHead}
             where: { id: asset.userId },
             select: { companyCode: true },
         });
-        if (!canAccessClip(viewer, uploader?.companyCode)) {
-            return reply.status(403).send({ error: 'Access denied' });
+        if (!canAccessClip(viewer, asset.userId, uploader?.companyCode)) {
+            return reply.status(404).send({ error: 'Not found' });
         }
 
         const clip = await prisma.clip.findFirst({
@@ -286,7 +308,7 @@ ${googleFontsHead}
     /**
      * GET /clips/:mediasourceId
      * Authenticated clip viewer page (shared Dashboard theme via /tokens.css, video player + metadata).
-     * Requires cookie auth; org-scoped (admins see all).
+     * Requires cookie auth; shared links are scoped to the owner's organization.
      */
     fastify.get('/clips/:mediasourceId', async (request, reply) => {
         const { mediasourceId } = request.params;
@@ -299,15 +321,7 @@ ${googleFontsHead}
 
         // Reject obviously invalid IDs (e.g. "undefined", empty, non-numeric)
         if (!mediasourceId || mediasourceId === 'undefined' || mediasourceId === 'null') {
-            reply.status(404).type('text/html').send(`
-                <!DOCTYPE html>
-                <html><head><title>Not Found</title>
-                <link rel="stylesheet" href="/tokens.css">
-                <style>body{background:var(--background);color:var(--foreground);font-family:var(--font-sans);display:flex;align-items:center;justify-content:center;height:100vh;margin:0}
-                h1{font-size:var(--text-2xl);opacity:0.7}</style></head>
-                <body><h1>Clip not found</h1></body></html>
-            `);
-            return;
+            return sendClipNotFound(reply);
         }
 
         let asset;
@@ -316,42 +330,23 @@ ${googleFontsHead}
                 where: { mediasourceId },
             });
 
-            // Clean up the 404 message
             if (!asset) {
-                reply.status(404).type('text/html').send(`
-                    <!DOCTYPE html>
-                    <html><head><title>Not Found</title>
-                    <link rel="stylesheet" href="/tokens.css">
-                    <style>body{background:var(--background);color:var(--foreground);font-family:var(--font-sans);display:flex;align-items:center;justify-content:center;height:100vh;margin:0}
-                    h1{font-size:var(--text-2xl);opacity:0.7}</style></head>
-                    <body><h1>Clip not found</h1></body></html>
-                `);
-                return;
+                return sendClipNotFound(reply);
             }
 
-            // Fetch relations separately (Prisma 7 + pg adapter has issues with include in some contexts)
-            const clips = await prisma.clip.findMany({ where: { assetId: asset.id }, orderBy: { createdAt: 'desc' } });
-            const formResponse = await prisma.formResponse.findFirst({ where: { assetId: asset.id } });
             const user = await prisma.user.findFirst({
                 where: { id: asset.userId },
                 select: { name: true, team: true, companyCode: true, organization: { select: { companyName: true } } },
             });
 
-            asset = { ...asset, clips, formResponse, user };
-
-            // ── Org-scoped access check ──
-            if (!canAccessClip(viewer, user?.companyCode)) {
-                reply.status(403).type('text/html').send(`
-                    <!DOCTYPE html>
-                    <html><head><title>Access Denied</title>
-                    <link rel="stylesheet" href="/tokens.css">
-                    <style>body{background:var(--background);color:var(--foreground);font-family:var(--font-sans);display:flex;align-items:center;justify-content:center;height:100vh;margin:0;flex-direction:column;gap:12px}
-                    h1{font-size:var(--text-2xl);opacity:0.7}p{font-size:var(--text-sm);opacity:0.4}a{color:var(--accent-blue)}</style></head>
-                    <body><h1>${icon('locked', { size: '1.2em' })} Access Denied</h1><p>This clip belongs to a different organization.</p>
-                    <a href="/clips/login">Sign in with a different account</a></body></html>
-                `);
-                return;
+            if (!canAccessClip(viewer, asset.userId, user?.companyCode)) {
+                return sendClipNotFound(reply);
             }
+
+            // Fetch relations separately (Prisma 7 + pg adapter has issues with include in some contexts)
+            const clips = await prisma.clip.findMany({ where: { assetId: asset.id }, orderBy: { createdAt: 'desc' } });
+            const formResponse = await prisma.formResponse.findFirst({ where: { assetId: asset.id } });
+            asset = { ...asset, clips, formResponse, user };
         } catch (err) {
             fastify.log.error({ err, mediasourceId }, 'Clip viewer DB query failed');
             reply.status(500).type('text/html').send(`

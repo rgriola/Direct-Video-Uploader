@@ -12,6 +12,7 @@ import prisma from '../lib/prisma.js';
 import Mux from '@mux/mux-node';
 import { getMuxAsset, MUX_ENV_KEY } from '../lib/mux.js';
 import { dbRetry } from '../lib/utils.js';
+import { teamScope } from '../lib/authorization.js';
 import fs from 'fs/promises';
 import path from 'path';
 
@@ -236,11 +237,13 @@ export default async function muxWebhookRoutes(fastify) {
      * GET /api/mux/status/:clipId
      * Check Mux processing status for a clip (polling fallback if webhooks are delayed).
      */
-    fastify.get('/api/mux/status/:clipId', async (request, reply) => {
+    fastify.get('/api/mux/status/:clipId', {
+        preHandler: [fastify.authenticate],
+    }, async (request, reply) => {
         const { clipId } = request.params;
 
-        const clip = await prisma.clip.findUnique({
-            where: { id: clipId },
+        const clip = await prisma.clip.findFirst({
+            where: { id: clipId, asset: teamScope(request.user) },
             select: {
                 id: true,
                 assetId: true,

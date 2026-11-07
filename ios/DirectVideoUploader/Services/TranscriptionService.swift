@@ -1,9 +1,10 @@
 import Speech
 import Synchronization
 import AVFoundation
+import Foundation
 
 /// Timestamped word segment from speech recognition.
-nonisolated struct TranscriptSegment: Codable, Sendable {
+nonisolated struct TranscriptSegment: Codable, Sendable, Equatable {
     let word: String
     let start: Double    // seconds from video start
     let end: Double      // start + duration
@@ -16,8 +17,52 @@ nonisolated struct TranscriptionResult: Sendable {
     let segments: [TranscriptSegment]
 }
 
-/// On-device video transcription using Apple Speech framework.
-/// Requires iOS 17+ for guaranteed on-device recognition.
+nonisolated enum TranscriptDeliveryError: Error {
+    case invalidResponse
+    case httpStatus(Int)
+}
+
+nonisolated enum TranscriptDelivery {
+    private struct Payload: Encodable {
+        let transcript: String
+        let segments: [TranscriptSegment]
+        let clipId: String
+    }
+
+    private struct Receipt: Decodable {
+        let ok: Bool
+        let clipId: String
+    }
+
+    static func send(
+        _ result: TranscriptionResult,
+        clipId: String,
+        request: URLRequest,
+        transport: @Sendable (URLRequest) async throws -> (Data, URLResponse) = {
+            try await RedirectSafeTransport.data(for: $0)
+        }
+    ) async throws {
+        var request = request
+        request.httpBody = try JSONEncoder().encode(
+            Payload(transcript: result.text, segments: result.segments, clipId: clipId))
+        try Task.checkCancellation()
+        let (data, response) = try await transport(request)
+        try Task.checkCancellation()
+        guard let http = response as? HTTPURLResponse else {
+            throw TranscriptDeliveryError.invalidResponse
+        }
+        guard (200..<300).contains(http.statusCode) else {
+            throw TranscriptDeliveryError.httpStatus(http.statusCode)
+        }
+        guard let receipt = try? JSONDecoder().decode(Receipt.self, from: data),
+              receipt.ok, receipt.clipId == clipId else {
+            throw TranscriptDeliveryError.invalidResponse
+        }
+    }
+}
+
+/// Video transcription using the Apple Speech framework.
+/// Recognition may use Apple's servers before trying an on-device fallback.
 @MainActor
 @Observable
 final class TranscriptionService {
@@ -44,7 +89,10 @@ final class TranscriptionService {
 
     /// Transcribe the audio track of a video file.
     /// Returns text + timestamped segments, or nil if no speech.
-    func transcribe(videoURL: URL) async -> TranscriptionResult? {
+    func transcribe(
+        videoURL: URL, isCurrent: @MainActor () -> Bool = { true }
+    ) async -> TranscriptionResult? {
+        guard isCurrent(), !Task.isCancelled else { return nil }
         state = .requesting
 
         // 0. Verify the file actually exists and is readable
@@ -55,10 +103,12 @@ final class TranscriptionService {
 
         // 1. Check / request authorization
         let authorized = await requestAuthorization()
+        guard isCurrent(), !Task.isCancelled else { return nil }
         guard authorized else {
             state = .failed("Speech recognition permission denied")
             return nil
         }
+        guard isCurrent(), !Task.isCancelled else { return nil }
 
         // 2. Run recognition (nonisolated — handles SFSpeechRecognizer internally)
         state = .transcribing
@@ -66,6 +116,7 @@ final class TranscriptionService {
         Log.debug("🎙️ [Transcribe] Starting recognition for \(videoURL.lastPathComponent)...", logger: Log.transcription)
 
         let result = await runRecognitionPipeline(videoURL: videoURL)
+        guard isCurrent(), !Task.isCancelled else { return nil }
 
         if let result {
             state = .completed(result)
@@ -84,20 +135,29 @@ final class TranscriptionService {
     /// Creates SFSpeechRecognizer internally to avoid sending non-Sendable types across actors.
     /// Strategy: server-based first (more accurate), then on-device fallback.
     @concurrent private nonisolated func runRecognitionPipeline(videoURL: URL) async -> TranscriptionResult? {
+        guard !Task.isCancelled else { return nil }
         guard let recognizer = SFSpeechRecognizer(), recognizer.isAvailable else {
             Log.error("❌ [Transcribe] Speech recognizer unavailable for this locale", logger: Log.transcription)
             return nil
         }
+        let callbackQueue = OperationQueue()
+        callbackQueue.maxConcurrentOperationCount = 1
+        recognizer.queue = callbackQueue
 
         // Attempt 1: Server-based (Apple's cloud — more accurate)
-        if let serverResult = await attemptRecognition(recognizer: recognizer, videoURL: videoURL, onDevice: false) {
+        if let serverResult = await attemptRecognition(
+            recognizer: recognizer, callbackQueue: callbackQueue, videoURL: videoURL, onDevice: false
+        ) {
             return serverResult
         }
+        guard !Task.isCancelled else { return nil }
 
         // Attempt 2: On-device fallback (works offline, different model)
         if recognizer.supportsOnDeviceRecognition {
             Log.debug("🎙️ [Transcribe] Server-based found no speech, trying on-device model...", logger: Log.transcription)
-            if let onDeviceResult = await attemptRecognition(recognizer: recognizer, videoURL: videoURL, onDevice: true) {
+            if let onDeviceResult = await attemptRecognition(
+                recognizer: recognizer, callbackQueue: callbackQueue, videoURL: videoURL, onDevice: true
+            ) {
                 return onDeviceResult
             }
         }
@@ -110,6 +170,7 @@ final class TranscriptionService {
     /// Runs entirely nonisolated to avoid sending non-Sendable Speech types across actors.
     @concurrent private nonisolated func attemptRecognition(
         recognizer: SFSpeechRecognizer,
+        callbackQueue: OperationQueue,
         videoURL: URL,
         onDevice: Bool
     ) async -> TranscriptionResult? {
@@ -127,12 +188,16 @@ final class TranscriptionService {
         }
 
         do {
-            let result = try await performRecognition(recognizer: recognizer, request: request)
+            let result = try await performRecognition(
+                recognizer: recognizer, callbackQueue: callbackQueue, request: request)
             if let result {
                 Log.debug("✅ [Transcribe] Got \(result.segments.count) segments (\(onDevice ? "on-device" : "server"))", logger: Log.transcription)
             }
             return result
+        } catch is CancellationError {
+            return nil
         } catch {
+            guard !Task.isCancelled else { return nil }
             let nsError = error as NSError
             // Error 203 = no speech — not a real error
             if nsError.domain == "kAFAssistantErrorDomain" && nsError.code == 203 {
@@ -150,35 +215,24 @@ final class TranscriptionService {
     /// callback closure doesn't cross actor boundaries.
     @concurrent private nonisolated func performRecognition(
         recognizer: SFSpeechRecognizer,
+        callbackQueue: OperationQueue,
         request: SFSpeechURLRecognitionRequest
     ) async throws -> TranscriptionResult? {
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<TranscriptionResult?, Error>) in
-            let gate = ResumeGate()
-
-            recognizer.recognitionTask(with: request) { @Sendable result, error in
-                if let error {
-                    guard gate.claim() else { return }
-                    continuation.resume(throwing: error)
-                    return
-                }
-                if let result, result.isFinal {
-                    guard gate.claim() else { return }
-                    let text = result.bestTranscription.formattedString
-                    if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        continuation.resume(returning: nil)
-                        return
-                    }
-                    let segments = result.bestTranscription.segments.map { seg in
-                        TranscriptSegment(
-                            word: seg.substring,
-                            start: seg.timestamp,
-                            end: seg.timestamp + seg.duration,
-                            confidence: seg.confidence
-                        )
-                    }
-                    continuation.resume(returning: TranscriptionResult(text: text, segments: segments))
-                }
+        let cancellation = TaskCancellationBridge()
+        defer { withExtendedLifetime(cancellation) {} }
+        return try await withTaskCancellationHandler {
+            try Task.checkCancellation()
+            let result = try await withCheckedThrowingContinuation {
+                (continuation: CheckedContinuation<TranscriptionResult?, Error>) in
+                let delegate = SpeechRecognitionDelegate(continuation: continuation)
+                let task = recognizer.recognitionTask(with: request, delegate: delegate)
+                let handle = SpeechTaskHandle(task: task, delegate: delegate, queue: callbackQueue)
+                cancellation.register { handle.cancel() }
             }
+            try Task.checkCancellation()
+            return result
+        } onCancel: {
+            cancellation.cancel()
         }
     }
 
@@ -191,6 +245,77 @@ final class TranscriptionService {
         default: return false
         }
     }
+}
+
+/// Confines the non-Sendable Speech task to its serial delegate queue and retains its delegate.
+private nonisolated final class SpeechTaskHandle: @unchecked Sendable {
+    private let task: SFSpeechRecognitionTask
+    private let delegate: SpeechRecognitionDelegate
+    private let queue: OperationQueue
+
+    init(task: SFSpeechRecognitionTask, delegate: SpeechRecognitionDelegate, queue: OperationQueue) {
+        self.task = task
+        self.delegate = delegate
+        self.queue = queue
+    }
+
+    func cancel() {
+        queue.addOperation { [self] in
+            withExtendedLifetime(delegate) { task.cancel() }
+        }
+    }
+}
+
+private nonisolated final class SpeechRecognitionDelegate: NSObject,
+    SFSpeechRecognitionTaskDelegate, Sendable
+{
+    private let continuation: CheckedContinuation<TranscriptionResult?, Error>
+    private let result = Mutex<TranscriptionResult?>(nil)
+    private let gate = ResumeGate()
+
+    init(continuation: CheckedContinuation<TranscriptionResult?, Error>) {
+        self.continuation = continuation
+    }
+
+    func speechRecognitionTask(
+        _ task: SFSpeechRecognitionTask, didFinishRecognition recognitionResult: SFSpeechRecognitionResult
+    ) {
+        let transcription = recognitionResult.bestTranscription
+        let text = transcription.formattedString
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        let segments = transcription.segments.map {
+            TranscriptSegment(
+                word: $0.substring, start: $0.timestamp,
+                end: $0.timestamp + $0.duration, confidence: $0.confidence)
+        }
+        result.withLock { current in
+            if let currentResult = current {
+                current = TranscriptionResult(
+                    text: "\(currentResult.text) \(text)",
+                    segments: currentResult.segments + segments)
+            } else {
+                current = TranscriptionResult(text: text, segments: segments)
+            }
+        }
+    }
+
+    func speechRecognitionTaskWasCancelled(_ task: SFSpeechRecognitionTask) {
+        guard gate.claim() else { return }
+        continuation.resume(throwing: CancellationError())
+    }
+
+    func speechRecognitionTask(_ task: SFSpeechRecognitionTask, didFinishSuccessfully success: Bool) {
+        guard gate.claim() else { return }
+        if success {
+            continuation.resume(returning: result.withLock { $0 })
+        } else {
+            continuation.resume(throwing: task.error ?? SpeechRecognitionFailure.unknown)
+        }
+    }
+}
+
+private nonisolated enum SpeechRecognitionFailure: Error {
+    case unknown
 }
 
 /// Lets exactly one recognition callback resume the continuation.

@@ -64,7 +64,11 @@ struct ModelDecodingTests {
                 "user": {"id": "user-1", "name": "Reporter", "phoneNumber": "5550100"},
                 "clips": [{
                   "id": "clip-1",
+                  "assetId": "asset-1",
                   "clipIndex": 0,
+                  "muxAssetId": "mux-asset-1",
+                  "muxUploadId": "mux-upload-1",
+                  "muxPlaybackId": "mux-playback-1",
                   "originalFileName": "field-report.mp4",
                   "duration": 12,
                   "fileSize": "123456789",
@@ -102,6 +106,10 @@ struct ModelDecodingTests {
         #expect(asset.formResponse?.slug == "field-report")
         #expect(asset.formResponse?.priority == "HIGH")
         #expect(clip.id == "clip-1")
+        #expect(clip.assetId == "asset-1")
+        #expect(clip.muxAssetId == "mux-asset-1")
+        #expect(clip.muxUploadId == "mux-upload-1")
+        #expect(clip.muxPlaybackId == "mux-playback-1")
         #expect(clip.fileSize == "123456789")
         #expect(clip.duration == 12)
         #expect(clip.thumbnailUrl == "https://example.com/thumbnail.png")

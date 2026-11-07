@@ -1,14 +1,28 @@
 import Foundation
 import Observation
 
+enum AuthSessionStorage {
+    case keychain
+    case memory
+}
+
 /// Manages authentication state — login, token storage, current user.
 @MainActor
 @Observable
 final class AuthService {
     // MARK: - State
     
-    var currentUser: User?
-    var token: String?
+    var currentUser: User? {
+        didSet {
+            if oldValue?.id != currentUser?.id { sessionGeneration = UUID() }
+        }
+    }
+    var token: String? {
+        didSet {
+            if oldValue != token { sessionGeneration = UUID() }
+        }
+    }
+    private(set) var sessionGeneration = UUID()
     var isAuthenticated: Bool { token != nil }
     var isLoading = false
     var errorMessage: String?
@@ -16,8 +30,18 @@ final class AuthService {
     // MARK: - Keychain key
     
     private let tokenKey = UserDefaultsKeys.authToken
+    private let storage: AuthSessionStorage
+    private let transport: @Sendable (URLRequest) async throws -> (Data, URLResponse)
     
-    init() {
+    init(
+        storage: AuthSessionStorage = .keychain,
+        transport: @escaping @Sendable (URLRequest) async throws -> (Data, URLResponse) = {
+            try await RedirectSafeTransport.data(for: $0)
+        }
+    ) {
+        self.storage = storage
+        self.transport = transport
+        guard storage == .keychain else { return }
         // Restore token from Keychain; migrate from UserDefaults if present.
         if let keychainToken = KeychainHelper.load(forKey: tokenKey) {
             token = keychainToken
@@ -32,12 +56,15 @@ final class AuthService {
     // MARK: - Login
     
     func login(phoneNumber: String, pin: String, companyCode: String) async throws {
+        guard !isLoading else { throw AuthError.loginInProgress }
+        let generation = sessionGeneration
+        let serverURL = ServerConfig.baseURL
         isLoading = true
         errorMessage = nil
         defer { isLoading = false }
         
         let url = ServerConfig.loginURL
-        Log.debug("🔐 [Auth] Attempting login to: \(url.absoluteString)", logger: Log.auth)
+        Log.debug("🔐 [Auth] Attempting login", logger: Log.auth)
         
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -46,7 +73,10 @@ final class AuthService {
         let body = LoginRequest(phoneNumber: phoneNumber, pin: pin, companyCode: companyCode)
         request.httpBody = try JSONEncoder().encode(body)
         
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await transport(request)
+        guard sessionGeneration == generation, ServerConfig.baseURL == serverURL else {
+            throw AuthError.sessionChanged
+        }
         
         guard let httpResponse = response as? HTTPURLResponse else {
             Log.error("🔐 [Auth] ❌ Invalid response (not HTTP)", logger: Log.auth)
@@ -66,18 +96,24 @@ final class AuthService {
         currentUser = loginResponse.user
         
         // Persist token securely in Keychain
-        if let t = token { KeychainHelper.save(t, forKey: tokenKey) }
+        if storage == .keychain, let t = token { KeychainHelper.save(t, forKey: tokenKey) }
     }
     
     // MARK: - Fetch Current User
     
     func fetchMe() async throws {
         guard let token else { throw AuthError.notAuthenticated }
+        let generation = sessionGeneration
+        let serverURL = ServerConfig.baseURL
         
         var request = URLRequest(url: ServerConfig.meURL)
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await transport(request)
+        guard sessionGeneration == generation, self.token == token,
+              ServerConfig.baseURL == serverURL else {
+            throw AuthError.sessionChanged
+        }
         
         guard let httpResponse = response as? HTTPURLResponse,
               httpResponse.statusCode == 200 else {
@@ -93,9 +129,10 @@ final class AuthService {
     // MARK: - Logout
     
     func logout() {
+        sessionGeneration = UUID()
         token = nil
         currentUser = nil
-        KeychainHelper.delete(forKey: tokenKey)
+        if storage == .keychain { KeychainHelper.delete(forKey: tokenKey) }
     }
     
     // MARK: - Authenticated Request Helper
@@ -118,6 +155,8 @@ nonisolated enum AuthError: LocalizedError {
     case loginFailed(String)
     case notAuthenticated
     case tokenExpired
+    case sessionChanged
+    case loginInProgress
     
     var errorDescription: String? {
         switch self {
@@ -125,6 +164,8 @@ nonisolated enum AuthError: LocalizedError {
         case .loginFailed(let msg): return msg
         case .notAuthenticated: return "Not authenticated"
         case .tokenExpired: return "Session expired — please log in again"
+        case .sessionChanged: return "Your session changed. Please try again."
+        case .loginInProgress: return "Sign-in is already in progress."
         }
     }
 }

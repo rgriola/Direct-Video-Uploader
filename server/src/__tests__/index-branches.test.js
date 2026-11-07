@@ -435,7 +435,7 @@ describe('index branch-heavy coverage', () => {
         expect(nonAdminReply.status).toHaveBeenCalledWith(403);
 
         fastify.jwt.verify.mockReturnValueOnce({ id: 'admin-1' });
-        prismaMock.user.findUnique.mockResolvedValueOnce({ role: 'ADMIN', status: 'ACTIVE' });
+        prismaMock.user.findUnique.mockResolvedValueOnce({ role: 'ADMIN', status: 'ACTIVE', companyCode: 'NEWS' });
         const adminReply = makeReply();
         await docsGuard({ headers: { authorization: 'Bearer ok-token' } }, adminReply);
         expect(adminReply.status).not.toHaveBeenCalled();

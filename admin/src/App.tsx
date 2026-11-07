@@ -20,6 +20,7 @@ import { ChatHistory } from "@/components/ChatHistory";
 import { ErrorLog } from "@/components/ErrorLog";
 import { AdminTools } from "@/components/AdminTools";
 import { OrgPanel } from "@/components/OrgPanel";
+import type { User } from "@/lib/types";
 
 const AUTH_TOKEN_KEY = "fixer_admin_token";
 
@@ -50,21 +51,23 @@ export default function App() {
 function Dashboard() {
   const [loggedIn, setLoggedIn] = useState(false);
   const [userRole, setUserRole] = useState<string | null>(null);
-  const isAdmin = userRole === "ADMIN" || userRole === "SUPER_ADMIN";
+  const isSuperAdmin = userRole === "SUPER_ADMIN";
   const [userName, setUserName] = useState<string | null>(null);
   const [userPhone, setUserPhone] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
   const [userCompany, setUserCompany] = useState<string | null>(null);
+  const [userCompanyCode, setUserCompanyCode] = useState<string | null>(null);
   const [showChatHistory, setShowChatHistory] = useState(false);
+  const canManageTeam = isSuperAdmin || (userRole === "ADMIN" && !!userCompanyCode);
 
   const { data: stats } = useStats(loggedIn);
   const { data: users, isLoading: usersLoading } = useUsers(loggedIn);
   const { data: assets, isLoading: assetsLoading } = useAssets(loggedIn);
-  const { data: triadStatus, isLoading: triadLoading } = useTriadStatus(loggedIn);
-  const { data: organizations, isLoading: orgsLoading } = useOrganizations(loggedIn);
+  const { data: triadStatus, isLoading: triadLoading } = useTriadStatus(loggedIn && isSuperAdmin);
+  const { data: organizations, isLoading: orgsLoading } = useOrganizations(loggedIn && canManageTeam);
   const refreshDashboard = useRefreshDashboard();
 
-  const { connected, socketId, logs, addLog, clearLogs, connect } = useSocket(() => {
+  const { connected, socketId, logs, addLog, clearLogs, connect, disconnect } = useSocket(() => {
     refreshDashboard("upload:complete");
   });
 
@@ -84,6 +87,7 @@ function Dashboard() {
           setUserId(user.id ?? null);
           setUserPhone(user.phoneNumber ?? null);
           setUserCompany(user.companyName ?? null);
+          setUserCompanyCode(user.companyCode ?? null);
           addLog("auth", `Session restored: ${user.name}`);
           connect();
         }
@@ -101,20 +105,19 @@ function Dashboard() {
     void restoreSession(saved);
   }, [addLog, connect]);
 
-  const handleLoginSuccess = useCallback((userName: string, role?: string, phone?: string) => {
+  const handleLoginSuccess = useCallback((user: User) => {
     // Token is already set in api.ts by the LoginForm; mirror it to localStorage
     const token = getToken();
     if (token) localStorage.setItem(AUTH_TOKEN_KEY, token);
+    queryClient.clear();
     setLoggedIn(true);
-    setUserRole(role ?? null);
-    setUserName(userName);
-    setUserPhone(phone ?? null);
-    // userId is set after fetchMe on session restore; for fresh login, fetch it now
-    fetchMe().then(({ user }) => {
-      setUserId(user?.id ?? null);
-      setUserCompany(user?.companyName ?? null);
-    }).catch(() => {});
-    addLog("auth", `Dashboard auth: ${userName}`);
+    setUserRole(user.role ?? null);
+    setUserName(user.name);
+    setUserPhone(user.phoneNumber ?? null);
+    setUserId(user.id);
+    setUserCompany(user.companyName ?? null);
+    setUserCompanyCode(user.companyCode ?? null);
+    addLog("auth", `Dashboard auth: ${user.name}`);
     connect();
   }, [addLog, connect, setLoggedIn]);
 
@@ -189,12 +192,18 @@ function Dashboard() {
     <div className="max-w-330 mx-auto px-4 sm:px-6 pt-5 sm:pt-8 pb-12 sm:pb-16">
       <Header
         onLogout={() => {
+          disconnect();
           clearToken();
           localStorage.removeItem(AUTH_TOKEN_KEY);
+          queryClient.clear();
           setLoggedIn(false);
+          setUserRole(null);
           setUserName(null);
           setUserPhone(null);
+          setUserId(null);
           setUserCompany(null);
+          setUserCompanyCode(null);
+          setShowChatHistory(false);
           void logoutClipSession();
         }}
         userName={userName}
@@ -202,12 +211,21 @@ function Dashboard() {
         userCompany={userCompany}
       />
 
-      <TriadStatusPanel
-        triad={triadStatus}
-        isLoading={triadLoading}
-        wsConnected={connected}
-        iosClients={stats?.iosClients}
-      />
+      {isSuperAdmin && (
+        <TriadStatusPanel
+          triad={triadStatus}
+          isLoading={triadLoading}
+          wsConnected={connected}
+          iosClients={stats?.iosClients}
+        />
+      )}
+
+      {userRole === "ADMIN" && !userCompanyCode && (
+        <p role="alert" className="mb-6 text-(--accent-amber)">
+          This Team Admin account needs an organization before it can manage team members.
+          Contact a Super Admin.
+        </p>
+      )}
 
       <StatsGrid stats={stats} />
 
@@ -217,7 +235,7 @@ function Dashboard() {
         <UserList
           users={users}
           isLoading={usersLoading}
-          onDeleteUser={isAdmin ? handleDeleteUser : undefined}
+          onDeleteUser={isSuperAdmin ? handleDeleteUser : undefined}
           currentUserId={userId ?? undefined}
           organizations={organizations}
           onRefresh={() => refreshDashboard()}
@@ -225,8 +243,7 @@ function Dashboard() {
         <AssetList assets={assets} isLoading={assetsLoading} />
       </div>
 
-      {/* Organizations panel — admin only */}
-      {isAdmin && (
+      {isSuperAdmin && (
         <div className="mb-8">
           <OrgPanel
             organizations={organizations ?? []}
@@ -236,18 +253,22 @@ function Dashboard() {
         </div>
       )}
 
-      <QuickActions onAction={handleAction} addLog={addLog} />
+      <QuickActions onAction={handleAction} addLog={addLog} canCleanup={isSuperAdmin} />
 
       <div className="grid grid-cols-2 gap-6 mb-8 max-[900px]:grid-cols-1">
         <ActivityLog logs={logs} onClear={clearLogs} />
-        <ErrorLog />
+        {isSuperAdmin && <ErrorLog />}
       </div>
 
       <EndpointTable />
 
-      {isAdmin && (
+      {canManageTeam && (
         <div className="mt-8">
-          <AdminTools onReset={() => { refreshDashboard(); addLog("http", "Nuclear reset executed"); }} />
+          <AdminTools
+            onReset={() => { refreshDashboard(); addLog("http", "Nuclear reset executed"); }}
+            canReset={isSuperAdmin}
+            companyCode={isSuperAdmin ? undefined : userCompanyCode ?? undefined}
+          />
         </div>
       )}
 

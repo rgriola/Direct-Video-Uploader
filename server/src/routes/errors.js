@@ -4,6 +4,7 @@
  * Future: trigger text/email notifications for CRITICAL errors.
  */
 import prisma from '../lib/prisma.js';
+import { ROLES } from '../lib/roles.js';
 
 export default async function errorRoutes(fastify) {
     /**
@@ -65,7 +66,7 @@ export default async function errorRoutes(fastify) {
      * Retrieve recent errors for dashboard.
      */
     fastify.get('/api/admin/errors', {
-        preHandler: [fastify.authenticate],
+        preHandler: [fastify.authenticate, fastify.requireRole(ROLES.SUPER_ADMIN)],
     }, async (request) => {
         const errors = await prisma.errorLog.findMany({
             orderBy: { createdAt: 'desc' },

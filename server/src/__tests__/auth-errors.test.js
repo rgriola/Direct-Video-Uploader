@@ -4,6 +4,7 @@ import fastifyJwt from '@fastify/jwt';
 import fastifyCookie from '@fastify/cookie';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { hashPin, hashPinLegacy } from '../lib/utils.js';
+import { requireRole } from '../lib/authorization.js';
 
 const prismaMock = {
     user: {
@@ -39,8 +40,9 @@ beforeEach(async () => {
     await app.register(fastifyCookie);
 
     app.decorate('authenticate', async (request) => {
-        request.user = { id: 'user-1' };
+        request.user = { id: 'user-1', role: 'SUPER_ADMIN' };
     });
+    app.decorate('requireRole', requireRole);
 
     await app.register(authRoutes);
     await app.register(errorRoutes);

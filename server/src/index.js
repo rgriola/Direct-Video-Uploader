@@ -35,7 +35,8 @@ import { startMuxSync, stopMuxSync } from './jobs/mux-sync.js';
 import { startUploadCleanup, stopUploadCleanup } from './jobs/upload-cleanup.js';
 import { CORS_ORIGINS, WS_CORS_ORIGINS } from './lib/config.js';
 import prisma from './lib/prisma.js';
-import { isAdminRole } from './lib/roles.js';
+import { requireRole } from './lib/authorization.js';
+import { ROLES } from './lib/roles.js';
 
 // ─── Global Crash Protection ─────────────────────────────
 // Prevent the process from dying on unhandled errors (Render shows 502 when this happens)
@@ -235,12 +236,15 @@ const docsGuard = async (request, reply) => {
 
     const user = await prisma.user.findUnique({
         where: { id: decoded.id },
-        select: { role: true, status: true },
+        select: { role: true, status: true, companyCode: true },
     });
 
-    if (!user || user.status !== 'ACTIVE' || !isAdminRole(user.role)) {
+    if (!user || user.status !== 'ACTIVE') {
         return reply.status(403).send({ error: 'Admin access required' });
     }
+
+    request.user = user;
+    return requireRole(ROLES.SUPER_ADMIN, ROLES.ADMIN)(request, reply);
 };
 
 await fastify.register(fastifySwagger, {
@@ -348,12 +352,7 @@ fastify.setErrorHandler((err, request, reply) => {
     return reply.status(statusCode).send({ error: err.message || 'Request failed' });
 });
 
-// Admin authorization — requires authenticate to run first (A5)
-fastify.decorate('authorizeAdmin', async function (request, reply) {
-    if (!isAdminRole(request.user?.role)) {
-        reply.status(403).send({ error: 'Admin access required' });
-    }
-});
+fastify.decorate('requireRole', requireRole);
 
 // Clip viewer cookie-based auth (reads JWT from HttpOnly cookie)
 fastify.decorate('clipAuthenticate', async function (request, reply) {
@@ -454,7 +453,7 @@ fastify.get('/api/health/ready', async (request, reply) => {
 
 // Lightweight admin metrics endpoint for dashboards and ops visibility.
 fastify.get('/api/metrics', {
-    preHandler: [fastify.authenticate, fastify.authorizeAdmin],
+    preHandler: [fastify.authenticate, fastify.requireRole(ROLES.SUPER_ADMIN)],
 }, async () => {
     const [counts = {}] = await prisma.$queryRaw`
         SELECT

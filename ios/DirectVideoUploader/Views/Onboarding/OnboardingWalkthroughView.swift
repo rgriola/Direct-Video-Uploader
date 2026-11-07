@@ -22,8 +22,10 @@ struct OnboardingWalkthroughView: View {
 
                          Spacer()
 
-                         Button("Skip") {
+                         Button {
                               complete(openGuide: false)
+                         } label: {
+                              Text("Skip").tapTarget()
                          }
                          .font(Theme.font13Semibold)
                          .foregroundStyle(Theme.secondaryText)
@@ -64,6 +66,7 @@ struct OnboardingWalkthroughView: View {
                                    .foregroundStyle(Theme.secondaryText)
                                    .frame(maxWidth: .infinity)
                                    .padding(.vertical, Theme.space8)
+                                   .tapTarget()
                          }
                     }
                     .padding(.horizontal, Theme.space24)
@@ -87,12 +90,7 @@ struct OnboardingWalkthroughView: View {
 
      private func complete(openGuide: Bool) {
           OnboardingCatalog.markCompleted()
+          if openGuide { onOpenGuide() }
           dismiss()
-
-          guard openGuide else { return }
-          // Defer one turn so the guide sheet is requested after this sheet starts dismissing.
-          Task { @MainActor in
-               onOpenGuide()
-          }
      }
 }

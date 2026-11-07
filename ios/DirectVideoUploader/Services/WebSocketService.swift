@@ -23,6 +23,7 @@ final class WebSocketService {
     var state: ConnectionState = .disconnected
     var isConnected: Bool { state == .connected }
     var isDisconnected: Bool { state == .disconnected }
+    var hasActiveSocket: Bool { webSocket != nil }
 
     /// True when messages are buffered waiting for reconnect
     var hasPendingMessages: Bool { !pendingQueue.isEmpty }
@@ -43,6 +44,7 @@ final class WebSocketService {
     private var webSocket: URLSessionWebSocketTask?
     private var session: URLSession?
     private var token: String?
+    private var tokenServerURL: URL?
     private var sid: String?
     private var isUpgraded = false
     private var reconnectAttempt = 0
@@ -66,27 +68,53 @@ final class WebSocketService {
 
     // Active connect/reconnect task — cancelled on disconnect to stop stale loops
     private var connectTask: Task<Void, Never>?
+    private let serverURLProvider: @MainActor () -> URL
+    private let handshakeTransport: @Sendable (URLRequest) async throws -> (Data, URLResponse)
+
+    init(
+        serverURL: @escaping @MainActor () -> URL = { ServerConfig.wsURL },
+        handshakeTransport: @escaping @Sendable (URLRequest) async throws -> (Data, URLResponse) = {
+            try await RedirectSafeTransport.data(for: $0)
+        }
+    ) {
+        self.serverURLProvider = serverURL
+        self.handshakeTransport = handshakeTransport
+    }
 
     // MARK: - Connect
 
-    func connect(token: String) {
+    @discardableResult
+    func connect(token: String) -> Task<Void, Never>? {
         guard state == .disconnected, !isReconnecting else {
             Log.debug("🔌 [WS] Already \(state)\(isReconnecting ? " (reconnecting)" : ""), skipping connect", logger: Log.network)
-            return
+            return nil
         }
 
+        let serverURL = serverURLProvider()
+        guard tokenServerURL == nil || tokenServerURL == serverURL else {
+            Log.error("⚠️ [WS] Server changed during the authenticated session", logger: Log.network)
+            disconnect()
+            onConnectionLost?()
+            return nil
+        }
         self.token = token
+        tokenServerURL = serverURL
         state = .connecting
         isReconnecting = true
         stopNetworkMonitor()
-        Log.debug("🔌 [WS] Connecting to: \(ServerConfig.wsURL.absoluteString)", logger: Log.network)
+        Log.debug("🔌 [WS] Connecting", logger: Log.network)
 
         // Step 1: Socket.IO handshake via HTTP polling to get session ID
-        connectTask = Task { @MainActor in
+        let task = Task { @MainActor in
             do {
-                try await performHandshake(token: token)
+                try await performHandshake(token: token, serverURL: serverURL)
             } catch {
                 guard !Task.isCancelled else { return }
+                guard self.token == token, serverURLProvider() == serverURL else {
+                    disconnect()
+                    onConnectionLost?()
+                    return
+                }
                 Log.error("❌ [WS] Handshake failed: \(Log.describe(error))", logger: Log.network)
                 state = .disconnected
                 // Attempt reconnect on handshake failure too
@@ -102,27 +130,35 @@ final class WebSocketService {
                 onReconnecting?(reconnectAttempt, maxReconnectAttempts)
                 try? await Task.sleep(for: .seconds(delay))
                 guard !Task.isCancelled else { return }
+                guard self.token == token, serverURLProvider() == serverURL else {
+                    disconnect()
+                    onConnectionLost?()
+                    return
+                }
                 isReconnecting = false
                 connect(token: token)
             }
         }
+        connectTask = task
+        return task
     }
 
     // MARK: - Socket.IO Handshake
 
-    private func performHandshake(token: String) async throws {
-        // Socket.IO first does a polling request to get the session ID
-        var components = URLComponents(url: ServerConfig.wsURL, resolvingAgainstBaseURL: false)!
-        components.path = Self.socketIOPath
-        components.queryItems = [
-            URLQueryItem(name: "EIO", value: "4"),
-            URLQueryItem(name: "transport", value: "polling"),
-        ]
-
-        var request = URLRequest(url: components.url!)
+    private func performHandshake(token: String, serverURL: URL) async throws {
+        guard let pollingURL = Self.socketURL(baseURL: serverURL, isWebSocket: false) else {
+            throw WebSocketError.handshakeFailed
+        }
+        var request = URLRequest(url: pollingURL)
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
 
-        let (data, _) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await handshakeTransport(request)
+        guard !Task.isCancelled, self.token == token, serverURLProvider() == serverURL else {
+            throw CancellationError()
+        }
+        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+            throw WebSocketError.handshakeFailed
+        }
 
         // Socket.IO polling response starts with a length prefix like "0{...}"
         guard let body = String(data: data, encoding: .utf8) else {
@@ -143,27 +179,22 @@ final class WebSocketService {
         self.sid = sid
 
         // Step 2: Upgrade to WebSocket
-        upgradeToWebSocket(sid: sid, token: token)
+        try upgradeToWebSocket(sid: sid, token: token, serverURL: serverURL)
     }
 
     // MARK: - WebSocket Upgrade
 
-    private func upgradeToWebSocket(sid: String, token: String) {
-        var components = URLComponents(url: ServerConfig.wsURL, resolvingAgainstBaseURL: false)!
-        components.scheme = components.scheme == "https" ? "wss" : "ws"
-        components.path = Self.socketIOPath
-        components.queryItems = [
-            URLQueryItem(name: "EIO", value: "4"),
-            URLQueryItem(name: "transport", value: "websocket"),
-            URLQueryItem(name: "sid", value: sid),
-        ]
-
-        var request = URLRequest(url: components.url!)
+    private func upgradeToWebSocket(sid: String, token: String, serverURL: URL) throws {
+        guard let socketURL = Self.socketURL(
+            baseURL: serverURL, isWebSocket: true, sid: sid) else {
+            throw WebSocketError.handshakeFailed
+        }
+        var request = URLRequest(url: socketURL)
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
 
         // Invalidate previous session to prevent leak (#3)
         session?.invalidateAndCancel()
-        let nextSession = URLSession(configuration: .default)
+        let nextSession = RedirectSafeTransport.webSocketSession()
         let socket = nextSession.webSocketTask(with: request)
         session = nextSession
         webSocket = socket
@@ -174,6 +205,24 @@ final class WebSocketService {
 
         // Listen for messages
         listenForMessages(on: socket)
+    }
+
+    static func socketURL(baseURL: URL, isWebSocket: Bool, sid: String? = nil) -> URL? {
+        guard var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false),
+              let scheme = components.scheme?.lowercased(),
+              ["http", "https"].contains(scheme),
+              let host = components.host, !host.isEmpty else { return nil }
+        if isWebSocket { components.scheme = scheme == "https" ? "wss" : "ws" }
+        var prefix = components.percentEncodedPath
+        while prefix.hasSuffix("/") { prefix.removeLast() }
+        components.percentEncodedPath = prefix + socketIOPath
+        components.queryItems = [
+            URLQueryItem(name: "EIO", value: "4"),
+            URLQueryItem(name: "transport", value: isWebSocket ? "websocket" : "polling"),
+        ]
+        if let sid { components.queryItems?.append(URLQueryItem(name: "sid", value: sid)) }
+        components.fragment = nil
+        return components.url
     }
 
     // MARK: - Listen
@@ -556,6 +605,7 @@ final class WebSocketService {
         cleanupConnection()
         pendingQueue.removeAll()
         token = nil
+        tokenServerURL = nil
         reconnectAttempt = 0
     }
 }

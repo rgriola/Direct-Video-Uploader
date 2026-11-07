@@ -2,7 +2,7 @@
 
 _Drafted: October 19, 2026 · Updated: November 6, 2026_
 _Owner: Rod_
-_Status: **In progress** — Step 1 baseline_
+_Status: **In progress** — Step 1 verified; Step 2.1 live; Step 2.3 in workspace_
 
 ```mermaid
 flowchart TD
@@ -38,8 +38,10 @@ flowchart TD
 | --- | --- |
 | Hosting | **Home server is live.** Fastify + Postgres 18 run on the MacBook Air behind a Cloudflare Tunnel (`dev.ms-fixer.com`). Cloud Run / Cloud SQL are no longer the primary target. |
 | Super Admin | **Rod Griola** (only one). Promotes/demotes any user, sees all videos, can pause, flag, or remove any video. |
-| Team Admin | Manages **only their team's** videos and members. Can **promote** members and **pause** them. Pause = soft delete (reversible). |
+| Team Admin | Manages **only their organization's** videos and members. Can promote and demote other Team Admins in that organization and pause members when moderation is implemented. |
 | Users | **Every user gets web access** once their account exists. |
+| Shared clip links | Signed-in members of the same organization may view each other's shared clips. Regular list views remain limited to the user's own records. |
+| Permanent user deletion | **Super Admin only**, including deletion of associated data. |
 | iOS role | **Upload only.** All management (users, moderation, sharing, downloads) happens in the desktop web app. |
 | Original video | The native original file is **stored by us**, not just by Mux. Mux is for playback only. **Local folder on the home server for testing**, cloud object storage later. |
 | "URL downloads" | Means **expiring download links** to the native original, for a person or a server. It does **not** mean importing videos from external URLs. (Removed from the plan.) |
@@ -55,14 +57,14 @@ flowchart TD
 | iOS observation | No `ObservableObject` / `@Published` found; observable app state uses `@Observable` | No broad observation migration is needed. |
 | iOS deployment target | `project.yml` and the generated Debug/Release app settings now agree on `18.6` | Build and test on iOS 18.6 as well as iOS 27. |
 | iOS escape hatches | 2× `@unchecked Sendable`, 3× `nonisolated(unsafe)` (including two date formatters), 2× `DispatchQueue.main.async*`, 2× `MainActor.run` in views, 1 Combine `NotificationCenter` publisher | The real Step 1 work. |
-| iOS tests | Swift Testing target and shared scheme added; 18 baseline tests pass on iOS 27.0 Simulator | Physical-device and minimum-version testing remain open. |
+| iOS tests | Swift Testing target and shared scheme added; 41 tests pass on iOS 27 Simulator; the Step 1 physical-device checklist passed | Minimum-version testing remains open. |
 | iOS hot spot | `ChatViewModel.swift` is 1,582 lines | Don't touch in Step 1. |
 | iOS ↔ roles | iOS `User` model doesn't decode `role` | New roles won't break the app. ✅ |
-| Server roles | `UserRole { USER, ADMIN }`. `ADMIN` skips company filtering (`admin.js:148`), so it already acts like a super admin | Existing ADMINs lose global access when roles split. |
-| Server auth | `authorizeAdmin` decorator + inline `role !== 'ADMIN'` check (`index.js:240`) | Replace both with `requireRole()`. |
+| Server roles | `SUPER_ADMIN`, `ADMIN`, and `USER` are deployed; one Team Admin has no organization | Assign that account an organization before deploying team scoping. |
+| Server auth | Role guards and HTTP team scoping are implemented and tested in the workspace, not yet deployed | Socket.IO and media access are separate outstanding isolation work. |
 | User status | `UserStatus { ACTIVE, SUSPENDED }` already exists | "Pause a member" maps to `SUSPENDED`. Label it **Paused** in the UI. No enum change needed. |
 | Video soft delete | No moderation state on `Asset`. Deletes are hard deletes | Add a moderation state (Step 2.2). |
-| Migrations | `prisma/migrations/` not committed (TASKS.md 0.5 open) | **Prerequisite** for every schema change. |
+| Migrations | Versioned migrations are committed and applied on the home server | Cloud Build still needs its separate destructive `db push` workflow addressed. |
 | Original files | iOS uploads **straight to Mux** (direct-upload PUT). The original never reaches our server. Mux doesn't give back the byte-exact original | Keeping originals means changing the upload pipeline (Step 4). |
 | Legacy local path | `Clip.storageUrl` + an `uploads/` folder exist. The Mux webhook **deletes** the local file after `mux:ready` (`mux-webhooks.js:145`) | Reuse the idea, but keep the file instead of deleting it. |
 | ⚠️ Public uploads folder | `index.js:267` serves `uploads/` with `@fastify/static` and **no auth**. Through the tunnel, anything placed there is publicly downloadable by URL | Must be removed or put behind auth **before** originals are stored (Step 4.1). |
@@ -174,7 +176,7 @@ Only APIs that **remove** code or risk.
 **Decisions (Nov 6, 2026):**
 - **Untrimmed uploads** send the camera's untouched original file and its metadata, without conversion or compression.
 - **Trimmed uploads** send a passthrough (no re-encode) copy cut from that original, named `<original>-edited.<ext>`, with the original's metadata. The `-edited` filename is what the web app stores.
-- **After a trimmed upload succeeds,** save the trimmed copy to Photos as a new item; the original is untouched.
+- **Before creating an upload,** save a trimmed copy to Photos as a new item; the original is untouched. Keep the preview for retry or cancellation if the save fails.
 - **Photo Library access is recommended, not required;** Speech Recognition is optional.
 - **Without access,** ask at the first upload; if declined, upload the current version with a notice that Photos edits may be included.
 - Fix Archive permission handling and the trimmed re-upload issue in this phase.
@@ -186,9 +188,9 @@ Only APIs that **remove** code or risk.
 - Archive re-upload fetches the edited `.current` version and ignores the trim.
 - Nothing currently retrieves the untouched original.
 
-**Implemented (Nov 6, 2026; uncommitted, device checks pending):** `OriginalVideoLoader` reads the `.video` resource (iCloud allowed, with progress); full-length selections upload that file unchanged; trims are passthrough copies with the original's metadata and the trimmed duration; trimmed copies are saved to Photos after upload; Archive re-upload uses originals with a duration match, otherwise the picker. Verified: Debug and Release builds, 25/25 tests on iOS 27, launch-screen check. Concurrency review fixes: cancellable iCloud download, superseded loads can't overwrite state, unique trim export folders, temp cleanup on cancelled uploads, no double Archive re-upload. Accessibility review fixes: VoiceOver announcements for the edits notice and the auto-opened picker, combined progress element, light-mode contrast for the Archive notice (`Theme.warningText`). Deferred (pre-existing, app-wide): Dynamic Type for `Theme` fonts, 44 pt targets for the confirm and Archive buttons, `secondaryText` contrast on the always-black picker footer.
+**Implemented (workspace; latest device checks pending):** `OriginalVideoLoader` reads the `.video` resource (iCloud allowed, with progress); full-length selections upload that file unchanged; trims are passthrough copies with the original's metadata and the trimmed duration. Trims are saved to Photos before creating a server asset, with the copy and potential location/iCloud sync disclosed before upload; a failed save or asset creation leaves the preview available for retry. Archive retries now always require selecting and confirming the video. Scoped, fingerprint-verified photo links remain stored locally but are not used to auto-select, because they cannot prove which upload another device last submitted. Older links are also preserved without auto-selection. The earlier device checks predate these changes and must be repeated.
 
-**Why access is recommended, not required:** The system `PhotosPicker` runs out of process and always shows the full library, so choosing videos needs no permission. Access is needed to read the untouched original via `PHAssetResource` (`.video`) and for automatic Archive re-upload. For videos never edited in Photos, the current version equals the original. The App Review specialist should review the wording against Guideline 5.1.1(iv).
+**Why access is recommended:** The system `PhotosPicker` runs out of process and can supply a selected video without broad library access. Access is needed to read the untouched original via `PHAssetResource` (`.video`); Archive retries use the representation selected in the picker. A trim also requires permission to add its copy to Photos before upload. For videos never edited in Photos, the current version equals the original. The App Review specialist should review the wording against Guideline 5.1.1(iv).
 
 **Without access (decided Nov 6, 2026):** Without access, or with Limited access to a video outside the selection, the app cannot fetch the `PHAsset`, so it cannot tell whether a video was edited in Photos. Ask for access at the first upload. If the person declines, upload the current version (`.current` encoding, no transcode) and show a notice that Photos edits may be included.
 
@@ -199,7 +201,7 @@ Only APIs that **remove** code or risk.
   - A single neutral **Continue** button shows the system prompt for each undecided permission (Photo Library first); people decline in the system dialog. There is no skip/close and no "Allow" label (App Review Guideline 5.1.1(iv), decided Nov 6, 2026). Persist that the screen was seen with `@AppStorage`; both permissions stay available from Profile.
   - Presented from `ChatView` after the walkthrough and guide close (or at launch when onboarding is already complete), never over another sheet.
 - Show the screen once to new and existing users while either permission is still undecided (`.notDetermined`).
-- **Limited:** Explain that originals and Archive re-upload work only for selected videos; offer to manage the selection or open Settings.
+- **Limited:** Explain that originals are available only for shared videos, other picker selections may include Photos edits, and Archive re-upload requires selecting a video; offer to manage the selection or open Settings.
 - **Denied** and **Restricted:** Show **Open Settings** on the Permissions screen and in Profile. Recheck status whenever the app becomes active.
 
 **Tasks**
@@ -207,14 +209,14 @@ Only APIs that **remove** code or risk.
 - [x] Picker: create with `photoLibrary: .shared()` and `preferredItemEncoding: .current`
 - [x] Original retrieval: with access, write the `.video` `PHAssetResource` to a temp file via `PHAssetResourceManager` with network access allowed (iCloud) and progress; use the original filename and `PHAsset` metadata (`OriginalVideoLoader`). A failed original load shows an error and never falls back to an edited copy.
 - [x] Trim: skip export when the range is the full duration and upload the original; otherwise export from the original, copy its metadata explicitly, and verify on device *(device verification pending)*
-- [x] Save trimmed copy to Photos after a successful upload (`PHAssetCreationRequest`); add `NSPhotoLibraryAddUsageDescription` and request add-only access if read/write access is not granted; a save failure must not fail the upload. The new item's identifier is linked to the upload for Archive re-upload.
+- [x] Save the trimmed copy to Photos before creating a server asset (`PHAssetCreationRequest`); request add-only access if read/write access is not granted. On failure, retain the preview for retry or cancellation. If Photos succeeds without returning an identifier, require explicit confirmation that Archive recovery will be manual.
 - [x] `PermissionManager`: inject the authorization provider (`PermissionAuthorizing`) for tests; make it the sole source of Speech authorization, including `TranscriptionService`; refresh status app-wide when the app becomes active (`ContentView`). Concurrency review: no issues.
 - [x] Extract a shared `PermissionRow` from `ProfileView`; build `PermissionsView` and its presentation in `ChatView`. Accessibility review applied: status as VoiceOver value, contrast-safe `Theme.purpleText`/`purpleFill`, stacked layout and scaled icon at accessibility text sizes, 44 pt targets, header traits.
-- [x] Archive retry: use the original resource, not `.current`; request access when undecided; with Limited or denied access, or when the original is not found, open the picker instead of showing an error
-- [x] Trimmed re-upload (revised): instead of persisting trim ranges, trimmed copies are saved to Photos and linked to the upload. Automatic retry only uses a Photos video whose length matches the uploaded clip's `duration` (±1 s), so a legacy record pointing at an untrimmed source falls back to the picker. Limit: a trim removing less than about 1 s isn't detected.
+- [x] Archive retry (revised): require a manual Photos selection and explicit confirmation; upload the selected representation rather than silently substituting an original. Reject known duration mismatches (±1 s); an unknown duration does not prove a match.
+- [x] Preserve legacy links without trusting them; new account/server-scoped links include a SHA-256 fingerprint and byte count. A selected representation is linked only when it matches the Photos original, but even verified local links are not auto-selected until the server can establish authoritative attempt identity.
 - [x] Swift Testing: full-range trim detection, duration matching (legacy no-auto-retry rule), metadata merge and trimmed-duration rules (`UploadFidelityTests`)
 - [x] Swift Testing: permission status mapping, row states, presentation decision, undecided-only requests and `TranscriptionService` authorization (`PermissionTests`, fake authorizer). 41/41 tests pass on the iOS 27 simulator; Debug and Release builds pass.
-- [x] Device matrix (fresh install for each case): Allow Full, Limited, Don't Allow, Speech Allow/Don't Allow, Continue without deciding, change in Settings while backgrounded, upgrade from a build where onboarding was already completed; in each Photo Library state, upload untrimmed, trimmed, iCloud-only and Photos-edited videos, and Archive re-upload. Compare uploaded bytes and metadata with the original exported from Photos. *(Passed on device, Nov 6, 2026.)*
+- [ ] Repeat the device matrix after the latest Photos-first and scoped-recovery changes: Allow Full, Limited, Don't Allow, Speech Allow/Don't Allow, change in Settings, and an existing installation. Exercise untrimmed, trimmed, iCloud-only and Photos-edited videos, cancellation and retry, and Archive recovery. Compare bytes and metadata. *(The previous implementation passed on device Nov 6, 2026.)*
 
 ### 1.6 Accessibility
 
@@ -257,19 +259,19 @@ Compliant: system toolbars, tab bar, alerts and confirmation dialogs, the full-w
 **Plan**
 
 *Phase A: touch targets and labels (no visual change)*
-- [ ] Add a shared `IconButton(systemName:label:)` with a 44×44 frame, `contentShape` and a required label. Use it for the 7 icon-only buttons.
-- [ ] Add `.frame(minHeight: 44)` once in `ChatActionButton` and once in `archiveButton`, which fixes 8 call sites.
-- [ ] Use `.toolbar` for the trim screen's Cancel/Next, or give them a 44 pt minimum height. Label Next as "Next".
-- [ ] Fix the remaining text buttons: Skip, Retry, Open Full Guide, Share to Slack, Priority, and the Debug server controls.
-- [ ] Add `.contentShape(Rectangle())` to every `.buttonStyle(.plain)` row so taps on empty space register (Archive row).
-- [ ] Size minimum targets with `@ScaledMetric` so they grow with text size.
+- [x] Add a shared 44×44 hit area with a required label to the icon-only buttons. *(Done as the `tapTarget()` modifier in `ChatButtonStyle.swift` instead of an `IconButton` type. It enlarges the hit area without changing visuals; labels are added at each call site.)*
+- [x] Add `.frame(minHeight: 44)` once in `ChatActionButton` and once in `archiveButton`, which fixes 8 call sites.
+- [x] Use `.toolbar` for the trim screen's Cancel/Next, or give them a 44 pt minimum height. Label Next as "Next".
+- [x] Fix the remaining text buttons: Skip, Retry, Open Full Guide, Share to Slack, Priority, and the Debug server controls.
+- [x] Add `.contentShape(Rectangle())` to every `.buttonStyle(.plain)` row so taps on empty space register (Archive row).
+- [x] Size minimum targets with `@ScaledMetric` so they grow with text size.
 
 *Phase B: VoiceOver and Voice Control semantics*
-- [ ] Trim: make each trim handle and the playhead adjustable with `.accessibilityAdjustableAction`, in steps of about 0.5 s or 1 s, announcing the time as the value. Hide the filmstrip tap-to-seek from VoiceOver. Widen the handles' hit areas, and decide which handle wins where they overlap at the 1 s minimum.
+- [x] Trim: make each trim handle and the playhead adjustable with `.accessibilityAdjustableAction`, in steps of about 0.5 s or 1 s, announcing the time as the value. Hide the filmstrip tap-to-seek from VoiceOver. Widen the handles' hit areas, and decide which handle wins where they overlap at the 1 s minimum. *(Done. Steps are 0.5 s under 1 min, 1 s under 5 min, else 5 s. Handle hit areas are 44 pt and extend outward, so they never overlap; handles win over the playhead. Drags are relative to touch-down so the wider target doesn't jump.)*
 - [ ] Add traits and values:
-  - Video tap: the button trait and a Play/Pause label.
-  - Transcribe: toggle semantics.
-  - Priority: the selected trait.
+  - Video tap: the button trait and a Play/Pause label. *(Done with the trim work.)*
+  - Transcribe: toggle semantics. *(Done in Phase A.)*
+  - Priority: the selected trait. *(Done in Phase A.)*
   - Archive rows: an expanded/collapsed value.
   - Disabled "Details": `.disabled(true)`.
 - [ ] Group composite rows (message bubbles, Archive rows, Metadata rows) into single elements with a label and value, and add custom actions for secondary buttons.
@@ -321,21 +323,26 @@ Compliant: system toolbars, tab bar, alerts and confirmation dialogs, the full-w
 - [x] Commit `server/prisma/migrations/`
 - [x] Home server uses `prisma migrate deploy` only (runbook). Removed the `db:push` npm script
 - [ ] Cloud Build (`cloudbuild.yaml`) and the unused `scripts/render-build.sh` still run `db push --accept-data-loss`. Switching Cloud SQL to `migrate deploy` needs `prisma migrate resolve --applied 20260928133253_init` there first
-- [ ] Take a `pg_dump` before the first real migration (`scripts/pg-backup.sh`)
+- [x] Take a `pg_dump` before the first real migration (`scripts/pg-backup.sh`)
+
+**Cloud Build caution:** `cloudbuild.yaml` still uses `db push --accept-data-loss`. Before
+any merge that could trigger Cloud Build, verify whether that trigger is active and disable
+or safely migrate its database workflow; home-server deployment alone does not address it.
 
 ### 2.1 Roles & Super Admin Seed
 
 | Role | Scope | Can |
 | --- | --- | --- |
-| `SUPER_ADMIN` (Rod) | Everything | Promote/demote any user to any role, pause/unpause any user, see all videos, pause/flag/remove any video, manage teams/orgs, server health & logs, create share links for any video |
-| `ADMIN` (Team Admin) | Own team only | See team videos, pause/unpause team videos, flag team videos for removal, add members, **promote USER → ADMIN within the team**, pause/unpause team members, create share links for team videos |
+| `SUPER_ADMIN` (Rod) | Everything | Promote/demote users between `USER` and `ADMIN`, pause/unpause users, see all videos, pause/flag/remove videos, manage teams/orgs, server health & logs, create share links for any video |
+| `ADMIN` (Team Admin) | Own team only | See team videos, pause/unpause team videos, flag team videos for removal, add members, **promote and demote Team Admins within the team**, pause/unpause team members, create share links for team videos |
 | `USER` | Own records | Web access: view own videos, transcripts, form data, profile/PIN. Upload from iOS (and desktop in Step 4). Create share links for own videos *(confirm)* |
 
 - [x] Migration `20261107150000_add_super_admin_role`: `ALTER TYPE "UserRole" ADD VALUE 'SUPER_ADMIN'`
 - [x] **Seed Rod as Super Admin from an env var** (`SUPER_ADMIN_PHONE`): `npm run bootstrap:super-admin` (`server/src/scripts/bootstrap-super-admin.js`, idempotent). Rod's account removed from `seed.js`
+- [x] Apply the migration and bootstrap the Super Admin on the home server
 - [x] Role helpers in `server/src/lib/roles.js` (`isAdminRole`, `isSuperAdmin`, `checkRoleChange`). Every former `role === 'ADMIN'` check (server + dashboard) now also accepts SUPER_ADMIN
 - [ ] Existing `ADMIN` accounts become team-scoped Team Admins (lands with 2.3). Tell them first. One current ADMIN has no organization
-- [x] Every `ADMIN` must belong to an organization: promotion requires `companyCode`, and `PATCH /api/admin/users/:id` can't clear an admin's organization
+- [x] Promotion to `ADMIN` requires `companyCode`, and `PATCH /api/admin/users/:id` can't clear an admin's organization. The legacy unassigned admin still needs assignment.
 - [x] `PATCH /api/admin/users/:id/role` `{ role: 'USER' | 'ADMIN' }` with guardrails:
   - Only SUPER_ADMIN can change roles outside their own organization (team admins get **404**)
   - Team Admin **can** promote and demote other Team Admins in their organization *(decided)*
@@ -366,14 +373,142 @@ Compliant: system toolbars, tab bar, alerts and confirmation dialogs, the full-w
 
 ### 2.3 API Authorization & Team Scoping
 
-- [ ] One decorator, `requireRole('SUPER_ADMIN', 'ADMIN')`. It replaces `authorizeAdmin` and the inline check at `index.js:240`
-- [ ] `teamScope(request)` returns the Prisma `where`:
-  - SUPER_ADMIN → `{}` (or the selected team)
-  - ADMIN → own team
-  - USER → `{ userId }`
-- [ ] Apply it to every list/detail query in `admin.js` and `assets.js`. Remove the ad-hoc filter at `admin.js:148`
-- [ ] Out-of-scope IDs return **404**, not 403
+**Workspace implementation:** HTTP scoping and dashboard role gating are implemented and
+locally tested, but not committed or deployed. Step 2 as a whole is not complete.
+
+- [x] `requireRole` replaces `authorizeAdmin` and the inline admin check.
+- [x] `userScope(user)` and `teamScope(user)` produce Prisma filters: Super Admin sees all,
+  Team Admin sees their organization, and User sees their own records. An unassigned Team
+  Admin sees only their own records and cannot manage a team.
+- [x] Apply scoping to dashboard lists, statistics, asset details, Mux status, and shared
+  clip pages. Out-of-scope record IDs return **404**. Transcript updates remain owner-only.
+- [x] Same-organization members may view a shared clip link; viewer authorization reloads
+  the current account and organization instead of trusting an old cookie.
+- [x] Restrict global diagnostics, cleanup, organization changes, and permanent user
+  deletion to Super Admin. Team Admins can create members only in their own organization.
 - [x] **Decided: team = Organization** (`companyCode`). The free-text `User.team` field is a label only
+- [ ] Before rollout, assign the existing unassigned Team Admin to an organization and notify
+  affected admins that their global access will become team-scoped.
+
+**iOS compatibility (workspace only):** Pending-form metadata is stored per account and
+server, and failed lookups or submissions leave it intact. Recovery verifies ownership,
+the active session, and the particular saved record before restoring or clearing it.
+Legacy `pending-form.json` files lack account/server provenance: they are preserved, not
+automatically restored or deleted, and the app directs users to add details manually in
+Archive. The app requests complete protection for a legacy file when it encounters one;
+Archive also offers an explicitly confirmed action to remove that local copy. Older uploads
+that need details or upload recovery remain visible beyond the usual seven-day window, with
+both actions available when needed. Archive owns the details sheet independently of its
+filtered rows. Form submissions are coordinated by account, server, and asset. Saved forms
+are cleared only after a response identifies the expected asset; redirects and invalid
+receipts are rejected. Leaving an unfinished form requires explicit confirmation, and a
+failed send keeps the entered values open. Requests have a bounded timeout; a timeout
+does not prove the server failed to save the details. Scoped recovery and transcript
+requests also reject redirects. The new pending-form file requests complete file protection;
+hardware enforcement must be checked on a physical device. Submission coordination is
+within one app process; simultaneous submissions on different devices remain last-write-wins.
+If the user explicitly skips a form, its recovery record stays in Archive instead of
+automatically reopening on a later launch.
+
+Transcript delivery targets the uploaded clip and reports success only after a matching
+server receipt, so it cannot silently save to a replacement clip. **Deploy the server
+update before distributing the iOS update**: older servers lack the new clip-specific
+route, so the updated app reports transcript delivery failure until the server is updated.
+Their legacy route can ignore a clip ID supplied in the request body. There is no Archive
+transcript-retry action yet. A matching receipt does not prove that the clip is still the
+current upload attempt; retained older clips and delayed Mux events need attempt-aware
+coordination before concurrent retries are safe. The existing retry path can return a
+waiting Mux upload URL while an earlier transfer is still active; do not re-upload while
+the original transfer may still be running. Already-started background transfers are not
+guaranteed to retract bytes already sent. The workspace app now requests cancellation of
+all tracked transfers on logout and retains their temporary files until the transfer
+callbacks finish; physical-device verification remains required.
+
+**Additional client release blockers found in review:**
+
+- Photos-first trimming and account/server-scoped, fingerprint-verified photo associations
+  are implemented in the workspace; physical-device validation remains required. Failed
+  saves and asset creation retain the preview. Cancelling an already-submitted Photos
+  transaction may still leave a copy in Photos. Legacy associations are preserved but
+  never auto-selected, including earlier scoped v2 links whose provenance cannot be proved.
+  Every Archive retry requires selecting and confirming a Photos representation. A v3 local
+  link is retained only when that representation matches the original bytes, preserving its
+  metadata, but it is not used for automatic retry because another device can change the
+  server upload. An explicitly confirmed repair preserves a corrupt scoped file separately.
+  A force-quit or indeterminate
+  Photos result can still make a later save duplicate a copy; asset creation retries can
+  also duplicate server assets after a lost response.
+- Temporary video copies request **complete until first user authentication** protection,
+  the selected tradeoff for background uploads. After the first unlock following a restart,
+  these files can remain accessible while the device is locked. The simulator cannot verify
+  the protection class; verify the class and locked-device behavior on physical hardware.
+  Scoped association and pending-form files separately request complete protection.
+- If iOS terminates the app during a background transfer, its completion is not reattached
+  to the original job, so a requested transcript may not resume after relaunch.
+- Trim source readers and exports retain a temporary-file lease through cancellation; the
+  handoff waits for the trim cover's dismissal and discards superseded results. Validate
+  teardown and dismissal on a physical device.
+- A waiting Mux URL may also retain metadata from the earlier attempt, including location,
+  when a different video is selected. Upload attempts and their metadata are not yet
+  versioned or bound to the selected bytes; do not rely on manual replacement until that
+  server-side behavior is resolved. An active Chat upload is now tracked within the same app
+  process and account/server scope to suppress its Archive retry, including while a
+  cancellation drains after logout. Archive rechecks its latest fetched asset before
+  retry side effects, tracks observed changes and reversions, and validates again immediately
+  before starting the background PUT. A detected change stops the retry and asks for a refresh;
+  this can include an update caused by the retry's own server request. The earlier URL-creation
+  POST may already have sent metadata and created or reused a waiting clip even if the final
+  guard rejects the PUT. These checks do not
+  protect against another device, a terminated app, an unfetched server change, or a transfer
+  that the server still considers active.
+- Archive can observe the retry's own server-created processing clip before its URL response
+  and abort the PUT. Until server-issued attempts can be distinguished safely, this fail-closed
+  case may leave a processing record without uploaded bytes and delay another retry. An observed
+  replacement during the PUT can also be followed by a stale completion notice; the post-upload
+  refresh currently holds the transfer barrier and temporary file until it finishes. Resolve
+  these cases before relying on recovery.
+- Chat may continue to present an earlier failure while an Archive retry is in progress, and a
+  later Mux-ready event does not yet clear every locally recorded failure by verified attempt.
+  Reconcile these states without attributing another attempt's success to the failed upload.
+- A repeated live form request, such as one caused by re-upload, can reopen a form whose
+  details were already submitted. Since the server currently upserts form data, submitting
+  that form can overwrite the existing details. Verify completion before presenting it.
+- The background video PUT uses a separate session that can follow redirects and handle
+  cookies, and its destination is not yet validated. Establish an approved HTTPS upload
+  destination and a redirect-safe background-transfer strategy before client release.
+- WebSocket connections and queued frames are not fully bound to the original account,
+  server, and session generation. Keychain write/delete failures are also not reliably
+  surfaced; a restored token is not bound to its issuing server, and a legacy token
+  can be restored after logout. These require the planned transport and authentication
+  hardening.
+- The app has no app-owned privacy manifest in the workspace. Review required-reason API
+  declarations and bundled SDK manifests with the App Review specialist before submission.
+- Temporary video cleanup depends on normal completion, and protected association staging
+  cleanup runs on a later write. Design task-aware cleanup for abandoned files without
+  deleting files still needed by background transfers.
+- The root recovery-protection alert and the legacy-form confirmation dialog do not expose
+  a reliable dismissal-completion signal to the shared presentation gate. VoiceOver focus,
+  queued announcements, and competing sheets need a lifecycle-safe solution before release.
+
+**Validation:** The current server coverage suite passed 173 tests in 22 files, including
+the disposable PostgreSQL authorization tests. The latest full iOS 27 simulator suite passed
+227 tests in 29 suites, including the real background PUT, Photos-link, and retry-intent
+regressions; Swift source and test hashes were unchanged during the run. The Release simulator
+build also passed. The admin production build and iOS launch-screen guard also passed.
+Physical-device validation remains required, including VoiceOver focus and announcements
+across tabs and sheets, keyboard validation, form dismissal, upload and recovery, staging,
+locked/unlocked file protection, and actual Socket.IO redirect behavior. Testing on the oldest
+supported iOS version also remains open.
+
+**Isolation is not complete:** Socket.IO events are still global (2.4), Mux playback URLs
+are public, and `/uploads/` is unauthenticated (4.1). Do not treat HTTP scoping alone as
+end-to-end media or real-time isolation. Dashboard sign-in still uses phone and PIN without
+a company code; the planned web-login policy remains part of Step 3. Stored auth tokens
+are not bound to their issuing server across launches, and existing transport and logout
+hardening still need a separate review. Verify or disable the Cloud Build and Render
+deployment triggers and replace their destructive `prisma db push --accept-data-loss`
+workflows before a merge that could invoke them; the cloud database migration baselines
+are not verified. The Render build script also seeds demo accounts.
 
 ### 2.4 Real-Time (Socket.IO) Scoping
 
@@ -384,8 +519,11 @@ Compliant: system toolbars, tab bar, alerts and confirmation dialogs, the full-w
 
 - [ ] Role × endpoint matrix (3 roles × 2 teams × each route → 200/403/404)
 - [x] Escalation and guardrail tests (2.1): `admin-role-routes.test.js`, `roles.test.js`, `bootstrap-super-admin.test.js`
+- [x] HTTP authorization integration tests use a disposable PostgreSQL database for multiple
+  organizations, role scopes, shared clips, stale cookies, and destructive-operation guards.
+  CI provisions that database and runs migrations before the coverage suite.
 - [ ] Moderation visibility tests (paused/flagged/removed hidden correctly)
-- [ ] Update `admin-routes.test.js` / `assets-routes.test.js`
+- [ ] Complete the full per-endpoint matrix, including moderation and Socket.IO.
 
 ---
 

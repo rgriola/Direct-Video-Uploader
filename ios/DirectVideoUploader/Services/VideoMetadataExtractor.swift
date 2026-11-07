@@ -2,7 +2,7 @@ import AVFoundation
 import UIKit
 
 /// Extracts real metadata from a local video file using AVAsset.
-nonisolated struct VideoMetadata: Codable {
+nonisolated struct VideoMetadata: Codable, Equatable, Sendable {
     let duration: Int          // seconds
     let resolution: String     // e.g. "3840×2160"
     let codec: String          // e.g. "HEVC / H.265"

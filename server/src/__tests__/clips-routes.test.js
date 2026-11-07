@@ -65,6 +65,9 @@ afterEach(async () => {
 });
 
 function authCookieFor(user) {
+    prismaMock.user.findUnique.mockImplementation(async ({ where }) =>
+        where.id === user.id ? { ...user, status: 'ACTIVE' } : null
+    );
     const token = app.jwt.sign(user, { expiresIn: '7d' });
     return `fixer_clip_token=${token}`;
 }
@@ -174,15 +177,15 @@ describe('clip routes deeper coverage', () => {
             },
         });
 
-        expect(response.statusCode).toBe(403);
-        expect(response.json()).toEqual({ error: 'Access denied' });
+        expect(response.statusCode).toBe(404);
+        expect(response.json()).toEqual({ error: 'Not found' });
     });
 
     it('returns ready payload when mux playback id exists', async () => {
         const cookieHeader = authCookieFor({
             id: 'viewer-1',
             name: 'Viewer',
-            role: 'ADMIN',
+            role: 'SUPER_ADMIN',
             companyCode: null,
         });
 
@@ -248,7 +251,7 @@ describe('clip routes deeper coverage', () => {
         const cookieHeader = authCookieFor({
             id: 'viewer-1',
             name: 'Viewer',
-            role: 'ADMIN',
+            role: 'SUPER_ADMIN',
             companyCode: null,
         });
 
@@ -313,7 +316,7 @@ describe('clip routes deeper coverage', () => {
         const cookieHeader = authCookieFor({
             id: 'viewer-1',
             name: 'Viewer',
-            role: 'ADMIN',
+            role: 'SUPER_ADMIN',
             companyCode: null,
         });
 

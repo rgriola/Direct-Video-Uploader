@@ -55,6 +55,23 @@ jobs:
   server-tests:
     name: Server Tests
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_DB: dvu_scope_test_ci
+          POSTGRES_USER: scope_test
+          POSTGRES_PASSWORD: test-only-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U scope_test -d dvu_scope_test_ci"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://scope_test:test-only-password@127.0.0.1:5432/dvu_scope_test_ci
+      TEST_DATABASE_URL: postgresql://scope_test:test-only-password@127.0.0.1:5432/dvu_scope_test_ci
     defaults:
       run:
         working-directory: server
@@ -74,6 +91,9 @@ jobs:
 
       - name: Verify lockfile unchanged
         run: git diff --exit-code -- package-lock.json
+
+      - name: Migrate disposable test database
+        run: npx prisma migrate deploy
 
       - name: Run tests with coverage gate
         run: npm run test:coverage

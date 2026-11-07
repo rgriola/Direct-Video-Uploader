@@ -2,7 +2,7 @@ import Foundation
 
 // MARK: - Asset
 
-nonisolated struct Asset: Codable, Identifiable, Sendable {
+nonisolated struct Asset: Codable, Identifiable, Sendable, Equatable {
     let id: String
     let mediasourceId: String?
     let mediasourceUrl: String?
@@ -14,15 +14,25 @@ nonisolated struct Asset: Codable, Identifiable, Sendable {
     let user: AssetUser?
     let clips: [Clip]?
     let formResponse: FormResponse?
+    let userId: String?
+    let updatedAt: String?
+
+    func needsUploadRecovery(at date: Date) -> Bool {
+        if status == .error { return true }
+        guard status == .uploading || status == .processing else { return false }
+        let timestamp = (status == .processing ? clips?.first?.createdAt : nil) ?? createdAt
+        guard let timestamp, let created = DVUDateFormatting.parseISO(timestamp) else { return true }
+        return date.timeIntervalSince(created) > 300
+    }
 }
 
-nonisolated struct AssetUser: Codable, Sendable {
+nonisolated struct AssetUser: Codable, Sendable, Equatable {
     let id: String
     let name: String
     let phoneNumber: String?
 }
 
-nonisolated enum AssetStatus: String, Codable, Sendable {
+nonisolated enum AssetStatus: String, Codable, Sendable, Equatable {
     case uploading = "UPLOADING"
     case processing = "PROCESSING"
     case ready = "READY"
@@ -49,8 +59,9 @@ nonisolated enum AssetStatus: String, Codable, Sendable {
 
 // MARK: - Clip
 
-nonisolated struct Clip: Codable, Identifiable, Sendable {
+nonisolated struct Clip: Codable, Identifiable, Sendable, Equatable {
     let id: String
+    let assetId: String?
     let clipIndex: Int?
     let originalFileName: String?
     let gpsLat: Double?
@@ -66,10 +77,14 @@ nonisolated struct Clip: Codable, Identifiable, Sendable {
     let fileSize: String?
     let transcript: String?
     let transcriptSegments: [TranscriptSegment]?
+    let createdAt: String?
     let status: String?
     let storageUrl: String?
     let streamUrl: String?
     let thumbnailUrl: String?
+    let muxAssetId: String?
+    let muxPlaybackId: String?
+    let muxUploadId: String?
 }
 
 // MARK: - Create Asset
@@ -88,7 +103,7 @@ nonisolated struct AssetDetailResponse: Codable, Sendable {
 
 // MARK: - Form Response
 
-nonisolated struct FormResponse: Codable, Sendable {
+nonisolated struct FormResponse: Codable, Sendable, Equatable {
     let id: String
     let assetId: String?
     let slug: String?

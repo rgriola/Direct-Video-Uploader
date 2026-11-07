@@ -1,7 +1,129 @@
 // May 10, 2026 - 3:07pm - GitHub Copilot (GPT-5.3-Codex)
 import Foundation
 import Observation
+import Photos
 import UIKit
+
+nonisolated struct ScopedUploadAsset: Hashable, Sendable {
+    let scope: PendingFormScope
+    let assetId: String
+}
+
+@MainActor
+@Observable
+final class FormPresentationState {
+    enum Tab: Hashable {
+        case chat, archive, photos, profile
+    }
+
+    var selectedTab = Tab.chat {
+        didSet {
+            if selectedTab != oldValue { generation = UUID() }
+        }
+    }
+    var archiveFormVisible = false {
+        didSet {
+            if archiveFormVisible != oldValue { generation = UUID() }
+        }
+    }
+    var pendingFormProtectionWarning = false {
+        didSet {
+            if pendingFormProtectionWarning != oldValue { generation = UUID() }
+        }
+    }
+    var isSceneActive: Bool {
+        didSet {
+            if isSceneActive != oldValue { generation = UUID() }
+        }
+    }
+    private(set) var generation = UUID()
+    var completedDetailsAssetIDs: Set<String> = []
+    var photoAssociatedAssetIDs: Set<String> = []
+    private(set) var activeChatUploads: [ScopedUploadAsset: UUID] = [:]
+    private(set) var failedChatUploadAssetIDs: Set<String> = []
+    private var uploadRecoveryRevisions: [String: Int] = [:]
+    private var startedUploadStageIDs: Set<UUID> = []
+
+    init(isSceneActive: Bool = true) {
+        self.isSceneActive = isSceneActive
+    }
+
+    var canPresentChatForm: Bool {
+        selectedTab == .chat && isSceneActive
+            && !archiveFormVisible && !pendingFormProtectionWarning
+    }
+
+    func canPresentInChat(isSceneActive: Bool) -> Bool {
+        canPresentChatForm && isSceneActive
+    }
+
+    func beginChatUpload(assetId: String, scope: PendingFormScope, uploadID: UUID) {
+        activeChatUploads[ScopedUploadAsset(scope: scope, assetId: assetId)] = uploadID
+        failedChatUploadAssetIDs.remove(assetId)
+    }
+
+    func finishChatUpload(
+        assetId: String, scope: PendingFormScope, uploadID: UUID, failed: Bool
+    ) {
+        let key = ScopedUploadAsset(scope: scope, assetId: assetId)
+        guard activeChatUploads[key] == uploadID else { return }
+        activeChatUploads[key] = nil
+        if failed { failedChatUploadAssetIDs.insert(assetId) }
+    }
+
+    func isChatUploading(assetId: String, scope: PendingFormScope?) -> Bool {
+        guard let scope else { return false }
+        return activeChatUploads[ScopedUploadAsset(scope: scope, assetId: assetId)] != nil
+    }
+
+    func clearChatUploadFailure(assetId: String) {
+        failedChatUploadAssetIDs.remove(assetId)
+    }
+
+    func clearChatUploadFailures() {
+        failedChatUploadAssetIDs.removeAll()
+    }
+
+    func uploadRecoveryRevision(for assetId: String) -> Int {
+        uploadRecoveryRevisions[assetId, default: 0]
+    }
+
+    func markUploadRecovered(assetId: String) {
+        uploadRecoveryRevisions[assetId, default: 0] += 1
+        clearChatUploadFailure(assetId: assetId)
+    }
+
+    func markUploadStarted(stageID: UUID) {
+        startedUploadStageIDs.insert(stageID)
+    }
+
+    func clearUploadRecoveryState() {
+        uploadRecoveryRevisions.removeAll()
+        startedUploadStageIDs.removeAll()
+    }
+
+    func shouldAnnounceRecoveryNotice(
+        code: String?, assetId: String?, params: [String: String]? = nil
+    ) -> Bool {
+        if code == "IOS_UPLOAD_START_FAILED" || code == "IOS_PREVIOUS_UPLOAD_START_FAILED",
+           let stageID = params?["stageId"].flatMap(UUID.init(uuidString:)),
+           startedUploadStageIDs.contains(stageID) {
+            return false
+        }
+        guard let assetId else { return true }
+        switch code {
+        case "IOS_PENDING_FORM_IN_ARCHIVE", "IOS_PENDING_FORM_SAVE_FAILED":
+            return !completedDetailsAssetIDs.contains(assetId)
+        case "IOS_UPLOAD_FAILED", "IOS_PREVIOUS_UPLOAD_FAILED":
+            let revision = params?["uploadRevision"].flatMap(Int.init) ?? 0
+            return uploadRecoveryRevision(for: assetId) == revision
+        case "IOS_PHOTO_ASSOCIATION_SAVE_FAILED", "IOS_PREVIOUS_PHOTO_ASSOCIATION_SAVE_FAILED":
+            return !photoAssociatedAssetIDs.contains(assetId)
+        default:
+            return true
+        }
+    }
+}
 
 /// Metadata for a sent-upload card, cached by message ID.
 struct SentUploadInfo {
@@ -43,6 +165,7 @@ final class ChatViewModel {
     var messages: [ChatMessage] = []
     var currentAssetId: String?
     var showFormSheet = false
+    private(set) var formAssetId: String?
     var showMetadataSheet = false
     var formFields: [FormField] = []
     var uploadProgress: Double = 0
@@ -52,8 +175,9 @@ final class ChatViewModel {
 
     // Staged video — preview before upload (iOS 26.3 flow)
     var stagedVideo: StagedVideo?
+    private(set) var stagedUploadPreparation: StagedUploadPreparation = .ready
     var isProcessingVideo = false
-    var transcribeOnUpload = false
+    private(set) var isSelectingVideo = false
 
     // Archive state — conversation closed after mux:ready or new upload
     var isArchived = false
@@ -72,12 +196,52 @@ final class ChatViewModel {
     /// IDs of outgoing Slack messages that have been confirmed by the server
     var slackConfirmedIds: Set<String> = []
 
-    /// Temp staging data preserved across confirmStagedUpload → createAsset
-    private var lastStagedCreatedDate: String?
-    private var lastStagedHasLocation: Bool = false
-    private var pendingPHAssetIdentifier: String?
-    private var uploadTask: Task<Void, Never>?
+    private var stagingTask: Task<Void, Never>?
+    private var stagingGeneration: UUID?
+    private var stagingFileURL: URL?
+    private var preparationAttempts: [UUID: UUID] = [:]
+    private var preparationTasks: [UUID: (attempt: UUID, task: Task<Void, Never>)] = [:]
+    private var leasedStagedFiles: Set<UUID> = []
+    private var uploadTasks: [UUID: Task<Void, Never>] = [:]
+    private var activeUploadID: UUID?
+    private var pendingAssetCreation: UUID?
+    private var uploadFailuresToPreserve: [ChatMessage] = []
     private let messagePolicy = MessagePolicyCoordinator()
+    private let sessionScope: PendingFormScope?
+    private let sessionServerURL: URL
+    private let sessionToken: String?
+    private let sessionGeneration: UUID
+    private let pendingFormStore: PendingFormStore
+    private let pendingFormRecovery: PendingFormRecovery
+    private let pendingFormSubmission: PendingFormSubmission
+    private let httpTransport: @Sendable (URLRequest) async throws -> (Data, URLResponse)
+    private let thumbnailGenerator: @Sendable (URL) async -> UIImage?
+    private let photoAssociationStore: ScopedPHAssetIdentifierStore
+    private let requestPhotoAddAccess: @Sendable () async -> Bool
+    private let saveTrimToPhotos: @Sendable (URL, String, VideoMetadata) async throws -> String?
+    private let fingerprintVideo: @Sendable (URL) async throws -> VideoContentFingerprint
+    private var activePendingRecord: PendingFormRecord?
+    private var activeFormGeneration = UUID() {
+        didSet {
+            if activeFormGeneration != oldValue { cancelStalePendingFormRecovery() }
+        }
+    }
+    private var submittingFormGeneration: UUID?
+    private var pendingRecoveryTask: Task<Void, Never>?
+    private var pendingRecoveryID: UUID?
+    private var pendingRecoveryKey: RecoveryKey?
+    private var retryPendingFormRecovery = false
+    private var isLocalFormPresentationBlocked = false
+    private let formPresentation: FormPresentationState
+    private var isFormPresentationBlocked: Bool {
+        isLocalFormPresentationBlocked || !formPresentation.canPresentChatForm
+    }
+    private var submittedPresentedForm = false
+    private var submittedRecoveryCleanupFailed = false
+    private var hasAnnouncedLegacyForm = false
+    private var skippedFormAssetIds: Set<String> = []
+    var isSubmittingForm: Bool { submittingFormGeneration == activeFormGeneration }
+    private(set) var formErrorRevision = 0
 
     private enum WorkflowStage: Int {
         case unknown = 0
@@ -90,30 +254,102 @@ final class ChatViewModel {
     }
 
     private var workflowStages: [String: WorkflowStage] = [:]
+    private var workflowRevisions: [String: Int] = [:]
     private var hasBlockingConnectivityIssue = false
     private var blockingConnectivityAssetId: String?
     private let reconnectWarningThreshold = 3
+
+    private struct RecoveryKey: Equatable {
+        let formGeneration: UUID
+        let presentationGeneration: UUID
+        let assetId: String?
+    }
+
+    private var currentRecoveryKey: RecoveryKey {
+        RecoveryKey(
+            formGeneration: activeFormGeneration,
+            presentationGeneration: formPresentation.generation,
+            assetId: currentAssetId)
+    }
 
     // MARK: - Dependencies
 
     let auth: AuthService
     let ws: WebSocketService
-    let uploader = VideoUploadService()
-    let transcriber = TranscriptionService()
-
-    init(auth: AuthService, ws: WebSocketService) {
+    init(
+        auth: AuthService,
+        ws: WebSocketService,
+        formPresentation: FormPresentationState = FormPresentationState(),
+        pendingFormStore: PendingFormStore = .shared,
+        httpTransport: @escaping @Sendable (URLRequest) async throws -> (Data, URLResponse) = {
+            try await RedirectSafeTransport.data(for: $0)
+        },
+        thumbnailGenerator: @escaping @Sendable (URL) async -> UIImage? = {
+            await StagedVideo.generateThumbnail(from: $0)
+        },
+        photoAssociationStore: ScopedPHAssetIdentifierStore = .shared,
+        requestPhotoAddAccess: @escaping @Sendable () async -> Bool = {
+            await OriginalVideoLoader.requestAddAccessIfNeeded()
+        },
+        saveTrimToPhotos: @escaping @Sendable (URL, String, VideoMetadata) async throws -> String? = {
+            fileURL, fileName, metadata in
+            try await OriginalVideoLoader.saveVideoToPhotos(
+                fileURL: fileURL,
+                fileName: fileName,
+                creationDate: metadata.capturedAt.flatMap { DVUDateFormatting.parseISO($0) },
+                latitude: metadata.gpsLat,
+                longitude: metadata.gpsLon,
+                altitude: metadata.gpsAltitude)
+        },
+        fingerprintVideo: @escaping @Sendable (URL) async throws -> VideoContentFingerprint = {
+            try await VideoContentFingerprint.calculate(for: $0)
+        }
+    ) {
         self.auth = auth
         self.ws = ws
+        self.formPresentation = formPresentation
+        self.pendingFormStore = pendingFormStore
+        self.pendingFormRecovery = PendingFormRecovery(store: pendingFormStore, fetch: httpTransport)
+        self.pendingFormSubmission = PendingFormSubmission(store: pendingFormStore, transport: httpTransport)
+        self.httpTransport = httpTransport
+        self.thumbnailGenerator = thumbnailGenerator
+        self.photoAssociationStore = photoAssociationStore
+        self.requestPhotoAddAccess = requestPhotoAddAccess
+        self.saveTrimToPhotos = saveTrimToPhotos
+        self.fingerprintVideo = fingerprintVideo
+        let serverURL = ServerConfig.baseURL
+        self.sessionServerURL = serverURL
+        self.sessionScope = auth.currentUser.flatMap {
+            PendingFormScope(userId: $0.id, serverURL: serverURL)
+        }
+        self.sessionToken = auth.token
+        self.sessionGeneration = auth.sessionGeneration
         setupWebSocketHandlers()
         setupConnectionHandlers()
-        checkPendingForm()  // Check for form that was pending when app was killed
+    }
+
+    private var sessionIsCurrent: Bool {
+        guard let sessionScope, let sessionToken,
+              let currentUser = auth.currentUser,
+              auth.sessionGeneration == sessionGeneration,
+              auth.token == sessionToken,
+              ServerConfig.baseURL == sessionServerURL,
+              let currentScope = PendingFormScope(userId: currentUser.id, serverURL: ServerConfig.baseURL)
+        else { return false }
+        return currentScope == sessionScope
     }
 
     // MARK: - WebSocket Handlers
 
     private func setupWebSocketHandlers() {
         ws.onMessage = { [weak self] message in
-            guard let self else { return }
+            guard let self, self.sessionIsCurrent else { return }
+            if let assetId = message.assetId, !assetId.isEmpty {
+                guard self.pendingAssetCreation == nil,
+                      assetId == self.currentAssetId
+                        || (self.currentAssetId == nil && assetId == self.archive.assetId)
+                else { return }
+            }
 
             self.clearBlockingConnectivityIssueIfNeeded(assetId: message.assetId)
 
@@ -143,8 +379,10 @@ final class ChatViewModel {
         }
 
         ws.onUploadComplete = { [weak self] data in
-            guard let self else { return }
+            guard let self, self.sessionIsCurrent else { return }
             let assetId = data["assetId"] as? String ?? ""
+            guard !assetId.isEmpty, assetId == self.currentAssetId,
+                  self.pendingAssetCreation == nil else { return }
             Log.debug("✅ [Upload] Upload complete for asset: \(assetId)", logger: Log.upload)
 
             self.clearBlockingConnectivityIssueIfNeeded(assetId: assetId)
@@ -160,45 +398,76 @@ final class ChatViewModel {
         }
 
         ws.onFormRequest = { [weak self] data in
-            guard let self else { return }
-            let assetId = data["assetId"] as? String
+            guard let self, self.sessionIsCurrent, let scope = self.sessionScope else { return }
+            guard let assetId = data["assetId"] as? String, !assetId.isEmpty else {
+                Log.error("⚠️ [Form] Form request is missing its asset ID", logger: Log.upload)
+                return
+            }
+            if self.showFormSheet && self.formAssetId == assetId { return }
+
+            let anotherFlowIsActive =
+                self.isFormPresentationBlocked || self.showMetadataSheet || self.showSlackShareSheet
+                || self.isSelectingVideo || self.isProcessingVideo || self.stagedVideo != nil
+                || self.pendingAssetCreation != nil
+                || (self.showFormSheet && self.formAssetId != assetId)
+                || (self.currentAssetId != nil && self.currentAssetId != assetId)
+            let pending = PendingForm(
+                assetId: assetId,
+                originalFileName: data["originalFileName"] as? String,
+                capturedAt: data["capturedAt"] as? String,
+                clipCount: data["clipCount"] as? Int,
+                duration: data["duration"] as? Int,
+                thumbnailJPEG: self.currentAssetId == assetId
+                    ? self.form.thumbnail?.jpegData(compressionQuality: 0.5) : nil,
+                savedAt: Date()
+            )
+            let record: PendingFormRecord?
+            do {
+                record = try self.pendingFormStore.save(pending, for: scope)
+            } catch {
+                record = nil
+                Log.error("⚠️ [Form] Failed to save pending form: \(Log.describe(error))", logger: Log.upload)
+                self.appendErrorBubble(
+                    "This form couldn't be saved for recovery. Add its details now or from Archive.",
+                    assetId: assetId, code: "IOS_PENDING_FORM_SAVE_FAILED")
+            }
+            if anotherFlowIsActive || record?.autoRecover == false
+                || self.skippedFormAssetIds.contains(assetId)
+            {
+                self.appendErrorBubble(
+                    "An upload needs details. Open Archive to add them.",
+                    assetId: assetId, code: "IOS_PENDING_FORM_IN_ARCHIVE")
+                return
+            }
+
+            if self.currentAssetId != assetId {
+                self.form = FormContext()
+            }
             self.currentAssetId = assetId
+            self.formAssetId = assetId
+            self.activeFormGeneration = UUID()
+            self.activePendingRecord = record
+            self.submittedPresentedForm = false
 
             self.clearBlockingConnectivityIssueIfNeeded(assetId: assetId)
-
-            if let assetId {
-                _ = self.promoteStage(for: assetId, to: .formRequested)
-            }
+            _ = self.promoteStage(for: assetId, to: .formRequested)
 
             // Store form context for ContextFormView header
             self.form.originalFileName = data["originalFileName"] as? String
             self.form.clipCount = data["clipCount"] as? Int
             self.form.duration = data["duration"] as? Int
-            if let dateVal = data["capturedAt"] as? String {
-                self.form.capturedAt = dateVal
-            }
+            self.form.capturedAt = data["capturedAt"] as? String
+            self.form.submitError = nil
 
             self.formFields = self.buildFormFields()
             self.showFormSheet = true
-
-            // Persist form state so it survives app kill
-            if let assetId {
-                PendingForm.save(
-                    PendingForm(
-                        assetId: assetId,
-                        originalFileName: self.form.originalFileName,
-                        capturedAt: self.form.capturedAt,
-                        clipCount: self.form.clipCount,
-                        duration: self.form.duration,
-                        thumbnailJPEG: self.form.thumbnail?.jpegData(compressionQuality: 0.5),
-                        savedAt: Date()
-                    ))
-            }
         }
 
         ws.onFormConfirmed = { [weak self] data in
-            guard let self else { return }
+            guard let self, self.sessionIsCurrent else { return }
             let assetId = data["assetId"] as? String
+            guard let assetId, assetId == self.currentAssetId,
+                  self.pendingAssetCreation == nil else { return }
 
             self.clearBlockingConnectivityIssueIfNeeded(assetId: assetId)
 
@@ -244,8 +513,10 @@ final class ChatViewModel {
         }
 
         ws.onMuxReady = { [weak self] data in
-            guard let self else { return }
+            guard let self, self.sessionIsCurrent else { return }
             let assetId = data["assetId"] as? String
+            guard let assetId, assetId == self.currentAssetId,
+                  self.pendingAssetCreation == nil else { return }
             let mediasourceId = data["mediasourceId"] as? String
             let mediasourceUrl = data["mediasourceUrl"] as? String
             let originalFileName = data["originalFileName"] as? String
@@ -272,7 +543,7 @@ final class ChatViewModel {
                 )
             }
 
-            Log.debug("✅ [Mux Ready] Asset \(assetId ?? "?") confirmed on Mediasource", logger: Log.upload)
+            Log.debug("✅ [Mux Ready] Asset \(assetId) confirmed on Mediasource", logger: Log.upload)
 
             let previousStage = self.promoteStage(for: assetId, to: .ready)
             if previousStage != .failed,
@@ -450,6 +721,12 @@ final class ChatViewModel {
     private func promoteStage(for assetId: String?, to stage: WorkflowStage) -> WorkflowStage {
         guard let assetId, !assetId.isEmpty else { return .unknown }
 
+        let revision = formPresentation.uploadRecoveryRevision(for: assetId)
+        if let previousRevision = workflowRevisions[assetId], previousRevision != revision {
+            workflowStages[assetId] = nil
+            messagePolicy.resetAssetScope(assetId: assetId)
+        }
+        workflowRevisions[assetId] = revision
         let previous = workflowStages[assetId] ?? .unknown
 
         if stage == .failed {
@@ -469,6 +746,13 @@ final class ChatViewModel {
             workflowStages[assetId] = stage
         }
         return previous
+    }
+
+    func uploadHasFailed(assetId: String?) -> Bool {
+        guard let assetId else { return false }
+        return formPresentation.failedChatUploadAssetIDs.contains(assetId)
+            || (workflowStages[assetId] == .failed
+                && workflowRevisions[assetId] == formPresentation.uploadRecoveryRevision(for: assetId))
     }
 
     private func inferredStage(from asset: Asset) -> WorkflowStage {
@@ -553,6 +837,10 @@ final class ChatViewModel {
             try? await Task.sleep(for: .seconds(1))
 
             guard
+                self.sessionIsCurrent, !Task.isCancelled,
+                self.pendingAssetCreation == nil,
+                self.archive.assetId == assetId,
+                self.currentAssetId == nil || self.currentAssetId == assetId,
                 !self.hasWorkflowMessage(
                     code: "IOS_MUX_READY_FOLLOWUP",
                     assetId: assetId,
@@ -679,10 +967,10 @@ final class ChatViewModel {
             previousStage != .failed
         {
             appendErrorBubble(
-                "Upload failed: Processing error",
+                "Upload failed: Processing failed. Open Archive to retry.",
                 assetId: asset.id,
                 code: "IOS_UPLOAD_FAILED",
-                params: ["reason": "Processing error"]
+                params: ["reason": "Processing failed. Open Archive to retry."]
             )
             return
         }
@@ -755,23 +1043,43 @@ final class ChatViewModel {
     }
 
     private func reconcileActiveWorkflowStateAfterReconnect() async {
-        guard auth.isAuthenticated else { return }
+        guard sessionIsCurrent else { return }
         guard let assetId = currentAssetId ?? archive.assetId else { return }
 
+        let recoveryRevision = formPresentation.uploadRecoveryRevision(for: assetId)
         let request = auth.authenticatedRequest(for: ServerConfig.assetURL(assetId))
         do {
-            let (data, response) = try await URLSession.shared.data(for: request)
-            let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
-            guard statusCode == 200 else { return }
+            let (data, response) = try await httpTransport(request)
+            guard sessionIsCurrent,
+                  pendingAssetCreation == nil,
+                  formPresentation.uploadRecoveryRevision(for: assetId) == recoveryRevision,
+                  currentAssetId == assetId || (currentAssetId == nil && archive.assetId == assetId)
+            else { return }
+            guard let http = response as? HTTPURLResponse else {
+                Log.error("⚠️ [Reconnect] Invalid workflow-state response", logger: Log.network)
+                return
+            }
+            guard http.statusCode == 200 else {
+                Log.error("⚠️ [Reconnect] Workflow-state lookup failed: HTTP \(http.statusCode)", logger: Log.network)
+                return
+            }
 
             let detail = try JSONDecoder().decode(AssetDetailResponse.self, from: data)
             let asset = detail.asset
+            guard asset.id == assetId else {
+                Log.error("⚠️ [Reconnect] Workflow-state asset did not match request", logger: Log.network)
+                return
+            }
             lastAsset = asset
             lastClip = asset.clips?.first
 
             clearBlockingConnectivityIssueIfNeeded(assetId: asset.id)
             reconcileWorkflowState(from: asset, source: .workflow)
         } catch {
+            guard sessionIsCurrent, pendingAssetCreation == nil,
+                  formPresentation.uploadRecoveryRevision(for: assetId) == recoveryRevision,
+                  currentAssetId == assetId || (currentAssetId == nil && archive.assetId == assetId)
+            else { return }
             if isConnectivityIssue(error) {
                 noteBlockingConnectivityIssue(operation: "syncing workflow state", assetId: assetId)
             }
@@ -805,12 +1113,19 @@ final class ChatViewModel {
     }
 
     /// Show an error message to the user as a chat bubble.
+    @discardableResult
     private func appendErrorBubble(
         _ text: String,
         assetId: String? = nil,
         code: String? = nil,
         params: [String: String]? = nil
-    ) {
+    ) -> ChatMessage {
+        var noticeParams = params ?? [:]
+        if (code == "IOS_UPLOAD_FAILED" || code == "IOS_PREVIOUS_UPLOAD_FAILED"),
+           let assetId {
+            noticeParams["uploadRevision"] = String(
+                formPresentation.uploadRecoveryRevision(for: assetId))
+        }
         let errorMsg = ChatMessage(
             id: UUID().uuidString,
             userId: nil,
@@ -820,13 +1135,14 @@ final class ChatViewModel {
             content: MessageContent(
                 text: text,
                 code: code,
-                params: params,
+                params: noticeParams.isEmpty ? nil : noticeParams,
                 fallbackText: code == nil ? nil : text,
                 schemaVersion: code == nil ? nil : MessageCatalog.schemaVersion
             ),
             createdAt: DVUDateFormatting.isoString(from: Date())
         )
         appendMessage(errorMsg, source: .error)
+        return errorMsg
     }
 
     /// Report an error to the server's error_logs table (best-effort, fire-and-forget).
@@ -838,7 +1154,7 @@ final class ChatViewModel {
         assetId: String? = nil,
         details: [String: String]? = nil
     ) async {
-        guard auth.isAuthenticated else { return }
+        guard sessionIsCurrent else { return }
         var request = auth.authenticatedRequest(for: ServerConfig.errorsURL, method: "POST")
         var body: [String: Any] = [
             "source": "ios",
@@ -848,10 +1164,20 @@ final class ChatViewModel {
         ]
         if let assetId { body["assetId"] = assetId }
         if let details { body["details"] = details }
-        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
-
-        // Fire-and-forget — don't let logging failures cascade
-        _ = try? await URLSession.shared.data(for: request)
+        do {
+            request.httpBody = try JSONSerialization.data(withJSONObject: body)
+            let (_, response) = try await httpTransport(request)
+            guard let http = response as? HTTPURLResponse else {
+                Log.error("⚠️ [Report] Invalid error-report response", logger: Log.network)
+                return
+            }
+            guard (200..<300).contains(http.statusCode) else {
+                Log.error("⚠️ [Report] Error-report request failed: HTTP \(http.statusCode)", logger: Log.network)
+                return
+            }
+        } catch {
+            Log.error("⚠️ [Report] Could not send error report: \(Log.describe(error))", logger: Log.network)
+        }
     }
 
     // MARK: - Send Text Message
@@ -928,7 +1254,12 @@ final class ChatViewModel {
     }
     // MARK: - Create Asset (Video Upload Flow)
 
-    func createAsset(fileName: String, fileURL: URL) async -> Asset? {
+    private func createAsset(
+        staged: StagedVideo, transcribe: Bool, uploadID: UUID
+    ) async -> Asset? {
+        guard sessionIsCurrent, !Task.isCancelled else { return nil }
+        let fileName = staged.fileName
+        let fileURL = staged.tempFileURL
         var request = auth.authenticatedRequest(for: ServerConfig.assetsURL, method: "POST")
         let body = CreateAssetRequest(fileName: fileName)
         request.httpBody = try? JSONEncoder().encode(body)
@@ -941,7 +1272,9 @@ final class ChatViewModel {
 
         do {
             let asset = try await withRetry(attempts: 3) { attempt in
-                let (data, httpResponse) = try await URLSession.shared.data(for: request)
+                guard self.sessionIsCurrent, !Task.isCancelled else { throw CancellationError() }
+                let (data, httpResponse) = try await self.httpTransport(request)
+                guard self.sessionIsCurrent, !Task.isCancelled else { throw CancellationError() }
                 let statusCode = (httpResponse as? HTTPURLResponse)?.statusCode ?? 0
 
                 guard statusCode >= 200, statusCode < 300 else {
@@ -955,31 +1288,42 @@ final class ChatViewModel {
                 return response.asset
             }
 
-            currentAssetId = asset.id
-            _ = promoteStage(for: asset.id, to: .uploading)
-            clearBlockingConnectivityIssueIfNeeded(assetId: asset.id)
+            guard sessionIsCurrent, !Task.isCancelled else { return nil }
+            formPresentation.markUploadStarted(stageID: staged.id)
+            let stageID = staged.id.uuidString
+            messages.removeAll {
+                ($0.content.code == "IOS_UPLOAD_START_FAILED"
+                    || $0.content.code == "IOS_PREVIOUS_UPLOAD_START_FAILED")
+                    && $0.content.params?["stageId"] == stageID
+            }
+            uploadFailuresToPreserve.removeAll {
+                $0.content.code == "IOS_PREVIOUS_UPLOAD_START_FAILED"
+                    && $0.content.params?["stageId"] == stageID
+            }
+            if activeUploadID == uploadID {
+                currentAssetId = asset.id
+                _ = promoteStage(for: asset.id, to: .uploading)
+                clearBlockingConnectivityIssueIfNeeded(assetId: asset.id)
 
-            // Add outgoing video message locally — also cache thumbnail for VideoBubble
-            let msgId = UUID().uuidString
-            let videoMessage = ChatMessage(
-                id: msgId,
-                userId: auth.currentUser?.id,
-                assetId: asset.id,
-                direction: .outgoing,
-                messageType: .video,
-                content: MessageContent(text: "📹 \(fileName)", fileName: fileName),
-                createdAt: DVUDateFormatting.isoString(from: Date())
-            )
-            appendMessage(videoMessage, source: .outgoing)
-
-            // Cache metadata so VideoBubble can render the card
-            sentUploads[msgId] = SentUploadInfo(
-                thumbnail: form.thumbnail,
-                fileName: fileName,
-                createdDate: lastStagedCreatedDate ?? DVUDateFormatting.longDate(from: Date()),
-                hasLocation: lastStagedHasLocation,
-                transcribeEnabled: transcribeOnUpload
-            )
+                let msgId = UUID().uuidString
+                let videoMessage = ChatMessage(
+                    id: msgId,
+                    userId: auth.currentUser?.id,
+                    assetId: asset.id,
+                    direction: .outgoing,
+                    messageType: .video,
+                    content: MessageContent(text: "📹 \(fileName)", fileName: fileName),
+                    createdAt: DVUDateFormatting.isoString(from: Date())
+                )
+                appendMessage(videoMessage, source: .outgoing)
+                sentUploads[msgId] = SentUploadInfo(
+                    thumbnail: staged.thumbnail,
+                    fileName: fileName,
+                    createdDate: staged.createdDate ?? DVUDateFormatting.longDate(from: Date()),
+                    hasLocation: staged.metadata.gpsLat != nil,
+                    transcribeEnabled: transcribe
+                )
+            }
 
             // Notify WebSocket with real file size
             ws.sendVideoUpload(
@@ -990,14 +1334,16 @@ final class ChatViewModel {
 
             return asset
         } catch {
-            let errorDesc = error.localizedDescription
-            if isConnectivityIssue(error) {
-                noteBlockingConnectivityIssue(operation: "starting upload", assetId: nil)
-            } else {
-                appendErrorBubble(
-                    "Could not start upload. Please try again.",
-                    code: "IOS_UPLOAD_START_FAILED"
-                )
+            guard sessionIsCurrent, !Task.isCancelled, !(error is CancellationError) else {
+                return nil
+            }
+            let errorDesc = Log.describe(error)
+            if activeUploadID != uploadID || stagedVideo?.id != staged.id
+                || isSelectingVideo || isProcessingVideo {
+                appendPreviousUploadFailure(
+                    "An earlier upload of \(fileName) couldn't start. Retry its preview if available, or select it again.",
+                    code: "IOS_PREVIOUS_UPLOAD_START_FAILED", fileName: fileName,
+                    uploadID: uploadID, stageID: staged.id)
             }
             Task {
                 await reportError(
@@ -1013,170 +1359,468 @@ final class ChatViewModel {
 
     // MARK: - Upload Video
 
-    /// Returns true when the file finished uploading.
-    @discardableResult
-    func uploadVideo(assetId: String, fileURL: URL, metadata: VideoMetadata? = nil) async -> Bool {
-        guard let token = auth.token else { return false }
-        isUploading = true
-        uploadProgress = 0
-        defer { isUploading = false }
+    /// Returns the uploaded clip when the file finished uploading.
+    private func uploadVideo(
+        assetId: String, fileURL: URL, fileName: String, metadata: VideoMetadata, uploadID: UUID
+    ) async -> MuxUploadResponse? {
+        guard sessionIsCurrent, let token = sessionToken, !Task.isCancelled else { return nil }
+        let uploader = VideoUploadService(createTransport: httpTransport)
+        if activeUploadID == uploadID {
+            isUploading = true
+            uploadProgress = 0
+        }
+        defer {
+            if activeUploadID == uploadID { isUploading = false }
+        }
 
         // Poll uploader progress on main actor
         let progressTask = Task { @MainActor in
-            while self.uploader.isUploading {
-                self.uploadProgress = self.uploader.uploadProgress
+            while !Task.isCancelled, self.sessionIsCurrent, self.activeUploadID == uploadID {
+                self.uploadProgress = uploader.uploadProgress
                 try? await Task.sleep(for: .milliseconds(100))
             }
-            self.uploadProgress = self.uploader.uploadProgress
         }
+        defer { progressTask.cancel() }
 
         do {
             // Single path: Mux direct upload via background URLSession.
             // iOS handles network interruptions automatically (waitsForConnectivity).
             let muxResult = try await uploader.uploadViaMux(
-                assetId: assetId, fileURL: fileURL, token: token, metadata: metadata)
+                assetId: assetId, fileURL: fileURL, token: token,
+                serverURL: sessionServerURL, metadata: metadata,
+                isCurrent: { self.sessionIsCurrent })
+            guard sessionIsCurrent, !Task.isCancelled else { return nil }
             Log.debug("✅ [Upload] Mux direct upload completed for asset: \(assetId), clipId: \(muxResult.clipId)", logger: Log.upload)
-            progressTask.cancel()
-            return true
+            if activeUploadID == uploadID { uploadProgress = 1 }
+            return muxResult
         } catch {
+            guard sessionIsCurrent, !Task.isCancelled, !(error is CancellationError) else {
+                return nil
+            }
             Log.error("❌ [Upload] Failed for asset \(assetId): \(Log.describe(error))", logger: Log.upload)
-            _ = promoteStage(for: assetId, to: .failed)
-            if isConnectivityIssue(error) {
-                noteBlockingConnectivityIssue(operation: "uploading video", assetId: assetId)
-            } else {
+            if activeUploadID == uploadID, currentAssetId == assetId {
+                _ = promoteStage(for: assetId, to: .failed)
+            }
+            if activeUploadID == uploadID, currentAssetId == assetId,
+               !isSelectingVideo, !isProcessingVideo, stagedVideo == nil {
+                let reason = isConnectivityIssue(error)
+                    ? "Connection interrupted. Open Archive to retry."
+                    : "Open Archive to retry."
                 appendErrorBubble(
-                    "Upload failed: \(error.localizedDescription)",
+                    "Upload failed: \(reason)",
                     assetId: assetId,
                     code: "IOS_UPLOAD_FAILED",
-                    params: ["reason": error.localizedDescription]
+                    params: ["reason": reason]
                 )
+            } else {
+                appendPreviousUploadFailure(
+                    "An earlier upload of \(fileName) failed. Open Archive to retry.",
+                    assetId: assetId, code: "IOS_PREVIOUS_UPLOAD_FAILED",
+                    fileName: fileName, uploadID: uploadID)
             }
             Task {
                 await reportError(
                     category: "upload",
-                    message: "File upload failed: \(error.localizedDescription)",
+                    message: "File upload failed: \(Log.describe(error))",
                     severity: "ERROR",
                     assetId: assetId
                 )
             }
         }
 
-        progressTask.cancel()
-        return false
+        return nil
     }
 
     // MARK: - Send Transcript
 
     /// Send transcript text + timestamped segments to the server (non-fatal).
-    func sendTranscript(assetId: String, result: TranscriptionResult) async {
-        var request = auth.authenticatedRequest(
-            for: ServerConfig.transcriptURL(assetId), method: "PATCH")
-
-        // Encode segments as JSON array
-        let segmentsData = try? JSONEncoder().encode(result.segments)
-        let segmentsJSON = segmentsData.flatMap { try? JSONSerialization.jsonObject(with: $0) }
-
-        let body: [String: Any] = [
-            "transcript": result.text,
-            "segments": segmentsJSON ?? [],
-        ]
-        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+    func sendTranscript(assetId: String, clipId: String, result: TranscriptionResult) async -> Bool {
+        guard sessionIsCurrent, !Task.isCancelled else {
+            Log.error("⚠️ [Transcribe] Session changed before transcript save", logger: Log.transcription)
+            return false
+        }
+        let request = auth.authenticatedRequest(
+            for: ServerConfig.transcriptURL(assetId, clipId: clipId), method: "PATCH")
 
         do {
-            let (_, response) = try await URLSession.shared.data(for: request)
-            if let http = response as? HTTPURLResponse, http.statusCode == 200 {
-                Log.debug("✅ [Transcribe] Transcript saved for asset \(assetId) (\(result.segments.count) segments)", logger: Log.transcription)
-            }
+            try await TranscriptDelivery.send(
+                result, clipId: clipId, request: request, transport: httpTransport)
+            guard sessionIsCurrent, !Task.isCancelled else { return false }
+            Log.debug("✅ [Transcribe] Transcript saved for asset \(assetId) (\(result.segments.count) segments)", logger: Log.transcription)
+            return true
+        } catch is CancellationError {
+            return false
+        } catch TranscriptDeliveryError.httpStatus(let status) {
+            Log.error("⚠️ [Transcribe] Transcript save failed: HTTP \(status)", logger: Log.transcription)
         } catch {
             Log.error("⚠️ [Transcribe] Failed to save transcript: \(Log.describe(error))", logger: Log.transcription)
-            // Non-fatal — don't show error bubble for transcript failure
         }
+        return false
     }
 
     // MARK: - Video Staging (iOS 26.3 Flow)
 
-    /// Stage a video for preview in chat — called after user confirms in the library picker.
+    func beginVideoSelection() {
+        isSelectingVideo = true
+        deferPendingFormRecovery()
+    }
+
+    func endVideoSelection() {
+        isSelectingVideo = false
+    }
+
+    func deferPendingFormRecovery() {
+        activeFormGeneration = UUID()
+    }
+
+    func cancelStalePendingFormRecovery() {
+        guard let pendingRecoveryKey, pendingRecoveryKey != currentRecoveryKey else { return }
+        cancelPendingFormRecovery()
+    }
+
+    func cancelPendingFormRecovery() {
+        pendingRecoveryTask?.cancel()
+        pendingRecoveryTask = nil
+        pendingRecoveryID = nil
+        pendingRecoveryKey = nil
+        retryPendingFormRecovery = false
+    }
+
+    @discardableResult
+    func invalidateIfSessionChanged() -> Bool {
+        guard !sessionIsCurrent else { return false }
+        cancelPendingFormRecovery()
+        stagingTask?.cancel()
+        stagingTask = nil
+        stagingGeneration = nil
+        stagingFileURL = nil
+        isProcessingVideo = false
+        for preparation in preparationTasks.values { preparation.task.cancel() }
+        preparationAttempts.removeAll()
+        if let stagedVideo {
+            if !leasedStagedFiles.contains(stagedVideo.id) {
+                cleanupTempFile(stagedVideo.tempFileURL)
+            }
+            self.stagedVideo = nil
+        }
+        stagedUploadPreparation = .ready
+        for task in uploadTasks.values { task.cancel() }
+        return true
+    }
+
+    func setFormPresentationBlocked(_ blocked: Bool) {
+        if blocked && !isLocalFormPresentationBlocked { deferPendingFormRecovery() }
+        isLocalFormPresentationBlocked = blocked
+    }
+
+    /// Reserve the selection before thumbnail generation can yield to another action.
+    @discardableResult
     func stageVideo(
         fileURL: URL, fileName: String, metadata: VideoMetadata, phAssetIdentifier: String? = nil,
         isTrimmed: Bool = false
-    ) async {
-        // If a conversation is archived, start fresh
-        if isArchived {
-            startNewConversation()
+    ) -> Task<Void, Never> {
+        guard sessionIsCurrent else {
+            cleanupTempFile(fileURL)
+            return Task {}
         }
-
+        stagingTask?.cancel()
+        if let stagedVideo {
+            preparationAttempts.removeValue(forKey: stagedVideo.id)
+            if stagedUploadPreparation != .creatingAsset {
+                preparationTasks[stagedVideo.id]?.task.cancel()
+            }
+            if !leasedStagedFiles.contains(stagedVideo.id) {
+                cleanupTempFile(stagedVideo.tempFileURL)
+            }
+            self.stagedVideo = nil
+        }
+        stagedUploadPreparation = .ready
+        activeFormGeneration = UUID()
+        let generation = UUID()
+        stagingGeneration = generation
+        stagingFileURL = fileURL
         isProcessingVideo = true
-        defer { isProcessingVideo = false }
-
-        // Store PHAsset identifier for re-upload recovery. A trimmed copy gets its own
-        // identifier once it's saved to Photos; the untrimmed source must never be linked.
-        self.pendingPHAssetIdentifier = isTrimmed ? nil : phAssetIdentifier
-
-        // Generate thumbnail from video
-        let thumbnail = await StagedVideo.generateThumbnail(from: fileURL)
-
-        // Format creation date for display
-        let createdDate: String? = {
-            guard let capturedAt = metadata.capturedAt else { return nil }
-            return DVUDateFormatting.longDate(capturedAt)
-        }()
-
-        stagedVideo = StagedVideo(
-            tempFileURL: fileURL,
-            fileName: fileName,
-            createdDate: createdDate,
-            thumbnail: thumbnail,
-            metadata: metadata,
-            isTrimmed: isTrimmed
-        )
+        let task = Task {
+            let thumbnail = await thumbnailGenerator(fileURL)
+            guard sessionIsCurrent, !Task.isCancelled, stagingGeneration == generation else {
+                if stagingGeneration == generation {
+                    stagingGeneration = nil
+                    stagingFileURL = nil
+                    stagingTask = nil
+                    isProcessingVideo = false
+                }
+                if stagingFileURL != fileURL && stagedVideo?.tempFileURL != fileURL {
+                    cleanupTempFile(fileURL)
+                }
+                return
+            }
+            let createdDate = metadata.capturedAt.map { DVUDateFormatting.longDate($0) }
+            stagedVideo = StagedVideo(
+                tempFileURL: fileURL,
+                fileName: fileName,
+                createdDate: createdDate,
+                thumbnail: thumbnail,
+                metadata: metadata,
+                phAssetIdentifier: isTrimmed ? nil : phAssetIdentifier,
+                isTrimmed: isTrimmed
+            )
+            stagingGeneration = nil
+            stagingFileURL = nil
+            stagingTask = nil
+            isProcessingVideo = false
+        }
+        stagingTask = task
+        return task
     }
 
-    /// User confirmed upload — proceed with create asset + upload.
-    func confirmStagedUpload() async {
-        guard let staged = stagedVideo else { return }
+    /// Save a trim before creating its server asset, retaining the stage on failure.
+    func confirmStagedUpload(
+        id: UUID, transcribe: Bool, acceptManualPhotoSelection: Bool = false
+    ) async {
+        guard sessionIsCurrent, !Task.isCancelled, !isSelectingVideo, !isProcessingVideo,
+              stagedVideo?.id == id,
+              preparationAttempts[id] == nil else { return }
 
-        // Auto-archive previous upload so state doesn't leak between uploads
-        if isArchived || currentAssetId != nil {
-            startNewConversation()
+        let attempt = UUID()
+        preparationAttempts[id] = attempt
+        let task = Task {
+            await prepareStagedUpload(
+                id: id, transcribe: transcribe,
+                acceptManualPhotoSelection: acceptManualPhotoSelection, attempt: attempt)
+        }
+        preparationTasks[id] = (attempt, task)
+        await withTaskCancellationHandler {
+            await task.value
+        } onCancel: {
+            task.cancel()
+        }
+        if preparationTasks[id]?.attempt == attempt { preparationTasks[id] = nil }
+    }
+
+    private func prepareStagedUpload(
+        id: UUID, transcribe: Bool, acceptManualPhotoSelection: Bool, attempt: UUID
+    ) async {
+        guard sessionIsCurrent, !Task.isCancelled, preparationAttempts[id] == attempt,
+              var staged = stagedVideo, staged.id == id else {
+            if preparationAttempts[id] == attempt { preparationAttempts[id] = nil }
+            return
+        }
+        let acceptedKnownMissingIdentifier = acceptManualPhotoSelection
+            && stagedUploadPreparation == .manualPhotoSelectionRequired
+            && staged.isSavedToPhotos && staged.savedPhotoIdentifier == nil
+        let acceptedUnverifiedFingerprint = acceptManualPhotoSelection
+            && stagedUploadPreparation == .manualFingerprintSelectionRequired
+            && staged.fingerprint == nil
+        leasedStagedFiles.insert(id)
+        let fileURL = staged.tempFileURL
+        defer {
+            if preparationAttempts[id] == attempt {
+                preparationAttempts[id] = nil
+                if let current = stagedVideo, current.id == id, stagedUploadPreparation.isBusy {
+                    stagedUploadPreparation = .failed(
+                        current.isTrimmed && current.isSavedToPhotos
+                            ? "Upload preparation was interrupted. Retry or remove the preview; the trim remains in Photos."
+                            : "Upload preparation was interrupted. Retry or remove the preview.")
+                }
+            }
+            leasedStagedFiles.remove(id)
+            if stagedVideo?.id != id { cleanupTempFile(fileURL) }
         }
 
-        let fileURL = staged.tempFileURL
+        func ownsStage() -> Bool {
+            sessionIsCurrent && stagedVideo?.id == id && preparationAttempts[id] == attempt
+        }
+
+        func isCurrent() -> Bool {
+            ownsStage() && !Task.isCancelled
+                && !isSelectingVideo && !isProcessingVideo
+        }
+
+        if staged.isTrimmed && !staged.isSavedToPhotos {
+            stagedUploadPreparation = .requestingPhotoAccess
+            let authorized = await requestPhotoAddAccess()
+            guard isCurrent() else { return }
+            guard authorized else {
+                stagedUploadPreparation = .photoAccessDenied
+                return
+            }
+
+            stagedUploadPreparation = .savingPhoto
+            do {
+                let save = saveTrimToPhotos
+                let fileName = staged.fileName
+                let metadata = staged.metadata
+                let transaction = Task.detached {
+                    try await save(fileURL, fileName, metadata)
+                }
+                let identifier = try await transaction.value
+                guard ownsStage() else { return }
+                staged.isSavedToPhotos = true
+                staged.savedPhotoIdentifier = identifier.flatMap { $0.isEmpty ? nil : $0 }
+                stagedVideo = staged
+            } catch {
+                guard ownsStage() else { return }
+                Log.error("❌ [Photos] Failed to save trimmed copy: \(Log.describe(error))", logger: Log.media)
+                stagedUploadPreparation = Self.photoSaveFailure(error)
+                return
+            }
+        }
+        guard isCurrent() else { return }
+
+        if staged.isTrimmed && staged.isSavedToPhotos && staged.savedPhotoIdentifier == nil
+            && !staged.acceptedManualPhotoSelection
+        {
+            guard acceptedKnownMissingIdentifier else {
+                stagedUploadPreparation = .manualPhotoSelectionRequired
+                return
+            }
+            staged.acceptedManualPhotoSelection = true
+            stagedVideo = staged
+        }
+
+        let photoIdentifier = staged.isTrimmed
+            ? staged.savedPhotoIdentifier : staged.phAssetIdentifier
+        if acceptedUnverifiedFingerprint {
+            staged.acceptedManualPhotoSelection = true
+            stagedVideo = staged
+        }
+        if photoIdentifier != nil && staged.fingerprint == nil && !staged.acceptedManualPhotoSelection {
+            stagedUploadPreparation = .verifyingPhoto
+            do {
+                let fingerprint = try await fingerprintVideo(fileURL)
+                guard isCurrent() else { return }
+                guard fingerprint.isValid else { throw PhotoAssociationError.invalidFingerprint }
+                staged.fingerprint = fingerprint
+                stagedVideo = staged
+            } catch {
+                guard isCurrent() else { return }
+                Log.error("❌ [Photos] Could not verify video for Archive: \(Log.describe(error))", logger: Log.media)
+                stagedUploadPreparation = .manualFingerprintSelectionRequired
+                return
+            }
+        }
+        guard isCurrent() else { return }
+
+        stagedUploadPreparation = .creatingAsset
+        if isArchived || currentAssetId != nil {
+            startNewConversation(preservingStagedVideo: true)
+        }
+
         let fileName = staged.fileName
         let metadata = staged.metadata
-        let isTrimmed = staged.isTrimmed
+        let uploadID = UUID()
+        activeUploadID = uploadID
+        pendingAssetCreation = uploadID
 
-        prepareStagedContext(staged)
-
-        uploadTask = Task {
-            defer { cleanupTempFile(fileURL) }
-            guard let asset = await createAsset(fileName: fileName, fileURL: fileURL) else {
+        let task = Task {
+            let created = await createAsset(staged: staged, transcribe: transcribe, uploadID: uploadID)
+            if pendingAssetCreation == uploadID { pendingAssetCreation = nil }
+            guard sessionIsCurrent, !Task.isCancelled else { return }
+            guard let asset = created else {
+                if stagedVideo?.id == id {
+                    stagedUploadPreparation = .failed(
+                        staged.isTrimmed
+                            ? "The upload couldn't be started. Retry or remove the preview; the trim remains in Photos."
+                            : "The upload couldn't be started. Retry or remove the preview.")
+                }
                 return
             }
             Log.debug("✅ [Upload] Asset created: \(asset.mediasourceId ?? asset.id)", logger: Log.upload)
 
-            savePHAssetIdentifier(for: asset.id)
-            let uploaded = await uploadVideo(assetId: asset.id, fileURL: fileURL, metadata: metadata)
-
-            guard !Task.isCancelled else { return }
-
-            if uploaded && isTrimmed {
-                await saveTrimmedCopyToPhotos(
-                    fileURL: fileURL, fileName: fileName, metadata: metadata, assetId: asset.id)
+            guard let uploadScope = sessionScope else {
+                Log.error("❌ [Upload] Missing account scope for an active upload", logger: Log.upload)
+                return
             }
+            formPresentation.beginChatUpload(
+                assetId: asset.id, scope: uploadScope, uploadID: uploadID)
+            if activeUploadID == uploadID {
+                prepareStagedContext(staged)
+            }
+            if let photoIdentifier, let fingerprint = staged.fingerprint {
+                do {
+                    guard let sessionScope else { throw PhotoAssociationError.invalidScope }
+                    try photoAssociationStore.save(
+                        assetId: asset.id,
+                        association: ScopedPhotoAssociation(
+                            photoIdentifier: photoIdentifier, fingerprint: fingerprint,
+                            metadata: metadata),
+                        for: sessionScope)
+                    formPresentation.photoAssociatedAssetIDs.insert(asset.id)
+                } catch {
+                    Log.error("⚠️ [Photos] Could not save Archive association: \(Log.describe(error))", logger: Log.media)
+                    if activeUploadID == uploadID, currentAssetId == asset.id {
+                        appendErrorBubble(
+                            "The photo link couldn't be saved. If you retry this upload, choose the matching video in Archive.",
+                            assetId: asset.id, code: "IOS_PHOTO_ASSOCIATION_SAVE_FAILED")
+                    } else {
+                        appendPreviousUploadFailure(
+                            "The photo link for \(fileName) couldn't be saved. Choose the matching video if you retry.",
+                            assetId: asset.id, code: "IOS_PREVIOUS_PHOTO_ASSOCIATION_SAVE_FAILED",
+                            fileName: fileName, uploadID: uploadID)
+                    }
+                }
+            }
+            let uploaded = await uploadVideo(
+                assetId: asset.id, fileURL: fileURL, fileName: fileName,
+                metadata: metadata, uploadID: uploadID)
+            formPresentation.finishChatUpload(
+                assetId: asset.id, scope: uploadScope, uploadID: uploadID,
+                failed: sessionIsCurrent && uploaded == nil)
 
-            if transcribeOnUpload {
-                await transcribeAndReport(assetId: asset.id, fileURL: fileURL)
-                transcribeOnUpload = false
+            guard sessionIsCurrent, !Task.isCancelled, let uploaded else { return }
+
+            if transcribe {
+                await transcribeAndReport(
+                    assetId: asset.id, clipId: uploaded.clipId, fileURL: fileURL,
+                    fileName: fileName, uploadID: uploadID)
             }
         }
-        await uploadTask?.value
-        uploadTask = nil
+        uploadTasks[uploadID] = task
+        await withTaskCancellationHandler {
+            await task.value
+        } onCancel: {
+            task.cancel()
+        }
+        uploadTasks[uploadID] = nil
+    }
+
+    private static func photoSaveFailure(_ error: Error) -> StagedUploadPreparation {
+        if let loaderError = error as? OriginalVideoLoader.LoaderError,
+           case .addAccessDenied = loaderError {
+            return .photoAccessDenied
+        }
+        let failure = error as NSError
+        if (failure.domain == NSCocoaErrorDomain
+                && failure.code == CocoaError.fileWriteOutOfSpace.rawValue)
+            || (failure.domain == NSPOSIXErrorDomain
+                && failure.code == Int(POSIXErrorCode.ENOSPC.rawValue)) {
+            return .failed("There isn't enough storage to save the trim in Photos. Free space and retry.")
+        }
+        guard failure.domain == PHPhotosErrorDomain,
+              let code = PHPhotosError.Code(rawValue: failure.code) else {
+            return .failed("Photos couldn't save the trim (error \(failure.code)). Retry; contact support if the problem continues.")
+        }
+        switch code {
+        case .accessUserDenied:
+            return .photoAccessDenied
+        case .accessRestricted:
+            return .failed("Photo Library access is restricted on this device. Check device restrictions before retrying.")
+        case .notEnoughSpace:
+            return .failed("There isn't enough storage to save the trim in Photos. Free space and retry.")
+        case .invalidResource, .missingResource:
+            return .failed("Photos couldn't use the trim file. Remove the preview and select the video again.")
+        case .operationInterrupted, .userCancelled:
+            return .failed("Saving the trim to Photos was interrupted. Retry.")
+        case .networkError, .networkAccessRequired:
+            return .failed("Photos couldn't save the trim because of a network problem. Check your connection and retry.")
+        default:
+            return .failed("Photos couldn't save the trim (error \(failure.code)). Retry; contact support if the problem continues.")
+        }
     }
 
     /// Cancel an in-progress upload.
     func cancelUpload() {
-        uploadTask?.cancel()
-        uploadTask = nil
+        if let activeUploadID { uploadTasks[activeUploadID]?.cancel() }
         isUploading = false
         uploadProgress = 0
         if let assetId = currentAssetId {
@@ -1186,11 +1830,14 @@ final class ChatViewModel {
     }
 
     /// User cancelled staged video — discard and clean up.
-    func cancelStagedVideo() {
-        if let staged = stagedVideo {
-            try? FileManager.default.removeItem(at: staged.tempFileURL)
-        }
+    func cancelStagedVideo(id: UUID) {
+        guard let staged = stagedVideo, staged.id == id else { return }
+        guard stagedUploadPreparation != .creatingAsset else { return }
+        preparationAttempts[id] = nil
+        preparationTasks[id]?.task.cancel()
         stagedVideo = nil
+        stagedUploadPreparation = .ready
+        if !leasedStagedFiles.contains(id) { cleanupTempFile(staged.tempFileURL) }
     }
 
     // MARK: - Private Helpers
@@ -1198,9 +1845,10 @@ final class ChatViewModel {
     /// Save thumbnail + metadata from staged video, clear the preview.
     private func prepareStagedContext(_ staged: StagedVideo) {
         form.thumbnail = staged.thumbnail
-        lastStagedCreatedDate = staged.createdDate
-        lastStagedHasLocation = staged.metadata.gpsLat != nil
-        stagedVideo = nil  // Clear immediately — VideoBubble (.uploading) takes over
+        if stagedVideo?.id == staged.id {
+            stagedVideo = nil
+            stagedUploadPreparation = .ready
+        }
     }
 
     /// Parse dynamic payload params into a string-only dictionary for template rendering.
@@ -1222,50 +1870,11 @@ final class ChatViewModel {
         return out.isEmpty ? nil : out
     }
 
-    /// Persist PHAsset identifier so re-upload can find the original video.
-    private func savePHAssetIdentifier(for assetId: String) {
-        if let phId = pendingPHAssetIdentifier {
-            PHAssetIdentifierStore.save(assetId: assetId, phAssetIdentifier: phId)
-        }
-        pendingPHAssetIdentifier = nil
-    }
-
-    /// Adds an uploaded trimmed copy to Photos and links it for Archive re-upload.
-    /// Failures don't affect the upload; they're reported as a chat bubble.
-    private func saveTrimmedCopyToPhotos(
-        fileURL: URL, fileName: String, metadata: VideoMetadata, assetId: String
-    ) async {
-        let creationDate = metadata.capturedAt.flatMap { DVUDateFormatting.parseISO($0) }
-        do {
-            let identifier = try await OriginalVideoLoader.saveVideoToPhotos(
-                fileURL: fileURL,
-                fileName: fileName,
-                creationDate: creationDate,
-                latitude: metadata.gpsLat,
-                longitude: metadata.gpsLon,
-                altitude: metadata.gpsAltitude
-            )
-            PHAssetIdentifierStore.save(assetId: assetId, phAssetIdentifier: identifier)
-            Log.debug("✅ [Photos] Saved trimmed copy \(fileName) for asset \(assetId)", logger: Log.media)
-        } catch OriginalVideoLoader.LoaderError.addAccessDenied {
-            appendErrorBubble(
-                "Your trimmed video uploaded, but it wasn't saved to Photos because Photo Library access is off.",
-                assetId: assetId,
-                code: "IOS_TRIM_SAVE_DENIED"
-            )
-        } catch {
-            Log.error("❌ [Photos] Failed to save trimmed copy: \(Log.describe(error))", logger: Log.media)
-            appendErrorBubble(
-                "Your trimmed video uploaded, but it couldn't be saved to Photos: \(error.localizedDescription)",
-                assetId: assetId,
-                code: "IOS_TRIM_SAVE_FAILED",
-                params: ["reason": error.localizedDescription]
-            )
-        }
-    }
-
     /// Transcribe audio and update the status bubble in-place.
-    private func transcribeAndReport(assetId: String, fileURL: URL) async {
+    private func transcribeAndReport(
+        assetId: String, clipId: String, fileURL: URL, fileName: String, uploadID: UUID
+    ) async {
+        guard sessionIsCurrent, !Task.isCancelled else { return }
         let transcribingMsg = ChatMessage(
             id: UUID().uuidString,
             userId: nil,
@@ -1280,17 +1889,18 @@ final class ChatViewModel {
             ),
             createdAt: DVUDateFormatting.isoString(from: Date())
         )
-        appendMessage(transcribingMsg, source: .workflow)
+        if activeUploadID == uploadID, currentAssetId == assetId {
+            appendMessage(transcribingMsg, source: .workflow)
+        }
 
-        if let result = await transcriber.transcribe(videoURL: fileURL) {
-            await sendTranscript(assetId: assetId, result: result)
-            updateTranscriptionBubble(
-                id: transcribingMsg.id, assetId: assetId,
-                text:
-                    "Transcript sent to Mediasource. (\(result.segments.count) words.) Transcript is available in Archive.",
-                code: "IOS_TRANSCRIBE_SUCCESS",
-                params: ["wordCount": "\(result.segments.count)"],
-                createdAt: transcribingMsg.createdAt)
+        let transcriber = TranscriptionService()
+        let result = await transcriber.transcribe(
+            videoURL: fileURL, isCurrent: { self.sessionIsCurrent })
+        guard sessionIsCurrent, !Task.isCancelled else { return }
+        if let result {
+            await deliverTranscriptAndUpdateBubble(
+                assetId: assetId, clipId: clipId, result: result, messageId: transcribingMsg.id,
+                createdAt: transcribingMsg.createdAt, fileName: fileName)
         } else {
             let statusText: String
             let statusCode: String
@@ -1312,7 +1922,31 @@ final class ChatViewModel {
                 text: statusText,
                 code: statusCode,
                 params: statusParams,
-                createdAt: transcribingMsg.createdAt)
+                createdAt: transcribingMsg.createdAt,
+                fileName: fileName)
+        }
+    }
+
+    func deliverTranscriptAndUpdateBubble(
+        assetId: String, clipId: String, result: TranscriptionResult, messageId: String,
+        createdAt: String?, fileName: String? = nil
+    ) async {
+        let sent = await sendTranscript(assetId: assetId, clipId: clipId, result: result)
+        guard sessionIsCurrent, !Task.isCancelled else { return }
+        if sent {
+            updateTranscriptionBubble(
+                id: messageId, assetId: assetId,
+                text: "Transcript saved to Mediasource. (\(result.segments.count) words.)",
+                code: "IOS_TRANSCRIBE_SUCCESS",
+                params: ["wordCount": "\(result.segments.count)"],
+                createdAt: createdAt)
+        } else {
+            updateTranscriptionBubble(
+                id: messageId, assetId: assetId,
+                text: "The transcript wasn't saved. To try again, upload the video with transcription enabled.",
+                code: "IOS_TRANSCRIBE_SAVE_FAILED",
+                createdAt: createdAt,
+                fileName: fileName)
         }
     }
 
@@ -1323,7 +1957,8 @@ final class ChatViewModel {
         text: String,
         code: String? = nil,
         params: [String: String]? = nil,
-        createdAt: String?
+        createdAt: String?,
+        fileName: String? = nil
     ) {
         if let idx = messages.firstIndex(where: { $0.id == id }) {
             messages[idx] = ChatMessage(
@@ -1338,19 +1973,37 @@ final class ChatViewModel {
                 ),
                 createdAt: createdAt
             )
+        } else if let fileName {
+            appendErrorBubble(
+                "Transcription for \(fileName): \(text)", assetId: assetId,
+                code: "IOS_PREVIOUS_TRANSCRIBE_RESULT",
+                params: ["fileName": fileName, "result": text, "messageId": id])
+        }
+    }
+
+    private func appendPreviousUploadFailure(
+        _ message: String, assetId: String? = nil, code: String, fileName: String,
+        uploadID: UUID, stageID: UUID? = nil
+    ) {
+        var params = ["fileName": fileName, "uploadId": uploadID.uuidString]
+        if let stageID { params["stageId"] = stageID.uuidString }
+        let notice = appendErrorBubble(
+            message, assetId: assetId, code: code, params: params)
+        if isSelectingVideo || isProcessingVideo || stagedVideo != nil {
+            uploadFailuresToPreserve.append(notice)
         }
     }
 
     /// Clean up the temporary video file after upload + transcription, including the
     /// per-load folder (`tmp/<UUID>/`) it was copied or exported into.
     private func cleanupTempFile(_ url: URL) {
-        try? FileManager.default.removeItem(at: url)
+        removeTemporaryVideoItem(url)
         let tempDir = FileManager.default.temporaryDirectory.standardizedFileURL
         let parent = url.standardizedFileURL.deletingLastPathComponent()
         if parent.deletingLastPathComponent().path == tempDir.path,
             UUID(uuidString: parent.lastPathComponent) != nil
         {
-            try? FileManager.default.removeItem(at: parent)
+            removeTemporaryVideoItem(parent)
         }
     }
 
@@ -1360,8 +2013,21 @@ final class ChatViewModel {
     /// PendingForm stays on disk so the form can be reopened later from Archive.
     /// Video continues uploading in background.
     func cancelForm() {
+        guard !isSubmittingForm else { return }
+        if let formAssetId { skippedFormAssetIds.insert(formAssetId) }
+        if let activePendingRecord {
+            do {
+                try pendingFormStore.deferToArchive(activePendingRecord)
+            } catch {
+                Log.error("⚠️ [Form] Could not save the skip preference: \(Log.describe(error))", logger: Log.upload)
+                appendErrorBubble(
+                    "The form was skipped, but that preference couldn't be saved. It may reopen after restart.",
+                    assetId: formAssetId, code: "IOS_PENDING_FORM_SKIP_SAVE_FAILED")
+            }
+        }
         showFormSheet = false
         isArchived = true
+        activeFormGeneration = UUID()
 
         // Add a chat bubble confirming the skip
         let msg = ChatMessage(
@@ -1372,10 +2038,10 @@ final class ChatViewModel {
             messageType: .systemNote,
             content: MessageContent(
                 text:
-                    "No worries. Your video is still uploading. You can add details from your Archive anytime.",
+                    "No worries. You can add details from your Archive anytime.",
                 code: "IOS_FORM_SKIPPED",
                 fallbackText:
-                    "No worries. Your video is still uploading. You can add details from your Archive anytime.",
+                    "No worries. You can add details from your Archive anytime.",
                 schemaVersion: MessageCatalog.schemaVersion
             ),
             createdAt: DVUDateFormatting.isoString(from: Date())
@@ -1383,36 +2049,95 @@ final class ChatViewModel {
         appendMessage(msg, source: .workflow)
     }
 
+    func formDismissed() -> String? {
+        guard !showFormSheet else { return nil }
+        let announcement: String? = submittedPresentedForm
+            ? (submittedRecoveryCleanupFailed
+                ? "Details sent, but the saved recovery state couldn't be updated."
+                : "Details sent.")
+            : nil
+        submittedPresentedForm = false
+        submittedRecoveryCleanupFailed = false
+        activeFormGeneration = UUID()
+        activePendingRecord = nil
+        formAssetId = nil
+        return announcement
+    }
+
     // MARK: - Submit Form
 
     func submitForm(assetId: String, formData: [String: String]) async {
-        var request = auth.authenticatedRequest(for: ServerConfig.formURL(assetId), method: "POST")
-        request.httpBody = try? JSONSerialization.data(withJSONObject: formData)
+        guard sessionIsCurrent, let scope = sessionScope else {
+            form.submitError = "Your session changed. Sign in again to submit these details."
+            formErrorRevision += 1
+            return
+        }
+        guard showFormSheet, formAssetId == assetId else { return }
+        let generation = activeFormGeneration
+        guard submittingFormGeneration != generation else { return }
+        submittingFormGeneration = generation
+        defer {
+            if submittingFormGeneration == generation {
+                submittingFormGeneration = nil
+            }
+        }
+        let pendingRecord = activePendingRecord.flatMap {
+            $0.scope == scope && $0.form.assetId == assetId ? $0 : nil
+        }
+        let request = auth.authenticatedRequest(for: ServerConfig.formURL(assetId), method: "POST")
 
         do {
-            let (_, response) = try await URLSession.shared.data(for: request)
-
-            // Check HTTP status code
-            if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode >= 400 {
-                throw URLError(.badServerResponse)
+            let outcome = try await pendingFormSubmission.submit(
+                formData: formData, request: request, pendingRecord: pendingRecord,
+                scope: scope, assetId: assetId,
+                isCurrent: { self.sessionIsCurrent })
+            if case .submittedRecoveryNotCleared(let error) = outcome {
+                Log.error("⚠️ [Form] Failed to clear saved recovery state: \(Log.describe(error))", logger: Log.upload)
             }
+            guard sessionIsCurrent else { return }
+            if case .sessionChanged = outcome { return }
+            formPresentation.completedDetailsAssetIDs.insert(assetId)
+            guard activeFormGeneration == generation,
+                  formAssetId == assetId, showFormSheet else { return }
 
             // Form sheet closes — server will push form:confirmed via WS
             // with the "High Five!" confirmation bubble + metadata
             form.submitError = nil
+            submittedPresentedForm = true
+            if case .submittedRecoveryNotCleared = outcome {
+                submittedRecoveryCleanupFailed = true
+            } else {
+                submittedRecoveryCleanupFailed = false
+            }
             showFormSheet = false
-            PendingForm.clear()
+            activePendingRecord = nil
             clearBlockingConnectivityIssueIfNeeded(assetId: assetId)
+            if case .submittedRecoveryNotCleared = outcome {
+                appendErrorBubble(
+                    "Details were sent, but the saved recovery state couldn't be updated.",
+                    assetId: assetId, code: "IOS_PENDING_FORM_CLEAR_FAILED")
+            }
         } catch {
-            Log.error("❌ [Form] Failed to submit form: \(Log.describe(error))", logger: Log.upload)
+            if case FormSubmissionError.httpStatus(let status) = error {
+                Log.error("❌ [Form] Submit failed: HTTP \(status)", logger: Log.upload)
+            } else {
+                Log.error("❌ [Form] Failed to submit form: \(Log.describe(error))", logger: Log.upload)
+            }
+            guard sessionIsCurrent, activeFormGeneration == generation, showFormSheet else { return }
+            if case FormSubmissionError.inProgress = error {
+                form.submitError = "These details are already being sent. Wait and try again."
+                formErrorRevision += 1
+                return
+            }
             // Keep form open so user can retry — show error in chat too
-            form.submitError = "Failed to send form. Please try again."
+            form.submitError = "Couldn't confirm the details were sent. Retry or check Archive."
+            formErrorRevision += 1
             if isConnectivityIssue(error) {
                 noteBlockingConnectivityIssue(
                     operation: "submitting form details", assetId: assetId)
             } else {
                 appendErrorBubble(
-                    "Form submission failed. The form is still open. Please retry.",
+                    "Couldn't confirm the details were sent. The form is still open.",
                     assetId: assetId,
                     code: "IOS_FORM_SUBMIT_FAILED"
                 )
@@ -1420,7 +2145,7 @@ final class ChatViewModel {
             Task {
                 await reportError(
                     category: "form",
-                    message: "Form submission failed: \(error.localizedDescription)",
+                    message: "Form submission failed: \(Log.describe(error))",
                     severity: "ERROR",
                     assetId: assetId
                 )
@@ -1431,8 +2156,9 @@ final class ChatViewModel {
     // MARK: - Connect
 
     func connectWebSocket() {
-        guard let token = auth.token else { return }
+        guard sessionIsCurrent, let token = auth.token else { return }
         workflowStages.removeAll()
+        workflowRevisions.removeAll()
         messagePolicy.resetForFreshConnection()
         hasBlockingConnectivityIssue = false
         blockingConnectivityAssetId = nil
@@ -1450,15 +2176,29 @@ final class ChatViewModel {
     // MARK: - Fetch Asset Detail
 
     func fetchAssetDetail(assetId: String) async {
+        guard sessionIsCurrent, currentAssetId == assetId else { return }
+        let recoveryRevision = formPresentation.uploadRecoveryRevision(for: assetId)
         let request = auth.authenticatedRequest(for: ServerConfig.assetURL(assetId))
         do {
-            let (data, _) = try await URLSession.shared.data(for: request)
+            let (data, urlResponse) = try await httpTransport(request)
+            guard sessionIsCurrent, currentAssetId == assetId,
+                  pendingAssetCreation == nil,
+                  formPresentation.uploadRecoveryRevision(for: assetId) == recoveryRevision else { return }
+            guard let http = urlResponse as? HTTPURLResponse, http.statusCode == 200 else {
+                throw URLError(.badServerResponse)
+            }
             let response = try JSONDecoder().decode(AssetDetailResponse.self, from: data)
+            guard response.asset.id == assetId else {
+                throw URLError(.badServerResponse)
+            }
             self.lastAsset = response.asset
             self.lastClip = response.asset.clips?.first
             clearBlockingConnectivityIssueIfNeeded(assetId: assetId)
             reconcileWorkflowState(from: response.asset, source: .workflow)
         } catch {
+            guard sessionIsCurrent, currentAssetId == assetId,
+                  pendingAssetCreation == nil,
+                  formPresentation.uploadRecoveryRevision(for: assetId) == recoveryRevision else { return }
             Log.error("❌ [Asset] Failed to fetch asset detail: \(Log.describe(error))", logger: Log.network)
             if isConnectivityIssue(error) {
                 noteBlockingConnectivityIssue(operation: "syncing metadata", assetId: assetId)
@@ -1474,47 +2214,120 @@ final class ChatViewModel {
 
     func showMetadata() {
         guard lastClip != nil else { return }
+        deferPendingFormRecovery()
         showMetadataSheet = true
     }
 
     // MARK: - Pending Form Recovery
 
     /// Check for a form that was pending when app was killed.
-    private func checkPendingForm() {
-        guard let pendingForm = PendingForm.load() else { return }
-
-        Log.debug("🔄 [Recovery] Found pending form for asset: \(pendingForm.assetId)", logger: Log.app)
-
-        Task {
-            let request = auth.authenticatedRequest(for: ServerConfig.assetURL(pendingForm.assetId))
+    func recoverPendingFormIfNeeded(restartInFlight: Bool = false) async {
+        guard sessionIsCurrent, let scope = sessionScope else { return }
+        if !hasAnnouncedLegacyForm {
             do {
-                let (data, response) = try await URLSession.shared.data(for: request)
-                let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
-
-                if statusCode == 200,
-                    let json = try? JSONDecoder().decode(AssetDetailResponse.self, from: data)
-                {
-                    if json.asset.formResponse != nil {
-                        // Form already submitted — clear
-                        Log.debug("🔄 [Recovery] Form already submitted for \(pendingForm.assetId) — clearing", logger: Log.app)
-                        PendingForm.clear()
-                    } else {
-                        // Restore form UI
-                        Log.debug("🔄 [Recovery] Restoring pending form for \(pendingForm.assetId)", logger: Log.app)
-                        restoreFormFromPending(pendingForm)
+                if try pendingFormStore.hasLegacyForm {
+                    hasAnnouncedLegacyForm = true
+                    do {
+                        try pendingFormStore.protectLegacyForm()
+                    } catch {
+                        Log.error("⚠️ [Form] Could not protect legacy recovery state: \(Log.describe(error))", logger: Log.upload)
+                        appendErrorBubble(
+                            "The older saved form couldn't be protected. Open Archive to remove it if no longer needed.",
+                            code: "IOS_LEGACY_FORM_PROTECTION_FAILED")
                     }
-                } else {
-                    PendingForm.clear()
+                    appendErrorBubble(
+                        "An older pending form was preserved. Sign in to the account that uploaded the video and open Archive to add its details.",
+                        code: "IOS_LEGACY_PENDING_FORM")
                 }
             } catch {
-                Log.debug("🔄 [Recovery] Could not check pending form: \(Log.describe(error))", logger: Log.app)
+                Log.error("⚠️ [Form] Could not inspect legacy recovery state: \(Log.describe(error))", logger: Log.upload)
+                appendErrorBubble(
+                    "Couldn't check for older saved forms. Unlock this device and try again.",
+                    code: "IOS_LEGACY_FORM_CHECK_FAILED")
             }
+        }
+        let key = currentRecoveryKey
+        if !restartInFlight, let pendingRecoveryTask, pendingRecoveryKey == key {
+            retryPendingFormRecovery = true
+            await pendingRecoveryTask.value
+            return
+        }
+        cancelPendingFormRecovery()
+        let recoveryID = UUID()
+        pendingRecoveryID = recoveryID
+        pendingRecoveryKey = key
+        let task = Task { @MainActor in
+            repeat {
+                guard !Task.isCancelled, self.pendingRecoveryID == recoveryID else { return }
+                self.retryPendingFormRecovery = false
+                await self.recoverNextPendingForm(for: scope, key: key, recoveryID: recoveryID)
+            } while self.retryPendingFormRecovery && self.sessionIsCurrent
+                && !Task.isCancelled && self.pendingRecoveryID == recoveryID
+            if self.pendingRecoveryID == recoveryID {
+                self.pendingRecoveryTask = nil
+                self.pendingRecoveryID = nil
+                self.pendingRecoveryKey = nil
+                self.retryPendingFormRecovery = false
+            }
+        }
+        pendingRecoveryTask = task
+        await task.value
+    }
+
+    private func recoverNextPendingForm(
+        for scope: PendingFormScope, key: RecoveryKey, recoveryID: UUID
+    ) async {
+        func isCurrent() -> Bool {
+            !Task.isCancelled && pendingRecoveryID == recoveryID
+                && currentRecoveryKey == key && sessionIsCurrent
+                && !isFormPresentationBlocked && !showFormSheet
+                && !showMetadataSheet && !showSlackShareSheet
+                && (!isUploading || key.assetId != nil) && !isProcessingVideo
+                && !isSelectingVideo && pendingAssetCreation == nil && stagedVideo == nil
+        }
+        guard isCurrent() else { return }
+
+        do {
+            let result = try await pendingFormRecovery.next(
+                for: scope, assetId: key.assetId,
+                isCurrent: isCurrent,
+                requestForAsset: {
+                    self.auth.authenticatedRequest(for: ServerConfig.assetURL($0))
+                })
+            guard isCurrent() else { return }
+            if case .ready(let record, let skippedFailures) = result {
+                if skippedFailures && retryPendingFormRecovery { return }
+                if skippedFailures {
+                    appendErrorBubble(
+                        "A saved form couldn't be restored. Check your connection or sign in again, then open Archive to add its details.",
+                        code: "IOS_PENDING_FORM_RECOVERY_FAILED")
+                }
+                Log.debug("🔄 [Recovery] Restoring pending form for asset: \(record.form.assetId)", logger: Log.app)
+                restoreFormFromPending(record)
+            }
+        } catch {
+            guard isCurrent() else { return }
+            if retryPendingFormRecovery { return }
+            if case PendingFormRecoveryError.httpStatus(let status) = error {
+                Log.error("⚠️ [Recovery] Pending form lookup failed: HTTP \(status)", logger: Log.app)
+            } else {
+                Log.error("⚠️ [Recovery] Could not check pending form: \(Log.describe(error))", logger: Log.app)
+            }
+            appendErrorBubble(
+                "A saved form couldn't be restored. Check your connection or sign in again, then open Archive to add its details.",
+                code: "IOS_PENDING_FORM_RECOVERY_FAILED")
         }
     }
 
     /// Restore form UI from persisted PendingForm state.
-    private func restoreFormFromPending(_ pendingForm: PendingForm) {
+    private func restoreFormFromPending(_ record: PendingFormRecord) {
+        let pendingForm = record.form
+        activePendingRecord = record
+        activeFormGeneration = UUID()
         currentAssetId = pendingForm.assetId
+        formAssetId = pendingForm.assetId
+        submittedPresentedForm = false
+        form = FormContext()
         form.originalFileName = pendingForm.originalFileName
         form.capturedAt = pendingForm.capturedAt
         form.clipCount = pendingForm.clipCount
@@ -1540,19 +2353,29 @@ final class ChatViewModel {
     // MARK: - Archive / New Conversation
 
     /// Clear current conversation and start fresh for a new upload.
-    func startNewConversation() {
+    func startNewConversation(preservingStagedVideo: Bool = false) {
+        let preservedFailures = uploadFailuresToPreserve.filter {
+            formPresentation.shouldAnnounceRecoveryNotice(
+                code: $0.content.code, assetId: $0.assetId, params: $0.content.params)
+        }
+        uploadFailuresToPreserve.removeAll()
         workflowStages.removeAll()
+        workflowRevisions.removeAll()
         messagePolicy.resetForNewConversation()
         hasBlockingConnectivityIssue = false
         blockingConnectivityAssetId = nil
         messages.removeAll()
         currentAssetId = nil
+        formAssetId = nil
+        activeUploadID = nil
         isArchived = false
         archive = ArchiveState()
         form = FormContext()
+        activePendingRecord = nil
+        activeFormGeneration = UUID()
         lastAsset = nil
         lastClip = nil
-        stagedVideo = nil
+        if !preservingStagedVideo { stagedVideo = nil }
         isUploading = false
         uploadProgress = 0
         showFormSheet = false
@@ -1561,8 +2384,6 @@ final class ChatViewModel {
         sentUploads.removeAll()
         slackThumbnails.removeAll()
         slackConfirmedIds.removeAll()
-        lastStagedCreatedDate = nil
-        lastStagedHasLocation = false
 
         // Re-send greeting for the fresh conversation
         let firstName = auth.currentUser?.name.components(separatedBy: " ").first ?? "there"
@@ -1582,6 +2403,9 @@ final class ChatViewModel {
             createdAt: DVUDateFormatting.isoString(from: Date())
         )
         appendMessage(greeting, source: .workflow)
+        for notice in preservedFailures {
+            appendMessage(notice, source: .error)
+        }
     }
 
     /// Send a Slack share for the archived asset.

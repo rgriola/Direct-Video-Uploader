@@ -52,6 +52,7 @@ vi.mock('@mux/mux-node', () => ({
 
 let app;
 let ioEmitSpy;
+let actor;
 
 async function buildApp(secret = 'mux-webhook-secret') {
     if (secret === undefined) {
@@ -66,6 +67,10 @@ async function buildApp(secret = 'mux-webhook-secret') {
     ioEmitSpy = vi.fn();
     app = Fastify({ logger: false });
 
+    app.decorate('authenticate', async (request, reply) => {
+        if (!actor) return reply.status(401).send({ error: 'Unauthorized' });
+        request.user = actor;
+    });
     app.decorate('io', {
         to: vi.fn(() => ({ emit: ioEmitSpy })),
     });
@@ -76,6 +81,7 @@ async function buildApp(secret = 'mux-webhook-secret') {
 
 beforeEach(() => {
     vi.clearAllMocks();
+    actor = { id: 'user-1', role: 'USER' };
 
     prismaMock.clip.findFirst.mockResolvedValue(null);
     prismaMock.clip.findUnique.mockResolvedValue(null);
@@ -285,7 +291,7 @@ describe('mux-webhooks routes focused coverage', () => {
 
     it('returns 404 from status endpoint when clip is not found', async () => {
         await buildApp();
-        prismaMock.clip.findUnique.mockResolvedValueOnce(null);
+        prismaMock.clip.findFirst.mockResolvedValueOnce(null);
 
         const response = await app.inject({
             method: 'GET',
@@ -294,11 +300,37 @@ describe('mux-webhooks routes focused coverage', () => {
 
         expect(response.statusCode).toBe(404);
         expect(response.json()).toEqual({ error: 'Clip not found' });
+        expect(prismaMock.clip.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+            where: { id: 'clip-missing', asset: { userId: 'user-1' } },
+        }));
+    });
+
+    it('requires authentication before reading a clip status', async () => {
+        await buildApp();
+        actor = null;
+
+        const response = await app.inject({ method: 'GET', url: '/api/mux/status/clip-1' });
+
+        expect(response.statusCode).toBe(401);
+        expect(prismaMock.clip.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('limits a team admin status lookup to their organization', async () => {
+        await buildApp();
+        actor = { id: 'admin-1', role: 'ADMIN', companyCode: 'NEWS' };
+        prismaMock.clip.findFirst.mockResolvedValueOnce(null);
+
+        const response = await app.inject({ method: 'GET', url: '/api/mux/status/clip-other' });
+
+        expect(response.statusCode).toBe(404);
+        expect(prismaMock.clip.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+            where: { id: 'clip-other', asset: { user: { companyCode: 'NEWS' } } },
+        }));
     });
 
     it('promotes processing clip to ready via upload and asset checks', async () => {
         await buildApp();
-        prismaMock.clip.findUnique.mockResolvedValueOnce({
+        prismaMock.clip.findFirst.mockResolvedValueOnce({
             id: 'clip-status-1',
             assetId: 'asset-status-1',
             muxAssetId: null,
@@ -347,7 +379,7 @@ describe('mux-webhooks routes focused coverage', () => {
 
     it('returns processing status when clip is still in progress', async () => {
         await buildApp();
-        prismaMock.clip.findUnique.mockResolvedValueOnce({
+        prismaMock.clip.findFirst.mockResolvedValueOnce({
             id: 'clip-processing',
             assetId: 'asset-processing',
             muxAssetId: null,
