@@ -319,11 +319,12 @@ struct ContextFormView: View {
             if formValues["type"] == nil { formValues["type"] = "Raw" }
             // Default priority to Low
             if formValues["priority"] == nil { formValues["priority"] = "Low" }
-
-            // Auto-focus slug after sheet presentation animation settles
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                focusedField = .slug
-            }
+        }
+        .task {
+            // Auto-focus slug after the sheet animation settles; cancelled if the form closes first.
+            try? await Task.sleep(for: .milliseconds(500))
+            guard !Task.isCancelled else { return }
+            focusedField = .slug
         }
     }
 

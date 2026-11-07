@@ -16,6 +16,8 @@ struct StagedVideo {
     let createdDate: String?      // formatted display string
     let thumbnail: UIImage?
     let metadata: VideoMetadata
+    /// A trimmed copy that isn't in Photos yet; saved there after a successful upload.
+    var isTrimmed: Bool = false
 }
 
 /// Unified video bubble — handles staged preview, uploading progress, and sent confirmation
@@ -266,7 +268,7 @@ struct VideoBubble: View {
 
 extension StagedVideo {
     /// Generate a thumbnail from a video file URL.
-    static func generateThumbnail(from url: URL) async -> UIImage? {
+    @concurrent nonisolated static func generateThumbnail(from url: URL) async -> UIImage? {
         let asset = AVURLAsset(url: url)
         let generator = AVAssetImageGenerator(asset: asset)
         generator.appliesPreferredTrackTransform = true
@@ -276,7 +278,7 @@ extension StagedVideo {
             let (cgImage, _) = try await generator.image(at: .zero)
             return UIImage(cgImage: cgImage)
         } catch {
-            print("❌ [Thumbnail] Failed to generate: \(error)")
+            Log.error("❌ [Thumbnail] Failed to generate: \(Log.describe(error))", logger: Log.media)
             return nil
         }
     }

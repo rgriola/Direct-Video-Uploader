@@ -28,14 +28,6 @@ const DEMO_USERS = [
         pin: '0000',
         role: 'ADMIN',
     },
-    {
-        phoneNumber: '9176717330',
-        name: 'Rod Griola',
-        email: 'rodczaro@gmail.com',
-        team: 'Engineering',
-        pin: '3218',
-        role: 'ADMIN',
-    },
 ];
 
 async function seed() {
@@ -48,7 +40,8 @@ async function seed() {
 
         if (existing) {
             // Update role if it differs (fixes pre-existing users missing ADMIN role)
-            if (user.role && existing.role !== user.role) {
+            // Never touch a Super Admin; that role is managed by bootstrap-super-admin.js
+            if (user.role && existing.role !== user.role && existing.role !== 'SUPER_ADMIN') {
                 await prisma.user.update({
                     where: { phoneNumber: user.phoneNumber },
                     data: { role: user.role },
@@ -79,7 +72,6 @@ async function seed() {
     console.log('  David Burgess  →  Phone: 5055034455  PIN: 1234');
     console.log('  Carrie Smith   →  Phone: 5055551234  PIN: 1234');
     console.log('  Admin User     →  Phone: 8001234567  PIN: 0000');
-    console.log('  Rod Griola     →  Phone: 9176717330  PIN: 3218  (ADMIN)');
 }
 
 seed()

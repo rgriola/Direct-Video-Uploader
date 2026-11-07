@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 import Observation
 import Photos
 
@@ -42,7 +43,7 @@ enum PHAssetIdentifierStore {
 // MARK: - Persisted Form State
 
 /// Saved to disk so the app can restore the context form after crash/kill.
-struct PendingForm: Codable {
+nonisolated struct PendingForm: Codable {
     let assetId: String
     let originalFileName: String?
     let capturedAt: String?
@@ -60,9 +61,9 @@ struct PendingForm: Codable {
         do {
             let data = try JSONEncoder().encode(form)
             try data.write(to: storageURL, options: .atomic)
-            print("💾 [Form] Saved pending form state for asset: \(form.assetId)")
+            Log.debug("💾 [Form] Saved pending form state for asset: \(form.assetId)", logger: Log.upload)
         } catch {
-            print("⚠️ [Form] Failed to save pending form state: \(error)")
+            Log.error("⚠️ [Form] Failed to save pending form state: \(Log.describe(error))", logger: Log.upload)
         }
     }
     
@@ -72,7 +73,7 @@ struct PendingForm: Codable {
             let data = try Data(contentsOf: storageURL)
             return try JSONDecoder().decode(PendingForm.self, from: data)
         } catch {
-            print("⚠️ [Form] Failed to load pending form state: \(error)")
+            Log.error("⚠️ [Form] Failed to load pending form state: \(Log.describe(error))", logger: Log.upload)
             clear()
             return nil
         }
@@ -80,7 +81,7 @@ struct PendingForm: Codable {
     
     static func clear() {
         try? FileManager.default.removeItem(at: storageURL)
-        print("🗑️ [Form] Cleared pending form state")
+        Log.debug("🗑️ [Form] Cleared pending form state", logger: Log.upload)
     }
 }
 
@@ -106,7 +107,7 @@ final class VideoUploadService: NSObject {
         error = nil
         defer { isUploading = false }
         
-        print("📤 [Mux] Requesting direct upload URL for asset: \(assetId)")
+        Log.debug("📤 [Mux] Requesting direct upload URL for asset: \(assetId)", logger: Log.upload)
         
         // Step 1: Ask server for a Mux direct upload URL (fast — just metadata)
         let muxURL = ServerConfig.muxUploadURL(assetId)
@@ -146,7 +147,7 @@ final class VideoUploadService: NSObject {
         
         guard let httpResp = createResponse as? HTTPURLResponse, httpResp.statusCode == 200 else {
             let body = String(data: createData, encoding: .utf8) ?? "Unknown"
-            print("📤 [Mux] ❌ Failed to get upload URL: \(body)")
+            Log.error("📤 [Mux] ❌ Failed to get upload URL: HTTP \((createResponse as? HTTPURLResponse)?.statusCode ?? 0)", logger: Log.upload)
             throw UploadError.serverError((createResponse as? HTTPURLResponse)?.statusCode ?? 0, body)
         }
         
@@ -157,7 +158,7 @@ final class VideoUploadService: NSObject {
             throw UploadError.invalidResponse
         }
         
-        print("📤 [Mux] Got upload URL, uploading directly to Mux CDN...")
+        Log.debug("📤 [Mux] Got upload URL, uploading directly to Mux CDN...", logger: Log.upload)
         
         // Simple PUT to Mux direct upload URL (no tus headers needed)
         var putRequest = URLRequest(url: uploadUrl)
@@ -172,12 +173,12 @@ final class VideoUploadService: NSObject {
         guard let putHttp = putResponse as? HTTPURLResponse,
               (200...204).contains(putHttp.statusCode) else {
             let code = (putResponse as? HTTPURLResponse)?.statusCode ?? 0
-            print("📤 [Mux] ❌ PUT to Mux failed with status \(code)")
+            Log.error("📤 [Mux] ❌ PUT to Mux failed with status \(code)", logger: Log.upload)
             throw UploadError.serverError(code, "Mux upload failed")
         }
         
         uploadProgress = 1.0
-        print("📤 [Mux] ✅ Direct upload complete! Mux will process and notify via webhook.")
+        Log.debug("📤 [Mux] ✅ Direct upload complete! Mux will process and notify via webhook.", logger: Log.upload)
         
         return MuxUploadResponse(clipId: clipId, muxUploadId: json["muxUploadId"] as? String ?? "")
     }
@@ -223,11 +224,13 @@ final class VideoUploadService: NSObject {
 
 // MARK: - Upload Delegate (Progress Tracking)
 
-private final class UploadDelegate: NSObject, URLSessionTaskDelegate, URLSessionDataDelegate, @unchecked Sendable {
+/// URLSession calls the delegate on its own serial queue; the response buffer is still
+/// behind a `Mutex` so the class is checked `Sendable`.
+private nonisolated final class UploadDelegate: NSObject, URLSessionTaskDelegate, URLSessionDataDelegate, Sendable {
     let onProgress: @Sendable (Double) -> Void
     let onComplete: @Sendable (Data?, URLResponse?, (any Error)?) -> Void
     
-    private var responseData = Data()
+    private let responseData = Mutex(Data())
     
     init(onProgress: @escaping @Sendable (Double) -> Void, onComplete: @escaping @Sendable (Data?, URLResponse?, (any Error)?) -> Void) {
         self.onProgress = onProgress
@@ -240,7 +243,7 @@ private final class UploadDelegate: NSObject, URLSessionTaskDelegate, URLSession
     }
     
     func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
-        responseData.append(data)
+        responseData.withLock { $0.append(data) }
     }
     
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
@@ -248,26 +251,26 @@ private final class UploadDelegate: NSObject, URLSessionTaskDelegate, URLSession
         if let error {
             onComplete(nil, nil, error)
         } else {
-            onComplete(responseData, task.response, nil)
+            onComplete(responseData.withLock { $0 }, task.response, nil)
         }
     }
     
     // Background session requires handling this to allow the session to reconnect
     func urlSession(_ session: URLSession, taskIsWaitingForConnectivity task: URLSessionTask) {
-        print("⏳ [Upload] Waiting for connectivity — upload will resume when network returns")
+        Log.debug("⏳ [Upload] Waiting for connectivity — upload will resume when network returns", logger: Log.upload)
     }
 }
 
 // MARK: - Mux Upload Response
 
-struct MuxUploadResponse {
+nonisolated struct MuxUploadResponse {
     let clipId: String
     let muxUploadId: String
 }
 
 // MARK: - Errors
 
-enum UploadError: LocalizedError {
+nonisolated enum UploadError: LocalizedError {
     case invalidResponse
     case serverError(Int, String)
     case fileNotFound

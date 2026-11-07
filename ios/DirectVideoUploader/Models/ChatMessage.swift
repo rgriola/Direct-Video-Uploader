@@ -4,7 +4,7 @@ import SwiftUI
 
 // MARK: - Chat Message
 
-struct ChatMessage: Codable, Identifiable {
+nonisolated struct ChatMessage: Codable, Identifiable, Sendable {
     let id: String
     let userId: String?
     let assetId: String?
@@ -27,12 +27,12 @@ struct ChatMessage: Codable, Identifiable {
     }
 }
 
-enum MessageDirection: String, Codable {
+nonisolated enum MessageDirection: String, Codable, Sendable {
     case outgoing = "OUTGOING"
     case incoming = "INCOMING"
 }
 
-enum MessageType: String, Codable {
+nonisolated enum MessageType: String, Codable, Sendable {
     case video = "VIDEO"
     case formRequest = "FORM_REQUEST"
     case formSubmitted = "FORM_SUBMITTED"
@@ -47,7 +47,7 @@ enum MessageType: String, Codable {
 // MARK: - Message Content
 
 /// Flexible content container — matches the JSON `content` field from the server.
-struct MessageContent: Codable {
+nonisolated struct MessageContent: Codable, Sendable {
     let text: String?
     let code: String?
     let params: [String: String]?
@@ -132,7 +132,7 @@ struct MessageContent: Codable {
 
 // MARK: - Form Field
 
-struct FormField: Codable, Identifiable {
+nonisolated struct FormField: Codable, Identifiable, Sendable {
     let id: String
     let label: String
     let type: String  // "text", "select", "textarea"
@@ -155,7 +155,7 @@ struct FormField: Codable, Identifiable {
     }
 }
 
-extension FormField {
+nonisolated extension FormField {
     /// Default form fields for video uploads — shared between ChatViewModel and ArchiveRowView.
     static func defaultVideoFields() -> [FormField] {
         [
@@ -171,6 +171,6 @@ extension FormField {
 
 // MARK: - Messages Response
 
-struct MessagesResponse: Codable {
+nonisolated struct MessagesResponse: Codable, Sendable {
     let messages: [ChatMessage]
 }

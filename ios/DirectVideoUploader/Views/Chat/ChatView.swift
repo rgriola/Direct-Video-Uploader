@@ -11,6 +11,9 @@ struct ChatView: View {
     @State private var showOnboarding = false
     @State private var showInstructions = false
     @AppStorage(OnboardingCatalog.completionKey) private var hasCompletedOnboarding = false
+    @AppStorage(PermissionsPrompt.seenKey) private var hasSeenPermissions = false
+    @Environment(PermissionManager.self) private var permissions
+    @State private var showPermissions = false
 
     var body: some View {
         ZStack {
@@ -81,12 +84,14 @@ struct ChatView: View {
         }
         .sheet(isPresented: $showVideoLibrary) {
             VideoLibraryView(
-                onConfirm: { fileURL, fileName, metadata, phAssetId in
+                onConfirm: { picked in
                     showVideoLibrary = false
                     Task {
                         await viewModel?.stageVideo(
-                            fileURL: fileURL, fileName: fileName, metadata: metadata,
-                            phAssetIdentifier: phAssetId)
+                            fileURL: picked.fileURL, fileName: picked.fileName,
+                            metadata: picked.metadata,
+                            phAssetIdentifier: picked.phAssetIdentifier,
+                            isTrimmed: picked.isTrimmed)
                     }
                 },
                 onDismiss: {
@@ -153,17 +158,35 @@ struct ChatView: View {
 
             if !hasCompletedOnboarding {
                 showOnboarding = true
+            } else {
+                presentPermissionsIfNeeded()
             }
         }
-        .sheet(isPresented: $showOnboarding) {
+        .sheet(isPresented: $showOnboarding, onDismiss: presentPermissionsIfNeeded) {
             OnboardingWalkthroughView(
                 onOpenGuide: {
                     showInstructions = true
                 }
             )
         }
-        .sheet(isPresented: $showInstructions) {
+        .sheet(isPresented: $showInstructions, onDismiss: presentPermissionsIfNeeded) {
             InstructionsView()
+        }
+        .sheet(isPresented: $showPermissions) {
+            PermissionsView()
+        }
+    }
+
+    /// Shows the Permissions screen once, after the walkthrough and guide are closed.
+    private func presentPermissionsIfNeeded() {
+        guard !showOnboarding, !showInstructions, !showVideoLibrary else { return }
+        permissions.refreshStatuses()
+        if PermissionsPrompt.shouldPresent(
+            hasSeen: hasSeenPermissions,
+            photoLibrary: permissions.photoLibraryStatus,
+            speech: permissions.speechStatus
+        ) {
+            showPermissions = true
         }
     }
 

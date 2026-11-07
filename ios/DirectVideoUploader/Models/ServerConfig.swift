@@ -2,7 +2,7 @@
 import Foundation
 
 /// Centralized UserDefaults keys.
-enum UserDefaultsKeys {
+nonisolated enum UserDefaultsKeys {
     static let serverURL = "dvu_server_url"
     static let authToken = "dvu_auth_token"
     static let appearanceMode = "dvu_appearance_mode"
@@ -13,14 +13,18 @@ enum UserDefaultsKeys {
 /// Priority order for resolving the server URL:
 ///   1. User-saved override (UserDefaults) — set via the login screen
 ///   2. Environment variable DVU_SERVER_URL — for CI / Xcode schemes
-///   3. Simulator default → http://127.0.0.1:3000
-///   4. Physical device default → production URL (or last-known dev IP)
+///   3. Debug default → dev server (https://dev.ms-fixer.com)
+///   4. Release → production URL
 enum ServerConfig {
 
     // MARK: - Production URL (update when deployed to Render)
 
     /// The production server URL. Used as the default for physical devices in Release builds.
     private static let productionURL = "https://ms-fixer.com"
+
+    /// Default for Debug builds (simulator and device). For a local server, set
+    /// `DVU_SERVER_URL` in the scheme or enter the URL on the login screen.
+    private static let devURL = "https://dev.ms-fixer.com"
 
     /// UserDefaults key for the user-saved server URL override
     private static let serverURLKey = UserDefaultsKeys.serverURL
@@ -44,13 +48,8 @@ enum ServerConfig {
                 return url
             }
 
-            // 3. Simulator → always 127.0.0.1
-            #if targetEnvironment(simulator)
-                return URL(string: "http://127.0.0.1:3000")!
-            #else
-                // 4. Physical device in Debug → home server via Cloudflare Tunnel
-                return URL(string: "https://dev.ms-fixer.com")!
-            #endif
+            // 3. Dev server
+            return URL(string: devURL)!
 
         #else
             // Release builds always use production

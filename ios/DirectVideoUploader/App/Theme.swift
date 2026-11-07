@@ -33,7 +33,7 @@ enum Theme {
     /// Change this one line to restyle every font in the app.
     static let fontFamily: FontFamily = .system
 
-    private static func resolvedInterfaceStyle(from traits: UITraitCollection)
+    nonisolated private static func resolvedInterfaceStyle(from traits: UITraitCollection)
         -> UIUserInterfaceStyle
     {
         switch traits.userInterfaceStyle {
@@ -45,9 +45,14 @@ enum Theme {
                 return current
             }
 
-            let screen = UIScreen.main.traitCollection.userInterfaceStyle
-            if screen == .dark || screen == .light {
-                return screen
+            // UIColor providers can run off the main thread; UIScreen is main-actor only.
+            if Thread.isMainThread {
+                let screen = MainActor.assumeIsolated {
+                    UIScreen.main.traitCollection.userInterfaceStyle
+                }
+                if screen == .dark || screen == .light {
+                    return screen
+                }
             }
 
             return .light
@@ -56,9 +61,10 @@ enum Theme {
         }
     }
 
-    private static func adaptive(_ lightHex: String, _ darkHex: String) -> Color {
+    /// Nonisolated: UIKit resolves dynamic colors on whatever thread draws.
+    nonisolated private static func adaptive(_ lightHex: String, _ darkHex: String) -> Color {
         Color(
-            uiColor: UIColor { traits in
+            uiColor: UIColor { @Sendable traits in
                 let style = resolvedInterfaceStyle(from: traits)
                 let hex = style == .dark ? darkHex : lightHex
                 return UIColor(hex: hex)
@@ -73,6 +79,10 @@ enum Theme {
     static let black = Color(hex: "#111111")
     static let white = Color(hex: "#F5F5F5")
     static let purple = Color(hex: "#8576EE")
+    /// Purple for text on light/dark backgrounds (≥ 4.5:1 contrast).
+    static let purpleText = adaptive("#5B4BD1", "#A99FF5")
+    /// Purple fill behind white text (≥ 4.5:1 contrast).
+    static let purpleFill = Color(hex: "#5B4BD1")
     static let blue = Color(hex: "#007AFF")
     static let green = Color(hex: "#30D158")
     static let red = Color(hex: "#FF453A")
@@ -105,6 +115,8 @@ enum Theme {
     // Text hierarchy
     static let primaryText = adaptive("#111111", "#F5F5F5")
     static let secondaryText = adaptive("#616167", "#98989D")
+    /// Warning text that keeps 4.5:1 contrast on light and dark card backgrounds.
+    static let warningText = adaptive("#8A6D00", "#FFD60A")
     static let tertiaryText = adaptive("#8A8A90", "#636366")
     static let lightText = adaptive("#2A2A2E", "#E5E5EA")
     static let metaText = adaptive("#4A4A4F", "#EBEBF5")
@@ -241,7 +253,7 @@ enum Theme {
 
 // MARK: - Color Extension
 
-extension Color {
+nonisolated extension Color {
     init(hex: String) {
         let hex = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
         var int: UInt64 = 0
@@ -265,7 +277,7 @@ extension Color {
     }
 }
 
-extension UIColor {
+nonisolated extension UIColor {
     fileprivate convenience init(hex: String) {
         let sanitized = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
         var value: UInt64 = 0

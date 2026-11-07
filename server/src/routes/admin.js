@@ -8,6 +8,7 @@ import prisma from '../lib/prisma.js';
 import { hashPin } from '../lib/utils.js';
 import { deleteMuxAsset, isMuxEnabled } from '../lib/mux.js';
 import { redactCompanyCode, redactPersonName, redactPhoneNumber } from '../lib/redact.js';
+import { checkRoleChange, isAdminRole } from '../lib/roles.js';
 
 export default async function adminRoutes(fastify) {
 
@@ -145,7 +146,7 @@ export default async function adminRoutes(fastify) {
         preHandler: [fastify.authenticate],
     }, async (request) => {
         // Role-based filtering: admins see all, non-admins see only their org's assets
-        const isAdmin = request.user?.role === 'ADMIN';
+        const isAdmin = isAdminRole(request.user?.role);
         const userCompanyCode = request.user?.companyCode || null;
 
         // Build WHERE clause for company filtering
@@ -688,6 +689,9 @@ export default async function adminRoutes(fastify) {
         // Handle companyCode — null removes assignment
         if (companyCode !== undefined) {
             if (companyCode === null || companyCode === '') {
+                if (isAdminRole(user.role)) {
+                    return reply.status(400).send({ error: 'Admins must belong to an organization. Change their role first.' });
+                }
                 data.companyCode = null;
             } else {
                 const org = await prisma.organization.findUnique({ where: { companyCode } });
@@ -732,6 +736,54 @@ export default async function adminRoutes(fastify) {
                 companyName: updated.organization?.companyName || null,
             },
             message: `Updated user ${updated.name}`,
+        };
+    });
+
+    /**
+     * PATCH /api/admin/users/:id/role
+     * Set a user's role to USER or ADMIN. Team admins can only change users in
+     * their own organization; SUPER_ADMIN can't be granted or changed here.
+     */
+    fastify.patch('/api/admin/users/:id/role', {
+        preHandler: [fastify.authenticate, fastify.authorizeAdmin],
+    }, async (request, reply) => {
+        const { id } = request.params;
+        const { role } = request.body || {};
+
+        const target = await prisma.user.findUnique({
+            where: { id },
+            select: { id: true, name: true, phoneNumber: true, role: true, companyCode: true },
+        });
+
+        const decision = checkRoleChange(request.user, target, role);
+        if (!decision.ok) {
+            return reply.status(decision.status).send({ error: decision.error });
+        }
+
+        if (target.role === role) {
+            return { user: { id: target.id, role: target.role }, message: `${target.name} is already ${role}` };
+        }
+
+        const updated = await prisma.user.update({
+            where: { id },
+            data: { role },
+            select: { id: true, name: true, role: true, companyCode: true },
+        });
+
+        request.log.warn(
+            {
+                actorId: request.user.id,
+                userName: redactPersonName(target.name),
+                phoneNumber: redactPhoneNumber(target.phoneNumber),
+                fromRole: target.role,
+                toRole: role,
+            },
+            'Admin changed user role'
+        );
+
+        return {
+            user: updated,
+            message: `${updated.name} is now ${role}`,
         };
     });
 

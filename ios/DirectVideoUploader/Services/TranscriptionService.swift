@@ -1,8 +1,9 @@
 import Speech
+import Synchronization
 import AVFoundation
 
 /// Timestamped word segment from speech recognition.
-struct TranscriptSegment: Codable, Sendable {
+nonisolated struct TranscriptSegment: Codable, Sendable {
     let word: String
     let start: Double    // seconds from video start
     let end: Double      // start + duration
@@ -10,7 +11,7 @@ struct TranscriptSegment: Codable, Sendable {
 }
 
 /// Result from transcription — plain text + per-word timestamps.
-struct TranscriptionResult: Sendable {
+nonisolated struct TranscriptionResult: Sendable {
     let text: String
     let segments: [TranscriptSegment]
 }
@@ -32,6 +33,12 @@ final class TranscriptionService {
 
     var state: TranscriptionState = .idle
     var progress: Double = 0  // 0.0–1.0 estimate
+
+    private let authorizer: any PermissionAuthorizing
+
+    init(authorizer: any PermissionAuthorizing = SystemPermissionAuthorizer()) {
+        self.authorizer = authorizer
+    }
 
     // MARK: - Public API
 
@@ -56,7 +63,7 @@ final class TranscriptionService {
         // 2. Run recognition (nonisolated — handles SFSpeechRecognizer internally)
         state = .transcribing
         progress = 0.1
-        print("🎙️ [Transcribe] Starting recognition for \(videoURL.lastPathComponent)...")
+        Log.debug("🎙️ [Transcribe] Starting recognition for \(videoURL.lastPathComponent)...", logger: Log.transcription)
 
         let result = await runRecognitionPipeline(videoURL: videoURL)
 
@@ -76,9 +83,9 @@ final class TranscriptionService {
     /// Runs the full recognition pipeline off the main actor.
     /// Creates SFSpeechRecognizer internally to avoid sending non-Sendable types across actors.
     /// Strategy: server-based first (more accurate), then on-device fallback.
-    private nonisolated func runRecognitionPipeline(videoURL: URL) async -> TranscriptionResult? {
+    @concurrent private nonisolated func runRecognitionPipeline(videoURL: URL) async -> TranscriptionResult? {
         guard let recognizer = SFSpeechRecognizer(), recognizer.isAvailable else {
-            print("❌ [Transcribe] Speech recognizer unavailable for this locale")
+            Log.error("❌ [Transcribe] Speech recognizer unavailable for this locale", logger: Log.transcription)
             return nil
         }
 
@@ -88,20 +95,20 @@ final class TranscriptionService {
         }
 
         // Attempt 2: On-device fallback (works offline, different model)
-        if #available(iOS 16, *), recognizer.supportsOnDeviceRecognition {
-            print("🎙️ [Transcribe] Server-based found no speech, trying on-device model...")
+        if recognizer.supportsOnDeviceRecognition {
+            Log.debug("🎙️ [Transcribe] Server-based found no speech, trying on-device model...", logger: Log.transcription)
             if let onDeviceResult = await attemptRecognition(recognizer: recognizer, videoURL: videoURL, onDevice: true) {
                 return onDeviceResult
             }
         }
 
-        print("🎙️ [Transcribe] No speech detected after both attempts")
+        Log.debug("🎙️ [Transcribe] No speech detected after both attempts", logger: Log.transcription)
         return nil
     }
 
     /// Single recognition attempt — returns nil if no speech found.
     /// Runs entirely nonisolated to avoid sending non-Sendable Speech types across actors.
-    private nonisolated func attemptRecognition(
+    @concurrent private nonisolated func attemptRecognition(
         recognizer: SFSpeechRecognizer,
         videoURL: URL,
         onDevice: Bool
@@ -113,28 +120,26 @@ final class TranscriptionService {
         request.contextualStrings = ["mediasource", "Mediasource", "b-roll", "B-roll", "slug", "standup", "Fixer", "breaking"]
 
         if onDevice {
-            if #available(iOS 16, *) {
-                request.requiresOnDeviceRecognition = true
-            }
-            print("🎙️ [Transcribe] Using on-device recognition")
+            request.requiresOnDeviceRecognition = true
+            Log.debug("🎙️ [Transcribe] Using on-device recognition", logger: Log.transcription)
         } else {
-            print("🎙️ [Transcribe] Using server-based recognition")
+            Log.debug("🎙️ [Transcribe] Using server-based recognition", logger: Log.transcription)
         }
 
         do {
             let result = try await performRecognition(recognizer: recognizer, request: request)
             if let result {
-                print("✅ [Transcribe] Got \(result.segments.count) segments (\(onDevice ? "on-device" : "server")), text: \"\(result.text.prefix(80))...\"")
+                Log.debug("✅ [Transcribe] Got \(result.segments.count) segments (\(onDevice ? "on-device" : "server"))", logger: Log.transcription)
             }
             return result
         } catch {
             let nsError = error as NSError
             // Error 203 = no speech — not a real error
             if nsError.domain == "kAFAssistantErrorDomain" && nsError.code == 203 {
-                print("🎙️ [Transcribe] No speech detected (\(onDevice ? "on-device" : "server"), error 203)")
+                Log.debug("🎙️ [Transcribe] No speech detected (\(onDevice ? "on-device" : "server"), error 203)", logger: Log.transcription)
                 return nil
             }
-            print("⚠️ [Transcribe] \(onDevice ? "On-device" : "Server") failed: \(error.localizedDescription) (domain: \(nsError.domain), code: \(nsError.code))")
+            Log.error("⚠️ [Transcribe] \(onDevice ? "On-device" : "Server") failed: \(Log.describe(error))", logger: Log.transcription)
             return nil
         }
     }
@@ -143,27 +148,21 @@ final class TranscriptionService {
 
     /// Runs the speech recognition task in a nonisolated context so the
     /// callback closure doesn't cross actor boundaries.
-    private nonisolated func performRecognition(
+    @concurrent private nonisolated func performRecognition(
         recognizer: SFSpeechRecognizer,
         request: SFSpeechURLRecognitionRequest
     ) async throws -> TranscriptionResult? {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<TranscriptionResult?, Error>) in
-            // Use a class-based box so the flag is reference-typed and safe
-            // to capture in the Sendable closure.
-            final class ResumeGuard: @unchecked Sendable {
-                var hasResumed = false
-            }
-            let guard_ = ResumeGuard()
+            let gate = ResumeGate()
 
-            recognizer.recognitionTask(with: request) { result, error in
-                guard !guard_.hasResumed else { return }
+            recognizer.recognitionTask(with: request) { @Sendable result, error in
                 if let error {
-                    guard_.hasResumed = true
+                    guard gate.claim() else { return }
                     continuation.resume(throwing: error)
                     return
                 }
                 if let result, result.isFinal {
-                    guard_.hasResumed = true
+                    guard gate.claim() else { return }
                     let text = result.bestTranscription.formattedString
                     if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                         continuation.resume(returning: nil)
@@ -185,11 +184,25 @@ final class TranscriptionService {
 
     // MARK: - Authorization
 
-    private nonisolated func requestAuthorization() async -> Bool {
-        await withCheckedContinuation { continuation in
-            SFSpeechRecognizer.requestAuthorization { status in
-                continuation.resume(returning: status == .authorized)
-            }
+    func requestAuthorization() async -> Bool {
+        switch authorizer.speechStatus() {
+        case .authorized: return true
+        case .notDetermined: return await authorizer.requestSpeech() == .authorized
+        default: return false
+        }
+    }
+}
+
+/// Lets exactly one recognition callback resume the continuation.
+private nonisolated final class ResumeGate: Sendable {
+    private let resumed = Mutex(false)
+
+    /// Returns true the first time only.
+    func claim() -> Bool {
+        resumed.withLock { resumed in
+            guard !resumed else { return false }
+            resumed = true
+            return true
         }
     }
 }

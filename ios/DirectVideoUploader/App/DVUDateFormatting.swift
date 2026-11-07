@@ -1,16 +1,11 @@
 import Foundation
 
 /// Shared date formatters — avoids creating new instances on every call.
-enum DVUDateFormatting {
+nonisolated enum DVUDateFormatting {
     // MARK: - Cached Formatters
 
-    nonisolated(unsafe) private static let isoFull: ISO8601DateFormatter = {
-        let f = ISO8601DateFormatter()
-        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return f
-    }()
-
-    nonisolated(unsafe) private static let isoBasic = ISO8601DateFormatter()
+    private static let isoFull = Date.ISO8601FormatStyle(includingFractionalSeconds: true)
+    private static let isoBasic = Date.ISO8601FormatStyle()
 
     private static let longFormatter: DateFormatter = {
         let f = DateFormatter()
@@ -34,12 +29,12 @@ enum DVUDateFormatting {
 
     /// Parse an ISO 8601 string (with or without fractional seconds).
     static func parseISO(_ string: String) -> Date? {
-        isoFull.date(from: string) ?? isoBasic.date(from: string)
+        (try? isoFull.parse(string)) ?? (try? isoBasic.parse(string))
     }
 
     /// Format a `Date` as an ISO 8601 string (no fractional seconds).
     static func isoString(from date: Date) -> String {
-        isoBasic.string(from: date)
+        isoBasic.format(date)
     }
 
     // MARK: - Display Formats

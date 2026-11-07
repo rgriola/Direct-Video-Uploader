@@ -1,6 +1,6 @@
 # Apple Speech Framework — Transcription Implementation
 
-> **Purpose**: Add automatic video transcription to the upload workflow using Apple's native `Speech` framework. Zero third-party dependencies. On-device processing (iOS 17+).
+> **Purpose**: Add automatic video transcription to the upload workflow using Apple's `Speech` framework, with server-based recognition first and an on-device fallback when supported.
 >
 > **Status**: ✅ IMPLEMENTED (March 25, 2026) — Dual-attempt strategy (server-based → on-device fallback), `addsPunctuation` for sentence formatting, `contextualStrings` for newsroom vocabulary.
 
@@ -8,13 +8,15 @@
 
 ## Overview
 
-After a video is uploaded, the iOS client runs on-device speech recognition to produce a text transcript with per-word timestamps. The transcript is saved to the database alongside the clip metadata and displayed in the Archive view, Metadata sheet, and web clip viewer.
+After a video is uploaded, the iOS client first attempts Apple's server-based speech recognition and then falls back to on-device recognition when supported. Audio may therefore be sent to Apple. The resulting transcript is saved to the database alongside the clip metadata and displayed in the Archive view, Metadata sheet, and web clip viewer.
 
 ---
 
 ## 1. New File: `TranscriptionService.swift`
 
 **Location**: `ios/DirectVideoUploader/Services/TranscriptionService.swift`
+
+The code example and agent prompts below describe the earlier on-device-only design, not the current server-first implementation. Consult the source before changing transcription or making privacy claims.
 
 ```swift
 import Speech

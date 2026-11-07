@@ -6,13 +6,33 @@ import UIKit
 
 // MARK: - Public API (unchanged contract)
 
+/// Result of the trim screen.
+enum TrimOutcome {
+    /// Nothing was cut; upload the original file as-is.
+    case fullLength
+    /// A passthrough copy of the selected range.
+    case trimmed(URL)
+}
+
+/// Decides whether a trim selection actually removes footage.
+nonisolated enum TrimRange {
+    /// Selections within this distance of either end count as untouched (under two frames at 30 fps).
+    static let fullLengthTolerance: Double = 0.05
+
+    static func isFullLength(start: Double, end: Double, duration: Double) -> Bool {
+        guard duration > 0 else { return true }
+        return start <= fullLengthTolerance && end >= duration - fullLengthTolerance
+    }
+}
+
 /// Lossless video trim UI using AVFoundation passthrough export.
 /// Shows a filmstrip scrubber, draggable trim handles, and an inline player preview.
 /// The trimmed output has identical quality to the original — no re-encoding.
+/// When the full length is kept, no copy is made and the original is uploaded.
 struct VideoTrimView: View {
     let videoURL: URL
     let originalFileName: String
-    var onTrimmed: (URL) -> Void
+    var onFinished: (TrimOutcome) -> Void
     var onCancel: () -> Void
 
     @State private var vm = TrimViewModel()
@@ -156,6 +176,10 @@ struct VideoTrimView: View {
 
     private func handleExport() {
         vm.pause()
+        if TrimRange.isFullLength(start: vm.trimStart, end: vm.trimEnd, duration: vm.duration) {
+            onFinished(.fullLength)
+            return
+        }
         isExporting = true
         exportProgress = 0
 
@@ -172,15 +196,11 @@ struct VideoTrimView: View {
                         }
                     }
                 )
-                await MainActor.run {
-                    isExporting = false
-                    onTrimmed(outputURL)
-                }
+                isExporting = false
+                onFinished(.trimmed(outputURL))
             } catch {
-                await MainActor.run {
-                    isExporting = false
-                    exportError = error.localizedDescription
-                }
+                isExporting = false
+                exportError = error.localizedDescription
             }
         }
     }
@@ -212,6 +232,13 @@ final class TrimViewModel {
     let player = AVPlayer()
     private var asset: AVURLAsset?
     private var timeObserver: Any?
+    @ObservationIgnored private var loadTask: Task<Void, Never>?
+
+    // Keep blocking session calls off-main and ordered across presentation/dismissal.
+    nonisolated private static let audioSessionQueue = DispatchQueue(
+        label: "com.directvideo.uploader.trim-audio",
+        qos: .userInitiated
+    )
 
     static let thumbnailCount = 12
     static let minimumTrimDuration: Double = 1.0
@@ -219,19 +246,34 @@ final class TrimViewModel {
     private let haptic = UIImpactFeedbackGenerator(style: .light)
 
     func load(url: URL) {
-        // Enable audio playback even in silent mode
-        try? AVAudioSession.sharedInstance().setCategory(.playback)
-        try? AVAudioSession.sharedInstance().setActive(true)
-
+        loadTask?.cancel()
         let asset = AVURLAsset(url: url)
         self.asset = asset
 
-        let item = AVPlayerItem(asset: asset)
-        player.replaceCurrentItem(with: item)
+        loadTask = Task { @MainActor in
+            guard !Task.isCancelled else { return }
 
-        Task {
+            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                Self.audioSessionQueue.async {
+                    do {
+                        let session = AVAudioSession.sharedInstance()
+                        try session.setCategory(.playback)
+                        try session.setActive(true)
+                    } catch {
+                        Log.error("Trim audio activation failed: \(Log.describe(error))", logger: Log.media)
+                    }
+                    continuation.resume()
+                }
+            }
+            guard !Task.isCancelled else { return }
+
+            let item = AVPlayerItem(asset: asset)
+            player.replaceCurrentItem(with: item)
+
             // Load duration
-            if let cmDur = try? await asset.load(.duration) {
+            let cmDur = try? await asset.load(.duration)
+            guard !Task.isCancelled else { return }
+            if let cmDur {
                 let dur = CMTimeGetSeconds(cmDur)
                 duration = dur
                 trimEnd = dur
@@ -243,6 +285,7 @@ final class TrimViewModel {
                 let size = try? await track.load(.naturalSize),
                 let transform = try? await track.load(.preferredTransform)
             {
+                guard !Task.isCancelled else { return }
                 let transformed = size.applying(transform)
                 let w = abs(transformed.width)
                 let h = abs(transformed.height)
@@ -250,7 +293,9 @@ final class TrimViewModel {
             }
 
             // Generate thumbnails
+            guard !Task.isCancelled else { return }
             await generateThumbnails(asset: asset)
+            guard !Task.isCancelled else { return }
 
             // Set up looping observer (but don't auto-play)
             setupLooping()
@@ -266,12 +311,20 @@ final class TrimViewModel {
     }
 
     func cleanup() {
+        loadTask?.cancel()
+        loadTask = nil
         player.pause()
         if let obs = timeObserver {
             player.removeTimeObserver(obs)
             timeObserver = nil
         }
-        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        Self.audioSessionQueue.async {
+            do {
+                try AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+            } catch {
+                Log.error("Trim audio deactivation failed: \(Log.describe(error))", logger: Log.media)
+            }
+        }
     }
 
     func togglePlayPause() {
@@ -318,6 +371,7 @@ final class TrimViewModel {
         var images: [UIImage] = []
 
         for i in 0..<count {
+            guard !Task.isCancelled else { return }
             let fraction = Double(i) / Double(count)
             let time = CMTime(seconds: fraction * duration, preferredTimescale: 600)
             do {
@@ -329,6 +383,7 @@ final class TrimViewModel {
             }
         }
 
+        guard !Task.isCancelled else { return }
         thumbnails = images
     }
 
@@ -577,7 +632,7 @@ private struct TrimScrubberView: View {
 
 /// Exports a trimmed video using AVAssetExportPresetPassthrough — zero re-encoding.
 /// The output is a byte-for-byte copy of the original bitstream within the trim range.
-enum PassthroughExporter {
+nonisolated enum PassthroughExporter {
 
     enum ExportError: LocalizedError {
         case noCompatibleFileType
@@ -594,7 +649,7 @@ enum PassthroughExporter {
         }
     }
 
-    static func export(
+    @concurrent static func export(
         source: URL,
         originalFileName: String,
         startTime: Double,
@@ -623,42 +678,46 @@ enum PassthroughExporter {
         } else {
             fileType = .mov
         }
-        session.outputFileType = fileType
+        // Carry the original's capture date, location and camera details into the copy.
+        if let sourceMetadata = try? await asset.load(.metadata), !sourceMetadata.isEmpty {
+            session.metadata = sourceMetadata
+        }
 
         // Build trimmed output filename
         let name = (originalFileName as NSString).deletingPathExtension
         let outExt = fileType == .mp4 ? "mp4" : "mov"
         let editedName = "\(name)-edited.\(outExt)"
-        let destURL = FileManager.default.temporaryDirectory.appendingPathComponent(editedName)
-        try? FileManager.default.removeItem(at: destURL)
-
-        session.outputURL = destURL
+        // A unique folder per export, so re-trimming can't replace a copy that's still uploading.
+        let destFolder = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: destFolder, withIntermediateDirectories: true)
+        let destURL = destFolder.appendingPathComponent(editedName)
 
         // Set trim range
         let start = CMTime(seconds: startTime, preferredTimescale: 600)
         let end = CMTime(seconds: endTime, preferredTimescale: 600)
         session.timeRange = CMTimeRange(start: start, end: end)
 
-        // Export with progress polling via async Task
-        nonisolated(unsafe) let pollSession = session
+        let states = session.states(updateInterval: 0.1)
         let progressTask = Task {
-            while !Task.isCancelled {
-                onProgress?(Double(pollSession.progress))
-                try? await Task.sleep(for: .milliseconds(100))
+            for await state in states {
+                if case .exporting(let progress) = state {
+                    onProgress?(progress.fractionCompleted)
+                }
             }
         }
-        await session.export()
-        progressTask.cancel()
-        onProgress?(1.0)
+        defer { progressTask.cancel() }
 
-        switch session.status {
-        case .completed:
-            return destURL
-        case .cancelled:
+        do {
+            try await session.export(to: destURL, as: fileType)
+        } catch is CancellationError {
+            try? FileManager.default.removeItem(at: destFolder)
             throw ExportError.cancelled
-        default:
-            throw ExportError.exportFailed(
-                session.error?.localizedDescription ?? "Unknown export error")
+        } catch {
+            try? FileManager.default.removeItem(at: destFolder)
+            throw ExportError.exportFailed(error.localizedDescription)
         }
+        onProgress?(1.0)
+        return destURL
     }
 }

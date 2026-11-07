@@ -50,6 +50,7 @@ export default function App() {
 function Dashboard() {
   const [loggedIn, setLoggedIn] = useState(false);
   const [userRole, setUserRole] = useState<string | null>(null);
+  const isAdmin = userRole === "ADMIN" || userRole === "SUPER_ADMIN";
   const [userName, setUserName] = useState<string | null>(null);
   const [userPhone, setUserPhone] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
@@ -216,7 +217,7 @@ function Dashboard() {
         <UserList
           users={users}
           isLoading={usersLoading}
-          onDeleteUser={userRole === "ADMIN" ? handleDeleteUser : undefined}
+          onDeleteUser={isAdmin ? handleDeleteUser : undefined}
           currentUserId={userId ?? undefined}
           organizations={organizations}
           onRefresh={() => refreshDashboard()}
@@ -225,7 +226,7 @@ function Dashboard() {
       </div>
 
       {/* Organizations panel — admin only */}
-      {userRole === "ADMIN" && (
+      {isAdmin && (
         <div className="mb-8">
           <OrgPanel
             organizations={organizations ?? []}
@@ -244,7 +245,7 @@ function Dashboard() {
 
       <EndpointTable />
 
-      {userRole === "ADMIN" && (
+      {isAdmin && (
         <div className="mt-8">
           <AdminTools onReset={() => { refreshDashboard(); addLog("http", "Nuclear reset executed"); }} />
         </div>

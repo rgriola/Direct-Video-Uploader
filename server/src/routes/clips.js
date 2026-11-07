@@ -10,6 +10,7 @@ import { verifyPin, hashPin, dbRetry } from '../lib/utils.js';
 import { redactCompanyCode, redactPersonName, redactPhoneNumber } from '../lib/redact.js';
 import { CLIP_COOKIE_NAME, clipCookieOpts } from '../lib/clipAuth.js';
 import { icon } from '../lib/icons.js';
+import { isAdminRole } from '../lib/roles.js';
 
 /** Escape HTML special characters to prevent XSS (#5). */
 function escapeHtml(str) {
@@ -104,7 +105,7 @@ export default async function clipRoutes(fastify) {
     // Admins see everything; regular users only see clips from their org
     function canAccessClip(viewer, clipUploaderCompanyCode) {
         if (!viewer) return false;
-        if (viewer.role === 'ADMIN') return true;
+        if (isAdminRole(viewer.role)) return true;
         if (!viewer.companyCode) return false;
         if (!clipUploaderCompanyCode) return false;
         return viewer.companyCode.toLowerCase() === clipUploaderCompanyCode.toLowerCase();
