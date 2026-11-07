@@ -56,7 +56,7 @@ struct ProfileView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("The onboarding walkthrough will show again on next app launch.")
+            Text("Onboarding will reset on next launch.")
         }
     }
 

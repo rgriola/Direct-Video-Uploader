@@ -68,7 +68,14 @@ launchctl load ~/Library/LaunchAgents/com.msfixer.fastify.plist
 This DB uses Prisma migrations (not `db push`). Workflow:
 1. Edit `server/prisma/schema.prisma`
 2. Locally: `npx prisma migrate dev --name <description>` (creates + applies migration, needs a role with `CREATEDB` for the shadow DB — `fixer_app` intentionally lacks this; use the admin role via a one-off `DATABASE_URL` override if needed)
-3. On the home server: `npx prisma migrate deploy` (uses `fixer_app`, no shadow DB needed)
+
+3. On the home server, from `server/` (the schema and the pinned Prisma version live there; running
+   from the repo root fails with "Could not find Prisma Schema" and makes `npx` download a different Prisma):
+   ```bash
+   cd ~/apps/direct-video-uploader/server
+   npx prisma migrate status    # lists pending migrations
+   npx prisma migrate deploy    # uses fixer_app, no shadow DB needed
+   ```
 4. Back up first (`scripts/pg-backup.sh`) whenever a migration changes data or types
 5. If a migration was bootstrapped as the admin role, fix table ownership:
    ```sql

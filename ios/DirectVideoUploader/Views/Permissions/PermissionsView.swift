@@ -31,7 +31,7 @@ struct PermissionsView: View {
                             PermissionRow(
                                 icon: "photo.on.rectangle.angled",
                                 title: "Photo Library",
-                                subtitle: "Upload your original videos, including from iCloud, and re-upload from Archive.",
+                                subtitle: "Used to upload videos from the photo library.",
                                 badge: "Recommended",
                                 statusLabel: permissions.photoLibraryLabel,
                                 state: permissions.photoLibraryRowState,
@@ -46,7 +46,7 @@ struct PermissionsView: View {
                             PermissionRow(
                                 icon: "mic.fill",
                                 title: "Speech Recognition",
-                                subtitle: "Transcribe video audio after upload.",
+                                subtitle: "Fixer can transcribe video audio.",
                                 badge: "Optional",
                                 statusLabel: permissions.speechLabel,
                                 state: permissions.speechRowState,
