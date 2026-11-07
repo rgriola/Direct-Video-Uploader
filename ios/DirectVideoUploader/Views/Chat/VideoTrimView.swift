@@ -232,6 +232,13 @@ final class TrimViewModel {
     let player = AVPlayer()
     private var asset: AVURLAsset?
     private var timeObserver: Any?
+    @ObservationIgnored private var loadTask: Task<Void, Never>?
+
+    // Keep blocking session calls off-main and ordered across presentation/dismissal.
+    nonisolated private static let audioSessionQueue = DispatchQueue(
+        label: "com.directvideo.uploader.trim-audio",
+        qos: .userInitiated
+    )
 
     static let thumbnailCount = 12
     static let minimumTrimDuration: Double = 1.0
@@ -239,19 +246,34 @@ final class TrimViewModel {
     private let haptic = UIImpactFeedbackGenerator(style: .light)
 
     func load(url: URL) {
-        // Enable audio playback even in silent mode
-        try? AVAudioSession.sharedInstance().setCategory(.playback)
-        try? AVAudioSession.sharedInstance().setActive(true)
-
+        loadTask?.cancel()
         let asset = AVURLAsset(url: url)
         self.asset = asset
 
-        let item = AVPlayerItem(asset: asset)
-        player.replaceCurrentItem(with: item)
+        loadTask = Task { @MainActor in
+            guard !Task.isCancelled else { return }
 
-        Task {
+            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                Self.audioSessionQueue.async {
+                    do {
+                        let session = AVAudioSession.sharedInstance()
+                        try session.setCategory(.playback)
+                        try session.setActive(true)
+                    } catch {
+                        Log.error("Trim audio activation failed: \(Log.describe(error))", logger: Log.media)
+                    }
+                    continuation.resume()
+                }
+            }
+            guard !Task.isCancelled else { return }
+
+            let item = AVPlayerItem(asset: asset)
+            player.replaceCurrentItem(with: item)
+
             // Load duration
-            if let cmDur = try? await asset.load(.duration) {
+            let cmDur = try? await asset.load(.duration)
+            guard !Task.isCancelled else { return }
+            if let cmDur {
                 let dur = CMTimeGetSeconds(cmDur)
                 duration = dur
                 trimEnd = dur
@@ -263,6 +285,7 @@ final class TrimViewModel {
                 let size = try? await track.load(.naturalSize),
                 let transform = try? await track.load(.preferredTransform)
             {
+                guard !Task.isCancelled else { return }
                 let transformed = size.applying(transform)
                 let w = abs(transformed.width)
                 let h = abs(transformed.height)
@@ -270,7 +293,9 @@ final class TrimViewModel {
             }
 
             // Generate thumbnails
+            guard !Task.isCancelled else { return }
             await generateThumbnails(asset: asset)
+            guard !Task.isCancelled else { return }
 
             // Set up looping observer (but don't auto-play)
             setupLooping()
@@ -286,12 +311,20 @@ final class TrimViewModel {
     }
 
     func cleanup() {
+        loadTask?.cancel()
+        loadTask = nil
         player.pause()
         if let obs = timeObserver {
             player.removeTimeObserver(obs)
             timeObserver = nil
         }
-        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        Self.audioSessionQueue.async {
+            do {
+                try AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+            } catch {
+                Log.error("Trim audio deactivation failed: \(Log.describe(error))", logger: Log.media)
+            }
+        }
     }
 
     func togglePlayPause() {
@@ -338,6 +371,7 @@ final class TrimViewModel {
         var images: [UIImage] = []
 
         for i in 0..<count {
+            guard !Task.isCancelled else { return }
             let fraction = Double(i) / Double(count)
             let time = CMTime(seconds: fraction * duration, preferredTimescale: 600)
             do {
@@ -349,6 +383,7 @@ final class TrimViewModel {
             }
         }
 
+        guard !Task.isCancelled else { return }
         thumbnails = images
     }
 

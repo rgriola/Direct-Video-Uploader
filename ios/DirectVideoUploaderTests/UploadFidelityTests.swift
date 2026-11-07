@@ -1,3 +1,4 @@
+import AVFoundation
 import Foundation
 import Testing
 @testable import DirectVideoUploader
@@ -28,6 +29,18 @@ struct UploadFidelityTests {
         #expect(!TrimRange.isFullLength(start: 0.5, end: 30, duration: 30))
         #expect(!TrimRange.isFullLength(start: 0, end: 29.5, duration: 30))
         #expect(!TrimRange.isFullLength(start: 5, end: 10, duration: 30))
+    }
+
+    @Test @MainActor
+    func dismissingTrimImmediatelyCancelsPlayerLoading() async {
+        let model = TrimViewModel()
+        model.load(url: FileManager.default.temporaryDirectory.appendingPathComponent("cancelled-trim.mov"))
+        model.cleanup()
+
+        await Task.yield()
+
+        #expect(model.player.currentItem == nil)
+        #expect(model.thumbnails.isEmpty)
     }
 
     @Test
