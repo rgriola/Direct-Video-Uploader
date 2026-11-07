@@ -19,22 +19,22 @@
  */
 
 import { useState } from "react";
-import { ChevronDown } from "lucide-react";
 import type { Asset } from "@/lib/types";
 import { panelHeader, subTextPanelHeader } from "@/lib/types";
+import { Icon, type IconName } from "./Icon";
 
 // ─── Status Configuration ────────────────────────────────────────────
 //
 // Maps asset.status values to visual indicators used in AssetRow.
-//   statusIcons   → emoji inside the colored circle
+//   statusIcons   → icon name shown inside the colored circle
 //   statusClasses → Tailwind classes for the status pill badge
 //   priorityColors → text color for the priority field in form response
 
-const statusIcons: Record<string, string> = {
-  READY: "✅",
-  PROCESSING: "⏳",
-  UPLOADING: "📤",
-  ERROR: "❌",
+const statusIcons: Record<string, IconName> = {
+  READY: "success",
+  PROCESSING: "processing",
+  UPLOADING: "outgoing",
+  ERROR: "error",
 };
 
 const statusClasses: Record<string, string> = {
@@ -71,11 +71,11 @@ export function AssetList({ assets, isLoading }: AssetListProps) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   return (
-    <div className="bg-(--card) border border-(--border-subtle) rounded-(--radius) overflow-hidden">
-      {/* Panel header — "📦 Assets [count]" */}
+    <div className="bg-(--card) border border-(--border-subtle) rounded-(--radius-xl) overflow-hidden">
+      {/* Panel header — "Assets [count]" */}
       <div className={panelHeader}>
-        <h2 className="text-lg font-semibold flex items-center gap-2">
-          📦 Assets{" "}
+        <h2 className="text-(length:--text-lg) font-semibold flex items-center gap-2">
+          <Icon name="assets" /> Assets{" "}
           <span className={subTextPanelHeader}>
             {assets?.length ?? 0}
           </span>
@@ -85,9 +85,9 @@ export function AssetList({ assets, isLoading }: AssetListProps) {
       {/* Scrollable list — max 400px, then scrolls */}
       <div className="max-h-100 overflow-y-auto scrollbar-hide">
         {isLoading ? (
-          <Empty icon="📦" text="Loading assets..." />
+          <Empty icon="assets" text="Loading assets..." />
         ) : !assets?.length ? (
-          <Empty icon="📦" text="No Assets on the server. Uploaded Video will appear here." />
+          <Empty icon="assets" text="No Assets on the server. Uploaded Video will appear here." />
         ) : (
           assets.map((asset) => (
             <AssetRow
@@ -122,14 +122,13 @@ function AssetRow({ asset, isExpanded, onToggle }: AssetRowProps) {
   // Title: show slug if available, fall back to mediasource ID, then asset ID
   const title = asset.formResponse?.slug || asset.mediasourceId || asset.id;
 
-  // One-line summary: "#100000017 · 1 clip · 2:05 · 1920x1080 · by Rod Griola · 📋 Form"
+  // One-line summary: "#100000017 · 1 clip · 2:05 · 1920x1080 · by Rod Griola"
   const details = [
     asset.mediasourceId ? `#${asset.mediasourceId}` : null,
     asset.clipCount ? `${asset.clipCount} clip${asset.clipCount !== 1 ? "s" : ""}` : null,
     formatDuration(asset.totalDuration) || null,
     clip?.resolution ?? null,
     `by ${asset.user?.name ?? "Unknown"}`,
-    asset.formResponse ? "📋 Form" : null,
   ]
     .filter(Boolean)
     .join(" · ");
@@ -143,32 +142,39 @@ function AssetRow({ asset, isExpanded, onToggle }: AssetRowProps) {
       {/* ── Collapsed row — always visible, click to toggle ── */}
       <button
         onClick={onToggle}
+        aria-expanded={isExpanded}
         className="flex items-center w-full px-6 py-4 hover:bg-(--card-hover) transition-colors cursor-pointer text-left bg-transparent border-0 text-inherit font-inherit"
       >
         {/* Status icon circle */}
-        <div className="w-10.5 h-10.5 rounded-[10px] bg-(--secondary) flex items-center justify-center text-base mr-3.5 shrink-0">
-          {statusIcons[asset.status] ?? "📦"}
+        <div className="w-10.5 h-10.5 rounded-(--radius-lg) bg-(--secondary) flex items-center justify-center text-(length:--text-base) mr-3.5 shrink-0">
+          <Icon name={statusIcons[asset.status] ?? "assets"} />
         </div>
 
         {/* Title + detail line */}
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold truncate">{title}</p>
-          <p className="text-xs text-(--muted-foreground) mt-0.5 flex items-center gap-2">
+          <p className="text-(length:--text-sm) font-semibold truncate">{title}</p>
+          <p className="text-(length:--text-xs) text-(--muted-foreground) mt-0.5 flex items-center gap-2">
             {details}
+            {asset.formResponse && (
+              <span className="inline-flex items-center gap-1 shrink-0">
+                <Icon name="form" /> Form
+              </span>
+            )}
           </p>
         </div>
 
         {/* Right side: badges + chevron */}
         <div className="shrink-0 flex items-center gap-2">
           {missingForm && (
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-(--accent-red-glow) text-(--accent-red)">
-              ⚠️ No Form
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-(--radius-md) text-(length:--text-xs) font-semibold bg-(--accent-red-glow) text-(--accent-red)">
+              <Icon name="warning" /> No Form
             </span>
           )}
-          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold ${statusClasses[asset.status] ?? ""}`}>
+          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-(--radius-md) text-(length:--text-xs) font-semibold ${statusClasses[asset.status] ?? ""}`}>
             {asset.status}
           </span>
-          <ChevronDown
+          <Icon
+            name="expand"
             className={`shrink-0 w-4 h-4 text-(--muted-foreground) transition-transform ${isExpanded ? "rotate-180" : ""}`}
           />
         </div>
@@ -176,12 +182,12 @@ function AssetRow({ asset, isExpanded, onToggle }: AssetRowProps) {
 
       {/* ── Expanded detail panel ── */}
       {isExpanded && (
-        <div className="px-6 pb-4 pt-1 bg-(--muted)/30 border-t border-(--border-subtle)">
+        <div className="px-6 pb-4 pt-1 bg-(--muted-foreground)/10 border-t border-(--border-subtle)">
           {/* Missing form alert */}
           {missingForm && (
-            <div className="flex items-center gap-2 mb-4 px-4 py-2 rounded-lg bg-(--accent-red-glow) border border-(--accent-red)/25">
-              <span className="text-base">🚨</span>
-              <div className="text-xs">
+            <div className="flex items-center gap-2 mb-4 px-4 py-2 rounded-(--radius-lg) bg-(--accent-red-glow) border border-(--accent-red)/25">
+              <span className="text-(length:--text-base)"><Icon name="alert" /></span>
+              <div className="text-(length:--text-xs)">
                 <span className="font-semibold text-(--accent-red)">NO CONTEXT FORM</span>
                 <span className="text-(--muted-foreground)"> Slug and description are missing for this asset.</span>
               </div>
@@ -196,16 +202,16 @@ function AssetRow({ asset, isExpanded, onToggle }: AssetRowProps) {
 
           {/* Footer: timestamp + clip viewer link */}
           <div className="flex items-center justify-between mt-2 pt-2 border-t border-(--border-subtle)">
-            <span className="text-[11px] text-(--muted-foreground)">
+            <span className="text-(length:--text-xs) text-(--muted-foreground)">
               {asset.createdAt ? new Date(asset.createdAt).toLocaleString() : ""}
             </span>
             <a
               href={clipUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-[11px] font-semibold text-(--card-foreground) hover:underline no-underline"
+              className="text-(length:--text-xs) font-semibold text-(--accent-blue) hover:underline no-underline inline-flex items-center gap-1"
             >
-              Play Clip ↗
+              Play Clip <Icon name="arrowUpRight" />
             </a>
           </div>
         </div>
@@ -220,8 +226,8 @@ function AssetRow({ asset, isExpanded, onToggle }: AssetRowProps) {
 function FormSection({ form }: { form: NonNullable<Asset["formResponse"]> }) {
   return (
     <div className="mb-3">
-      <h4 className="text-[11px] font-semibold text-(--muted-foreground) uppercase tracking-wider mb-2">Form Response</h4>
-      <div className="grid grid-cols-2 gap-x-6 gap-y-1.5 text-xs">
+      <h4 className="text-(length:--text-xs) font-semibold text-(--muted-foreground) uppercase tracking-wider mb-2">Form Response</h4>
+      <div className="grid grid-cols-2 gap-x-6 gap-y-1.5 text-(length:--text-xs)">
         {form.description && (
           <div className="col-span-2 max-w-[65ch]">
             <DetailRow label="Description" value={form.description} />
@@ -240,8 +246,8 @@ function FormSection({ form }: { form: NonNullable<Asset["formResponse"]> }) {
 function ClipSection({ clip }: { clip: NonNullable<Asset["clips"]>[number] }) {
   return (
     <div className="mb-3">
-      <h4 className="text-[11px] font-semibold text-(--muted-foreground) uppercase tracking-wider mb-2">Clip Details</h4>
-      <div className="grid grid-cols-2 gap-x-6 gap-y-1.5 text-xs">
+      <h4 className="text-(length:--text-xs) font-semibold text-(--muted-foreground) uppercase tracking-wider mb-2">Clip Details</h4>
+      <div className="grid grid-cols-2 gap-x-6 gap-y-1.5 text-(length:--text-xs)">
         {clip.resolution && <DetailRow label="Resolution" value={clip.resolution} />}
         {clip.codec && <DetailRow label="Codec" value={clip.codec} />}
         {clip.orientation && <DetailRow label="Orientation" value={clip.orientation} />}
@@ -265,10 +271,10 @@ function DetailRow({ label, value, className = "" }: { label: string; value: str
 }
 
 /** Placeholder shown when the list is loading or has no items */
-function Empty({ icon, text }: { icon: string; text: string }) {
+function Empty({ icon, text }: { icon: IconName; text: string }) {
   return (
-    <div className="py-10 px-6 text-center text-(--muted-foreground) text-sm">
-      <div className="text-[32px] mb-2 opacity-50">{icon}</div>
+    <div className="py-10 px-6 text-center text-(--muted-foreground) text-(length:--text-sm)">
+      <div className="text-(length:--text-3xl) mb-2 opacity-50 flex justify-center"><Icon name={icon} /></div>
       {text}
     </div>
   );

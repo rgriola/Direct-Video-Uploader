@@ -1,0 +1,9 @@
+{
+  "id" : "b712b7fa-d195-4ad4-83f4-a303042142f7",
+  "targets" : [
+    {
+      "id" : "f0c39068-a064-4afc-8268-9e97224ae103",
+      "name" : "DirectVideoUploader"
+    }
+  ]
+}

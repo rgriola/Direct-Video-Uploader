@@ -1,6 +1,7 @@
 // Last updated: May 9, 2026 - 6:55pm - GPT-5.3-Codex
 import Fastify from 'fastify';
 import fastifyJwt from '@fastify/jwt';
+import fastifyCookie from '@fastify/cookie';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { hashPin, hashPinLegacy } from '../lib/utils.js';
 
@@ -35,6 +36,7 @@ beforeEach(async () => {
 
     app = Fastify({ logger: false });
     await app.register(fastifyJwt, { secret: 'test-jwt-secret' });
+    await app.register(fastifyCookie);
 
     app.decorate('authenticate', async (request) => {
         request.user = { id: 'user-1' };

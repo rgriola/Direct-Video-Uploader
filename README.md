@@ -8,6 +8,8 @@ The UX is intentionally modeled after text messaging work-flow: Opening the app 
 
 > **Status:** Phase 3 (~99%) — Mux pipeline operational, Slack integration live, Apple Speech transcription, admin tools, archive, video trim, stability hardening complete. See `PROJECT_STATUS.md` for full details.
 
+**Native readiness roadmap (October 28, 2026):** See the [iOS 27 Readiness Plan](docs/IOS_27_READINESS_PLAN.md) for phased work, acceptance gates, and progress checklists. Historical progress above does not establish current iOS 27 readiness.
+
 ---
 
 ## Architecture
@@ -189,9 +191,9 @@ Replace the device type and runtime with installed iPhone options if needed. If 
 
 | User          | Phone        | PIN    | Role  |
 | ------------- | ------------ | ------ | ----- |
-| Rod Griola    | `9176717330` | `3218` | ADMIN |
-| David Burgess | `5055034455` | `1234` | USER  |
-| Carrie Smith  | `5055551234` | `1234` | USER  |
+| Rod Griola    | `9176717330` | `3xxx` | ADMIN |
+| David Burgess | `5055034455` | `xxxx` | USER  |
+| Carrie Smith  | `5055551234` | `xxxx` | USER  |
 
 ---
 
@@ -231,6 +233,21 @@ The project is fully containerized and uses **Google Cloud Build** for automated
 - **Secret Manager**: Holds sensitive environment variables (`DATABASE_URL`, `JWT_SECRET`, `MUX_*`).
 - **Artifact Registry**: Stores versioned Docker container builds tagged by Git commit SHA.
 - **Cloudflare**: Managed DNS CNAME (`ghs.googlehosted.com.`) with automatic SSL certificate provisioning.
+
+---
+
+## Home Server (Cloudflare Tunnel)
+
+The Fastify server and Postgres 18 run on a home MacBook Air instead of Cloud Run/Cloud SQL, exposed via a **Cloudflare Tunnel**. Both the production domain `ms-fixer.com` and the secondary/testing domain `dev.ms-fixer.com` route to this home server (Cloud Run no longer receives traffic for either). Postgres stays loopback-only (SCRAM auth, no open ports); only the Fastify server is tunneled out.
+
+- **Services**: `brew services` manages Postgres 18; a `launchd` `LaunchAgent` (`~/Library/LaunchAgents/com.msfixer.fastify.plist`) keeps Fastify running (`KeepAlive`, auto-restart).
+- **Tunnel**: `cloudflared` runs as a system `LaunchDaemon`, config at `/etc/cloudflared/config.yml`, routing both `ms-fixer.com` and `dev.ms-fixer.com` → `http://localhost:3000`.
+- **Access control**: Cloudflare Zero Trust protects the admin dashboard (site root) with email one-time-PIN login, on both domains. `/api/*`, `/socket.io/*`, `/uploads/*`, and `/clips/*` bypass Access on both domains (already gated by the app's own JWT/cookie auth).
+- **CORS/WebSocket origins**: `PUBLIC_URL` (defaults to `https://ms-fixer.com`) plus its `www.` variant are always allowed; additional origins (e.g. `https://dev.ms-fixer.com`) can be added via the comma-separated `EXTRA_CORS_ORIGINS` env var.
+- **Migrations**: schema changes go through `prisma migrate dev` locally, then `prisma migrate deploy` on the home server (not `db push`, to avoid destructive drift on real data).
+- **Backups**: nightly `pg_dump` with 7-day local retention, encrypted offsite copy.
+
+Full runbook: [Home Server Runbook](HOME_SERVER_RUNBOOK.md).
 
 ---
 

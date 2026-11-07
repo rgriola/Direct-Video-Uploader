@@ -1063,3 +1063,6 @@ The plan should include steps for replacing a managed database with a local Post
 - allow DNS to continue through Cloudflare.
 
 I'm not sure how to do this but if this is a few hours of set up and testing I think this is the way to go until the project is ready for production.
+
+
+>> Closed Thread Oct 4 2026 moved to docs. New first-file is 01-first-file.md

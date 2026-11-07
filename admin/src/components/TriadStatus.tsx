@@ -1,7 +1,7 @@
 import { cn } from "@/lib/utils";
 import type { TriadStatus as TriadStatusType } from "@/lib/types";
-import { panelHeader } from "@/lib/types";
-import { subTextPanelHeader } from "@/lib/types";
+import { panelHeader, subTextPanelHeader } from "@/lib/types";
+import { Icon, type IconName } from "./Icon";
 
 interface TriadStatusProps {
   triad?: TriadStatusType;
@@ -10,21 +10,21 @@ interface TriadStatusProps {
   iosClients?: number;
 }
 
-const serviceConfig = [
+const serviceConfig: { key: "database" | "server" | "ios" | "admin"; label: string; icon: IconName; desc: string }[] = [
   {
-    key: "database" as const,
+    key: "database",
     label: "Database",
-    icon: "🗄️",
+    icon: "database",
     desc: "PostgreSQL",
   },
   {
-    key: "server" as const,
+    key: "server",
     label: "Server",
-    icon: "⚡",
+    icon: "api",
     desc: "Fastify :3000",
   },
-  { key: "ios" as const, label: "iOS App", icon: "📱", desc: "Mobile Client" },
-  { key: "admin" as const, label: "Dashboard", icon: "📊", desc: "This Page" },
+  { key: "ios", label: "iOS App", icon: "device", desc: "Mobile Client" },
+  { key: "admin", label: "Dashboard", icon: "status", desc: "This Page" },
 ];
 
 function statusDot(status: string) {
@@ -73,15 +73,15 @@ export function TriadStatusPanel({
   iosClients = 0,
 }: TriadStatusProps) {
   return (
-    <div className="bg-(--card) border border-(--border-subtle) rounded-(--radius) overflow-hidden mb-8">
+    <div className="bg-(--card) border border-(--border-subtle) rounded-(--radius-xl) overflow-hidden mb-8">
       <div className={panelHeader}>
-        <h2 className="text-lg font-semibold text-(--foreground) flex items-center gap-2">
-          🔺 Triad Status
+        <h2 className="text-(length:--text-lg) font-semibold text-(--foreground) flex items-center gap-2">
+          <Icon name="triad" /> Triad Status
         </h2>
         <div className="flex items-center gap-3">
           {/* iOS client indicator */}
-          <div className="flex items-center gap-1 text-xs text-(--foreground)">
-            <span>📱</span>
+          <div className="flex items-center gap-1 text-(length:--text-xs) text-(--foreground)">
+            <Icon name="device" />
             <span>
               {iosClients > 0 ? `${iosClients} iOS User` : "No iOS User"}
             </span>
@@ -90,7 +90,7 @@ export function TriadStatusPanel({
           {/* WebSocket status badge */}
           <span
             className={cn(
-              "inline-flex items-center gap-1 px-3 py-0.5 rounded-full text-xs font-semibold tracking-wide border",
+              "inline-flex items-center gap-1 px-3 py-0.5 rounded-(--radius-full) text-(length:--text-xs) font-semibold tracking-wide border",
               wsConnected
                 ? "bg-(--accent-green-glow) text-(--accent-green) border-[rgba(52,211,153,0.2)]"
                 : "bg-(--secondary) text-(--muted-foreground) border-(--border)",
@@ -98,7 +98,7 @@ export function TriadStatusPanel({
           >
             <span
               className={cn(
-                "w-1.5 h-1.5 rounded-full",
+                "w-1.5 h-1.5 rounded-(--radius-full)",
                 wsConnected
                   ? "bg-(--accent-green) animate-pulse-dot"
                   : "bg-(--muted-foreground)",
@@ -121,21 +121,21 @@ export function TriadStatusPanel({
               key={svc.key}
               className="flex items-center gap-3 px-5 py-4 border-r border-(--border-subtle) last:border-r-0 max-[900px]:border-b max-[900px]:border-r-0"
             >
-              <div className="text-2xl">{svc.icon}</div>
+              <div className="text-(length:--text-2xl)"><Icon name={svc.icon} /></div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
                   <span
-                    className={`w-2 h-2 rounded-full shrink-0 ${isLoading ? "bg-(--muted-foreground)" : statusDot(status)}`}
+                    className={`w-2 h-2 rounded-(--radius-full) shrink-0 ${isLoading ? "bg-(--muted-foreground)" : statusDot(status)}`}
                   />
-                  <span className="text-sm font-semibold">{svc.label}</span>
+                  <span className="text-(length:--text-sm) font-semibold">{svc.label}</span>
 
                   <span
-                    className={`text-[11px] font-semibold ${isLoading ? "text-(--muted-foreground)" : statusTextColor(status)}`}
+                    className={`text-(length:--text-xs) font-semibold ${isLoading ? "text-(--muted-foreground)" : statusTextColor(status)}`}
                   >
                     {isLoading ? "..." : statusLabel(status)}
                   </span>
                 </div>
-                <p className="text-[11px] text-(--muted-foreground) mt-0.5 truncate">
+                <p className="text-(length:--text-xs) text-(--muted-foreground) mt-0.5 truncate">
                   {isLoading
                     ? svc.desc
                     : message

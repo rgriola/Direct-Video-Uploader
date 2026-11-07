@@ -53,7 +53,7 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
       <div className="w-full max-w-sm">
         {/* Logo */}
         <div className="flex items-center gap-4 mb-8">
-          <div className="w-16 h-16 rounded-2xl overflow-hidden shadow-[0_8px_32px_rgba(74,158,255,0.3)] shrink-0">
+          <div className="w-16 h-16 rounded-(--radius-2xl) overflow-hidden shadow-[0_8px_32px_color-mix(in_srgb,var(--accent-blue)_30%,transparent)] shrink-0">
             <img
               src="/fixer-icon.png"
               alt="Fixer"
@@ -61,8 +61,8 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
             />
           </div>
           <div className="ml-auto text-right">
-            <h1 className="text-2xl font-bold tracking-tight">Fixer</h1>
-            <p className="text-sm text-(--muted-foreground) mt-1">
+            <h1 className="text-(length:--text-2xl) font-bold tracking-tight">Fixer</h1>
+            <p className="text-(length:--text-sm) text-(--muted-foreground) mt-1">
               Admin Dashboard
             </p>
           </div>
@@ -71,12 +71,12 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
         {/* Form */}
         <form
           onSubmit={handleSubmit}
-          className="bg-(--card) border border-(--border) rounded-2xl p-6 space-y-4 shadow-xl"
+          className="bg-(--card) border border-(--border) rounded-(--radius-2xl) p-6 space-y-4 shadow-xl"
         >
           <div className="space-y-2">
             <label
               htmlFor="phone"
-              className="block text-sm font-medium text-(--muted-foreground)"
+              className="block text-(length:--text-sm) font-medium text-(--muted-foreground)"
             >
               Phone Number
             </label>
@@ -91,16 +91,16 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
               onChange={(e) => handlePhoneChange(e.target.value)}
               placeholder="e.g. 8001234567"
               maxLength={10}
-              className="w-full px-4 py-2 rounded-lg 
-              bg-(--secondary) border border-(--border) text-(--secondary-foreground) 
-              text-sm placeholder:text-(--secondary) focus:outline-none focus:ring-2 focus:ring-(--accent-blue)focus:border-transparent transition-all"
+              className="w-full px-4 py-2 rounded-(--radius-lg) 
+              bg-(--secondary) border border-(--border) text-(--foreground) 
+              text-(length:--text-sm) placeholder:text-(--muted-foreground) focus:outline-none focus:ring-2 focus:ring-(--accent-blue) focus:border-transparent transition-all"
             />
           </div>
 
           <div className="space-y-2">
             <label
               htmlFor="pin"
-              className="block text-sm font-medium text-(--muted-foreground)"
+              className="block text-(length:--text-sm) font-medium text-(--muted-foreground)"
             >
               PIN
             </label>
@@ -114,12 +114,12 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
               onChange={(e) => handlePinChange(e.target.value)}
               placeholder="••••"
               maxLength={8}
-              className="w-full px-4 py-2 rounded-lg bg-(--secondary) border border-(--border) text-(--foreground) text-sm placeholder:text-(--muted-foreground) focus:outline-none focus:ring-2 focus:ring-(--accent-blue) focus:border-transparent transition-all"
+              className="w-full px-4 py-2 rounded-(--radius-lg) bg-(--secondary) border border-(--border) text-(--foreground) text-(length:--text-sm) placeholder:text-(--muted-foreground) focus:outline-none focus:ring-2 focus:ring-(--accent-blue) focus:border-transparent transition-all"
             />
           </div>
 
           {error && (
-            <p className="text-sm text-(--accent-red) bg-(--accent-red-glow) border border-[--accent-red] rounded-lg px-3 py-2">
+            <p className="text-(length:--text-sm) text-(--accent-red) bg-(--accent-red-glow) border border-(--accent-red) rounded-(--radius-lg) px-3 py-2">
               {error}
             </p>
           )}
@@ -127,7 +127,7 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
           <button
             type="submit"
             disabled={loading}
-            className="w-full py-2 rounded-lg bg-(--accent-blue) text-white text-sm font-semibold tracking-wide hover:opacity-90 active:opacity-75 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+            className="w-full py-2 rounded-(--radius-lg) bg-(--accent-blue) text-white text-(length:--text-sm) font-semibold tracking-wide hover:opacity-90 active:opacity-75 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
           >
             {loading ? "Signing in…" : "Sign In"}
           </button>
