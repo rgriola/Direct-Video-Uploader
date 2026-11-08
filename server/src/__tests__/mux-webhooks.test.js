@@ -3,6 +3,8 @@ import Fastify from 'fastify';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const prismaMock = {
+    $transaction: vi.fn(),
+    $queryRaw: vi.fn(),
     clip: {
         findFirst: vi.fn(),
         findUnique: vi.fn(),
@@ -15,6 +17,7 @@ const prismaMock = {
 };
 
 const muxLibMock = {
+    disableMuxPlayback: vi.fn(),
     getMuxAsset: vi.fn(),
     getMuxUpload: vi.fn(),
 };
@@ -30,6 +33,7 @@ vi.mock('../lib/prisma.js', () => ({
 }));
 
 vi.mock('../lib/mux.js', () => ({
+    disableMuxPlayback: muxLibMock.disableMuxPlayback,
     getMuxAsset: muxLibMock.getMuxAsset,
     getMuxUpload: muxLibMock.getMuxUpload,
     MUX_ENV_KEY: 'env-key-123',
@@ -83,6 +87,8 @@ beforeEach(() => {
     vi.clearAllMocks();
     actor = { id: 'user-1', role: 'USER' };
 
+    prismaMock.$transaction.mockImplementation(async callback => callback(prismaMock));
+    prismaMock.$queryRaw.mockResolvedValue([{ moderation: 'ACTIVE' }]);
     prismaMock.clip.findFirst.mockResolvedValue(null);
     prismaMock.clip.findUnique.mockResolvedValue(null);
     prismaMock.clip.update.mockResolvedValue({});
@@ -91,6 +97,7 @@ beforeEach(() => {
 
     muxLibMock.getMuxAsset.mockResolvedValue(null);
     muxLibMock.getMuxUpload.mockResolvedValue(null);
+    muxLibMock.disableMuxPlayback.mockResolvedValue({ ok: true });
 
     fsMock.unlink.mockResolvedValue(undefined);
     verifySignatureMock.mockReturnValue(undefined);
@@ -203,6 +210,7 @@ describe('mux-webhooks routes focused coverage', () => {
         prismaMock.asset.findUnique.mockResolvedValueOnce({
             id: 'asset-1',
             userId: 'user-1',
+            moderation: 'ACTIVE',
             mediasourceId: '100000001',
             originalFileName: 'field.mp4',
             formResponse: {
@@ -256,6 +264,43 @@ describe('mux-webhooks routes focused coverage', () => {
         );
     });
 
+    it('revokes playback instead of exposing a ready event for a paused asset', async () => {
+        await buildApp();
+        prismaMock.clip.findFirst.mockResolvedValueOnce({
+            id: 'clip-paused',
+            assetId: 'asset-paused',
+            storageUrl: null,
+        });
+        prismaMock.$queryRaw.mockResolvedValueOnce([{ moderation: 'PAUSED' }]);
+
+        const response = await app.inject({
+            method: 'POST',
+            url: '/api/webhooks/mux',
+            headers: { 'mux-signature': 'sig-ok' },
+            payload: {
+                type: 'video.asset.ready',
+                data: {
+                    id: 'mux-paused',
+                    playback_ids: [{ policy: 'public', id: 'public-paused-id' }],
+                },
+            },
+        });
+
+        expect(response.statusCode).toBe(200);
+        expect(muxLibMock.disableMuxPlayback).toHaveBeenCalledWith('mux-paused');
+        expect(prismaMock.clip.update).toHaveBeenCalledWith({
+            where: { id: 'clip-paused' },
+            data: {
+                muxAssetId: 'mux-paused',
+                muxPlaybackId: null,
+                streamUrl: null,
+                thumbnailUrl: null,
+                status: 'READY',
+            },
+        });
+        expect(ioEmitSpy).not.toHaveBeenCalled();
+    });
+
     it('handles mux asset errored events by setting clip and asset to ERROR', async () => {
         await buildApp();
         prismaMock.clip.findFirst.mockResolvedValueOnce({
@@ -301,7 +346,7 @@ describe('mux-webhooks routes focused coverage', () => {
         expect(response.statusCode).toBe(404);
         expect(response.json()).toEqual({ error: 'Clip not found' });
         expect(prismaMock.clip.findFirst).toHaveBeenCalledWith(expect.objectContaining({
-            where: { id: 'clip-missing', asset: { userId: 'user-1' } },
+            where: { id: 'clip-missing', asset: { userId: 'user-1', moderation: 'ACTIVE' } },
         }));
     });
 
@@ -324,7 +369,7 @@ describe('mux-webhooks routes focused coverage', () => {
 
         expect(response.statusCode).toBe(404);
         expect(prismaMock.clip.findFirst).toHaveBeenCalledWith(expect.objectContaining({
-            where: { id: 'clip-other', asset: { user: { companyCode: 'NEWS' } } },
+            where: { id: 'clip-other', asset: { user: { companyCode: 'NEWS' }, moderation: 'ACTIVE' } },
         }));
     });
 

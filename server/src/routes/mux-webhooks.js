@@ -10,7 +10,7 @@
  */
 import prisma from '../lib/prisma.js';
 import Mux from '@mux/mux-node';
-import { getMuxAsset, MUX_ENV_KEY } from '../lib/mux.js';
+import { disableMuxPlayback, getMuxAsset, MUX_ENV_KEY } from '../lib/mux.js';
 import { dbRetry } from '../lib/utils.js';
 import { teamScope } from '../lib/authorization.js';
 import fs from 'fs/promises';
@@ -128,18 +128,56 @@ export default async function muxWebhookRoutes(fastify) {
                 }
 
                 if (clip) {
-                    await dbRetry(() => prisma.clip.update({
-                        where: { id: clip.id },
-                        data: {
-                            muxAssetId,
-                            muxPlaybackId,
-                            streamUrl,
-                            thumbnailUrl,
-                            status: 'READY',
-                        },
+                    const canPlay = await dbRetry(() => prisma.$transaction(async tx => {
+                        const rows = await tx.$queryRaw`
+                            SELECT moderation FROM assets WHERE id = ${clip.assetId} FOR UPDATE
+                        `;
+                        if (!rows.length) return false;
+                        const active = rows[0].moderation === 'ACTIVE';
+                        await tx.clip.update({
+                            where: { id: clip.id },
+                            data: {
+                                muxAssetId,
+                                muxPlaybackId: active ? muxPlaybackId : null,
+                                streamUrl: active ? streamUrl : null,
+                                thumbnailUrl: active ? thumbnailUrl : null,
+                                status: 'READY',
+                            },
+                        });
+                        await tx.asset.update({
+                            where: { id: clip.assetId },
+                            data: { status: 'READY' },
+                        });
+                        return active;
                     }));
 
-                    request.log.info({ clipId: clip.id, muxPlaybackId }, 'Mux asset ready');
+                    let asset = canPlay ? await dbRetry(() => prisma.asset.findUnique({
+                        where: { id: clip.assetId },
+                        include: { formResponse: true },
+                    })) : null;
+                    if (canPlay && asset?.moderation !== 'ACTIVE') {
+                        const revoked = await disableMuxPlayback(muxAssetId);
+                        if (!revoked.ok) {
+                            request.log.error({ muxAssetId, clipId: clip.id }, 'Could not revoke playback for moderated asset');
+                            return reply.status(502).send({ error: 'Could not revoke playback for moderated asset' });
+                        }
+                        await dbRetry(() => prisma.clip.update({
+                            where: { id: clip.id },
+                            data: { muxPlaybackId: null, streamUrl: null, thumbnailUrl: null },
+                        }));
+                        asset = null;
+                    } else if (!canPlay) {
+                        const revoked = await disableMuxPlayback(muxAssetId);
+                        if (!revoked.ok) {
+                            request.log.error({ muxAssetId, clipId: clip.id }, 'Could not revoke playback for moderated asset');
+                            return reply.status(502).send({ error: 'Could not revoke playback for moderated asset' });
+                        }
+                    }
+
+                    request.log.info(
+                        { clipId: clip.id, muxPlaybackId: asset ? muxPlaybackId : null },
+                        asset ? 'Mux asset ready' : 'Mux asset ready while moderated'
+                    );
 
                     // ─── Temp file cleanup ────────────────────────────────
                     // Delete local file now that Mux has the video
@@ -159,17 +197,7 @@ export default async function muxWebhookRoutes(fastify) {
                         }
                     }
 
-                    // Update the parent asset status to READY
-                    await dbRetry(() => prisma.asset.update({
-                        where: { id: clip.assetId },
-                        data: { status: 'READY' },
-                    }));
-
-                    // Notify the asset owner via WebSocket (not all clients)
-                    const asset = await prisma.asset.findUnique({
-                        where: { id: clip.assetId },
-                        include: { formResponse: true },
-                    });
+                    // Notify only when the asset remains available for playback.
                     if (asset) {
                         const ownerSockets = fastify.userSockets?.get(asset.userId);
                         if (ownerSockets) {
@@ -243,7 +271,7 @@ export default async function muxWebhookRoutes(fastify) {
         const { clipId } = request.params;
 
         const clip = await prisma.clip.findFirst({
-            where: { id: clipId, asset: teamScope(request.user) },
+            where: { id: clipId, asset: { ...teamScope(request.user), moderation: 'ACTIVE' } },
             select: {
                 id: true,
                 assetId: true,
@@ -293,16 +321,28 @@ export default async function muxWebhookRoutes(fastify) {
                     const streamUrl = `https://stream.mux.com/${playbackId}.m3u8`;
                     const thumbnailUrl = `https://image.mux.com/${playbackId}/thumbnail.png?width=640`;
 
-                    await dbRetry(() => prisma.clip.update({
-                        where: { id: clipId },
-                        data: { muxPlaybackId: playbackId, streamUrl, thumbnailUrl, status: 'READY' },
+                    const active = await dbRetry(() => prisma.$transaction(async tx => {
+                        const rows = await tx.$queryRaw`
+                            SELECT moderation FROM assets WHERE id = ${clip.assetId} FOR UPDATE
+                        `;
+                        if (!rows.length || rows[0].moderation !== 'ACTIVE') return false;
+                        await tx.clip.update({
+                            where: { id: clipId },
+                            data: { muxPlaybackId: playbackId, streamUrl, thumbnailUrl, status: 'READY' },
+                        });
+                        await tx.asset.update({
+                            where: { id: clip.assetId },
+                            data: { status: 'READY' },
+                        });
+                        return true;
                     }));
-
-                    // Also update the parent asset status
-                    await dbRetry(() => prisma.asset.update({
-                        where: { id: clip.assetId },
-                        data: { status: 'READY' },
-                    }));
+                    if (!active) {
+                        const revoked = await disableMuxPlayback(clip.muxAssetId);
+                        if (!revoked.ok) {
+                            return reply.status(502).send({ error: 'Could not revoke playback for moderated asset' });
+                        }
+                        return reply.status(404).send({ error: 'Clip not found' });
+                    }
 
                     return { status: 'ready', muxPlaybackId: playbackId, streamUrl, thumbnailUrl };
                 }

@@ -178,6 +178,54 @@ export async function deleteMuxAsset(muxAssetId) {
 }
 
 /**
+ * Revoke every public playback ID for an asset.
+ * A missing Mux asset is already non-playable and is treated as success.
+ */
+export async function disableMuxPlayback(muxAssetId) {
+    if (!muxClient || !muxAssetId) {
+        return { ok: false, error: 'Mux is not configured for playback revocation' };
+    }
+
+    try {
+        const asset = await muxClient.video.assets.retrieve(muxAssetId);
+        const playbackIds = (asset.playback_ids || [])
+            .filter(playback => playback.policy === 'public')
+            .map(playback => playback.id);
+        for (const playbackId of playbackIds) {
+            await muxClient.video.assets.deletePlaybackId(muxAssetId, playbackId);
+        }
+        return { ok: true };
+    } catch (err) {
+        if (err.status === 404) return { ok: true };
+        console.error('🎬 Mux playback revocation error:', err.message);
+        return { ok: false, error: 'Mux playback revocation failed' };
+    }
+}
+
+/**
+ * Ensure an active, ready Mux asset has a public playback ID.
+ * Pending assets receive their public playback ID from Mux when processing completes.
+ */
+export async function enableMuxPlayback(muxAssetId) {
+    if (!muxClient || !muxAssetId) {
+        return { ok: false, error: 'Mux is not configured for playback restoration' };
+    }
+
+    try {
+        const asset = await muxClient.video.assets.retrieve(muxAssetId);
+        const publicPlayback = asset.playback_ids?.find(playback => playback.policy === 'public');
+        if (publicPlayback) return { ok: true, playbackId: publicPlayback.id };
+        if (asset.status !== 'ready') return { ok: true, playbackId: null, pending: true };
+
+        const playback = await muxClient.video.assets.createPlaybackId(muxAssetId, { policy: 'public' });
+        return { ok: true, playbackId: playback.id };
+    } catch (err) {
+        console.error('🎬 Mux playback restoration error:', err.message);
+        return { ok: false, error: 'Mux playback restoration failed' };
+    }
+}
+
+/**
  * List all Mux assets (paginated, returns first page).
  * Used by nuclear reset to catch orphaned assets.
  * @returns {Promise<Array|null>}
