@@ -46,7 +46,7 @@ function NuclearReset({ onReset }: { onReset: () => void }) {
       const res = await nuclearReset();
       const d = res.deleted;
       toast.success(res.message, {
-        description: `${d.assets} assets, ${d.clips} clips, ${d.chatMessages} messages deleted. Mux: ${res.mux.deleted} deleted${res.mux.failed ? `, ${res.mux.failed} failed` : ""}${res.mux.skipped ? " (Mux not configured)" : ""}`,
+        description: `${d.assets} assets, ${d.clips} clips, ${d.chatMessages} messages deleted. Mux cleanup was not attempted.`,
         duration: 8000,
       });
       onReset();
@@ -64,8 +64,9 @@ function NuclearReset({ onReset }: { onReset: () => void }) {
         <Icon name="nuclear" /> Nuclear Reset
       </h3>
       <p className="text-(length:--text-sm) text-(--muted-foreground) leading-relaxed">
-        Wipe all assets, clips, Mux videos, chat messages, form responses, and
-        error logs. <strong>User accounts are preserved.</strong>
+        Temporarily blocked while any asset records remain. When no assets remain,
+        this clears chat messages and error logs; it does not delete Mux videos.
+        <strong> User accounts are preserved.</strong>
       </p>
       {confirming && !running && (
         <p className="text-(length:--text-xs) text-(--accent-red) font-semibold inline-flex items-center gap-1">
@@ -82,7 +83,7 @@ function NuclearReset({ onReset }: { onReset: () => void }) {
               : "bg-(--secondary) border-(--border-subtle) text-(--secondary-foreground) hover:bg-(--accent-red-glow) hover:border-(--accent-red)/50 hover:text-(--accent-red)"
           } disabled:opacity-50 disabled:cursor-not-allowed`}
         >
-          {running ? "Resetting..." : confirming ? "Confirm Reset" : "Reset Everything"}
+          {running ? "Resetting..." : confirming ? "Confirm Reset" : "Reset Non-Media Data"}
         </button>
         {confirming && !running && (
           <button

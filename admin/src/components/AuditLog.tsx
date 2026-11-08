@@ -1,9 +1,10 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { fetchAuditLogs, updateAssetModeration } from "@/lib/api";
-import { panelHeader, subTextPanelHeader } from "@/lib/types";
+import { fetchAuditLogs, fetchMediaIssues, updateAssetModeration } from "@/lib/api";
+import { panelHeader, subTextPanelHeader, type AssetModeration } from "@/lib/types";
 import { Icon } from "./Icon";
 import { toast } from "sonner";
 import { useState } from "react";
+import { MediaSyncDetails, notifyMediaSyncResult } from "./MediaSyncDetails";
 
 export function AuditLog() {
   const queryClient = useQueryClient();
@@ -13,20 +14,27 @@ export function AuditLog() {
     queryFn: fetchAuditLogs,
     refetchInterval: 30_000,
   });
+  const issues = useQuery({
+    queryKey: ["media-issues"],
+    queryFn: fetchMediaIssues,
+    refetchInterval: 30_000,
+  });
 
-  async function retryRemoval(targetId: string, reason?: string | null) {
+  async function retryMedia(targetId: string, moderation: AssetModeration, reason?: string | null) {
     setRetryingId(targetId);
     try {
       const result = await updateAssetModeration(targetId, {
-        moderation: "REMOVED",
-        reason: reason || "Retry media cleanup",
+        moderation,
+        reason: reason || "Retry media reconciliation",
       });
-      toast.success(result.message);
+      notifyMediaSyncResult(result);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Media cleanup retry failed");
+      toast.error(err instanceof Error ? err.message : "Media reconciliation retry failed");
     } finally {
       setRetryingId(null);
       void queryClient.invalidateQueries({ queryKey: ["audit-logs"] });
+      void queryClient.invalidateQueries({ queryKey: ["media-issues"] });
+      void queryClient.invalidateQueries({ queryKey: ["assets"] });
     }
   }
 
@@ -37,6 +45,40 @@ export function AuditLog() {
           <Icon name="activity" /> Moderation Audit{" "}
           <span className={subTextPanelHeader}>{data?.logs.length ?? 0}</span>
         </h2>
+      </div>
+      <div className="border-b border-(--border-subtle) px-4 py-3">
+        <h3 className="font-semibold text-(length:--text-sm)">Media requiring attention</h3>
+        {issues.error ? (
+          <p role="alert" className="mt-2 text-(--accent-red)">
+            {issues.error instanceof Error ? issues.error.message : "Could not load media reconciliation issues"}
+          </p>
+        ) : issues.isLoading ? (
+          <p className="mt-2 text-(--muted-foreground)">Loading media issues...</p>
+        ) : !issues.data?.issues.length ? (
+          <p className="mt-2 text-(--muted-foreground)">No media requires attention.</p>
+        ) : (
+          <ul className="mt-2 max-h-80 overflow-y-auto divide-y divide-(--border-subtle)">
+            {issues.data.issues.map((issue) => (
+              <li key={issue.id} className="py-2 text-(length:--text-xs)">
+                <p className="font-semibold">
+                  {issue.mediasourceId ? `#${issue.mediasourceId}` : issue.id} · {issue.moderation.replace(/_/g, " ")}
+                </p>
+                <MediaSyncDetails assetId={issue.id} media={issue} canConfirm />
+                <button
+                  type="button"
+                  disabled={retryingId === issue.id}
+                  onClick={() => void retryMedia(issue.id, issue.moderation, issue.moderationReason)}
+                  className="px-2 py-1 rounded-(--radius-md) border border-(--border-subtle) text-(--foreground) disabled:opacity-50"
+                >
+                  {retryingId === issue.id ? "Retrying..." : "Retry media reconciliation"}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+        {issues.data?.hasMore && (
+          <p role="status" className="mt-2 text-(--accent-amber)">More than 100 media issues exist. Resolve these to see the rest.</p>
+        )}
       </div>
       {error ? (
         <p role="alert" className="p-4 text-(--accent-red)">
@@ -64,7 +106,7 @@ export function AuditLog() {
                 <button
                   type="button"
                   disabled={retryingId === log.targetId}
-                  onClick={() => void retryRemoval(log.targetId, log.reason)}
+                  onClick={() => void retryMedia(log.targetId, "REMOVED", log.reason)}
                   className="mt-2 px-2 py-1 rounded-(--radius-md) border border-(--border-subtle) text-(--foreground) disabled:opacity-50"
                 >
                   {retryingId === log.targetId ? "Retrying..." : "Retry media cleanup"}

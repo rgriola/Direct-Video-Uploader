@@ -8,6 +8,7 @@ const prismaMock = {
     $executeRaw: vi.fn(),
     $transaction: vi.fn(),
     asset: {
+        count: vi.fn(),
         findMany: vi.fn(),
         deleteMany: vi.fn(),
     },
@@ -16,6 +17,7 @@ const prismaMock = {
         findMany: vi.fn(),
     },
     clip: {
+        count: vi.fn(),
         findMany: vi.fn(),
         deleteMany: vi.fn(),
     },
@@ -91,12 +93,14 @@ beforeEach(async () => {
     prismaMock.$transaction.mockImplementation(async (fn) => fn(prismaMock));
 
     prismaMock.asset.findMany.mockResolvedValue([]);
+    prismaMock.asset.count.mockResolvedValue(0);
     prismaMock.asset.deleteMany.mockResolvedValue({ count: 0 });
 
     prismaMock.chatMessage.deleteMany.mockResolvedValue({ count: 0 });
     prismaMock.chatMessage.findMany.mockResolvedValue([]);
 
     prismaMock.clip.findMany.mockResolvedValue([]);
+    prismaMock.clip.count.mockResolvedValue(0);
     prismaMock.clip.deleteMany.mockResolvedValue({ count: 0 });
 
     prismaMock.errorLog.deleteMany.mockResolvedValue({ count: 0 });
@@ -208,6 +212,7 @@ describe('admin routes deeper coverage', () => {
 
     it('cleans stale uploading assets and dependent messages', async () => {
         prismaMock.asset.findMany.mockResolvedValue([{ id: 'asset-1' }, { id: 'asset-2' }]);
+        prismaMock.$queryRaw.mockResolvedValueOnce([{ id: 'asset-1' }, { id: 'asset-2' }]);
         prismaMock.chatMessage.deleteMany.mockResolvedValue({ count: 2 });
         prismaMock.asset.deleteMany.mockResolvedValue({ count: 2 });
 
@@ -405,22 +410,78 @@ describe('admin routes deeper coverage', () => {
         expect(response.json()).toEqual({ error: 'User not found' });
     });
 
-    it('deletes user data including mux assets and local files', async () => {
+    it('blocks Nuclear Reset without deleting references while assets remain', async () => {
+        prismaMock.asset.count.mockResolvedValueOnce(1);
+        const response = await app.inject({ method: 'POST', url: '/api/admin/nuclear-reset' });
+
+        expect(response.statusCode).toBe(409);
+        expect(response.json().error).toContain('temporarily blocked');
+        expect(prismaMock.asset.deleteMany).not.toHaveBeenCalled();
+        expect(prismaMock.clip.deleteMany).not.toHaveBeenCalled();
+        expect(prismaMock.chatMessage.deleteMany).not.toHaveBeenCalled();
+    });
+
+    it('allows a non-media reset when no assets remain', async () => {
+        const response = await app.inject({ method: 'POST', url: '/api/admin/nuclear-reset' });
+        expect(response.statusCode).toBe(200);
+        expect(response.json()).toMatchObject({
+            message: 'Non-media reset complete; Mux media was not changed',
+            mux: { deleted: 0, failed: 0, skipped: true },
+        });
+        expect(prismaMock.$executeRaw).toHaveBeenCalledTimes(1);
+    });
+
+    it('blocks user deletion when any media cleanup is incomplete', async () => {
+        prismaMock.user.findUnique.mockResolvedValueOnce({
+            id: 'user-delete', role: 'USER', name: 'Delete Me', phoneNumber: '5055552222',
+        });
+        prismaMock.$queryRaw
+            .mockResolvedValueOnce([{ role: 'USER' }])
+            .mockResolvedValueOnce([{ id: 'asset-1', moderation: 'REMOVED', media_sync_state: 'ERROR', media_create_operation_id: null }]);
+
+        const response = await app.inject({ method: 'DELETE', url: '/api/admin/users/user-delete' });
+        expect(response.statusCode).toBe(409);
+        expect(response.json().error).toContain('media cleanup');
+        expect(prismaMock.asset.deleteMany).not.toHaveBeenCalled();
+        expect(prismaMock.user.delete).not.toHaveBeenCalled();
+    });
+
+    it('blocks user deletion while media reconciliation holds an asset lock', async () => {
+        prismaMock.user.findUnique.mockResolvedValueOnce({
+            id: 'user-delete', role: 'USER', name: 'Delete Me', phoneNumber: '5055552222',
+        });
+        prismaMock.$queryRaw
+            .mockResolvedValueOnce([{ role: 'USER' }])
+            .mockResolvedValueOnce([{ id: 'asset-1', moderation: 'REMOVED', media_sync_state: 'SYNCED', media_create_operation_id: null }])
+            .mockResolvedValueOnce([{ acquired: false }]);
+
+        const response = await app.inject({ method: 'DELETE', url: '/api/admin/users/user-delete' });
+        expect(response.statusCode).toBe(409);
+        expect(response.json().error).toContain('in progress');
+        expect(prismaMock.user.delete).not.toHaveBeenCalled();
+    });
+
+    it('deletes user data only after media removal was verified', async () => {
         const dashboard = { disconnect: vi.fn() };
         const phone = { disconnect: vi.fn() };
         app.userSockets.set('user-delete', new Set(['dashboard', 'phone']));
         app.io.sockets.sockets.set('dashboard', dashboard);
         app.io.sockets.sockets.set('phone', phone);
-        muxState.enabled = true;
         prismaMock.user.findUnique.mockResolvedValueOnce({
             id: 'user-delete',
+            role: 'USER',
             name: 'Delete Me',
             phoneNumber: '5055552222',
         });
-        prismaMock.clip.findMany.mockResolvedValueOnce([
-            { muxAssetId: 'mux-1', storageUrl: '/uploads/delete-1.mp4' },
-            { muxAssetId: null, storageUrl: '/uploads/delete-2.mp4' },
-        ]);
+        prismaMock.$queryRaw
+            .mockResolvedValueOnce([{ role: 'USER' }])
+            .mockResolvedValueOnce([
+                { id: 'asset-1', moderation: 'REMOVED', media_sync_state: 'SYNCED', media_create_operation_id: null },
+                { id: 'asset-2', moderation: 'REMOVED', media_sync_state: 'SYNCED', media_create_operation_id: null },
+            ])
+            .mockResolvedValueOnce([{ acquired: true }])
+            .mockResolvedValueOnce([{ acquired: true }]);
+        prismaMock.clip.count.mockResolvedValueOnce(2);
         prismaMock.chatMessage.deleteMany.mockResolvedValueOnce({ count: 4 });
         prismaMock.errorLog.deleteMany.mockResolvedValueOnce({ count: 1 });
         prismaMock.asset.deleteMany.mockResolvedValueOnce({ count: 2 });
@@ -431,8 +492,8 @@ describe('admin routes deeper coverage', () => {
         });
 
         expect(response.statusCode).toBe(200);
-        expect(muxMock.deleteMuxAsset).toHaveBeenCalledWith('mux-1');
-        expect(fsMock.unlink).toHaveBeenCalledTimes(2);
+        expect(muxMock.deleteMuxAsset).not.toHaveBeenCalled();
+        expect(fsMock.unlink).not.toHaveBeenCalled();
         expect(prismaMock.chatMessage.deleteMany).toHaveBeenCalledWith({ where: { userId: 'user-delete' } });
         expect(prismaMock.errorLog.deleteMany).toHaveBeenCalledWith({ where: { userId: 'user-delete' } });
         expect(prismaMock.asset.deleteMany).toHaveBeenCalledWith({ where: { userId: 'user-delete' } });
@@ -445,8 +506,8 @@ describe('admin routes deeper coverage', () => {
             clips: 2,
             chatMessages: 4,
             errorLogs: 1,
-            muxAssets: 1,
-            localFiles: 2,
+            muxAssets: 0,
+            localFiles: 0,
         });
     });
 });

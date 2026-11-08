@@ -1,11 +1,6 @@
-import { unlink } from 'fs/promises';
-import path from 'path';
 import prisma from '../lib/prisma.js';
-import {
-    deleteMuxAsset,
-    disableMuxPlayback,
-    enableMuxPlayback,
-} from '../lib/mux.js';
+import { recordMuxAssetReference, reconcileAssetMedia } from '../lib/media-reconciliation.js';
+import { withAssetMediaLock } from '../lib/media-lock.js';
 import { teamScope } from '../lib/authorization.js';
 import { isSuperAdmin, ROLES } from '../lib/roles.js';
 import { invalidateUserSockets } from '../ws/rooms.js';
@@ -75,7 +70,7 @@ async function writeUserStatus({ id, currentStatus, status, actor, reason, pause
     });
 }
 
-async function writeAssetModeration({ id, currentModeration, moderation, actor, reason, playbackUpdates = [] }) {
+async function writeAssetModeration({ id, currentModeration, moderation, actor, reason }) {
     return prisma.$transaction(async (tx) => {
         const updated = await tx.asset.updateMany({
             where: { id, moderation: currentModeration },
@@ -84,16 +79,14 @@ async function writeAssetModeration({ id, currentModeration, moderation, actor, 
                 moderatedAt: new Date(),
                 moderatedById: actorId(actor),
                 moderationReason: reason,
+                mediaSyncState: 'PENDING',
+                mediaSyncError: null,
+                mediaSyncRevision: { increment: 1 },
+                mediaSyncNextAt: new Date(),
+                mediaPlaybackReset: true,
             },
         });
         if (updated.count !== 1) return false;
-        for (const playback of playbackUpdates) {
-            await tx.clip.update({
-                where: { id: playback.clipId },
-                data: playback.data,
-            });
-        }
-
         await tx.auditLog.create({
             data: {
                 actorUserId: actorId(actor),
@@ -111,109 +104,6 @@ async function writeAssetModeration({ id, currentModeration, moderation, actor, 
         });
         return true;
     });
-}
-
-async function preparePublicPlayback(clips, request) {
-    const playbackUpdates = [];
-    for (const clip of clips) {
-        if (!clip.muxAssetId) {
-            if (clip.muxPlaybackId) {
-                request.log.error({ clipId: clip.id }, 'Cannot restore Mux playback without its asset ID');
-                return { ok: false, playbackUpdates };
-            }
-            continue;
-        }
-
-        const result = await enableMuxPlayback(clip.muxAssetId);
-        if (!result.ok) {
-            request.log.error(
-                { clipId: clip.id, muxAssetId: clip.muxAssetId, error: result.error },
-                'Could not restore Mux playback'
-            );
-            return { ok: false, playbackUpdates };
-        }
-
-        if (result.playbackId) {
-            const playbackId = result.playbackId;
-            playbackUpdates.push({
-                clipId: clip.id,
-                data: {
-                    muxPlaybackId: playbackId,
-                    streamUrl: `https://stream.mux.com/${playbackId}.m3u8`,
-                    thumbnailUrl: `https://image.mux.com/${playbackId}/thumbnail.png?width=640`,
-                },
-            });
-        }
-    }
-    return { ok: true, playbackUpdates };
-}
-
-async function revokePublicPlayback(clips, request) {
-    for (const clip of clips) {
-        if (!clip.muxAssetId) {
-            if (clip.muxPlaybackId) {
-                request.log.error({ clipId: clip.id }, 'Cannot revoke Mux playback without its asset ID');
-                return false;
-            }
-            continue;
-        }
-
-        const result = await disableMuxPlayback(clip.muxAssetId);
-        if (!result.ok) {
-            request.log.error(
-                { clipId: clip.id, muxAssetId: clip.muxAssetId, error: result.error },
-                'Could not revoke Mux playback'
-            );
-            return false;
-        }
-        await prisma.clip.update({
-            where: { id: clip.id },
-            data: { muxPlaybackId: null, streamUrl: null, thumbnailUrl: null },
-        });
-    }
-    return true;
-}
-
-async function persistPlaybackIfActive(assetId, playbackUpdates) {
-    return prisma.$transaction(async tx => {
-        const rows = await tx.$queryRaw`
-            SELECT moderation FROM assets WHERE id = ${assetId} FOR UPDATE
-        `;
-        if (!rows.length || rows[0].moderation !== 'ACTIVE') return false;
-        for (const playback of playbackUpdates) {
-            await tx.clip.update({
-                where: { id: playback.clipId },
-                data: playback.data,
-            });
-        }
-        return true;
-    });
-}
-
-async function deleteLocalOriginals(clips, request) {
-    const uploadsRoot = path.resolve(process.cwd(), 'uploads');
-    let failed = false;
-    for (const clip of clips) {
-        if (!clip.storageUrl?.startsWith('/uploads/')) continue;
-        const filePath = path.resolve(process.cwd(), clip.storageUrl.slice(1));
-        if (!filePath.startsWith(`${uploadsRoot}${path.sep}`)) {
-            request.log.error({ clipId: clip.id }, 'Refusing to delete a local file outside uploads');
-            failed = true;
-            continue;
-        }
-        try {
-            await unlink(filePath);
-        } catch (err) {
-            if (err.code !== 'ENOENT') {
-                request.log.error(
-                    { clipId: clip.id, err: { message: err.message } },
-                    'Could not delete local original during asset removal'
-                );
-                failed = true;
-            }
-        }
-    }
-    return !failed;
 }
 
 export default async function moderationRoutes(fastify) {
@@ -300,105 +190,141 @@ export default async function moderationRoutes(fastify) {
             return reply.status(409).send({ error: `Cannot change moderation from ${current} to ${moderation}` });
         }
 
-        let clips = [];
-        let playbackUpdates = [];
-        if (moderation === 'ACTIVE') {
-            clips = await prisma.clip.findMany({
-                where: { assetId: id },
-                select: { id: true, muxAssetId: true, muxPlaybackId: true, storageUrl: true },
-            });
-            const prepared = await preparePublicPlayback(clips, request);
-            playbackUpdates = prepared.playbackUpdates;
-            if (!prepared.ok) {
-                const cleanupSucceeded = await revokePublicPlayback(clips, request);
-                return reply.status(502).send({
-                    error: cleanupSucceeded
-                        ? 'Could not restore video playback; asset remains unavailable'
-                        : 'Could not restore playback and cleanup partially created Mux IDs; asset remains unavailable',
-                });
-            }
-        }
-
+        let updated;
         if (current !== moderation) {
-            let updated;
-            try {
-                updated = await writeAssetModeration({
-                    id,
-                    currentModeration: current,
-                    moderation,
-                    actor: request.user,
-                    reason,
-                    playbackUpdates,
-                });
-            } catch (err) {
-                if (moderation === 'ACTIVE') await revokePublicPlayback(clips, request);
-                throw err;
-            }
-            if (!updated) {
-                if (moderation === 'ACTIVE' && !await revokePublicPlayback(clips, request)) {
-                    return reply.status(502).send({ error: 'Asset state changed and playback cleanup failed' });
-                }
-                return reply.status(409).send({ error: 'Asset moderation changed; refresh and try again' });
-            }
-        } else if (moderation === 'ACTIVE') {
-            let persisted;
-            try {
-                persisted = await persistPlaybackIfActive(id, playbackUpdates);
-            } catch (err) {
-                await revokePublicPlayback(clips, request);
-                throw err;
-            }
-            if (!persisted) {
-                if (!await revokePublicPlayback(clips, request)) {
-                    return reply.status(502).send({ error: 'Asset state changed and playback cleanup failed' });
-                }
-                return reply.status(409).send({ error: 'Asset moderation changed; refresh and try again' });
-            }
-        }
-
-        if (moderation === 'PAUSED' || moderation === 'FLAGGED_FOR_REMOVAL') {
-            clips = await prisma.clip.findMany({
-                where: { assetId: id },
-                select: { id: true, muxAssetId: true, muxPlaybackId: true, storageUrl: true },
+            updated = await writeAssetModeration({
+                id,
+                currentModeration: current,
+                moderation,
+                actor: request.user,
+                reason,
             });
-            if (!await revokePublicPlayback(clips, request)) {
-                return reply.status(502).send({
-                    error: `Asset is ${moderation.toLowerCase()}, but Mux playback revocation failed. Retry this action.`,
-                });
-            }
-        } else if (moderation === 'REMOVED') {
-            clips = await prisma.clip.findMany({
-                where: { assetId: id },
-                select: { id: true, muxAssetId: true, muxPlaybackId: true, storageUrl: true },
-            });
-            let muxDeletionFailed = clips.some(clip => clip.muxPlaybackId && !clip.muxAssetId);
-            if (muxDeletionFailed) {
-                request.log.error({ assetId: id }, 'Cannot remove Mux playback without its asset ID');
-            }
-            for (const muxAssetId of new Set(clips.map(clip => clip.muxAssetId).filter(Boolean))) {
-                if (!await deleteMuxAsset(muxAssetId)) muxDeletionFailed = true;
-            }
-            const localDeletionSucceeded = await deleteLocalOriginals(clips, request);
-            if (muxDeletionFailed || !localDeletionSucceeded) {
-                request.log.error({ assetId: id, muxDeletionFailed, localDeletionSucceeded }, 'Asset removal is incomplete');
-                return reply.status(502).send({
-                    error: 'Asset is marked removed, but media cleanup failed. Retry removal after checking server and Mux availability.',
-                });
-            }
-            await prisma.clip.updateMany({
-                where: { assetId: id },
+        } else {
+            const result = await prisma.asset.updateMany({
+                where: { id, moderation: current },
                 data: {
-                    muxAssetId: null,
-                    muxPlaybackId: null,
-                    streamUrl: null,
-                    thumbnailUrl: null,
-                    storageUrl: null,
+                    mediaSyncState: 'PENDING',
+                    mediaSyncError: null,
+                    mediaSyncRevision: { increment: 1 },
+                    mediaSyncNextAt: new Date(),
                 },
             });
+            updated = result.count === 1;
+        }
+        if (!updated) return reply.status(409).send({ error: 'Asset moderation changed; refresh and try again' });
+
+        const sync = await reconcileAssetMedia(fastify, id);
+        if (sync.state === 'MISSING') return reply.status(404).send({ error: 'Asset not found' });
+        const latest = await prisma.asset.findUnique({
+            where: { id },
+            select: { moderation: true, mediaSyncState: true },
+        });
+        if (!latest) return reply.status(404).send({ error: 'Asset not found' });
+        if (latest.moderation !== moderation) {
+            return reply.status(409).send({ error: 'Asset moderation changed; refresh and try again' });
+        }
+        request.log.info({ assetId: id, moderation }, 'Admin changed asset moderation');
+        const state = sync.state === 'ERROR' ? 'ERROR' : latest.mediaSyncState;
+        const complete = state === 'SYNCED';
+        return reply.status(complete ? 200 : 202).send({
+            asset: { id, moderation },
+            mediaSyncState: state,
+            message: complete
+                ? `Asset ${moderation.toLowerCase()}`
+                : `Asset ${moderation.toLowerCase()}; ${sync.state === state ? sync.message : 'media reconciliation is pending'}`,
+        });
+    });
+
+    fastify.post('/api/admin/assets/:id/media-sync/confirm-create', {
+        preHandler: [fastify.authenticate, fastify.requireRole(ROLES.SUPER_ADMIN)],
+    }, async (request, reply) => {
+        const { id } = request.params;
+        const { operationId, confirmed } = request.body || {};
+        const reason = parseReason(request.body?.reason, reply);
+        if (reply.sent) return;
+        if (typeof operationId !== 'string' || !operationId || confirmed !== true || !reason) {
+            return reply.status(400).send({ error: 'A Mux confirmation, operation ID, and reason are required' });
         }
 
-        request.log.info({ assetId: id, moderation }, 'Admin changed asset moderation');
-        return { asset: { id, moderation }, message: `Asset ${moderation.toLowerCase()}` };
+        const locked = await withAssetMediaLock(id, async assertLocked => {
+            await assertLocked();
+            return prisma.$transaction(async tx => {
+                const rows = await tx.$queryRaw`
+                    SELECT media_create_operation_id, media_create_mux_asset_id
+                    FROM assets WHERE id = ${id} FOR UPDATE
+                `;
+                if (!rows.length) return 'missing';
+                if (rows[0].media_create_operation_id !== operationId) return 'changed';
+                await recordMuxAssetReference(tx, {
+                    assetId: id,
+                    muxAssetId: rows[0].media_create_mux_asset_id,
+                });
+                await tx.asset.update({
+                    where: { id },
+                    data: {
+                        mediaCreateOperationId: null,
+                        mediaCreateMuxAssetId: null,
+                        mediaCreateStartedAt: null,
+                        mediaPlaybackReset: true,
+                        mediaSyncState: 'PENDING',
+                        mediaSyncError: null,
+                        mediaSyncRevision: { increment: 1 },
+                        mediaSyncNextAt: new Date(),
+                    },
+                });
+                await tx.auditLog.create({
+                    data: {
+                        actorUserId: actorId(request.user),
+                        targetType: 'ASSET',
+                        targetId: id,
+                        action: 'MEDIA_CREATE_CONFIRMED',
+                        reason: `Operation ${operationId}: ${reason}`,
+                    },
+                });
+                return 'confirmed';
+            });
+        });
+        if (!locked.acquired) return reply.status(409).send({ error: 'Media reconciliation is still in progress' });
+        if (locked.value === 'missing') return reply.status(404).send({ error: 'Asset not found' });
+        if (locked.value !== 'confirmed') return reply.status(409).send({ error: 'Playback operation changed; refresh and try again' });
+
+        const sync = await reconcileAssetMedia(fastify, id);
+        if (sync.state === 'MISSING') return reply.status(404).send({ error: 'Asset not found' });
+        return reply.status(sync.state === 'SYNCED' ? 200 : 202).send({
+            mediaSyncState: sync.state,
+            message: sync.message,
+        });
+    });
+
+    fastify.get('/api/admin/media-issues', {
+        preHandler: [fastify.authenticate, fastify.requireRole(ROLES.SUPER_ADMIN)],
+    }, async () => {
+        const issues = await prisma.asset.findMany({
+            where: {
+                OR: [
+                    { mediaSyncState: 'ERROR' },
+                    { mediaCreateOperationId: { not: null } },
+                    { moderation: 'ACTIVE', mediaPlaybackReset: true },
+                    { moderation: { not: 'ACTIVE' }, mediaSyncState: 'PENDING' },
+                ],
+            },
+            select: {
+                id: true,
+                mediasourceId: true,
+                moderation: true,
+                moderationReason: true,
+                mediaSyncState: true,
+                mediaSyncError: true,
+                mediaSyncNextAt: true,
+                mediaPlaybackReset: true,
+                mediaCreateOperationId: true,
+                mediaCreateMuxAssetId: true,
+                mediaCreateStartedAt: true,
+            },
+            orderBy: [{ mediaSyncNextAt: 'asc' }, { id: 'asc' }],
+            take: 101,
+        });
+        return { issues: issues.slice(0, 100), hasMore: issues.length > 100 };
     });
 
     fastify.get('/api/admin/audit-logs', {

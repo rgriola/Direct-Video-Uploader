@@ -174,6 +174,8 @@ async function handleSlackCommand(socket, userId, assetId, channels, mentions, o
             orderBy: { createdAt: 'desc' },
             select: {
                 mediasourceId: true,
+                mediaPlaybackReset: true,
+                mediaCreateOperationId: true,
                 formResponse: { select: { slug: true } },
                 clips: { select: { muxPlaybackId: true, capturedAt: true }, take: 1, orderBy: { createdAt: 'desc' } },
             },
@@ -181,7 +183,9 @@ async function handleSlackCommand(socket, userId, assetId, channels, mentions, o
         if (asset?.mediasourceId) {
             mediasourceId = asset.mediasourceId;
             clipUrl = `${PUBLIC_URL}/clips/${mediasourceId}`;
-            const playbackId = asset.clips?.[0]?.muxPlaybackId;
+            const playbackId = !asset.mediaPlaybackReset && !asset.mediaCreateOperationId
+                ? asset.clips?.[0]?.muxPlaybackId
+                : null;
             if (playbackId) {
                 thumbnailUrl = `https://image.mux.com/${playbackId}/thumbnail.png?width=640`;
             }

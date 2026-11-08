@@ -3,6 +3,7 @@ import cookie from '@fastify/cookie';
 import fastifyJwt from '@fastify/jwt';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { requireRole } from '../lib/authorization.js';
+import { acquireIntegrationDatabaseLock } from './helpers/database-lock.js';
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 if (process.env.CI && !databaseUrl) {
@@ -25,6 +26,7 @@ const integration = databaseUrl ? describe : describe.skip;
 integration('organization authorization against PostgreSQL', () => {
     let app;
     let prisma;
+    let releaseDatabaseLock;
 
     const users = [
         { id: 'scope-super', name: 'Super', phoneNumber: '5500000001', role: 'SUPER_ADMIN', companyCode: null },
@@ -62,7 +64,9 @@ integration('organization authorization against PostgreSQL', () => {
     }
 
     beforeAll(async () => {
-        ({ default: prisma } = await import('../lib/prisma.js'));
+        const database = await import('../lib/prisma.js');
+        prisma = database.default;
+        releaseDatabaseLock = await acquireIntegrationDatabaseLock(database.pool);
         const { default: adminRoutes } = await import('../routes/admin.js');
         const { default: assetRoutes } = await import('../routes/assets.js');
         const { default: clipRoutes } = await import('../routes/clips.js');
@@ -138,11 +142,15 @@ integration('organization authorization against PostgreSQL', () => {
     afterAll(async () => {
         if (app) await app.close();
         if (prisma) {
-            await prisma.chatMessage.deleteMany({ where: { userId: { in: userIds } } });
-            await prisma.asset.deleteMany({ where: { userId: { in: userIds } } });
-            await prisma.user.deleteMany({ where: { OR: [{ id: { in: userIds } }, { phoneNumber: createdPhone }] } });
-            await prisma.organization.deleteMany({ where: { companyCode: { in: companyCodes } } });
-            await prisma.$disconnect();
+            try {
+                await prisma.chatMessage.deleteMany({ where: { userId: { in: userIds } } });
+                await prisma.asset.deleteMany({ where: { userId: { in: userIds } } });
+                await prisma.user.deleteMany({ where: { OR: [{ id: { in: userIds } }, { phoneNumber: createdPhone }] } });
+                await prisma.organization.deleteMany({ where: { companyCode: { in: companyCodes } } });
+            } finally {
+                await releaseDatabaseLock?.();
+                await prisma.$disconnect();
+            }
         }
     });
 
@@ -174,6 +182,70 @@ integration('organization authorization against PostgreSQL', () => {
             wsConnections,
             onlineUsers: iosClients,
         });
+    });
+
+    it('reports playback availability to every role without exposing operation details', async () => {
+        const id = 'scope-asset-news';
+        const actors = ['scope-super', 'scope-admin-news', 'scope-user-news'];
+        const readAsset = async (actor, moderation) => {
+            const query = moderation ? `?moderation=${moderation}` : '';
+            const response = await requestAs(actor, 'GET', `/api/admin/assets${query}`);
+            expect(response.statusCode).toBe(200);
+            const asset = response.json().assets.find(item => item.id === id);
+            expect(asset).toBeDefined();
+            return asset;
+        };
+
+        try {
+            for (const actor of actors) {
+                expect((await readAsset(actor)).mediaPlaybackUnavailable).toBe(false);
+            }
+
+            await prisma.asset.update({ where: { id }, data: { mediaPlaybackReset: true } });
+            for (const actor of actors) {
+                expect((await readAsset(actor)).mediaPlaybackUnavailable).toBe(true);
+            }
+
+            await prisma.asset.update({
+                where: { id },
+                data: {
+                    mediaPlaybackReset: false,
+                    mediaCreateOperationId: 'scope-operation',
+                    mediaCreateMuxAssetId: 'scope-mux-asset',
+                    mediaCreateStartedAt: new Date(),
+                },
+            });
+            for (const actor of actors) {
+                const asset = await readAsset(actor);
+                expect(asset.mediaPlaybackUnavailable).toBe(true);
+                expect(asset.mediaCreateOperationId).toBe(actor === 'scope-super' ? 'scope-operation' : null);
+                expect(asset.mediaCreateMuxAssetId).toBe(actor === 'scope-super' ? 'scope-mux-asset' : null);
+            }
+
+            await prisma.asset.update({
+                where: { id },
+                data: {
+                    moderation: 'PAUSED',
+                    mediaCreateOperationId: null,
+                    mediaCreateMuxAssetId: null,
+                    mediaCreateStartedAt: null,
+                },
+            });
+            for (const actor of actors) {
+                expect((await readAsset(actor, 'PAUSED')).mediaPlaybackUnavailable).toBe(true);
+            }
+        } finally {
+            await prisma.asset.update({
+                where: { id },
+                data: {
+                    moderation: 'ACTIVE',
+                    mediaPlaybackReset: false,
+                    mediaCreateOperationId: null,
+                    mediaCreateMuxAssetId: null,
+                    mediaCreateStartedAt: null,
+                },
+            });
+        }
     });
 
     it('requires authentication and scopes asset details to the owner or their admin', async () => {

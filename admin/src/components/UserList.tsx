@@ -497,8 +497,8 @@ function UserDetails({
         <div className="pt-2 mt-2 border-t border-(--border-subtle)">
           {confirming && !deleting && (
             <p className="text-(length:--text-xs) text-(--accent-red) font-semibold mb-2 inline-flex items-start gap-1">
-              <Icon name="warning" /> This will permanently delete {user.name} and ALL their data.
-              Click again to confirm.
+              <Icon name="warning" /> This permanently deletes {user.name} and their data.
+              All their assets must first be removed with media cleanup completed. Click again to confirm.
             </p>
           )}
           <div className="flex items-center gap-2">

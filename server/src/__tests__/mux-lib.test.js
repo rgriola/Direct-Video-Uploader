@@ -5,8 +5,11 @@ const muxApi = {
     constructorArgs: [],
     uploadsCreate: vi.fn(),
     uploadsRetrieve: vi.fn(),
+    uploadsCancel: vi.fn(),
     assetsRetrieve: vi.fn(),
     assetsDelete: vi.fn(),
+    playbackCreate: vi.fn(),
+    playbackDelete: vi.fn(),
     assetsList: vi.fn(),
 };
 
@@ -21,10 +24,13 @@ vi.mock('@mux/mux-node', () => ({
                 uploads: {
                     create: muxApi.uploadsCreate,
                     retrieve: muxApi.uploadsRetrieve,
+                    cancel: muxApi.uploadsCancel,
                 },
                 assets: {
                     retrieve: muxApi.assetsRetrieve,
                     delete: muxApi.assetsDelete,
+                    createPlaybackId: muxApi.playbackCreate,
+                    deletePlaybackId: muxApi.playbackDelete,
                     list: muxApi.assetsList,
                 },
             };
@@ -62,8 +68,11 @@ beforeEach(() => {
     muxApi.constructorArgs = [];
     muxApi.uploadsCreate.mockReset();
     muxApi.uploadsRetrieve.mockReset();
+    muxApi.uploadsCancel.mockReset();
     muxApi.assetsRetrieve.mockReset();
     muxApi.assetsDelete.mockReset();
+    muxApi.playbackCreate.mockReset();
+    muxApi.playbackDelete.mockReset();
     muxApi.assetsList.mockReset();
 
     createReadStreamMock.mockClear();
@@ -120,12 +129,12 @@ describe('mux lib coverage', () => {
         expect(muxApi.uploadsCreate).toHaveBeenCalledWith(
             expect.objectContaining({
                 new_asset_settings: {
-                    playback_policy: ['public'],
                     passthrough: JSON.stringify({ clipId: 'clip-1', assetId: 'asset-1' }),
                 },
                 cors_origin: '*',
                 timeout: 3600,
-            })
+            }),
+            { timeout: 15_000, maxRetries: 0 },
         );
     });
 
@@ -145,6 +154,7 @@ describe('mux lib coverage', () => {
         const mux = await importMuxModule({ tokenId: 'id', tokenSecret: 'secret' });
         const result = await mux.ingestVideo('/tmp/video.mp4', { clipId: 'clip-200', assetId: 'asset-200' });
 
+        expect(muxApi.uploadsCreate.mock.calls[0][0].new_asset_settings).not.toHaveProperty('playback_policy');
         expect(createReadStreamMock).toHaveBeenCalledWith('/tmp/video.mp4');
         expect(fetchMock).toHaveBeenCalledWith('https://mux.example/upload/200', {
             method: 'PUT',
@@ -192,6 +202,9 @@ describe('mux lib coverage', () => {
 
         muxApi.uploadsRetrieve.mockRejectedValueOnce(new Error('upload lookup failed'));
         await expect(mux.getMuxUpload('upload-fail')).resolves.toBeNull();
+        expect(muxApi.uploadsRetrieve).toHaveBeenCalledWith(
+            'upload-fail', { timeout: 15_000, maxRetries: 0 },
+        );
     });
 
     it('deletes mux asset and handles 404 as success', async () => {
@@ -205,6 +218,186 @@ describe('mux lib coverage', () => {
 
         muxApi.assetsDelete.mockRejectedValueOnce({ status: 500, message: 'server error' });
         await expect(mux.deleteMuxAsset('mux-error')).resolves.toBe(false);
+    });
+
+    it('revokes every public playback ID even if one was already deleted', async () => {
+        const mux = await importMuxModule({ tokenId: 'id', tokenSecret: 'secret' });
+        muxApi.assetsRetrieve
+            .mockResolvedValueOnce({
+                status: 'ready',
+                playback_ids: [
+                    { policy: 'public', id: 'public-1' },
+                    { policy: 'signed', id: 'signed-1' },
+                    { policy: 'public', id: 'public-2' },
+                ],
+            })
+            .mockResolvedValueOnce({ status: 'ready', playback_ids: [{ policy: 'signed', id: 'signed-1' }] });
+        muxApi.playbackDelete
+            .mockRejectedValueOnce({ status: 404, message: 'not found' })
+            .mockResolvedValueOnce(undefined);
+
+        await expect(mux.disableMuxPlayback('mux-1')).resolves.toEqual({ ok: true });
+        expect(muxApi.playbackDelete.mock.calls).toEqual([
+            ['mux-1', 'public-1', { timeout: 15_000, maxRetries: 0 }],
+            ['mux-1', 'public-2', { timeout: 15_000, maxRetries: 0 }],
+        ]);
+        expect(muxApi.assetsRetrieve).toHaveBeenCalledTimes(2);
+    });
+
+    it('attempts remaining IDs and reports failure if any public ID remains', async () => {
+        const mux = await importMuxModule({ tokenId: 'id', tokenSecret: 'secret' });
+        muxApi.assetsRetrieve
+            .mockResolvedValueOnce({
+                status: 'ready',
+                playback_ids: [
+                    { policy: 'public', id: 'public-1' },
+                    { policy: 'public', id: 'public-2' },
+                ],
+            })
+            .mockResolvedValueOnce({ status: 'ready', playback_ids: [{ policy: 'public', id: 'public-1' }] });
+        muxApi.playbackDelete
+            .mockRejectedValueOnce({ status: 503, message: 'unavailable' })
+            .mockResolvedValueOnce(undefined);
+
+        await expect(mux.disableMuxPlayback('mux-1')).resolves.toEqual({
+            ok: false,
+            error: 'Mux still has public playback IDs',
+        });
+        expect(muxApi.playbackDelete).toHaveBeenCalledTimes(2);
+        expect(console.error).toHaveBeenCalled();
+    });
+
+    it('does not confirm revocation if the verification lookup fails', async () => {
+        const mux = await importMuxModule({ tokenId: 'id', tokenSecret: 'secret' });
+        muxApi.assetsRetrieve
+            .mockResolvedValueOnce({ status: 'ready', playback_ids: [{ policy: 'public', id: 'public-1' }] })
+            .mockRejectedValueOnce({ status: 503, message: 'unavailable' });
+        muxApi.playbackDelete.mockResolvedValue(undefined);
+
+        await expect(mux.disableMuxPlayback('mux-1')).resolves.toEqual({
+            ok: false,
+            error: 'Mux playback revocation failed',
+        });
+    });
+
+    it('does not delete playback IDs after the reconciliation lock is lost', async () => {
+        const mux = await importMuxModule({ tokenId: 'id', tokenSecret: 'secret' });
+        muxApi.assetsRetrieve.mockResolvedValueOnce({
+            status: 'ready',
+            playback_ids: [{ policy: 'public', id: 'public-1' }],
+        });
+        const assertLocked = vi.fn().mockRejectedValue(new Error('lock lost'));
+
+        await expect(mux.disableMuxPlayback('mux-1', assertLocked)).rejects.toThrow('lock lost');
+        expect(muxApi.playbackDelete).not.toHaveBeenCalled();
+    });
+
+    it('stops revoking before the next ID if the reconciliation lock is lost', async () => {
+        const mux = await importMuxModule({ tokenId: 'id', tokenSecret: 'secret' });
+        muxApi.assetsRetrieve.mockResolvedValueOnce({
+            status: 'ready',
+            playback_ids: [
+                { policy: 'public', id: 'public-1' },
+                { policy: 'public', id: 'public-2' },
+            ],
+        });
+        muxApi.playbackDelete.mockResolvedValue(undefined);
+        const assertLocked = vi.fn()
+            .mockResolvedValueOnce(undefined)
+            .mockResolvedValueOnce(undefined)
+            .mockRejectedValueOnce(new Error('lock lost'));
+
+        await expect(mux.disableMuxPlayback('mux-1', assertLocked)).rejects.toThrow('lock lost');
+        expect(muxApi.playbackDelete.mock.calls).toEqual([
+            ['mux-1', 'public-1', { timeout: 15_000, maxRetries: 0 }],
+        ]);
+    });
+
+    it('treats a missing Mux asset as already revoked', async () => {
+        const mux = await importMuxModule({ tokenId: 'id', tokenSecret: 'secret' });
+        muxApi.assetsRetrieve.mockRejectedValueOnce({ status: 404, message: 'not found' });
+
+        await expect(mux.disableMuxPlayback('mux-missing')).resolves.toEqual({ ok: true });
+        expect(muxApi.playbackDelete).not.toHaveBeenCalled();
+    });
+
+    it('distinguishes a missing asset from an unavailable Mux lookup', async () => {
+        const mux = await importMuxModule({ tokenId: 'id', tokenSecret: 'secret' });
+        muxApi.assetsRetrieve.mockRejectedValueOnce({ status: 404, message: 'not found' });
+        await expect(mux.inspectMuxAsset('mux-missing')).resolves.toEqual({ ok: true, asset: null });
+
+        muxApi.assetsRetrieve.mockRejectedValueOnce({ status: 503, message: 'unavailable' });
+        await expect(mux.inspectMuxAsset('mux-unavailable')).resolves.toEqual({
+            ok: false,
+            error: 'Mux asset inspection failed',
+        });
+
+        muxApi.assetsRetrieve.mockResolvedValueOnce({ status: 'ready', playback_ids: [{ policy: 'public' }] });
+        await expect(mux.inspectMuxAsset('mux-invalid')).resolves.toEqual({
+            ok: false,
+            error: 'Mux asset inspection returned an invalid response',
+        });
+    });
+
+    it('only confirms cancellation when Mux reports the upload cancelled', async () => {
+        const mux = await importMuxModule({ tokenId: 'id', tokenSecret: 'secret' });
+        muxApi.uploadsCancel.mockResolvedValueOnce({ status: 'cancelled' });
+        await expect(mux.cancelMuxUpload('upload-1')).resolves.toEqual({ ok: true });
+
+        muxApi.uploadsCancel.mockResolvedValueOnce({ status: 'waiting' });
+        await expect(mux.cancelMuxUpload('upload-2')).resolves.toEqual({
+            ok: false,
+            error: 'Mux upload cancellation was not confirmed',
+        });
+    });
+
+    it('does not retry a playback creation whose outcome could be unknown', async () => {
+        const mux = await importMuxModule({ tokenId: 'id', tokenSecret: 'secret' });
+        muxApi.playbackCreate.mockRejectedValueOnce(new Error('request timed out'));
+
+        await expect(mux.createMuxPublicPlayback('mux-1')).resolves.toEqual({
+            ok: false,
+            indeterminate: true,
+            error: 'Mux playback creation outcome is unknown',
+        });
+        expect(muxApi.playbackCreate).toHaveBeenCalledWith(
+            'mux-1',
+            { policy: 'public' },
+            { timeout: 15_000, maxRetries: 0 },
+        );
+        expect(muxApi.playbackCreate).toHaveBeenCalledTimes(1);
+    });
+
+    it('distinguishes rejected playback creation from an indeterminate response', async () => {
+        const mux = await importMuxModule({ tokenId: 'id', tokenSecret: 'secret' });
+        muxApi.playbackCreate.mockRejectedValueOnce({ status: 403, message: 'forbidden' });
+        await expect(mux.createMuxPublicPlayback('mux-1')).resolves.toEqual({
+            ok: false,
+            indeterminate: false,
+            error: 'Mux playback creation was rejected',
+        });
+
+        muxApi.playbackCreate.mockResolvedValueOnce({});
+        await expect(mux.createMuxPublicPlayback('mux-1')).resolves.toEqual({
+            ok: false,
+            indeterminate: true,
+            error: 'Mux playback creation outcome is unknown',
+        });
+    });
+
+    it('only accepts a playback creation response that confirms public policy', async () => {
+        const mux = await importMuxModule({ tokenId: 'id', tokenSecret: 'secret' });
+        muxApi.playbackCreate.mockResolvedValueOnce({ id: 'public-1', policy: 'public' });
+        await expect(mux.createMuxPublicPlayback('mux-1')).resolves.toEqual({
+            ok: true, playbackId: 'public-1',
+        });
+
+        muxApi.playbackCreate.mockResolvedValueOnce({ id: 'other-1', policy: 'signed' });
+        await expect(mux.createMuxPublicPlayback('mux-1')).resolves.toEqual({
+            ok: false,
+            indeterminate: true,
+            error: 'Mux playback creation outcome is unknown',
+        });
     });
 
     it('lists mux assets and returns null on list failure', async () => {

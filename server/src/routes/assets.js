@@ -6,6 +6,9 @@ import { randomUUID } from 'crypto';
 import prisma from '../lib/prisma.js';
 import { generateMediasourceId, dbRetry, parseClientMetadata, serializeClip, notifyUserSockets } from '../lib/utils.js';
 import { isMuxEnabled, createDirectUpload } from '../lib/mux.js';
+import { queueAssetMediaSync } from '../lib/media-reconciliation.js';
+import { withAssetMediaLock } from '../lib/media-lock.js';
+import { canExposePlayback } from '../lib/media-visibility.js';
 import { teamScope } from '../lib/authorization.js';
 import { isSuperAdmin } from '../lib/roles.js';
 import { notifyDashboardAssetChange } from '../ws/dashboard-notifications.js';
@@ -25,12 +28,21 @@ const ALLOWED_VIDEO_MIMES = new Set([
 function serializeAsset(asset) {
     const clips = asset.clips.map(clip => {
         const serialized = serializeClip(clip);
-        if (asset.moderation !== 'ACTIVE') {
-            return { ...serialized, muxPlaybackId: null, streamUrl: null, thumbnailUrl: null };
+        if (!canExposePlayback(asset)) {
+            return { ...serialized, storageUrl: null, muxPlaybackId: null, streamUrl: null, thumbnailUrl: null };
         }
         return serialized;
     });
-    return { ...asset, clips };
+    const {
+        mediaCreateOperationId: _operationId,
+        mediaCreateMuxAssetId: _muxAssetId,
+        mediaCreateStartedAt: _startedAt,
+        mediaSyncRevision: _revision,
+        mediaSyncNextAt: _nextAt,
+        mediaSyncError: _error,
+        ...visible
+    } = asset;
+    return { ...visible, clips };
 }
 
 export default async function assetRoutes(fastify) {
@@ -76,7 +88,7 @@ export default async function assetRoutes(fastify) {
     /**
      * POST /api/assets/:id/mux-upload
      * Create a Mux direct upload URL. iOS uploads directly to Mux's CDN,
-     * bypassing the server (avoids Render's 30s request timeout for large files).
+     * bypassing the server for large file transfers.
      *
      * Body: { metadata?: { duration, resolution, codec, ... } }
      * Returns: { uploadUrl, clipId, muxUploadId }
@@ -90,90 +102,6 @@ export default async function assetRoutes(fastify) {
             return reply.status(503).send({ error: 'Mux not configured' });
         }
 
-        const asset = await dbRetry(() => prisma.asset.findUnique({ where: { id } }));
-        if (!asset || asset.userId !== request.user.id) {
-            return reply.status(404).send({ error: 'Asset not found' });
-        }
-        if (asset.moderation !== 'ACTIVE') {
-            return reply.status(409).send({ error: 'This asset is not accepting uploads while it is moderated' });
-        }
-
-        // Idempotent: if there's already a PROCESSING clip for this asset with a
-        // Mux upload URL, return it instead of creating a duplicate.
-        const existingClip = await dbRetry(() => prisma.clip.findFirst({
-            where: { assetId: id, status: 'PROCESSING', muxUploadId: { not: null } },
-            orderBy: { createdAt: 'desc' },
-        }));
-
-        if (existingClip) {
-            // Look up the Mux upload to check if it's still usable
-            const { getMuxUpload } = await import('../lib/mux.js');
-            let upload;
-            try {
-                upload = await getMuxUpload(existingClip.muxUploadId);
-            } catch (err) {
-                request.log.warn(
-                    {
-                        muxUploadId: existingClip.muxUploadId,
-                        err: { message: err.message },
-                    },
-                    'Could not fetch Mux upload status'
-                );
-            }
-
-            if (!upload || typeof upload.status !== 'string') {
-                request.log.warn(
-                    { muxUploadId: existingClip.muxUploadId },
-                    'Cannot verify existing Mux upload status'
-                );
-                return reply.status(503).send({ error: 'Could not verify the existing upload. Please try again.' });
-            }
-
-            // Only reuse if Mux upload is still in 'waiting' state (accepting bytes)
-            if (upload.status === 'waiting') {
-                if (!upload.url) {
-                    request.log.warn(
-                        { muxUploadId: existingClip.muxUploadId },
-                        'Existing Mux upload has no upload URL'
-                    );
-                    return reply.status(503).send({ error: 'Could not verify the existing upload. Please try again.' });
-                }
-                request.log.info(
-                    { clipId: existingClip.id, mediasourceId: asset.mediasourceId },
-                    'Reusing existing processing clip upload'
-                );
-                return {
-                    uploadUrl: upload.url,
-                    clipId: existingClip.id,
-                    muxUploadId: existingClip.muxUploadId,
-                };
-            }
-            if (upload.status === 'asset_created') {
-                return reply.status(409).send({ error: 'The existing upload is already processing.' });
-            }
-            if (!['cancelled', 'timed_out', 'errored'].includes(upload.status)) {
-                request.log.warn(
-                    { muxUploadId: existingClip.muxUploadId, muxUploadStatus: upload.status },
-                    'Cannot verify whether the existing Mux upload is finished'
-                );
-                return reply.status(503).send({ error: 'Could not verify the existing upload. Please try again.' });
-            }
-            // A terminal upload can no longer produce a new asset.
-            request.log.info(
-                {
-                    muxUploadId: existingClip.muxUploadId,
-                    muxUploadStatus: upload.status,
-                    mediasourceId: asset.mediasourceId,
-                },
-                'Creating fresh direct upload after stale mux upload state'
-            );
-            await dbRetry(() => prisma.clip.delete({ where: { id: existingClip.id } }));
-            await dbRetry(() => prisma.asset.update({
-                where: { id },
-                data: { clipCount: { decrement: 1 } },
-            }));
-        }
-
         const clientMeta = request.body?.metadata || {};
         const mimeType = String(clientMeta.mimeType || clientMeta.contentType || clientMeta.type || '')
             .trim()
@@ -182,64 +110,179 @@ export default async function assetRoutes(fastify) {
         if (mimeType && !ALLOWED_VIDEO_MIMES.has(mimeType)) {
             return reply.status(415).send({ error: `Unsupported media type: ${mimeType}` });
         }
-
-        const clipId = randomUUID();
-
-        // Create the Mux direct upload URL
-        const muxResult = await createDirectUpload({ clipId, assetId: id });
-        if (!muxResult) {
-            return reply.status(500).send({ error: 'Failed to create Mux upload' });
+        const metadata = parseClientMetadata(clientMeta);
+        let fileSize;
+        try {
+            fileSize = clientMeta.fileSize ? BigInt(clientMeta.fileSize) : null;
+        } catch {
+            return reply.status(400).send({ error: 'Invalid file size' });
         }
 
-        const metadata = parseClientMetadata(clientMeta);
+        let locked;
+        try {
+            locked = await withAssetMediaLock(id, async assertLocked => {
+                const asset = await dbRetry(() => prisma.asset.findUnique({ where: { id } }));
+                if (!asset || asset.userId !== request.user.id) {
+                    return { status: 404, body: { error: 'Asset not found' } };
+                }
+                if (asset.moderation !== 'ACTIVE') {
+                    return { status: 409, body: { error: 'This asset is not accepting uploads while it is moderated' } };
+                }
 
-        // Create clip record in PROCESSING state (Mux webhook will mark READY)
-        await dbRetry(() => prisma.clip.create({
-            data: {
-                id: clipId,
-                assetId: id,
-                clipIndex: 0,
-                originalFileName: clientMeta.fileName || asset.originalFileName || null,
-                fileSize: clientMeta.fileSize ? BigInt(clientMeta.fileSize) : null,
-                muxUploadId: muxResult.muxUploadId,
-                ...metadata,
-                status: 'PROCESSING',
-            },
-        }));
+                const existingClip = await dbRetry(() => prisma.clip.findFirst({
+                    where: {
+                        assetId: id,
+                        status: 'PROCESSING',
+                        OR: [
+                            { muxUploadId: { not: null } },
+                            { muxUploadId: null, muxAssetId: null, storageUrl: null },
+                        ],
+                    },
+                    orderBy: { createdAt: 'desc' },
+                }));
+                let staleClip = null;
+                if (existingClip?.muxUploadId) {
+                    const { getMuxUpload } = await import('../lib/mux.js');
+                    let upload;
+                    try {
+                        upload = await getMuxUpload(existingClip.muxUploadId);
+                    } catch (err) {
+                        request.log.warn({ err: { message: err.message } }, 'Could not fetch Mux upload status');
+                    }
+                    if (!upload || typeof upload.status !== 'string'
+                        || (upload.status === 'waiting' && !upload.url)
+                        || !['waiting', 'asset_created', 'cancelled', 'timed_out', 'errored'].includes(upload.status)) {
+                        request.log.warn({ muxUploadId: existingClip.muxUploadId }, 'Cannot verify existing Mux upload status');
+                        return { status: 503, body: { error: 'Could not verify the existing upload. Please try again.' } };
+                    }
+                    if (upload.status === 'asset_created') {
+                        return { status: 409, body: { error: 'The existing upload is already processing.' } };
+                    }
+                    if (upload.status === 'waiting') {
+                        await assertLocked();
+                        const current = await prisma.asset.findUnique({ where: { id } });
+                        if (!current || current.userId !== request.user.id || current.moderation !== 'ACTIVE') {
+                            return { status: 409, body: { error: 'This asset is not accepting uploads while it is moderated' } };
+                        }
+                        return {
+                            status: 200,
+                            body: { uploadUrl: upload.url, clipId: existingClip.id, muxUploadId: existingClip.muxUploadId },
+                        };
+                    }
+                    staleClip = existingClip;
+                } else if (existingClip) {
+                    staleClip = existingClip;
+                }
 
-        // Update asset status
-        await dbRetry(() => prisma.asset.update({
-            where: { id },
-            data: {
-                status: 'PROCESSING',
-                clipCount: { increment: 1 },
-                totalDuration: metadata.duration,
-            },
-        }));
+                if (staleClip && (staleClip.muxAssetId || staleClip.muxPlaybackId
+                    || staleClip.storageUrl || staleClip.streamUrl || staleClip.thumbnailUrl
+                    || await prisma.muxAssetReference.findFirst({
+                    where: { assetId: id, clipId: staleClip.id },
+                    select: { muxAssetId: true },
+                }))) {
+                    await queueAssetMediaSync(prisma, id);
+                    return { status: 409, body: { error: 'The previous upload has media requiring reconciliation.' } };
+                }
 
-        request.log.info(
-            { clipId, mediasourceId: asset.mediasourceId, muxUploadId: muxResult.muxUploadId },
-            'Created mux direct upload URL'
-        );
+                const clipId = randomUUID();
+                const claimed = await dbRetry(() => prisma.$transaction(async tx => {
+                    const updated = await tx.asset.updateMany({
+                        where: { id, userId: request.user.id, moderation: 'ACTIVE' },
+                        data: {
+                            status: 'PROCESSING',
+                            ...(!staleClip ? { clipCount: { increment: 1 } } : {}),
+                            totalDuration: metadata.duration,
+                        },
+                    });
+                    if (updated.count !== 1) return false;
+                    if (staleClip) {
+                        const deleted = await tx.clip.deleteMany({
+                            where: { id: staleClip.id, assetId: id, status: 'PROCESSING', muxAssetId: null },
+                        });
+                        if (deleted.count !== 1) throw new Error('Previous upload changed while being replaced');
+                    }
+                    await tx.clip.create({
+                        data: {
+                            id: clipId,
+                            assetId: id,
+                            clipIndex: 0,
+                            originalFileName: clientMeta.fileName || asset.originalFileName || null,
+                            fileSize,
+                            ...metadata,
+                            status: 'PROCESSING',
+                        },
+                    });
+                    await queueAssetMediaSync(tx, id);
+                    return true;
+                }));
+                if (!claimed) {
+                    return { status: 409, body: { error: 'This asset is not accepting uploads while it is moderated' } };
+                }
 
-        // Push form request via WebSocket
+                let muxResult;
+                try {
+                    await assertLocked();
+                    muxResult = await createDirectUpload({ clipId, assetId: id });
+                    if (!muxResult) throw new Error('Mux upload creation is not configured');
+                } catch (err) {
+                    request.log.error({ assetId: id, err: { message: err.message } }, 'Mux upload creation failed');
+                    await dbRetry(() => prisma.$transaction(async tx => {
+                        await tx.asset.updateMany({
+                            where: { id, clips: { none: { id: { not: clipId }, status: 'PROCESSING' } } },
+                            data: { status: 'ERROR' },
+                        });
+                        await tx.clip.updateMany({
+                            where: { id: clipId, assetId: id, muxUploadId: null },
+                            data: { status: 'ERROR' },
+                        });
+                        await queueAssetMediaSync(tx, id);
+                    }));
+                    return { status: 502, body: { error: 'Failed to create Mux upload. Please try again.' } };
+                }
+
+                await dbRetry(() => prisma.$transaction(async tx => {
+                    await queueAssetMediaSync(tx, id);
+                    const linked = await tx.clip.updateMany({
+                        where: { id: clipId, assetId: id, muxUploadId: null },
+                        data: { muxUploadId: muxResult.muxUploadId },
+                    });
+                    if (linked.count !== 1) throw new Error('Mux upload could not be linked to its clip');
+                }));
+                await assertLocked();
+
+                const current = await prisma.asset.findUnique({ where: { id } });
+                if (!current || current.userId !== request.user.id || current.moderation !== 'ACTIVE') {
+                    return { status: 409, body: { error: 'This asset is not accepting uploads while it is moderated' } };
+                }
+                return {
+                    status: 200,
+                    body: { uploadUrl: muxResult.uploadUrl, clipId, muxUploadId: muxResult.muxUploadId },
+                    asset,
+                };
+            });
+        } catch (err) {
+            request.log.error({ assetId: id, err: { message: err.message } }, 'Could not safely create Mux upload');
+            return reply.status(503).send({ error: 'Could not safely create the upload. Please try again.' });
+        }
+
+        if (!locked.acquired) {
+            return reply.status(409).send({ error: 'Media reconciliation is in progress. Please try again.' });
+        }
+        const { status, body, asset } = locked.value;
+        if (status !== 200 || !asset) return reply.status(status).send(body);
+
+        request.log.info({ clipId: body.clipId, mediasourceId: asset.mediasourceId, muxUploadId: body.muxUploadId }, 'Created mux direct upload URL');
         const originalName = clientMeta.fileName || asset.originalFileName || asset.mediasourceId;
-
         notifyUserSockets(fastify.io, request.user.id, {
             assetId: id,
             asset: { mediasourceId: asset.mediasourceId, mediasourceUrl: asset.mediasourceUrl, originalFileName: originalName },
             userName: request.user.name,
             metadata,
-            clip: { id: clipId, fileSize: clientMeta.fileSize || '0' },
+            clip: { id: body.clipId, fileSize: clientMeta.fileSize || '0' },
             messageText: `🎬 #${asset.mediasourceId} uploading to Mediasoure.`,
         });
         await notifyDashboardAssetChange(fastify, id);
-
-        return {
-            uploadUrl: muxResult.uploadUrl,
-            clipId,
-            muxUploadId: muxResult.muxUploadId,
-        };
+        return body;
     });
 
     /**
@@ -297,14 +340,7 @@ export default async function assetRoutes(fastify) {
         }
 
         // Convert BigInt to string for JSON serialization
-        const clips = serializeAsset(asset).clips;
-
-        return {
-            asset: {
-                ...asset,
-                clips,
-            },
-        };
+        return { asset: serializeAsset(asset) };
     });
 
     /**

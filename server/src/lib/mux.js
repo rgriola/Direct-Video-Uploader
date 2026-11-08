@@ -19,6 +19,7 @@ import { stat } from 'fs/promises';
 const MUX_TOKEN_ID = process.env.MUX_TOKEN_ID;
 const MUX_TOKEN_SECRET = process.env.MUX_TOKEN_SECRET;
 export const MUX_ENV_KEY = process.env.MUX_ENV_KEY || '';
+const CONTROL_REQUEST_OPTIONS = { timeout: 15_000, maxRetries: 0 };
 
 /** Whether Mux is configured (has API credentials). */
 export const isMuxEnabled = !!(MUX_TOKEN_ID && MUX_TOKEN_SECRET);
@@ -51,7 +52,6 @@ export async function createDirectUpload(opts = {}) {
 
     const upload = await muxClient.video.uploads.create({
         new_asset_settings: {
-            playback_policy: ['public'],
             passthrough: JSON.stringify({
                 clipId: opts.clipId,
                 assetId: opts.assetId,
@@ -59,7 +59,11 @@ export async function createDirectUpload(opts = {}) {
         },
         cors_origin: '*',
         timeout: 3600, // 1 hour expiry for the upload URL
-    });
+    }, CONTROL_REQUEST_OPTIONS);
+
+    if (typeof upload?.id !== 'string' || !upload.id || typeof upload.url !== 'string' || !upload.url) {
+        throw new Error('Mux upload creation returned an invalid response');
+    }
 
     return {
         uploadUrl: upload.url,
@@ -90,7 +94,6 @@ export async function ingestVideo(filePath, opts = {}) {
         // Create a direct upload — Mux gives us a PUT URL
         const upload = await muxClient.video.uploads.create({
             new_asset_settings: {
-                playback_policy: ['public'],
                 // passthrough lets us correlate webhook events back to our clip
                 passthrough: JSON.stringify({
                     clipId: opts.clipId,
@@ -98,7 +101,7 @@ export async function ingestVideo(filePath, opts = {}) {
                 }),
             },
             cors_origin: '*',
-        });
+        }, CONTROL_REQUEST_OPTIONS);
 
         // Upload the file to Mux's upload URL
         const fileStats = await stat(filePath);
@@ -152,10 +155,100 @@ export async function getMuxAsset(muxAssetId) {
 export async function getMuxUpload(muxUploadId) {
     if (!muxClient) return null;
     try {
-        return await muxClient.video.uploads.retrieve(muxUploadId);
+        return await muxClient.video.uploads.retrieve(muxUploadId, CONTROL_REQUEST_OPTIONS);
     } catch (err) {
         console.error('🎬 Mux upload fetch error:', err.message);
         return null;
+    }
+}
+
+export async function inspectMuxAsset(muxAssetId) {
+    if (!muxClient || !muxAssetId) {
+        return { ok: false, error: 'Mux asset inspection is not configured' };
+    }
+
+    try {
+        const asset = await muxClient.video.assets.retrieve(muxAssetId, CONTROL_REQUEST_OPTIONS);
+        if (!asset || typeof asset.status !== 'string'
+            || (asset.playback_ids != null && (
+                !Array.isArray(asset.playback_ids)
+                || asset.playback_ids.some(playback =>
+                    typeof playback?.id !== 'string' || !playback.id
+                    || typeof playback.policy !== 'string' || !playback.policy)
+            ))) {
+            console.error('🎬 Mux asset inspection returned an invalid response');
+            return { ok: false, error: 'Mux asset inspection returned an invalid response' };
+        }
+        return { ok: true, asset };
+    } catch (err) {
+        if (err.status === 404) return { ok: true, asset: null };
+        console.error('🎬 Mux asset inspection error:', err.message);
+        return { ok: false, error: 'Mux asset inspection failed' };
+    }
+}
+
+export async function inspectMuxUpload(muxUploadId) {
+    if (!muxClient || !muxUploadId) {
+        return { ok: false, error: 'Mux upload inspection is not configured' };
+    }
+
+    try {
+        const upload = await muxClient.video.uploads.retrieve(muxUploadId, CONTROL_REQUEST_OPTIONS);
+        if (!upload || typeof upload.status !== 'string') {
+            console.error('🎬 Mux upload inspection returned an invalid response');
+            return { ok: false, error: 'Mux upload inspection returned an invalid response' };
+        }
+        return { ok: true, upload };
+    } catch (err) {
+        console.error('🎬 Mux upload inspection error:', err.message);
+        return { ok: false, error: 'Mux upload inspection failed' };
+    }
+}
+
+export async function cancelMuxUpload(muxUploadId) {
+    if (!muxClient || !muxUploadId) {
+        return { ok: false, error: 'Mux upload cancellation is not configured' };
+    }
+
+    try {
+        const upload = await muxClient.video.uploads.cancel(muxUploadId, CONTROL_REQUEST_OPTIONS);
+        if (upload?.status !== 'cancelled') {
+            console.error('🎬 Mux upload cancellation was not confirmed');
+            return { ok: false, error: 'Mux upload cancellation was not confirmed' };
+        }
+        return { ok: true };
+    } catch (err) {
+        console.error('🎬 Mux upload cancellation error:', err.message);
+        return { ok: false, error: 'Mux upload cancellation failed' };
+    }
+}
+
+export async function createMuxPublicPlayback(muxAssetId) {
+    if (!muxClient || !muxAssetId) {
+        return { ok: false, indeterminate: false, error: 'Mux playback creation is not configured' };
+    }
+
+    try {
+        const playback = await muxClient.video.assets.createPlaybackId(
+            muxAssetId,
+            { policy: 'public' },
+            CONTROL_REQUEST_OPTIONS,
+        );
+        if (typeof playback?.id !== 'string' || !playback.id || playback.policy !== 'public') {
+            console.error('🎬 Mux playback creation returned an invalid response');
+            return { ok: false, indeterminate: true, error: 'Mux playback creation outcome is unknown' };
+        }
+        return { ok: true, playbackId: playback.id };
+    } catch (err) {
+        const status = err?.status;
+        const rejected = Number.isInteger(status) && status >= 400 && status < 500
+            && status !== 408 && status !== 429;
+        console.error('🎬 Mux playback creation error:', err.message);
+        return {
+            ok: false,
+            indeterminate: !rejected,
+            error: rejected ? 'Mux playback creation was rejected' : 'Mux playback creation outcome is unknown',
+        };
     }
 }
 
@@ -167,7 +260,7 @@ export async function getMuxUpload(muxUploadId) {
 export async function deleteMuxAsset(muxAssetId) {
     if (!muxClient || !muxAssetId) return false;
     try {
-        await muxClient.video.assets.delete(muxAssetId);
+        await muxClient.video.assets.delete(muxAssetId, CONTROL_REQUEST_OPTIONS);
         return true;
     } catch (err) {
         // 404 = already gone, treat as success
@@ -181,48 +274,40 @@ export async function deleteMuxAsset(muxAssetId) {
  * Revoke every public playback ID for an asset.
  * A missing Mux asset is already non-playable and is treated as success.
  */
-export async function disableMuxPlayback(muxAssetId) {
+export async function disableMuxPlayback(muxAssetId, assertLocked = async () => {}) {
     if (!muxClient || !muxAssetId) {
         return { ok: false, error: 'Mux is not configured for playback revocation' };
     }
 
-    try {
-        const asset = await muxClient.video.assets.retrieve(muxAssetId);
-        const playbackIds = (asset.playback_ids || [])
-            .filter(playback => playback.policy === 'public')
-            .map(playback => playback.id);
-        for (const playbackId of playbackIds) {
-            await muxClient.video.assets.deletePlaybackId(muxAssetId, playbackId);
+    const inspection = await inspectMuxAsset(muxAssetId);
+    await assertLocked();
+    if (!inspection.ok) return { ok: false, error: 'Mux playback revocation failed' };
+    if (!inspection.asset) return { ok: true };
+
+    const playbackIds = (inspection.asset.playback_ids || [])
+        .filter(playback => playback.policy === 'public')
+        .map(playback => playback.id);
+    for (const playbackId of playbackIds) {
+        await assertLocked();
+        try {
+            await muxClient.video.assets.deletePlaybackId(muxAssetId, playbackId, CONTROL_REQUEST_OPTIONS);
+        } catch (err) {
+            if (err.status !== 404) {
+                console.error('🎬 Mux playback revocation error:', err.message);
+            }
         }
-        return { ok: true };
-    } catch (err) {
-        if (err.status === 404) return { ok: true };
-        console.error('🎬 Mux playback revocation error:', err.message);
+    }
+
+    await assertLocked();
+    const current = await inspectMuxAsset(muxAssetId);
+    await assertLocked();
+    if (!current.ok) {
         return { ok: false, error: 'Mux playback revocation failed' };
     }
-}
-
-/**
- * Ensure an active, ready Mux asset has a public playback ID.
- * Pending assets receive their public playback ID from Mux when processing completes.
- */
-export async function enableMuxPlayback(muxAssetId) {
-    if (!muxClient || !muxAssetId) {
-        return { ok: false, error: 'Mux is not configured for playback restoration' };
+    if (current.asset?.playback_ids?.some(playback => playback.policy === 'public')) {
+        return { ok: false, error: 'Mux still has public playback IDs' };
     }
-
-    try {
-        const asset = await muxClient.video.assets.retrieve(muxAssetId);
-        const publicPlayback = asset.playback_ids?.find(playback => playback.policy === 'public');
-        if (publicPlayback) return { ok: true, playbackId: publicPlayback.id };
-        if (asset.status !== 'ready') return { ok: true, playbackId: null, pending: true };
-
-        const playback = await muxClient.video.assets.createPlaybackId(muxAssetId, { policy: 'public' });
-        return { ok: true, playbackId: playback.id };
-    } catch (err) {
-        console.error('🎬 Mux playback restoration error:', err.message);
-        return { ok: false, error: 'Mux playback restoration failed' };
-    }
+    return { ok: true };
 }
 
 /**

@@ -11,6 +11,7 @@ import { redactCompanyCode, redactPersonName, redactPhoneNumber } from '../lib/r
 import { CLIP_COOKIE_NAME, clipCookieOpts } from '../lib/clipAuth.js';
 import { icon } from '../lib/icons.js';
 import { isSuperAdmin, sameOrganization } from '../lib/roles.js';
+import { canExposePlayback } from '../lib/media-visibility.js';
 
 /** Escape HTML special characters to prevent XSS (#5). */
 function escapeHtml(str) {
@@ -298,7 +299,7 @@ ${googleFontsHead}
             select: { muxPlaybackId: true, status: true },
         });
 
-        const ready = !!(clip?.muxPlaybackId);
+        const ready = canExposePlayback(asset) && !!clip?.muxPlaybackId;
         return reply.send({
             ready,
             muxPlaybackId: ready ? clip.muxPlaybackId : null,
@@ -364,7 +365,10 @@ ${googleFontsHead}
             return;
         }
 
-        const clip = asset.clips?.[0];
+        const firstClip = asset.clips?.[0];
+        const clip = firstClip && !canExposePlayback(asset)
+            ? { ...firstClip, storageUrl: null, streamUrl: null, thumbnailUrl: null, muxPlaybackId: null }
+            : firstClip;
         const form = asset.formResponse;
         // Width/height ratio for the player + its loading placeholder — computed
         // once here so both the initial render and the "processing → ready"

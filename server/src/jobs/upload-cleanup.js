@@ -11,11 +11,12 @@
  */
 import prisma from '../lib/prisma.js';
 import { dbRetry } from '../lib/utils.js';
+import { withAssetMediaLock } from '../lib/media-lock.js';
+import { localUploadPath, removeLocalUpload } from '../lib/local-media.js';
 import * as slack from '../lib/slack.js';
 import { redactPersonName } from '../lib/redact.js';
 import { notifyDashboardAssetChange } from '../ws/dashboard-notifications.js';
 import fs from 'fs/promises';
-import path from 'path';
 
 const CLEANUP_INTERVAL_MS = 5 * 60 * 1000;   // 5 minutes
 const ORPHAN_THRESHOLD_MS = 60 * 60 * 1000;  // 1 hour
@@ -25,7 +26,7 @@ let cleanupLog = null;
 /**
  * Find and clean up orphaned UPLOADING assets.
  */
-async function cleanupOrphanedUploads(fastify) {
+export async function cleanupOrphanedUploads(fastify, { fileSystem = fs } = {}) {
     const log = fastify?.log ?? null;
     try {
         const cutoff = new Date(Date.now() - ORPHAN_THRESHOLD_MS);
@@ -33,40 +34,63 @@ async function cleanupOrphanedUploads(fastify) {
         const orphanedAssets = await dbRetry(() => prisma.asset.findMany({
             where: {
                 status: 'UPLOADING',
+                moderation: 'ACTIVE',
                 createdAt: { lt: cutoff },
             },
-            include: {
-                clips: { select: { id: true, storageUrl: true } },
-                user: { select: { name: true } },
-            },
+            select: { id: true },
         }));
 
         if (orphanedAssets.length === 0) return;
 
         log?.info({ orphanedCount: orphanedAssets.length }, 'Upload cleanup found orphaned uploading assets');
 
-        for (const asset of orphanedAssets) {
+        for (const candidate of orphanedAssets) {
+            let asset;
+            try {
+                const locked = await withAssetMediaLock(candidate.id, async assertLocked => {
+                    return prisma.$transaction(async tx => {
+                        await tx.$queryRaw`SELECT id FROM assets WHERE id = ${candidate.id} FOR UPDATE`;
+                        const current = await tx.asset.findFirst({
+                            where: {
+                                id: candidate.id,
+                                status: 'UPLOADING',
+                                moderation: 'ACTIVE',
+                                mediaPlaybackReset: false,
+                                mediaCreateOperationId: null,
+                                createdAt: { lt: cutoff },
+                            },
+                            include: {
+                                clips: { select: { id: true, storageUrl: true } },
+                                user: { select: { name: true } },
+                            },
+                        });
+                        if (!current) return null;
+
+                        for (const clip of current.clips) {
+                            const filePath = localUploadPath(clip.storageUrl);
+                            if (!filePath) continue;
+                            await assertLocked();
+                            await removeLocalUpload(tx, clip, fileSystem);
+                            await tx.clip.updateMany({
+                                where: { id: clip.id, assetId: current.id, storageUrl: clip.storageUrl },
+                                data: { storageUrl: null },
+                            });
+                        }
+
+                        await tx.asset.update({ where: { id: current.id }, data: { status: 'ERROR' } });
+                        return current;
+                    }, { timeout: 30000 });
+                });
+                if (!locked.acquired || !locked.value) continue;
+                asset = locked.value;
+            } catch (err) {
+                log?.error({ assetId: candidate.id, err: { message: err.message } }, 'Could not clean orphaned upload');
+                continue;
+            }
+
             const ageMin = Math.round((Date.now() - new Date(asset.createdAt).getTime()) / 60000);
             const redactedUserName = redactPersonName(asset.user?.name) || 'unknown';
 
-            // Clean up partial upload files
-            for (const clip of asset.clips) {
-                if (clip.storageUrl) {
-                    const filePath = path.resolve(process.cwd(), clip.storageUrl.replace(/^\//, ''));
-                    try {
-                        await fs.unlink(filePath);
-                        log?.info({ filePath }, 'Deleted orphaned upload file');
-                    } catch {
-                        // File may not exist — that's fine
-                    }
-                }
-            }
-
-            // Mark asset as ERROR
-            await dbRetry(() => prisma.asset.update({
-                where: { id: asset.id },
-                data: { status: 'ERROR' },
-            }));
             await notifyDashboardAssetChange(fastify, asset.id);
 
             log?.warn(
@@ -80,11 +104,12 @@ async function cleanupOrphanedUploads(fastify) {
 
             // Alert via Slack
             if (slack.isConfigured()) {
-                await slack.postToChannel('general',
+                const alert = await slack.postToChannel('general',
                     `🧹 Orphaned upload cleaned up — #${asset.mediasourceId} was stuck in UPLOADING for ${ageMin}min (user: ${redactedUserName})`,
                     undefined,
                     { requestId: 'job:upload-cleanup' }
                 );
+                if (!alert.ok) log?.error({ assetId: asset.id }, 'Could not send orphaned upload alert');
             }
         }
     } catch (err) {
