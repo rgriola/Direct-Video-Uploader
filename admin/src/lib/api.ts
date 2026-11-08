@@ -38,7 +38,7 @@ async function api<T>(method: string, path: string, body?: unknown): Promise<T> 
 
 /* ─── Typed API calls ─── */
 
-import type { Stats, User, Asset, TriadStatus, Organization } from "./types";
+import type { Stats, User, Asset, TriadStatus, Organization, MediaIssue, MediaSyncState } from "./types";
 
 export async function fetchHealth() {
   return api<{ status: string; service: string; version: string }>("GET", "/api/health");
@@ -131,7 +131,26 @@ export async function updateAssetModeration(
   assetId: string,
   data: { moderation: "ACTIVE" | "PAUSED" | "FLAGGED_FOR_REMOVAL" | "REMOVED"; reason?: string },
 ) {
-  return api<{ asset: Pick<Asset, "id" | "moderation">; message: string }>("PATCH", `/api/admin/assets/${assetId}/moderation`, data);
+  return api<MediaSyncResponse & { asset: Pick<Asset, "id" | "moderation"> }>(
+    "PATCH", `/api/admin/assets/${assetId}/moderation`, data,
+  );
+}
+
+export interface MediaSyncResponse {
+  mediaSyncState: MediaSyncState;
+  message: string;
+}
+
+export async function confirmMuxPlaybackCreation(assetId: string, operationId: string, reason: string) {
+  return api<MediaSyncResponse>("POST", `/api/admin/assets/${assetId}/media-sync/confirm-create`, {
+    operationId,
+    confirmed: true,
+    reason,
+  });
+}
+
+export async function fetchMediaIssues() {
+  return api<{ issues: MediaIssue[]; hasMore: boolean }>("GET", "/api/admin/media-issues");
 }
 
 export interface AuditLog {

@@ -23,6 +23,7 @@ import { toast } from "sonner";
 import type { Asset } from "@/lib/types";
 import { panelHeader, subTextPanelHeader } from "@/lib/types";
 import { Icon, type IconName } from "./Icon";
+import { MediaSyncDetails } from "./MediaSyncDetails";
 
 // ─── Status Configuration ────────────────────────────────────────────
 //
@@ -168,6 +169,10 @@ function AssetRow({ asset, isExpanded, onToggle, viewerRole, onModerate }: Asset
   // Clip viewer URL: prefer mediasourceUrl, fall back to /clips/:id
   const clipUrl = asset.mediasourceUrl || `/clips/${asset.mediasourceId || asset.id}`;
   const isSuperAdmin = viewerRole === "SUPER_ADMIN";
+  const canPlay = asset.moderation === "ACTIVE"
+    && !asset.mediaPlaybackUnavailable
+    && !asset.mediaPlaybackReset
+    && !asset.mediaCreateOperationId;
 
   async function changeModeration(
     moderation: "ACTIVE" | "PAUSED" | "FLAGGED_FOR_REMOVAL" | "REMOVED",
@@ -246,6 +251,16 @@ function AssetRow({ asset, isExpanded, onToggle, viewerRole, onModerate }: Asset
               {asset.moderation === "FLAGGED_FOR_REMOVAL" ? "FLAGGED" : asset.moderation}
             </span>
           )}
+          {asset.mediaSyncState === "ERROR" && (
+            <span className="inline-flex items-center px-2 py-0.5 rounded-(--radius-md) text-(length:--text-xs) font-semibold bg-(--accent-red-glow) text-(--accent-red)">
+              MEDIA NEEDS ATTENTION
+            </span>
+          )}
+          {asset.mediaSyncState === "PENDING" && (
+            <span className="inline-flex items-center px-2 py-0.5 rounded-(--radius-md) text-(length:--text-xs) font-semibold bg-(--accent-amber-glow) text-(--accent-amber)">
+              MEDIA PENDING
+            </span>
+          )}
           <Icon
             name="expand"
             className={`shrink-0 w-4 h-4 text-(--muted-foreground) transition-transform ${isExpanded ? "rotate-180" : ""}`}
@@ -278,11 +293,15 @@ function AssetRow({ asset, isExpanded, onToggle, viewerRole, onModerate }: Asset
               Moderation note: {asset.moderationReason}
             </p>
           )}
+          <MediaSyncDetails assetId={asset.id} media={asset} canConfirm={isSuperAdmin} />
 
           {onModerate && viewerRole && (
             <div className="flex flex-wrap gap-2 py-2">
               {asset.moderation === "ACTIVE" && (
                 <>
+                  {(asset.mediaSyncState === "ERROR" || asset.mediaPlaybackReset) && (
+                    <ModerationButton label="Retry media reconciliation" onClick={() => void changeModeration("ACTIVE")} />
+                  )}
                   <ModerationButton label="Pause playback" onClick={() => void changeModeration("PAUSED")} />
                   <ModerationButton label="Flag for removal" onClick={() => void changeModeration("FLAGGED_FOR_REMOVAL")} />
                 </>
@@ -319,7 +338,7 @@ function AssetRow({ asset, isExpanded, onToggle, viewerRole, onModerate }: Asset
             <span className="text-(length:--text-xs) text-(--muted-foreground)">
               {asset.createdAt ? new Date(asset.createdAt).toLocaleString() : ""}
             </span>
-            {asset.moderation === "ACTIVE" ? (
+            {canPlay ? (
               <a
                 href={clipUrl}
                 target="_blank"
@@ -330,7 +349,9 @@ function AssetRow({ asset, isExpanded, onToggle, viewerRole, onModerate }: Asset
               </a>
             ) : (
               <span className="text-(length:--text-xs) text-(--muted-foreground)">
-                Playback disabled while {asset.moderation.toLowerCase().replace(/_/g, " ")}
+                {asset.moderation === "ACTIVE"
+                  ? "Playback unavailable while media reconciliation is in progress"
+                  : `Playback disabled while ${asset.moderation.toLowerCase().replace(/_/g, " ")}`}
               </span>
             )}
           </div>

@@ -30,12 +30,34 @@ export interface Clip {
   metadata?: Record<string, unknown>;
 }
 
-export interface Asset {
+export type MediaSyncState = "PENDING" | "SYNCED" | "ERROR";
+export type AssetModeration = "ACTIVE" | "PAUSED" | "FLAGGED_FOR_REMOVAL" | "REMOVED";
+
+export interface MediaSyncInfo {
+  mediaSyncState?: MediaSyncState;
+  mediaSyncError?: string | null;
+  mediaSyncNextAt?: string | null;
+  mediaPlaybackReset?: boolean;
+  mediaPlaybackUnavailable?: boolean;
+  mediaCreateOperationId?: string | null;
+  mediaCreateMuxAssetId?: string | null;
+  mediaCreateStartedAt?: string | null;
+}
+
+export interface MediaIssue extends MediaSyncInfo {
   id: string;
+  mediasourceId?: string | null;
+  moderation: AssetModeration;
+  moderationReason?: string | null;
+}
+
+export interface Asset extends MediaSyncInfo {
+  id: string;
+  mediaPlaybackUnavailable: boolean;
   mediasourceId?: string | null;
   mediasourceUrl?: string | null;
   status: string;
-  moderation: "ACTIVE" | "PAUSED" | "FLAGGED_FOR_REMOVAL" | "REMOVED";
+  moderation: AssetModeration;
   moderatedAt?: string | null;
   moderatedById?: string | null;
   moderationReason?: string | null;

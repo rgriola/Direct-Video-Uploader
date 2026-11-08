@@ -24,6 +24,7 @@ import { StatsGrid } from "@/components/StatsGrid";
 import { QuickActions } from "@/components/QuickActions";
 import { UserList } from "@/components/UserList";
 import { AssetList } from "@/components/AssetList";
+import { notifyMediaSyncResult } from "@/components/MediaSyncDetails";
 import { ActivityLog } from "@/components/ActivityLog";
 import { EndpointTable } from "@/components/EndpointTable";
 import { ChatHistory } from "@/components/ChatHistory";
@@ -268,7 +269,6 @@ function Dashboard() {
       } catch (err) {
         toast.error(err instanceof Error ? err.message : "Failed to delete user");
         addLog("error", `Delete user failed: ${err instanceof Error ? err.message : "Unknown error"}`);
-        throw err;
       }
     },
     [addLog, refreshDashboard],
@@ -282,8 +282,8 @@ function Dashboard() {
     ) => {
       try {
         const result = await updateAssetModeration(assetId, { moderation, reason });
-        toast.success(result.message);
-        addLog("http", `Asset ${assetId.slice(0, 8)}: ${moderation.toLowerCase()}`);
+        notifyMediaSyncResult(result);
+        addLog(result.mediaSyncState === "ERROR" ? "error" : "http", `Asset ${assetId.slice(0, 8)}: ${moderation.toLowerCase()} (${result.mediaSyncState.toLowerCase()})`);
       } catch (err) {
         const message = err instanceof Error ? err.message : "Failed to update asset moderation";
         toast.error(message);
