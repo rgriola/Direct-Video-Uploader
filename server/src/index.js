@@ -31,6 +31,7 @@ import moderationRoutes from './routes/moderation.js';
 import clipRoutes from './routes/clips.js';
 import errorRoutes from './routes/errors.js';
 import muxWebhookRoutes from './routes/mux-webhooks.js';
+import localUploadRoutes from './routes/local-uploads.js';
 import { setupWebSocket } from './ws/handler.js';
 import { startMuxSync, stopMuxSync } from './jobs/mux-sync.js';
 import { startUploadCleanup, stopUploadCleanup } from './jobs/upload-cleanup.js';
@@ -269,11 +270,9 @@ await fastify.register(fastifySwaggerUi, {
 import { mkdirSync } from 'fs';
 mkdirSync(path.resolve(process.cwd(), 'uploads'), { recursive: true });
 
-// Serve uploaded files statically (demo only — production uses R2/S3)
-await fastify.register(fastifyStatic, {
+// Legacy local files remain shareable only while all associated assets are active.
+await fastify.register(localUploadRoutes, {
     root: path.resolve(process.cwd(), 'uploads'),
-    prefix: '/uploads/',
-    decorateReply: false,
 });
 
 // Serve dashboard from public/ (wildcard: false so dynamic routes like /clips/:slug aren't swallowed)

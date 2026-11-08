@@ -6,7 +6,7 @@
 import { Prisma } from '@prisma/client';
 import prisma from '../lib/prisma.js';
 import { hashPin } from '../lib/utils.js';
-import { deleteMuxAsset, isMuxEnabled } from '../lib/mux.js';
+import { assetMediaLockKey } from '../lib/media-lock-key.js';
 import { redactCompanyCode, redactPersonName, redactPhoneNumber } from '../lib/redact.js';
 import { teamScope, userScope } from '../lib/authorization.js';
 import { checkRoleChange, isSuperAdmin, ROLES, sameOrganization } from '../lib/roles.js';
@@ -210,6 +210,15 @@ export default async function adminRoutes(fastify) {
                    a.moderation, a.moderated_at AS "moderatedAt",
                    a.moderated_by_id AS "moderatedById",
                    a.moderation_reason AS "moderationReason",
+                   a.media_sync_state AS "mediaSyncState",
+                   a.media_sync_error AS "mediaSyncError",
+                   a.media_sync_next_at AS "mediaSyncNextAt",
+                   a.media_playback_reset AS "mediaPlaybackReset",
+                   (a.moderation <> 'ACTIVE' OR a.media_playback_reset
+                       OR a.media_create_operation_id IS NOT NULL) AS "mediaPlaybackUnavailable",
+                   CASE WHEN ${isSuperAdmin(request.user.role)} THEN a.media_create_operation_id END AS "mediaCreateOperationId",
+                   CASE WHEN ${isSuperAdmin(request.user.role)} THEN a.media_create_mux_asset_id END AS "mediaCreateMuxAssetId",
+                   CASE WHEN ${isSuperAdmin(request.user.role)} THEN a.media_create_started_at END AS "mediaCreateStartedAt",
                    a.clip_count::int AS "clipCount", a.total_duration_seconds::int AS "totalDuration",
                    a.created_at AS "createdAt",
                    json_build_object('id', u.id, 'name', u.name, 'phoneNumber', u.phone_number) AS "user",
@@ -265,11 +274,16 @@ export default async function adminRoutes(fastify) {
     fastify.post('/api/admin/cleanup-assets', {
         preHandler: [fastify.authenticate, fastify.requireRole(ROLES.SUPER_ADMIN)],
     }, async (request) => {
-        // Find UPLOADING assets with 0 clips using Prisma ORM
+        const safeFilter = {
+            status: 'UPLOADING',
+            moderation: 'ACTIVE',
+            clips: { none: {} },
+            muxAssetReferences: { none: {} },
+            mediaCreateOperationId: null,
+        };
         const staleAssets = await prisma.asset.findMany({
             where: {
-                status: 'UPLOADING',
-                clips: { none: {} },
+                ...safeFilter,
             },
             select: { id: true },
         });
@@ -278,18 +292,23 @@ export default async function adminRoutes(fastify) {
             return { cleaned: 0, message: 'No stale assets found' };
         }
 
-        const ids = staleAssets.map(a => a.id);
-
-        // Delete chat messages referencing these assets first (FK constraint)
-        await prisma.chatMessage.deleteMany({
-            where: { assetId: { in: ids } },
+        const candidates = staleAssets.map(a => a.id);
+        const ids = await prisma.$transaction(async tx => {
+            const locked = await tx.$queryRaw`
+                SELECT id FROM assets WHERE id IN (${Prisma.join(candidates)}) ORDER BY id FOR UPDATE
+            `;
+            const safe = await tx.asset.findMany({
+                where: { ...safeFilter, id: { in: locked.map(asset => asset.id) } },
+                select: { id: true },
+            });
+            const safeIds = safe.map(asset => asset.id);
+            if (!safeIds.length) return [];
+            await tx.chatMessage.deleteMany({ where: { assetId: { in: safeIds } } });
+            await tx.asset.deleteMany({ where: { id: { in: safeIds } } });
+            return safeIds;
         });
 
-        // Delete the stale assets
-        await prisma.asset.deleteMany({
-            where: { id: { in: ids } },
-        });
-
+        if (!ids.length) return { cleaned: 0, message: 'No stale assets found' };
         request.log.info(
             { cleanedCount: ids.length, assetIdPrefixes: ids.map(id => id.slice(0, 8)) },
             'Cleaned stale uploading assets'
@@ -379,74 +398,50 @@ export default async function adminRoutes(fastify) {
 
     /**
      * POST /api/admin/nuclear-reset
-     * Delete ALL assets, clips, form responses, chat messages, error logs.
-     * Also deletes all Mux assets. Preserves user accounts.
+     * Clear non-media data only when no asset records remain.
      */
     fastify.post('/api/admin/nuclear-reset', {
         preHandler: [fastify.authenticate, fastify.requireRole(ROLES.SUPER_ADMIN)],
-    }, async (request) => {
-        const results = { muxDeleted: 0, muxFailed: 0, muxSkipped: false };
-
-        // 1. Collect all Mux asset IDs from clips before deleting DB rows
-        const clipsWithMux = await prisma.clip.findMany({
-            where: { muxAssetId: { not: null } },
-            select: { muxAssetId: true },
+    }, async (request, reply) => {
+        const result = await prisma.$transaction(async tx => {
+            await tx.$executeRaw`LOCK TABLE assets IN ACCESS EXCLUSIVE MODE`;
+            if (await tx.asset.count()) return null;
+            const chatDeleted = await tx.chatMessage.deleteMany({});
+            const errorDeleted = await tx.errorLog.deleteMany({});
+            const formDeleted = await tx.formResponse.deleteMany({});
+            const clipDeleted = await tx.clip.deleteMany({});
+            return { chatDeleted, errorDeleted, formDeleted, clipDeleted };
         });
-
-        // 2. Delete Mux assets
-        if (isMuxEnabled && clipsWithMux.length > 0) {
-            for (const clip of clipsWithMux) {
-                const ok = await deleteMuxAsset(clip.muxAssetId);
-                if (ok) results.muxDeleted++;
-                else results.muxFailed++;
-            }
-        } else if (!isMuxEnabled) {
-            results.muxSkipped = true;
+        if (!result) {
+            return reply.status(409).send({
+                error: 'Nuclear Reset is temporarily blocked while asset records exist; media references must be retained for recovery.',
+            });
         }
-
-        // 3. Delete DB tables in FK-safe order
-        const chatDeleted = await prisma.chatMessage.deleteMany({});
-        const errorDeleted = await prisma.errorLog.deleteMany({});
-        const formDeleted = await prisma.formResponse.deleteMany({});
-        const clipDeleted = await prisma.clip.deleteMany({});
-        const assetDeleted = await prisma.asset.deleteMany({});
-
-        // 4. Reset mediasource_id sequence counter (must start at 100000001 for 9-digit IDs)
-        try {
-            await prisma.$executeRaw`ALTER SEQUENCE IF EXISTS mediasource_id_seq RESTART WITH 100000001`;
-        } catch { /* sequence may not exist — safe to ignore */ }
 
         request.log.warn(
             {
-                assetCount: assetDeleted.count,
-                clipCount: clipDeleted.count,
-                muxDeleted: results.muxDeleted,
-                muxFailed: results.muxFailed,
+                assetCount: 0,
+                clipCount: result.clipDeleted.count,
             },
-            'Admin performed nuclear reset'
+            'Admin cleared non-media data with no asset records present'
         );
 
         return {
-            message: 'Nuclear reset complete — all data wiped except users',
+            message: 'Non-media reset complete; Mux media was not changed',
             deleted: {
-                assets: assetDeleted.count,
-                clips: clipDeleted.count,
-                formResponses: formDeleted.count,
-                chatMessages: chatDeleted.count,
-                errorLogs: errorDeleted.count,
+                assets: 0,
+                clips: result.clipDeleted.count,
+                formResponses: result.formDeleted.count,
+                chatMessages: result.chatDeleted.count,
+                errorLogs: result.errorDeleted.count,
             },
-            mux: {
-                deleted: results.muxDeleted,
-                failed: results.muxFailed,
-                skipped: results.muxSkipped,
-            },
+            mux: { deleted: 0, failed: 0, skipped: true },
         };
     });
 
     /**
      * DELETE /api/admin/users/:id
-     * Hard-wipe a user and ALL their data: Mux assets, local files,
-     * clips, assets, form responses, chat messages, error logs.
+     * Hard-wipe a user only after all of their media has been removed and verified.
      */
     fastify.delete('/api/admin/users/:id', {
         preHandler: [fastify.authenticate, fastify.requireRole(ROLES.SUPER_ADMIN)],
@@ -467,69 +462,61 @@ export default async function adminRoutes(fastify) {
             return reply.status(403).send({ error: 'Super Admin accounts cannot be deleted through the API' });
         }
 
-        const counts = { muxAssets: 0, localFiles: 0 };
+        const result = await prisma.$transaction(async tx => {
+            const users = await tx.$queryRaw`SELECT role FROM users WHERE id = ${id} FOR UPDATE`;
+            if (!users.length) return { status: 'missing' };
+            if (users[0].role === 'SUPER_ADMIN') return { status: 'protected' };
 
-        // 1. Collect Mux asset IDs from user's clips before deleting DB rows
-        const userClips = await prisma.clip.findMany({
-            where: { asset: { userId: id } },
-            select: { muxAssetId: true, storageUrl: true },
-        });
-
-        // 2. Delete Mux assets remotely
-        if (isMuxEnabled) {
-            for (const clip of userClips) {
-                if (clip.muxAssetId) {
-                    const ok = await deleteMuxAsset(clip.muxAssetId);
-                    if (ok) counts.muxAssets++;
-                }
+            const assets = await tx.$queryRaw`
+                SELECT id, moderation, media_sync_state, media_create_operation_id
+                FROM assets WHERE user_id = ${id} ORDER BY id FOR UPDATE
+            `;
+            if (assets.some(asset => asset.moderation !== 'REMOVED'
+                || asset.media_sync_state !== 'SYNCED' || asset.media_create_operation_id)) {
+                return { status: 'needs-cleanup' };
             }
-        }
-
-        // 3. Delete local video files from disk
-        const { unlink } = await import('fs/promises');
-        const path = await import('path');
-        for (const clip of userClips) {
-            if (clip.storageUrl?.startsWith('/uploads/')) {
-                try {
-                    const filePath = path.resolve(process.cwd(), clip.storageUrl.slice(1));
-                    await unlink(filePath);
-                    counts.localFiles++;
-                } catch (err) {
-                    if (err.code !== 'ENOENT') {
-                        request.log.warn(
-                            { storageUrl: clip.storageUrl, err: { message: err.message } },
-                            'Failed to delete local clip file during user delete'
-                        );
-                    }
-                }
+            for (const asset of assets) {
+                const key = assetMediaLockKey(asset.id);
+                const locks = await tx.$queryRaw`
+                    SELECT pg_try_advisory_xact_lock(hashtextextended(${key}, 0)) AS acquired
+                `;
+                if (!locks[0]?.acquired) return { status: 'busy' };
             }
-        }
 
-        // 4. Delete DB records in FK-safe order
-        const chatDeleted = await prisma.chatMessage.deleteMany({ where: { userId: id } });
-        const errorDeleted = await prisma.errorLog.deleteMany({ where: { userId: id } });
-        // Assets cascade-delete their clips, form responses, and asset-linked chat messages
-        const assetDeleted = await prisma.asset.deleteMany({ where: { userId: id } });
-
-        // 5. Delete the user record
-        await prisma.auditLog.create({
-            data: {
-                actorUserId: request.user.id,
-                targetType: 'USER',
-                targetId: id,
-                action: 'USER_DELETED',
-            },
+            const clips = await tx.clip.count({ where: { asset: { userId: id } } });
+            const chatDeleted = await tx.chatMessage.deleteMany({ where: { userId: id } });
+            const errorDeleted = await tx.errorLog.deleteMany({ where: { userId: id } });
+            const assetDeleted = await tx.asset.deleteMany({ where: { userId: id } });
+            await tx.auditLog.create({
+                data: {
+                    actorUserId: request.user.id,
+                    targetType: 'USER',
+                    targetId: id,
+                    action: 'USER_DELETED',
+                },
+            });
+            await tx.user.delete({ where: { id } });
+            return { status: 'deleted', clips, chatDeleted, errorDeleted, assetDeleted };
         });
-        await prisma.user.delete({ where: { id } });
+        if (result.status === 'missing') return reply.status(404).send({ error: 'User not found' });
+        if (result.status === 'protected') {
+            return reply.status(403).send({ error: 'Super Admin accounts cannot be deleted through the API' });
+        }
+        if (result.status === 'needs-cleanup') {
+            return reply.status(409).send({
+                error: 'Remove every asset and wait for media cleanup to finish before deleting this user.',
+            });
+        }
+        if (result.status === 'busy') {
+            return reply.status(409).send({ error: 'Media reconciliation is in progress. Please try again.' });
+        }
         invalidateUserSockets(fastify, [id]);
 
         request.log.warn(
             {
                 userName: redactPersonName(target.name),
                 phoneNumber: redactPhoneNumber(target.phoneNumber),
-                assetCount: assetDeleted.count,
-                muxAssetCount: counts.muxAssets,
-                localFileCount: counts.localFiles,
+                assetCount: result.assetDeleted.count,
             },
             'Admin deleted user and associated data'
         );
@@ -537,12 +524,12 @@ export default async function adminRoutes(fastify) {
         return {
             message: `User ${target.name} deleted with all associated data`,
             deleted: {
-                assets: assetDeleted.count,
-                clips: userClips.length,
-                chatMessages: chatDeleted.count,
-                errorLogs: errorDeleted.count,
-                muxAssets: counts.muxAssets,
-                localFiles: counts.localFiles,
+                assets: result.assetDeleted.count,
+                clips: result.clips,
+                chatMessages: result.chatDeleted.count,
+                errorLogs: result.errorDeleted.count,
+                muxAssets: 0,
+                localFiles: 0,
             },
         };
     });
