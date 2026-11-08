@@ -16,7 +16,7 @@ const sslDisabledByUrl = /[?&]sslmode=disable\b/i.test(dbUrl);
 const useSsl = sslMode === 'require'
     || (isProduction && !usesUnixSocket && !sslDisabledByUrl && sslMode !== 'disable');
 
-const pool = new pg.Pool({
+export const pool = new pg.Pool({
     connectionString: process.env.DATABASE_URL,
     max: 20,                   // Enough for concurrent dashboard + WS + API
     idleTimeoutMillis: isProduction ? 30000 : 10000,  // Keep connections alive longer in prod
