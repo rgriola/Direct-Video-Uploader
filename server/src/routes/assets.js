@@ -7,6 +7,7 @@ import prisma from '../lib/prisma.js';
 import { generateMediasourceId, dbRetry, parseClientMetadata, serializeClip, notifyUserSockets } from '../lib/utils.js';
 import { isMuxEnabled, createDirectUpload } from '../lib/mux.js';
 import { teamScope } from '../lib/authorization.js';
+import { isSuperAdmin } from '../lib/roles.js';
 
 // Allowed video MIME types — kept for reference if local upload is re-enabled
 const ALLOWED_VIDEO_MIMES = new Set([
@@ -18,6 +19,17 @@ const ALLOWED_VIDEO_MIMES = new Set([
     'video/3gpp',
     'video/3gpp2',
 ]);
+
+function serializeAsset(asset) {
+    const clips = asset.clips.map(clip => {
+        const serialized = serializeClip(clip);
+        if (asset.moderation !== 'ACTIVE') {
+            return { ...serialized, muxPlaybackId: null, streamUrl: null, thumbnailUrl: null };
+        }
+        return serialized;
+    });
+    return { ...asset, clips };
+}
 
 export default async function assetRoutes(fastify) {
     /**
@@ -77,6 +89,9 @@ export default async function assetRoutes(fastify) {
         const asset = await dbRetry(() => prisma.asset.findUnique({ where: { id } }));
         if (!asset || asset.userId !== request.user.id) {
             return reply.status(404).send({ error: 'Asset not found' });
+        }
+        if (asset.moderation !== 'ACTIVE') {
+            return reply.status(409).send({ error: 'This asset is not accepting uploads while it is moderated' });
         }
 
         // Idempotent: if there's already a PROCESSING clip for this asset with a
@@ -230,7 +245,7 @@ export default async function assetRoutes(fastify) {
         preHandler: [fastify.authenticate],
     }, async (request) => {
         const assets = await prisma.asset.findMany({
-            where: { userId: request.user.id },
+            where: { userId: request.user.id, moderation: { in: ['ACTIVE', 'PAUSED'] } },
             orderBy: { createdAt: 'desc' },
             include: {
                 clips: { take: 1, orderBy: { createdAt: 'desc' } },
@@ -239,10 +254,7 @@ export default async function assetRoutes(fastify) {
         });
 
         // Convert BigInt to string for JSON serialization
-        const serialized = assets.map((a) => ({
-            ...a,
-            clips: a.clips.map(serializeClip),
-        }));
+        const serialized = assets.map(serializeAsset);
 
         return { assets: serialized };
     });
@@ -257,7 +269,15 @@ export default async function assetRoutes(fastify) {
         const { id } = request.params;
 
         const asset = await prisma.asset.findFirst({
-            where: { id, ...teamScope(request.user) },
+            where: {
+                id,
+                ...teamScope(request.user),
+                moderation: {
+                    in: isSuperAdmin(request.user.role)
+                        ? ['ACTIVE', 'PAUSED', 'FLAGGED_FOR_REMOVAL']
+                        : ['ACTIVE', 'PAUSED'],
+                },
+            },
             include: {
                 clips: true,
                 formResponse: true,
@@ -272,7 +292,7 @@ export default async function assetRoutes(fastify) {
         }
 
         // Convert BigInt to string for JSON serialization
-        const clips = asset.clips.map(serializeClip);
+        const clips = serializeAsset(asset).clips;
 
         return {
             asset: {
@@ -310,6 +330,9 @@ export default async function assetRoutes(fastify) {
         });
         if (!asset || asset.userId !== request.user.id) {
             return reply.status(404).send({ error: 'Asset not found' });
+        }
+        if (asset.moderation !== 'ACTIVE') {
+            return reply.status(409).send({ error: 'This asset is not accepting form updates while it is moderated' });
         }
 
         // ── Server-side sanitization ─────────────────────────────────────────────

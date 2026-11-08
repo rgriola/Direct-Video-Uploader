@@ -281,6 +281,7 @@ ${googleFontsHead}
         }
         const asset = await prisma.asset.findFirst({ where: { mediasourceId } });
         if (!asset) return reply.status(404).send({ error: 'Not found' });
+        if (asset.moderation !== 'ACTIVE') return reply.status(404).send({ error: 'Not found' });
 
         // Org access check
         const uploader = await prisma.user.findFirst({
@@ -331,6 +332,9 @@ ${googleFontsHead}
             });
 
             if (!asset) {
+                return sendClipNotFound(reply);
+            }
+            if (asset.moderation !== 'ACTIVE') {
                 return sendClipNotFound(reply);
             }
 

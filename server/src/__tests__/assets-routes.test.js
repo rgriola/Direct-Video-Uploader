@@ -142,6 +142,7 @@ describe('assets route deeper coverage', () => {
         prismaMock.asset.findUnique.mockResolvedValue({
             id: 'asset-1',
             userId: 'user-1',
+            moderation: 'ACTIVE',
             mediasourceId: '100000001',
             mediasourceUrl: '/clips/100000001',
             originalFileName: 'video.mp4',
@@ -160,10 +161,55 @@ describe('assets route deeper coverage', () => {
         expect(prismaMock.clip.create).not.toHaveBeenCalled();
     });
 
+    it('does not create a new upload for a paused asset', async () => {
+        prismaMock.asset.findUnique.mockResolvedValue({
+            id: 'asset-1',
+            userId: 'user-1',
+            moderation: 'PAUSED',
+        });
+
+        const response = await app.inject({
+            method: 'POST',
+            url: '/api/assets/asset-1/mux-upload',
+            payload: { metadata: { mimeType: 'video/mp4' } },
+        });
+
+        expect(response.statusCode).toBe(409);
+        expect(prismaMock.clip.create).not.toHaveBeenCalled();
+        expect(muxMock.createDirectUpload).not.toHaveBeenCalled();
+    });
+
+    it('keeps paused assets in the owner archive without exposing playback URLs', async () => {
+        prismaMock.asset.findMany.mockResolvedValue([{
+            id: 'asset-paused',
+            moderation: 'PAUSED',
+            clips: [{
+                id: 'clip-paused',
+                muxPlaybackId: 'old-playback-id',
+                streamUrl: 'https://stream.mux.com/old-playback-id.m3u8',
+                thumbnailUrl: 'https://image.mux.com/old-playback-id/thumbnail.png',
+                fileSize: BigInt(1234),
+            }],
+            formResponse: null,
+        }]);
+
+        const response = await app.inject({ method: 'GET', url: '/api/assets/mine' });
+
+        expect(response.statusCode).toBe(200);
+        expect(response.json().assets[0].moderation).toBe('PAUSED');
+        expect(response.json().assets[0].clips[0]).toMatchObject({
+            muxPlaybackId: null,
+            streamUrl: null,
+            thumbnailUrl: null,
+            fileSize: '1234',
+        });
+    });
+
     it('reuses existing waiting mux upload for idempotency', async () => {
         prismaMock.asset.findUnique.mockResolvedValue({
             id: 'asset-1',
             userId: 'user-1',
+            moderation: 'ACTIVE',
             mediasourceId: '100000001',
             mediasourceUrl: '/clips/100000001',
             originalFileName: 'video.mp4',
@@ -203,7 +249,7 @@ describe('assets route deeper coverage', () => {
         ['already processing', { status: 'asset_created' }, 409],
     ])('preserves the clip when the existing mux upload is %s', async (_label, upload, status) => {
         prismaMock.asset.findUnique.mockResolvedValue({
-            id: 'asset-1', userId: 'user-1', mediasourceId: '100000001',
+            id: 'asset-1', userId: 'user-1', moderation: 'ACTIVE', mediasourceId: '100000001',
             mediasourceUrl: '/clips/100000001', originalFileName: 'video.mp4',
         });
         prismaMock.clip.findFirst.mockResolvedValue({
@@ -225,7 +271,7 @@ describe('assets route deeper coverage', () => {
     });
 
     it('preserves the clip if checking mux upload status throws', async () => {
-        prismaMock.asset.findUnique.mockResolvedValue({ id: 'asset-1', userId: 'user-1' });
+        prismaMock.asset.findUnique.mockResolvedValue({ id: 'asset-1', userId: 'user-1', moderation: 'ACTIVE' });
         prismaMock.clip.findFirst.mockResolvedValue({
             id: 'clip-existing', muxUploadId: 'upload-existing',
         });
@@ -248,6 +294,7 @@ describe('assets route deeper coverage', () => {
         prismaMock.asset.findUnique.mockResolvedValue({
             id: 'asset-1',
             userId: 'user-1',
+            moderation: 'ACTIVE',
             mediasourceId: '100000001',
             mediasourceUrl: '/clips/100000001',
             originalFileName: 'video.mp4',
@@ -298,6 +345,7 @@ describe('assets route deeper coverage', () => {
         prismaMock.asset.findUnique.mockResolvedValue({
             id: 'asset-1',
             userId: 'user-1',
+            moderation: 'ACTIVE',
             mediasourceId: '100000001',
             mediasourceUrl: '/clips/100000001',
             originalFileName: 'field-report.mp4',

@@ -193,6 +193,7 @@ describe('clip routes deeper coverage', () => {
             id: 'asset-1',
             mediasourceId: '100000001',
             status: 'READY',
+            moderation: 'ACTIVE',
             userId: 'uploader-1',
         });
         prismaMock.user.findFirst.mockResolvedValue({ companyCode: 'SPORT' });
@@ -215,6 +216,37 @@ describe('clip routes deeper coverage', () => {
             muxPlaybackId: 'playback-123',
             status: 'READY',
         });
+    });
+
+    it('blocks clip pages and polling for paused assets', async () => {
+        const cookieHeader = authCookieFor({
+            id: 'viewer-1',
+            name: 'Viewer',
+            role: 'SUPER_ADMIN',
+            companyCode: null,
+        });
+        prismaMock.asset.findFirst.mockResolvedValue({
+            id: 'asset-paused',
+            mediasourceId: '100000012',
+            moderation: 'PAUSED',
+            userId: 'uploader-1',
+        });
+
+        const statusResponse = await app.inject({
+            method: 'GET',
+            url: '/clips/100000012/status',
+            headers: { cookie: cookieHeader },
+        });
+        const pageResponse = await app.inject({
+            method: 'GET',
+            url: '/clips/100000012',
+            headers: { cookie: cookieHeader },
+        });
+
+        expect(statusResponse.statusCode).toBe(404);
+        expect(pageResponse.statusCode).toBe(404);
+        expect(prismaMock.clip.findFirst).not.toHaveBeenCalled();
+        expect(prismaMock.clip.findMany).not.toHaveBeenCalled();
     });
 
     it('redirects unauthenticated clip viewer requests to login', async () => {
@@ -261,6 +293,7 @@ describe('clip routes deeper coverage', () => {
             mediasourceUrl: '/clips/100000111',
             originalFileName: 'field-clip.mp4',
             status: 'READY',
+            moderation: 'ACTIVE',
             clipCount: 1,
             totalDuration: 42,
             createdAt: new Date('2026-05-09T00:00:00.000Z'),
@@ -326,6 +359,7 @@ describe('clip routes deeper coverage', () => {
             mediasourceUrl: '/clips/100000777',
             originalFileName: 'overnight.mp4',
             status: 'READY',
+            moderation: 'ACTIVE',
             clipCount: 1,
             totalDuration: 0,
             createdAt: new Date('2026-05-09T01:00:00.000Z'),
