@@ -27,6 +27,7 @@ import { fileURLToPath } from 'url';
 import authRoutes from './routes/auth.js';
 import assetRoutes from './routes/assets.js';
 import adminRoutes from './routes/admin.js';
+import moderationRoutes from './routes/moderation.js';
 import clipRoutes from './routes/clips.js';
 import errorRoutes from './routes/errors.js';
 import muxWebhookRoutes from './routes/mux-webhooks.js';
@@ -389,6 +390,7 @@ fastify.decorate('io', io);
 await fastify.register(authRoutes);
 await fastify.register(assetRoutes);
 await fastify.register(adminRoutes);
+await fastify.register(moderationRoutes);
 
 await fastify.register(clipRoutes);
 await fastify.register(errorRoutes);
