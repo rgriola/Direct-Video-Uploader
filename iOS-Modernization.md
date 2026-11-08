@@ -154,9 +154,11 @@ Only APIs that **remove** code or risk.
   - [x] `MessagePolicyCoordinator` / `MessageCatalog`
   - [x] `DVUDateFormatting`
 - [x] Configure CI to run the Swift tests on an available iOS 18.6+ iPhone simulator
-- The iOS CI job uses GitHub's `xcode-27` preview runner to exercise the iOS 27 SDK
-  and real background-upload tests. The preview runner may have limited capacity; it
-  does not replace testing on the oldest supported iOS version.
+- The iOS CI job uses GitHub's `xcode-27` preview runner and selects an available
+  iPhone using CoreSimulator runtime version metadata, including device-specific
+  runtimes. It is configured to exercise the iOS 27 SDK and real background-upload
+  tests. The preview runner may have limited capacity; it does not replace testing
+  on the oldest supported iOS version.
 - [ ] Verify the CI job on GitHub and run the suite on an iOS 18.6 simulator or device
 - [ ] ~~Before 1.2, capture a fresh baseline (screen recordings of key flows) in `ios/baseline-artifacts/`~~ *(skipped: 1.2 shipped first; device regression covers it)*
 
