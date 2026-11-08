@@ -1,8 +1,8 @@
 # Fixer Roadmap — iOS Modernization → Web App Expansion
 
-_Drafted: October 19, 2026 · Updated: November 7, 2026_
+_Drafted: October 19, 2026 · Updated: November 8, 2026_
 _Owner: Rod_
-_Status: **In progress** — Step 1 verified; Steps 2.1 and 2.3 deployed; Steps 2.2 and 2.4 implemented, deployment pending; Step 2.2 migration pending_
+_Status: **In progress** — Step 1 verified; Steps 2.1 and 2.3 deployed; Step 2.4 pushed but not deployed; Step 2.2 reconciliation fix on a development branch, with migrations and real-Mux rollout validation pending_
 
 ```mermaid
 flowchart TD
@@ -61,15 +61,15 @@ flowchart TD
 | iOS hot spot | `ChatViewModel.swift` is 1,582 lines | Don't touch in Step 1. |
 | iOS ↔ roles | iOS `User` model doesn't decode `role` | New roles won't break the app. ✅ |
 | Server roles | `SUPER_ADMIN`, `ADMIN`, and `USER` are deployed; one Team Admin has no organization | Assign that account an organization before deploying team scoping. |
-| Server auth | Role guards and HTTP team scoping were deployed on Nov 7, 2026 (per Rod); Step 2.4 socket scoping is implemented in the workspace | Deploy Step 2.4 with the matching dashboard after the Step 2.2 migration. |
+| Server auth | Role guards and HTTP team scoping were deployed on Nov 7, 2026 (per Rod); Step 2.4 socket scoping is pushed but not deployed | Deploy with the matching dashboard after the Step 2.2 rollout checks and migrations. |
 | User status | `UserStatus { ACTIVE, SUSPENDED }` already exists | "Pause a member" maps to `SUSPENDED`. Label it **Paused** in the UI. No enum change needed. |
-| Video moderation | Step 2.2 moderation states and server/admin controls are implemented; migration is not yet applied | Pause/flag/remove revokes Mux public playback IDs; unpause/restore issues a new ID. Apply the migration before deploying. |
-| Migrations | Versioned migrations are committed and applied on the home server | Cloud Build and Render are no longer used; their legacy scripts still need safe migration workflows if reused. |
+| Video moderation | Step 2.2 moderation and durable reconciliation are implemented on a development branch, not deployed | Apply the pending migrations and complete the legacy-upload and real-Mux checks before relying on pause or removal. |
+| Migrations | Existing baseline migrations are applied on the home server; the Step 2.2 moderation and reconciliation migrations are pending there | Cloud Build and Render are no longer used; their legacy scripts still need safe migration workflows if reused. |
 | Original files | iOS uploads **straight to Mux** (direct-upload PUT). The original never reaches our server. Mux doesn't give back the byte-exact original | Keeping originals means changing the upload pipeline (Step 4). |
-| Legacy local path | `Clip.storageUrl` + an `uploads/` folder exist. The Mux webhook **deletes** the local file after `mux:ready` (`mux-webhooks.js:145`) | Reuse the idea, but keep the file instead of deleting it. |
-| ⚠️ Public uploads folder | `index.js:267` serves `uploads/` with `@fastify/static` and **no auth**. Through the tunnel, anything placed there is publicly downloadable by URL | Must be removed or put behind auth **before** originals are stored (Step 4.1). |
+| Legacy local path | `Clip.storageUrl` and an `uploads/` folder exist. The workspace coordinator cleans legacy files after Mux readiness or permanent removal | Step 4 must retain and manage original files explicitly instead. |
+| ⚠️ Public uploads folder | The deployed static route is unauthenticated. The workspace adds moderation/reference checks, but known active files remain reachable by URL without authentication | Replace it with authenticated or signed access **before** originals are stored (Step 4.1). |
 | Thumbnails | Webhook already writes `Clip.thumbnailUrl` (`image.mux.com/<id>/thumbnail.png?width=640`) | Thumbnails are frontend-only work. |
-| Mux settings | Uploads still begin with `playback_policy: public`, `cors_origin: '*'` | Step 2.2 deletes public playback IDs when an asset is paused, flagged, or removed; restoring playback creates a new ID, so old public URLs stay revoked. |
+| Mux settings | Previously issued uploads can request automatic public playback; workspace uploads omit the playback policy and retain `cors_origin: '*'` | Drain or cancel legacy uploads, verify Mux cleanup, and test with real Mux before relying on moderation. |
 | Admin web app | One `App.tsx`, no router. Active theme: `theme-a-editorial.css` (imported in `main.tsx`). Three alternates sit unused | See the Themes note in Step 3. |
 
 ---
@@ -369,22 +369,34 @@ reviewed and migrated safely before either workflow is reused.
 | `ACTIVE` (default) | — | Owner, team admins, super admin | — |
 | `PAUSED` | Team Admin, Super Admin | Team admins, super admin (greyed out). Stays in owner's list marked **Paused**, with playback and share links disabled *(decided)* | Yes, unpause |
 | `FLAGGED_FOR_REMOVAL` | Team Admin, Super Admin | Super admin removal queue | Yes, Super Admin can restore |
-| `REMOVED` | **Super Admin only** | Nobody (audit row kept) | No. Original file and Mux asset are deleted |
+| `REMOVED` | **Super Admin only** | Nobody (audit row kept) | No. Mux and legacy local cleanup must be verified; failures remain visible for retry |
 
 - [x] Fields: `moderation`, `moderatedAt`, `moderatedById`, `moderationReason`
 - [x] Asset lists default to active for admins; owners continue to see their active and paused assets. Admins can opt in to paused assets; only Super Admin can view flagged assets. The iOS Archive keeps older paused assets visible, labels them **Paused**, and suppresses playback, sharing, and retry actions.
-- [ ] Removal marks a tombstone, deletes Mux media and any legacy local original, and supports retry from the Super Admin audit log when cleanup fails. Share-link revocation is deferred until Step 5 adds share links; Step 4 must wire original-file storage into removal.
+- [x] Removal marks a tombstone, reconciles Mux and legacy local media, and supports retry from the Super Admin audit log when cleanup fails.
+- [ ] Deploy and verify removal against real Mux. Share-link revocation is deferred until Step 5; Step 4 must wire original-file storage into removal.
 - [x] Audit log table records actor, target, action, reason, and time; Super Admin can view the log.
 
-**Implementation/rollout status (Nov 7, 2026):**
-Server, dashboard, and iOS Archive changes are implemented; the additive migration has not been applied and Step 2.2 is not deployed. The iOS Archive decodes moderation, keeps paused assets visible regardless of age, and suppresses their playback, sharing, and retry actions.
+**Implementation/rollout status (Nov 8, 2026):** Server and dashboard reconciliation changes
+are on `fix/step-2-2-mux-moderation`; the earlier iOS Archive changes are
+implemented. Step 2.2 is not deployed and its moderation plus reconciliation migrations are
+pending on the home server. The iOS Archive keeps paused assets visible and suppresses their
+playback, sharing, and retry actions.
 
-**Deployment is blocked on Mux moderation reconciliation:**
-Mux can create a public playback ID when a paused upload finishes processing. The ready webhook attempts to revoke it, but a missed or repeatedly failing webhook can leave that ID public; the sync job currently logs this condition without revoking it.
+The workspace fix uses durable per-asset revisions and PostgreSQL advisory locks to reconcile
+late webhooks, missed webhooks, moderation changes, Mux playback creation and deletion, and
+legacy local files. New uploads do not request automatic public IDs. A playback creation with
+an unknown outcome stays unavailable until a Super Admin obtains confirmation from Mux and
+records it; incomplete cleanup remains visible and retryable. Hard user deletion requires
+verified media cleanup, and Nuclear Reset is blocked while any asset record remains.
 
-Concurrent pause, unpause, and ready events can also race remote Mux operations. Resolve and test these cases before relying on pause or deploying Step 2.2. Revocation is not instantaneous for viewers already playing a video; Mux may let an existing session continue briefly after its playback ID is deleted.
-
-The unauthenticated `/uploads/` static path remains a separate exposure: legacy local files reachable there cannot be paused reliably until Step 4.1 replaces or protects that path. Apply the migration on the home server before deploying the code.
+**Rollout remains blocked** until old server instances are stopped, legacy direct-upload URLs
+are drained or cancelled and verified, pending migrations are applied, and real-Mux staging
+checks and reconciliation are healthy. A `PENDING` or `ERROR` response does not prove that an
+old public Mux URL has stopped working. The workspace local route blocks moderated or unreferenced
+files but remains unauthenticated for active files. Public URLs, already-playing streams, caches,
+and downloaded copies are not private or instantly revocable. See
+`HOME_SERVER_RUNBOOK.md` for the full rollout and recovery procedure.
 
 ### 2.3 API Authorization & Team Scoping
 
@@ -503,7 +515,7 @@ callbacks finish; physical-device verification remains required.
   a reliable dismissal-completion signal to the shared presentation gate. VoiceOver focus,
   queued announcements, and competing sheets need a lifecycle-safe solution before release.
 
-**Validation:** The current server coverage suite passed 209 tests in 24 files, including
+**Validation:** The Step 2.3 server coverage suite passed 209 tests in 24 files, including
 the disposable PostgreSQL authorization and Socket.IO tests. The latest full iOS 27 simulator suite passed
 227 tests in 29 suites, including the real background PUT, Photos-link, and retry-intent
 regressions; Swift source and test hashes were unchanged during the run. The Release simulator
@@ -513,8 +525,8 @@ across tabs and sheets, keyboard validation, form dismissal, upload and recovery
 locked/unlocked file protection, and actual Socket.IO redirect behavior. Testing on the oldest
 supported iOS version also remains open.
 
-**Isolation is not complete:** Step 2.4 socket scoping is implemented but not deployed;
-Mux playback URLs are public, and `/uploads/` is unauthenticated (4.1). Do not treat HTTP
+**Isolation is not complete:** Step 2.4 socket scoping is pushed but not deployed;
+Mux playback URLs are public, and active `/uploads/` files remain unauthenticated (4.1). Do not treat HTTP
 and socket scoping as end-to-end media isolation. Dashboard sign-in still uses phone and PIN without
 a company code; the planned web-login policy remains part of Step 3. Stored auth tokens
 are not bound to their issuing server across launches, and existing transport and logout
@@ -524,9 +536,9 @@ reviewed before any reuse. The Render build script also seeds demo accounts.
 
 ### 2.4 Real-Time (Socket.IO) Scoping
 
-**Implementation/rollout status:** Implemented in the workspace; not yet deployed. Resolve the
-Step 2.2 Mux moderation blocker and apply its pending migration before deploying the server,
-then rebuild the dashboard and restart the server as described in the home-server runbook.
+**Implementation/rollout status:** Pushed to `main`; not yet deployed. Complete the Step 2.2
+legacy-upload, migration, and real-Mux validation gates before deploying the server, then
+rebuild the dashboard and restart the server as described in the home-server runbook.
 
 - [x] Audit server emits. The existing rich upload, form, and Mux notifications were already
   owner-targeted, rather than global dashboard broadcasts; keep their iOS payloads owner-only.
@@ -636,7 +648,7 @@ sequenceDiagram
   - Recommend an **external SSD** path, not the Air's internal disk
   - Layout: `originals/<teamId>/<assetId>/<clipId>/<originalFileName>`
 - [ ] Replace `Clip.storageUrl` (a public path) with `storageKey` + `storageDriver` + `sha256` + `sizeBytes`
-- [ ] **Remove the public `/uploads/` static route** (`index.js:267`). All file access goes through authenticated or signed routes
+- [ ] **Replace the guarded but unauthenticated `/uploads/` route.** All original-file access must go through authenticated or signed routes
 - [ ] Stop deleting originals in the `mux:ready` webhook (`mux-webhooks.js:145`)
 - [ ] Update `upload-cleanup.js` so it only removes **incomplete** uploads
 - [ ] Disk guardrails:

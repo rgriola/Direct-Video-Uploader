@@ -4,7 +4,7 @@ Operational reference for the MacBook Air home server hosting Postgres 18 + Fast
 
 **Domains:** As of Oct 11, 2026 the apex `ms-fixer.com` (production, used by the iOS Release build and the public site) and `dev.ms-fixer.com` (kept as a secondary/testing hostname) both route through the same Cloudflare Tunnel to this home server. Cloud Run no longer receives any traffic for either hostname.
 
-We do not use Google Cloud or Render. 
+We do not use Google Cloud or Render.
 
 ## Services running on this Mac
 
@@ -66,10 +66,9 @@ launchctl load ~/Library/LaunchAgents/com.msfixer.fastify.plist
 ```
 
 ## Schema changes
->> NOTE We do not run anything on google or render. These are legacy set ups. we run our own Database on a laptop"
-**Cloud Build caution:** `cloudbuild.yaml` still runs `prisma db push --accept-data-loss`.
-Confirm its trigger is disabled or replace and validate that workflow before a merge
-that could invoke it. The Cloud database's migration baseline has not been verified.
+
+Cloud Build and Render are retired, not deployment targets. Their legacy scripts still use
+`prisma db push --accept-data-loss` and must not be reused without a separate migration review.
 
 This DB uses Prisma migrations (not `db push`). Workflow:
 1. Edit `server/prisma/schema.prisma`
@@ -138,20 +137,96 @@ modify a Super Admin.
   physical-device and locked-device validation are still required. Repeated live form
   requests can reopen completed details, and resubmitting them can overwrite existing
   details. See the iOS roadmap before distributing the client.
-- Verify or disable the Cloud Build and Render deployment triggers before merging. Both
-  build workflows use `prisma db push --accept-data-loss`; the cloud migration baselines
-  are unverified, and the Render workflow also seeds demo accounts.
+- Do not use the legacy Cloud Build or Render workflows; both use
+  `prisma db push --accept-data-loss`, and the Render workflow also seeds demo accounts.
 - Finish the physical-device checks described in `iOS-Modernization.md` before rollout.
+
+## Step 2.2 moderation reconciliation rollout
+
+The reconciliation fix is on a development branch, not deployed. Step 2.4 is pushed
+to `main` but is also not deployed. The Step 2.2 moderation migration and the two reconciliation
+migrations have only been applied to a disposable test database. Do not rely on pause or
+permanent removal in production until the following checks pass against the actual Mux account.
+
+1. Back up the home database and establish a rollback/restore plan. Stop issuing uploads and
+   stop **all** old Fastify processes before deploying; old code can create or publish public
+   playback IDs outside the new coordinator. Do not run mixed old and new server versions.
+2. Inventory previously issued Mux direct-upload URLs, including any not represented in the
+   database. Old URLs may request an automatic public playback ID even when their asset is
+   paused. Cancel or drain them, wait for in-flight asset creation/processing to settle, and
+   verify their terminal state and public playback IDs in Mux. Waiting an arbitrary interval
+   or relying only on webhooks is not sufficient. Reconcile any untracked Mux assets manually.
+3. Before migration, review conflicting and incomplete media references. For example, on the
+   home database run these **read-only** queries and investigate any results:
+
+   ```sql
+   SELECT mux_asset_id, COUNT(DISTINCT asset_id)
+   FROM clips WHERE mux_asset_id IS NOT NULL
+   GROUP BY mux_asset_id HAVING COUNT(DISTINCT asset_id) > 1;
+
+   SELECT mux_upload_id, COUNT(DISTINCT asset_id)
+   FROM clips WHERE mux_upload_id IS NOT NULL
+   GROUP BY mux_upload_id HAVING COUNT(DISTINCT asset_id) > 1;
+
+   SELECT id, asset_id, mux_upload_id
+   FROM clips WHERE mux_asset_id IS NULL
+     AND (mux_playback_id IS NOT NULL OR stream_url IS NOT NULL OR thumbnail_url IS NOT NULL);
+
+   SELECT storage_url, COUNT(*) FROM clips WHERE storage_url IS NOT NULL
+   GROUP BY storage_url HAVING COUNT(*) > 1;
+
+   SELECT id, asset_id FROM clips
+   WHERE storage_url IS NOT NULL AND storage_url NOT LIKE '/uploads/%';
+   ```
+
+   The Mux-reference migration refuses an asset ID shared across different assets. An upload
+   ID may allow a missing asset ID to be recovered; otherwise a playback URL without its Mux
+   asset ID cannot be verified or revoked automatically. Shared, invalid, or symlinked local
+   media also requires manual investigation. Keep such assets and references; do not clear
+   their fields or hard-delete their owners to bypass an error.
+4. With the old server stopped, apply the pending migrations using the schema workflow above,
+   build the matching dashboard, and start only the updated server. Confirm Mux credentials,
+   webhook signature verification, and the media worker are configured. New direct uploads
+   do not request an automatic playback ID; the coordinator creates one only for active media.
+5. In the Super Admin **Moderation Audit** panel, inspect **Media requiring attention** and
+   retry or resolve errors. `PENDING` and `ERROR` are not completed revocations: the app hides
+   playback immediately and the dashboard hides its playback link while access is blocked.
+   A previously issued public Mux URL may still work until Mux confirms revocation. Verify
+   every paused/flagged asset has no public playback IDs and every removed Mux asset is gone.
+   Check a new upload, pause, restore, removal, missed-webhook recovery, and a blocked legacy
+   local URL in staging with real Mux before production use.
+6. Monitor server logs and the issue list after restarting. The due queue takes at most 20
+   assets per two-minute cycle, with up to four concurrent reconciliations; a backlog means
+   individual assets may be checked less often. A healthy HTTP health check alone does not
+   establish that media reconciliation is current.
+
+**Unknown playback creation:** The Super Admin issue list shows the Mux asset, local operation
+ID, and start time. A marker can represent an in-flight call or an unknown outcome after a
+failure. Ask Mux to confirm that the relevant request cannot complete now **or later**; only
+then use **Confirm Mux cannot complete request** and record how and when Mux confirmed it.
+The operation ID and note are retained in the audit log. If Mux cannot confirm, leave the
+operation unresolved and playback unavailable. Old playback references remain stored until
+revocation is verified, then are cleared before replacement playback is attempted. Other
+missing or conflicting references may require a controlled, backed-up database repair; there
+is no dashboard action to invent a missing Mux association.
+
+**Destructive operations:** A Super Admin can hard-delete a user only after every owned asset
+is `REMOVED` and media cleanup is `SYNCED`, with no outstanding creation marker or held media
+lock. Nuclear Reset returns 409 while any asset record remains. With no assets it clears
+non-media data, preserves users, audit history, and the media-ID sequence, and does not
+delete or verify Mux videos.
+
+**Limitations:** Active Mux playback IDs remain public URLs. The workspace `/uploads/` route
+is still unauthenticated for known active files, although it denies moderated, unreferenced,
+and symlinked paths and sends `Cache-Control: no-store`. Neither mechanism is team-scoped media
+authorization. A viewer already streaming, a previously cached response, or a downloaded
+file may remain playable after a pause or removal.
 
 ## Step 2.4 socket scoping rollout
 
-The server and dashboard changes are implemented in the workspace but not yet deployed.
-Deployment is blocked on Step 2.2 Mux moderation reconciliation: a moderated upload can
-gain a public playback ID when processing finishes if the ready webhook is missed or keeps
-failing, and concurrent moderation and ready events can race Mux operations. Resolve and
-test those cases first. The Step 2.2 moderation migration is also still pending; apply it
-before deploying this server version. Rebuild the dashboard and restart Fastify using the
-commands above so the server and dashboard are updated together.
+Step 2.4 is pushed to `main` but not deployed. Deploy it with the matching dashboard only
+after the Step 2.2 checks and pending migrations above. Rebuild the dashboard and restart
+Fastify using the commands above so the server and dashboard are updated together.
 
 - Rich upload, form, and Mux notifications remain owner-only. Active asset changes also
   trigger a payload-free refresh for the owner's Team Admins and Super Admins; changes for
@@ -166,7 +241,7 @@ commands above so the server and dashboard are updated together.
 - Rooms, connection tracking, and authorization invalidation are process-local. The current
   single Fastify process is required; multiple instances need a shared Socket.IO adapter
   and coordinated revocation before relying on these guarantees.
-- This does not make public Mux playback URLs or the unauthenticated `/uploads/` path private.
+- This does not make public Mux playback URLs or active legacy `/uploads/` URLs private.
 
 ## Backup & restore
 
@@ -199,7 +274,8 @@ Verify row counts against the live DB before treating the restore as authoritati
 
 ## Rollback (see main plan doc for full detail)
 
-- iOS: switch Debug scheme back to Cloud Run URL; Release build uses `ms-fixer.com` directly, so a DNS-level rollback (below) is required to revert production traffic
+- iOS: revert the app release or point the Debug scheme to an authorized environment; do not
+  roll back to the retired Cloud Run deployment
 - Home: `launchctl unload ~/Library/LaunchAgents/com.msfixer.fastify.plist` + `brew services stop postgresql@18`
 - Cloudflare: delete the `ms-fixer.com` and/or `dev.ms-fixer.com` DNS routes (or `cloudflared tunnel delete fixer-dev`), and remove the corresponding public hostname from each of the 5 Zero Trust Access applications
 
