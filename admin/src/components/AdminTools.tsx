@@ -4,7 +4,11 @@ import { nuclearReset, createUser } from "@/lib/api";
 import { panelHeader, subTextPanelHeader } from "@/lib/types";
 import { Icon } from "./Icon";
 
-export function AdminTools({ onReset }: { onReset: () => void }) {
+export function AdminTools({ onReset, canReset, companyCode }: {
+  onReset: () => void;
+  canReset: boolean;
+  companyCode?: string;
+}) {
   return (
     <div className="bg-(--card) border border-(--border-subtle) rounded-(--radius-xl) overflow-hidden mb-8">
 
@@ -19,8 +23,8 @@ export function AdminTools({ onReset }: { onReset: () => void }) {
       </div>
 
       <div className="grid grid-cols-2 gap-6 px-6 py-4 max-[900px]:grid-cols-1">
-        <NuclearReset onReset={onReset} />
-        <CreateUser />
+        {canReset && <NuclearReset onReset={onReset} />}
+        <CreateUser fixedCompanyCode={companyCode} />
       </div>
     </div>
   );
@@ -95,7 +99,7 @@ function NuclearReset({ onReset }: { onReset: () => void }) {
 
 /* ─── Create User ─── */
 
-function CreateUser() {
+function CreateUser({ fixedCompanyCode }: { fixedCompanyCode?: string }) {
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
@@ -116,7 +120,7 @@ function CreateUser() {
         phoneNumber: phone.replace(/\D/g, ""),
         email: email.trim() || undefined,
         team: team.trim() || undefined,
-        companyCode: companyCode.trim() || undefined,
+        companyCode: fixedCompanyCode ?? (companyCode.trim() || undefined),
       });
       toast.success(res.message);
       setName("");
@@ -173,15 +177,21 @@ function CreateUser() {
             onChange={(e) => setTeam(e.target.value)}
           />
         </div>
-        <div className="grid grid-cols-2 gap-2">
-          <input
-            className={inputClass}
-            placeholder="Company Code (3-4 letters)"
-            value={companyCode}
-            onChange={(e) => setCompanyCode(e.target.value.replace(/[^A-Za-z]/g, "").slice(0, 4))}
-            maxLength={4}
-          />
-        </div>
+        {fixedCompanyCode ? (
+          <p className="text-(length:--text-xs) text-(--muted-foreground)">
+            Organization: {fixedCompanyCode}
+          </p>
+        ) : (
+          <div className="grid grid-cols-2 gap-2">
+            <input
+              className={inputClass}
+              placeholder="Company Code (3-4 letters)"
+              value={companyCode}
+              onChange={(e) => setCompanyCode(e.target.value.replace(/[^A-Za-z]/g, "").slice(0, 4))}
+              maxLength={4}
+            />
+          </div>
+        )}
         <button
           type="submit"
           disabled={creating}

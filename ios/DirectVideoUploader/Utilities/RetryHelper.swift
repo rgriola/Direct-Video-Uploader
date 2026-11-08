@@ -12,6 +12,8 @@ func withRetry<T>(
     for attempt in 1...attempts {
         do {
             return try await operation(attempt)
+        } catch is CancellationError {
+            throw CancellationError()
         } catch {
             lastError = error
             if attempt < attempts {

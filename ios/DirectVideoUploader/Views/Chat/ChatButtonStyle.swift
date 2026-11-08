@@ -20,7 +20,27 @@ struct ChatActionButton: View {
             .background(color)
             .foregroundStyle(Theme.white)
             .clipShape(RoundedRectangle(cornerRadius: Theme.buttonCornerRadius))
+            .tapTarget()
         }
+    }
+}
+
+/// Expands the hit area to Apple's 44 pt minimum (scaled with Dynamic Type)
+/// without changing the visible size. Apply after visual styling, inside a Button label.
+struct MinimumTapTarget: ViewModifier {
+    var alignment: Alignment = .center
+    @ScaledMetric(relativeTo: .body) private var minSize: CGFloat = 44
+
+    func body(content: Content) -> some View {
+        content
+            .frame(minWidth: minSize, minHeight: minSize, alignment: alignment)
+            .contentShape(Rectangle())
+    }
+}
+
+extension View {
+    func tapTarget(alignment: Alignment = .center) -> some View {
+        modifier(MinimumTapTarget(alignment: alignment))
     }
 }
 

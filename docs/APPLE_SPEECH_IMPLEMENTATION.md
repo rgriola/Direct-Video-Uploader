@@ -10,6 +10,11 @@
 
 After a video is uploaded, the iOS client first attempts Apple's server-based speech recognition and then falls back to on-device recognition when supported. Audio may therefore be sent to Apple. The resulting transcript is saved to the database alongside the clip metadata and displayed in the Archive view, Metadata sheet, and web clip viewer.
 
+The current workspace update targets `PATCH /api/assets/:id/clips/:clipId/transcript`
+and requires a matching clip receipt. The legacy route documented in the historical
+examples below remains available to older clients. Deploy the server update before the
+updated iOS client; older servers do not provide the clip-specific route.
+
 ---
 
 ## 1. New File: `TranscriptionService.swift`

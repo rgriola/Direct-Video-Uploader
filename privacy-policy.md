@@ -16,6 +16,7 @@ While using our Service, we may ask you to provide us with certain personally id
 Email address
 First name and last name
 Cookies and Usage Data
+Phone Number : for authorization
 Usage Data
 
 We may also collect information your browser sends whenever you visit our Service or when you access the Service by or through a mobile device ("Usage Data").
@@ -92,9 +93,11 @@ We may use third-party Service Providers to monitor and analyze the use of our S
 
 Child Privacy
 
-The Service is not intended for any person under the age of 18 aka a minor. The Service is for professional use only through an employer, as such, minors are not allowed to use, join or maintain access to the Service through an adult for any purposes under the sun until they are of the majority and employed by the subscribing company.
+The Service is not intended for any person under the age of 18 aka a minor. The Service is for professional use only through an employer, as such, minors are not allowed to use, join or maintain access to the Service through an adult for any purposes under the sun until they are of the majority and employed by a subscribing company.
 
-We do not knowingly collect personally identifiable information from anyone under the age of 18. If you are a parent or guardian and you are aware your Children have provided us with Personal Data, please contact us. If we become aware we have collected Personal Data from children without verification of parental consent, we take steps to remove this information from our servers.
+We do not knowingly collect personally identifiable information from anyone under the age of 18. If you are a parent or guardian and you are aware your Children have provided us with Personal Data, please contact us. If we find evidence a child is using our service we will remove access to the service.
+
+
 
 Changes To This Privacy Policy
 

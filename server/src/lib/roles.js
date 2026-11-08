@@ -23,8 +23,9 @@ export function isAdminRole(role) {
     return role === ROLES.ADMIN || role === ROLES.SUPER_ADMIN;
 }
 
-function sameOrg(a, b) {
-    return Boolean(a) && Boolean(b) && a.toLowerCase() === b.toLowerCase();
+export function sameOrganization(a, b) {
+    // companyCode is the case-sensitive foreign key to Organization.
+    return typeof a === 'string' && a.length > 0 && a === b;
 }
 
 /**
@@ -46,7 +47,7 @@ export function checkRoleChange(actor, target, newRole) {
     }
 
     const actorIsSuper = isSuperAdmin(actor.role);
-    if (!actorIsSuper && !sameOrg(actor.companyCode, target.companyCode)) {
+    if (!actorIsSuper && !sameOrganization(actor.companyCode, target.companyCode)) {
         return { ok: false, status: 404, error: 'User not found' };
     }
     if (actor.id === target.id) {

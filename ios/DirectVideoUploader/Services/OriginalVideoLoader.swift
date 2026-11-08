@@ -10,6 +10,90 @@ nonisolated struct LoadedOriginalVideo: Sendable {
     let metadata: VideoMetadata
 }
 
+nonisolated enum TemporaryVideoStorage {
+    enum StorageError: LocalizedError {
+        case fileCreationFailed
+        case protectionNotApplied
+
+        var errorDescription: String? {
+            switch self {
+            case .fileCreationFailed:
+                "The temporary video file could not be created."
+            case .protectionNotApplied:
+                "The temporary video could not be protected on this device."
+            }
+        }
+    }
+
+    static var protection: FileProtectionType { .completeUntilFirstUserAuthentication }
+
+    static func makeDirectory() throws -> URL {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        do {
+            try FileManager.default.createDirectory(
+                at: directory, withIntermediateDirectories: true,
+                attributes: [.protectionKey: protection])
+            try applyProtection(to: directory)
+            return directory
+        } catch {
+            removeTemporaryVideoItem(directory)
+            throw error
+        }
+    }
+
+    static func createFile(at url: URL) throws {
+        guard FileManager.default.createFile(
+            atPath: url.path, contents: nil, attributes: [.protectionKey: protection]) else {
+            throw StorageError.fileCreationFailed
+        }
+        try applyProtection(to: url)
+    }
+
+    static func applyProtection(to url: URL) throws {
+        try FileManager.default.setAttributes([.protectionKey: protection], ofItemAtPath: url.path)
+        let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+        #if targetEnvironment(simulator)
+        if attributes[.protectionKey] == nil {
+            Log.debug("Simulator cannot report temporary video protection; verify on a device", logger: Log.media)
+            return
+        }
+        #endif
+        guard attributes[.protectionKey] as? String == protection.rawValue else {
+            throw StorageError.protectionNotApplied
+        }
+    }
+
+    @concurrent static func copy(from source: URL, to destination: URL) async throws {
+        try Task.checkCancellation()
+        try createFile(at: destination)
+        let input = try FileHandle(forReadingFrom: source)
+        var output: FileHandle?
+        do {
+            let writer = try FileHandle(forWritingTo: destination)
+            output = writer
+            while let chunk = try input.read(upToCount: 1_048_576), !chunk.isEmpty {
+                try Task.checkCancellation()
+                try writer.write(contentsOf: chunk)
+            }
+            try Task.checkCancellation()
+            try writer.close()
+            output = nil
+            try input.close()
+        } catch {
+            if let output {
+                do { try output.close() } catch {
+                    Log.error("⚠️ [Video] Could not close a temporary video: \(Log.describe(error))", logger: Log.media)
+                }
+            }
+            do { try input.close() } catch {
+                Log.error("⚠️ [Video] Could not close the selected video: \(Log.describe(error))", logger: Log.media)
+            }
+            throw error
+        }
+    }
+}
+
 /// Reads camera originals from Photos (never the Photos-edited version, never transcoded)
 /// and saves trimmed copies back to the library.
 ///
@@ -21,14 +105,14 @@ nonisolated enum OriginalVideoLoader {
         case assetNotFound
         case originalResourceMissing
         case addAccessDenied
-        case saveFailed
+        case invalidOriginalFilename
 
         var errorDescription: String? {
             switch self {
             case .assetNotFound: "The video could not be found in Photos."
             case .originalResourceMissing: "The original video file could not be found in Photos."
             case .addAccessDenied: "Photo Library access is off."
-            case .saveFailed: "The video could not be saved to Photos."
+            case .invalidOriginalFilename: "The original video has an invalid filename."
             }
         }
     }
@@ -73,6 +157,20 @@ nonisolated enum OriginalVideoLoader {
         return abs(photosDuration - Double(clipDuration)) <= durationTolerance
     }
 
+    /// Unknown durations cannot disprove a match, so the selected video still needs confirmation.
+    static func hasCompatibleDuration(photosDuration: Double, clipDuration: Int?) -> Bool {
+        guard let clipDuration, clipDuration > 0, photosDuration > 0 else { return true }
+        return isSameLength(photosDuration: photosDuration, clipDuration: clipDuration)
+    }
+
+    static func safeOriginalFilename(_ name: String) throws -> String {
+        let filename = (name as NSString).lastPathComponent
+        guard !filename.isEmpty, filename != ".", filename != "..", filename != "/" else {
+            throw LoaderError.invalidOriginalFilename
+        }
+        return filename
+    }
+
     // MARK: - Original Export
 
     /// Copies the camera's original bytes (the `.video` resource, ignoring Photos edits) into a
@@ -98,10 +196,8 @@ nonisolated enum OriginalVideoLoader {
             (lat: $0.coordinate.latitude, lon: $0.coordinate.longitude, alt: $0.altitude)
         }
 
-        let fileName = resource.originalFilename
-        let folder = FileManager.default.temporaryDirectory
-            .appendingPathComponent(UUID().uuidString, isDirectory: true)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let fileName = try safeOriginalFilename(resource.originalFilename)
+        let folder = try TemporaryVideoStorage.makeDirectory()
         let destination = folder.appendingPathComponent(fileName)
 
         let options = PHAssetResourceRequestOptions()
@@ -113,7 +209,7 @@ nonisolated enum OriginalVideoLoader {
         do {
             try await writeResource(resource, to: destination, options: options)
         } catch {
-            try? FileManager.default.removeItem(at: folder)
+            removeTemporaryVideoItem(folder)
             throw error
         }
 
@@ -132,9 +228,7 @@ nonisolated enum OriginalVideoLoader {
     @concurrent private static func writeResource(
         _ resource: PHAssetResource, to destination: URL, options: PHAssetResourceRequestOptions
     ) async throws {
-        guard FileManager.default.createFile(atPath: destination.path, contents: nil) else {
-            throw CocoaError(.fileWriteUnknown)
-        }
+        try TemporaryVideoStorage.createFile(at: destination)
         let handle = try FileHandle(forWritingTo: destination)
         let request = ResourceRequest()
 
@@ -152,11 +246,19 @@ nonisolated enum OriginalVideoLoader {
                         }
                     },
                     completionHandler: { error in
-                        try? handle.close()
+                        let closeError: (any Error)?
+                        do {
+                            try handle.close()
+                            closeError = nil
+                        } catch {
+                            closeError = error
+                        }
                         if let writeError = request.writeError {
                             continuation.resume(throwing: writeError)
                         } else if let error {
                             continuation.resume(throwing: error)
+                        } else if let closeError {
+                            continuation.resume(throwing: closeError)
                         } else {
                             continuation.resume()
                         }
@@ -173,8 +275,8 @@ nonisolated enum OriginalVideoLoader {
 
     // MARK: - Save to Photos
 
-    /// Adds a video to Photos as a new item and returns its local identifier.
-    /// The file is copied, so the caller still owns `fileURL`.
+    /// Adds a video to Photos as a new item. A successful transaction may not return an identifier.
+    /// Authorization must be requested first; the caller retains ownership of `fileURL`.
     @concurrent static func saveVideoToPhotos(
         fileURL: URL,
         fileName: String,
@@ -182,8 +284,12 @@ nonisolated enum OriginalVideoLoader {
         latitude: Double?,
         longitude: Double?,
         altitude: Double?
-    ) async throws -> String {
-        guard await requestAddAccessIfNeeded() else { throw LoaderError.addAccessDenied }
+    ) async throws -> String? {
+        let readWrite = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+        let addOnly = PHPhotoLibrary.authorizationStatus(for: .addOnly)
+        guard canRead(readWrite) || addOnly == .authorized || addOnly == .limited else {
+            throw LoaderError.addAccessDenied
+        }
 
         let createdIdentifier = CreatedAssetIdentifier()
         try await PHPhotoLibrary.shared().performChanges {
@@ -206,8 +312,7 @@ nonisolated enum OriginalVideoLoader {
             createdIdentifier.set(request.placeholderForCreatedAsset?.localIdentifier)
         }
 
-        guard let identifier = createdIdentifier.value else { throw LoaderError.saveFailed }
-        return identifier
+        return createdIdentifier.value
     }
 }
 

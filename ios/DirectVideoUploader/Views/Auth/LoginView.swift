@@ -10,9 +10,11 @@ struct LoginView: View {
     @State private var pin = ""
     @State private var showServerEditor = false
     @State private var serverURLDraft = ""
+    @State private var isStartingLogin = false
     @FocusState private var focusedField: Field?
 
     enum Field { case companyCode, phone, pin, serverURL }
+    private var isLoggingIn: Bool { isStartingLogin || auth.isLoading }
 
     var body: some View {
         ZStack {
@@ -39,6 +41,7 @@ struct LoginView: View {
                 // Server URL indicator — tap to edit (above form so keyboard doesn't cover it)
                 serverURLIndicator
                     .padding(.bottom, Theme.space24)
+                    .disabled(isLoggingIn)
 
                 // Form
                 VStack(spacing: Theme.space16) {
@@ -154,6 +157,7 @@ struct LoginView: View {
                     }
                 }
                 .padding(.horizontal, Theme.space32)
+                .disabled(isLoggingIn)
 
                 // Error message
                 if let error = auth.errorMessage {
@@ -165,10 +169,10 @@ struct LoginView: View {
 
                 // Login button
                 Button {
-                    Task { await login() }
+                    startLogin()
                 } label: {
                     HStack {
-                        if auth.isLoading {
+                        if isLoggingIn {
                             ProgressView()
                                 .tint(Theme.white)
                                 .scaleEffect(0.8)
@@ -184,9 +188,12 @@ struct LoginView: View {
                     .clipShape(RoundedRectangle(cornerRadius: Theme.radiusLg))
                 }
                 .disabled(
-                    auth.isLoading || companyCode.isEmpty || phoneNumber.isEmpty || pin.isEmpty
+                    isLoggingIn || showServerEditor
+                        || companyCode.isEmpty || phoneNumber.isEmpty || pin.isEmpty
                 )
-                .opacity(companyCode.isEmpty || phoneNumber.isEmpty || pin.isEmpty ? 0.5 : 1)
+                .opacity(
+                    showServerEditor || companyCode.isEmpty || phoneNumber.isEmpty || pin.isEmpty
+                        ? 0.5 : 1)
                 .padding(.horizontal, Theme.space32)
                 .padding(.top, 28)
 
@@ -208,12 +215,15 @@ struct LoginView: View {
             focusedField = nil
         }
         .onSubmit {
-            if focusedField == .companyCode {
+            guard !isLoggingIn else { return }
+            if showServerEditor {
+                if focusedField == .serverURL { saveServerURL() }
+            } else if focusedField == .companyCode {
                 focusedField = .phone
             } else if focusedField == .phone {
                 focusedField = .pin
             } else {
-                Task { await login() }
+                startLogin()
             }
         }
     }
@@ -239,13 +249,12 @@ struct LoginView: View {
                             .focused($focusedField, equals: .serverURL)
 
                         Button {
-                            ServerConfig.setServerURL(serverURLDraft)
-                            showServerEditor = false
-                            focusedField = nil
+                            saveServerURL()
                         } label: {
                             Text("Save")
                                 .font(Theme.font11Semibold)
                                 .foregroundStyle(Theme.blue)
+                                .tapTarget()
                         }
 
                         if ServerConfig.hasCustomURL {
@@ -258,7 +267,17 @@ struct LoginView: View {
                                 Text("Reset")
                                     .font(Theme.font11Semibold)
                                     .foregroundStyle(Theme.red.opacity(0.7))
+                                    .tapTarget()
                             }
+                        }
+                        Button {
+                            showServerEditor = false
+                            focusedField = nil
+                        } label: {
+                            Text("Cancel")
+                                .font(Theme.font11Semibold)
+                                .foregroundStyle(Theme.secondaryText)
+                                .tapTarget()
                         }
                     }
                     .padding(.horizontal, Theme.space12)
@@ -266,6 +285,10 @@ struct LoginView: View {
                     .background(Theme.glassOverlay)
                     .clipShape(RoundedRectangle(cornerRadius: Theme.radiusSm))
                     .padding(.horizontal, Theme.space32)
+                    Text("Don't include passwords or tokens in the server URL.")
+                        .font(Theme.font11Regular)
+                        .foregroundStyle(Theme.secondaryText)
+                        .padding(.horizontal, Theme.space32)
                 } else {
                     // Compact display — tap to edit
                     Button {
@@ -290,6 +313,8 @@ struct LoginView: View {
                             }
                         }
                         .foregroundStyle(Theme.secondaryText)
+                        .frame(minHeight: 44)
+                        .contentShape(Rectangle())
                     }
                 }
             #else
@@ -308,12 +333,34 @@ struct LoginView: View {
         }
     }
 
-    private func login() async {
+    private func saveServerURL() {
+        ServerConfig.setServerURL(serverURLDraft)
+        showServerEditor = false
         focusedField = nil
+    }
+
+    private func startLogin() {
+        guard !isLoggingIn, !showServerEditor,
+              !companyCode.isEmpty, !phoneNumber.isEmpty, !pin.isEmpty else { return }
+        isStartingLogin = true
+        let phone = phoneNumber
+        let code = companyCode
+        let submittedPIN = pin
+        Task {
+            defer { isStartingLogin = false }
+            await login(phone: phone, pin: submittedPIN, companyCode: code)
+        }
+    }
+
+    private func login(phone: String, pin: String, companyCode: String) async {
+        focusedField = nil
+        let generation = auth.sessionGeneration
         do {
-            try await auth.login(phoneNumber: phoneNumber, pin: pin, companyCode: companyCode)
+            try await auth.login(phoneNumber: phone, pin: pin, companyCode: companyCode)
         } catch {
-            auth.errorMessage = error.localizedDescription
+            if auth.sessionGeneration == generation {
+                auth.errorMessage = error.localizedDescription
+            }
         }
     }
 }

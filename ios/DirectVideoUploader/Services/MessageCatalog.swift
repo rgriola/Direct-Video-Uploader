@@ -75,15 +75,38 @@ nonisolated enum MessageCatalog {
                "Upload a video first and I can grab the metadata so you can Slack it. Previous uploads are in your Archive, and you can Slack from there.",
           "IOS_UPLOAD_START_FAILED": "Could not start upload. Please try again.",
           "IOS_UPLOAD_FAILED": "Upload failed: {reason}",
+          "IOS_PREVIOUS_UPLOAD_START_FAILED":
+               "An earlier upload of {fileName} couldn't start. Retry its preview if available, or select it again.",
+          "IOS_PREVIOUS_UPLOAD_FAILED":
+               "An earlier upload of {fileName} failed. Open Archive to retry.",
           "IOS_TRANSCRIBE_START": "Transcribing audio...",
           "IOS_TRANSCRIBE_SUCCESS":
-               "Transcript sent to Mediasource. ({wordCount} words.) Transcript is available in Archive.",
+               "Transcript saved to Mediasource. ({wordCount} words.)",
           "IOS_TRANSCRIBE_NO_SPEECH": "No clear audio detected in video.",
           "IOS_TRANSCRIBE_FAILED": "Transcription failed: {reason}",
           "IOS_TRANSCRIBE_EMPTY": "Transcription did not produce results.",
+          "IOS_TRANSCRIBE_SAVE_FAILED":
+               "The transcript wasn't saved. To try again, upload the video with transcription enabled.",
+          "IOS_PREVIOUS_TRANSCRIBE_RESULT": "Transcription for {fileName}: {result}",
           "IOS_FORM_SKIPPED":
-               "No worries. Your video is still uploading. You can add details from your Archive anytime.",
-          "IOS_FORM_SUBMIT_FAILED": "Form submission failed. The form is still open. Please retry.",
+               "No worries. You can add details from your Archive anytime.",
+          "IOS_FORM_SUBMIT_FAILED": "Couldn't confirm the details were sent. The form is still open.",
+          "IOS_PENDING_FORM_SAVE_FAILED":
+               "This form couldn't be saved for recovery. Add its details now or from Archive.",
+          "IOS_PENDING_FORM_CLEAR_FAILED":
+               "Details were sent, but the saved recovery state couldn't be updated.",
+          "IOS_PENDING_FORM_IN_ARCHIVE":
+               "An upload needs details. Open Archive to add them.",
+          "IOS_PENDING_FORM_SKIP_SAVE_FAILED":
+               "The form was skipped, but that preference couldn't be saved. It may reopen after restart.",
+          "IOS_LEGACY_FORM_CHECK_FAILED":
+               "Couldn't check for older saved forms. Unlock this device and try again.",
+          "IOS_PENDING_FORM_RECOVERY_FAILED":
+               "A saved form couldn't be restored. Check your connection or sign in again, then open Archive to add its details.",
+          "IOS_LEGACY_PENDING_FORM":
+               "An older pending form was preserved. Sign in to the account that uploaded the video and open Archive to add its details.",
+          "IOS_LEGACY_FORM_PROTECTION_FAILED":
+               "The older saved form couldn't be protected. Open Archive to remove it if no longer needed.",
           "IOS_ASSET_DETAILS_LOAD_FAILED": "Could not load video details.",
           "IOS_GREETING_NEW_CONVERSATION": "Hey {firstName}. Upload away.",
           "IOS_MUX_READY_SUMMARY": "Mediasource confirmed.",
@@ -94,6 +117,8 @@ nonisolated enum MessageCatalog {
                "Your trimmed video uploaded, but it wasn't saved to Photos because Photo Library access is off.",
           "IOS_TRIM_SAVE_FAILED":
                "Your trimmed video uploaded, but it couldn't be saved to Photos: {reason}",
+          "IOS_PREVIOUS_TRIM_SAVE_FAILED":
+               "{fileName} uploaded, but its trimmed copy couldn't be saved to Photos.",
           "IOS_CONNECTIVITY_BLOCKING":
                "Connection interrupted while {operation}. Upload and metadata sync are paused until reconnection.",
           "IOS_CONNECTIVITY_RECOVERED":

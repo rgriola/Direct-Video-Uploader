@@ -161,7 +161,7 @@ Replace the device type and runtime with installed iPhone options if needed. If 
 | **Dashboard**     | React 19 + Vite 6 + TypeScript + Tailwind v4 |
 | **Clip Viewer**   | Server-rendered HTML at `/clips/:slug`       |
 | **Slack**         | Bot API (`fixer-video` bot)                  |
-| **Transcription** | Apple Speech (on-device, opt-in)             |
+| **Transcription** | Apple Speech (opt-in; may use Apple's servers) |
 | **Hosting**       | GCP (Cloud Run + Cloud SQL + Secret Manager) |
 
 ---
@@ -175,9 +175,9 @@ Replace the device type and runtime with installed iPhone options if needed. If 
 - **Video trim** — Pre-upload trimming via native `UIVideoEditorController`
 - **PHAsset fast path** — Zero-copy video loading from Photos library (instant, no file copy)
 - **Slack integration** — Post to `#channels` or DM `@users` with thumbnail, clip link, and metadata
-- **Clip viewer** — Public shareable page with Mux player, metadata, transcript
-- **Apple Speech** — On-device transcription with newsroom vocabulary, per-word timestamps
-- **Archive** — 7-day history with status dots, thumbnails, re-upload, form submission. Slug shown as primary display name; format row combines resolution + codec
+- **Clip viewer** — Sign-in required for owners, same-organization members, or Super Admins. The underlying Mux playback URLs are still public.
+- **Apple Speech** — Optional transcription with newsroom vocabulary and per-word timestamps; recognition may use Apple's servers.
+- **Archive** — uploads or details submitted in the last 7 days, plus older uploads needing details or upload recovery, with status dots, thumbnails, re-upload, and form submission. Slug shown as primary display name; format row combines resolution + codec
 - **Photos tab** — Placeholder for upcoming photo upload pipeline (TBD feature)
 - **Profile** — User info, Photo Library + Speech Recognition permission toggles with live status, app info
 - **In-app instructions** — 5-page swipeable guide: First Things, iPhone Media, Steps to Use Fixer, What's Happening Inside Fixer, Archive. SF Symbol icons inline
@@ -189,11 +189,11 @@ Replace the device type and runtime with installed iPhone options if needed. If 
 
 ## Demo Credentials
 
-| User          | Phone        | PIN    | Role  |
-| ------------- | ------------ | ------ | ----- |
-| Rod Griola    | `9176717330` | `3xxx` | ADMIN |
-| David Burgess | `5055034455` | `xxxx` | USER  |
-| Carrie Smith  | `5055551234` | `xxxx` | USER  |
+| User          | Phone        | PIN    | Role        |
+| ------------- | ------------ | ------ | ------------|
+| Rod Griola    | `9176717330` | `3xxx` | SUPER ADMIN |
+| David Burgess | `5055034455` | `xxxx` | USER        |
+| Carrie Smith  | `5055551234` | `xxxx` | USER        |
 
 ---
 
@@ -216,7 +216,7 @@ The server expects these in `server/.env` (see `.env.example`):
 
 ## Deployment (Google Cloud Platform)
 
-The project is fully containerized and uses **Google Cloud Build** for automated CI/CD deployment to **Google Cloud Run** and **Cloud SQL**:
+On Hold: The project is fully containerized and uses **Google Cloud Build** for automated CI/CD deployment to **Google Cloud Run** and **Cloud SQL**:
 
 ```bash
 # Deploys automatically via Cloud Build on git push to main
@@ -242,7 +242,7 @@ The Fastify server and Postgres 18 run on a home MacBook Air instead of Cloud Ru
 
 - **Services**: `brew services` manages Postgres 18; a `launchd` `LaunchAgent` (`~/Library/LaunchAgents/com.msfixer.fastify.plist`) keeps Fastify running (`KeepAlive`, auto-restart).
 - **Tunnel**: `cloudflared` runs as a system `LaunchDaemon`, config at `/etc/cloudflared/config.yml`, routing both `ms-fixer.com` and `dev.ms-fixer.com` → `http://localhost:3000`.
-- **Access control**: Cloudflare Zero Trust protects the admin dashboard (site root) with email one-time-PIN login, on both domains. `/api/*`, `/socket.io/*`, `/uploads/*`, and `/clips/*` bypass Access on both domains (already gated by the app's own JWT/cookie auth).
+- **Access control**: Cloudflare Zero Trust protects the admin dashboard (site root) with email one-time-PIN login, on both domains. `/api/*`, `/socket.io/*`, `/uploads/*`, and `/clips/*` bypass Access. App authentication protects the applicable API and clip routes, but `/uploads/*` is currently unauthenticated, Mux playback URLs are public, and dashboard Socket.IO events are not yet organization-scoped.
 - **CORS/WebSocket origins**: `PUBLIC_URL` (defaults to `https://ms-fixer.com`) plus its `www.` variant are always allowed; additional origins (e.g. `https://dev.ms-fixer.com`) can be added via the comma-separated `EXTRA_CORS_ORIGINS` env var.
 - **Migrations**: schema changes go through `prisma migrate dev` locally, then `prisma migrate deploy` on the home server (not `db push`, to avoid destructive drift on real data).
 - **Backups**: nightly `pg_dump` with 7-day local retention, encrypted offsite copy.

@@ -155,7 +155,8 @@ cd ios && xcodegen generate && xcodebuild -project DirectVideoUploader.xcodeproj
 | `GET`   | `/api/assets/mine`           | ✅ User's assets list      |
 | `POST`  | `/api/errors`                | ✅ Client error log        |
 | `GET`   | `/api/admin/errors`          | ✅ Retrieve errors         |
-| `PATCH` | `/api/assets/:id/transcript` | ✅ Save transcript         |
+| `PATCH` | `/api/assets/:id/transcript` | ✅ Legacy transcript route |
+| `PATCH` | `/api/assets/:id/clips/:clipId/transcript` | 🛠️ Workspace only; save to a specific clip |
 | `POST`  | `/api/admin/users`           | ✅ Create user (admin)     |
 | `POST`  | `/api/admin/nuclear-reset`   | ✅ Wipe all data + Mux     |
 | `POST`  | `/api/assets/:id/mux-upload` | ✅ Mux direct upload       |
@@ -259,7 +260,7 @@ cd ios && xcodegen generate && xcodebuild -project DirectVideoUploader.xcodeproj
 **Features Added (Mar 25 — Session):**
 
 - **Admin Panel** — New admin tools UI on the dashboard. Rod Griola added as ADMIN user (phone: 9176717330, PIN: 3218). `POST /api/admin/users` creates new accounts (default PIN 0000, USER role). `POST /api/admin/nuclear-reset` wipes all assets, clips, form responses, chat messages, error logs, and Mux assets — preserves users, resets mediasource ID sequence to 100000001. `AdminTools.tsx` component with confirmation dialogs.
-- **Apple Speech Transcription** — On-device video transcription using `SFSpeechRecognizer`. New `TranscriptionService.swift` with `@MainActor @Observable` pattern. Dual-attempt strategy: server-based recognition first (more accurate), on-device fallback (works offline). `addsPunctuation = true` for proper sentence formatting. `contextualStrings` for newsroom vocabulary (mediasource, b-roll, slug, standup, Fixer, breaking). Opt-in via Transcribe toggle on VideoPreviewBubble. Saves to `clips.transcript` + `clips.transcript_segments` (per-word timestamps). `PATCH /api/assets/:id/transcript` server endpoint. Transcript displayed in Archive, MetadataView, and web clip viewer.
+- **Apple Speech Transcription** — Video transcription using `SFSpeechRecognizer`. New `TranscriptionService.swift` with `@MainActor @Observable` pattern. Dual-attempt strategy: server-based recognition first (more accurate), on-device fallback (works offline). `addsPunctuation = true` for proper sentence formatting. `contextualStrings` for newsroom vocabulary (mediasource, b-roll, slug, standup, Fixer, breaking). Opt-in via Transcribe toggle on VideoPreviewBubble. Saves to `clips.transcript` + `clips.transcript_segments` (per-word timestamps). `PATCH /api/assets/:id/transcript` server endpoint. Transcript displayed in Archive, MetadataView, and web clip viewer.
 - **Render buildCommand fix** — `render.yaml` was missing `prisma db push` in the `buildCommand`. Prisma Client expected `transcript`/`transcript_segments` columns but they didn't exist in production PostgreSQL — P2022 error on every `clip.findFirst()`. Fixed by adding `npx prisma db push --accept-data-loss && node src/seed.js` to the Render buildCommand.
 - **Greeting fix** — Greeting was not showing when admin dashboard was open. `userSockets` tracked both admin and iOS sockets for the same user. Fixed to count only iOS sockets per user.
 - **Mediasource ID sequence fix** — Nuclear reset `ALTER SEQUENCE` used `RESTART WITH 1` instead of `RESTART WITH 100000001`. Fixed in `admin.js` + reset local dev DB sequence.

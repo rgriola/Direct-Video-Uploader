@@ -11,7 +11,7 @@ on:
 jobs:
   ios-launchscreen-guard:
     name: iOS Launch Screen Guard
-    runs-on: macos-latest
+    runs-on: xcode-27
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -19,32 +19,16 @@ jobs:
       - name: Verify launch screen contract
         run: bash ./scripts/verify-ios-launchscreen.sh
 
+      - name: Verify simulator selection
+        run: python3 -m unittest discover -s scripts -p 'test_select_ios_simulator.py'
+
       - name: Run iOS unit tests
         shell: bash
         run: |
+          xcodebuild -version
           xcodebuild -project ios/DirectVideoUploader.xcodeproj \
             -scheme DirectVideoUploader -showdestinations > /dev/null
-          simulator_id="$(xcrun simctl list devices available -j | python3 -c '
-          import json
-          import sys
-
-          prefix = "com.apple.CoreSimulator.SimRuntime.iOS-"
-          candidates = []
-          for runtime, devices in json.load(sys.stdin)["devices"].items():
-              if not runtime.startswith(prefix):
-                  continue
-              version = tuple(int(part) for part in runtime[len(prefix):].split("-"))
-              if version < (18, 6):
-                  continue
-              for device in devices:
-                  if device["isAvailable"] and device["deviceTypeIdentifier"].startswith(
-                      "com.apple.CoreSimulator.SimDeviceType.iPhone-"
-                  ):
-                      candidates.append((version, device["state"] == "Booted", device["udid"]))
-          if not candidates:
-              raise SystemExit("No iOS 18.6+ iPhone simulator is available.")
-          print(max(candidates)[2])
-          ')"
+          simulator_id="$(xcrun simctl list -j | python3 scripts/select_ios_simulator.py)"
           echo "Running iOS tests on simulator $simulator_id"
           xcodebuild -project ios/DirectVideoUploader.xcodeproj \
             -scheme DirectVideoUploader \
@@ -55,6 +39,23 @@ jobs:
   server-tests:
     name: Server Tests
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_DB: dvu_scope_test_ci
+          POSTGRES_USER: scope_test
+          POSTGRES_PASSWORD: test-only-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U scope_test -d dvu_scope_test_ci"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://scope_test:test-only-password@127.0.0.1:5432/dvu_scope_test_ci
+      TEST_DATABASE_URL: postgresql://scope_test:test-only-password@127.0.0.1:5432/dvu_scope_test_ci
     defaults:
       run:
         working-directory: server
@@ -74,6 +75,9 @@ jobs:
 
       - name: Verify lockfile unchanged
         run: git diff --exit-code -- package-lock.json
+
+      - name: Migrate disposable test database
+        run: npx prisma migrate deploy
 
       - name: Run tests with coverage gate
         run: npm run test:coverage

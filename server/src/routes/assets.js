@@ -6,7 +6,7 @@ import { randomUUID } from 'crypto';
 import prisma from '../lib/prisma.js';
 import { generateMediasourceId, dbRetry, parseClientMetadata, serializeClip, notifyUserSockets } from '../lib/utils.js';
 import { isMuxEnabled, createDirectUpload } from '../lib/mux.js';
-import { isAdminRole } from '../lib/roles.js';
+import { teamScope } from '../lib/authorization.js';
 
 // Allowed video MIME types — kept for reference if local upload is re-enabled
 const ALLOWED_VIDEO_MIMES = new Set([
@@ -102,8 +102,23 @@ export default async function assetRoutes(fastify) {
                 );
             }
 
+            if (!upload || typeof upload.status !== 'string') {
+                request.log.warn(
+                    { muxUploadId: existingClip.muxUploadId },
+                    'Cannot verify existing Mux upload status'
+                );
+                return reply.status(503).send({ error: 'Could not verify the existing upload. Please try again.' });
+            }
+
             // Only reuse if Mux upload is still in 'waiting' state (accepting bytes)
-            if (upload?.url && upload.status === 'waiting') {
+            if (upload.status === 'waiting') {
+                if (!upload.url) {
+                    request.log.warn(
+                        { muxUploadId: existingClip.muxUploadId },
+                        'Existing Mux upload has no upload URL'
+                    );
+                    return reply.status(503).send({ error: 'Could not verify the existing upload. Please try again.' });
+                }
                 request.log.info(
                     { clipId: existingClip.id, mediasourceId: asset.mediasourceId },
                     'Reusing existing processing clip upload'
@@ -114,12 +129,21 @@ export default async function assetRoutes(fastify) {
                     muxUploadId: existingClip.muxUploadId,
                 };
             }
-            // Upload expired, cancelled, timed-out, errored, or already used —
-            // delete the stale clip and create a fresh one below
+            if (upload.status === 'asset_created') {
+                return reply.status(409).send({ error: 'The existing upload is already processing.' });
+            }
+            if (!['cancelled', 'timed_out', 'errored'].includes(upload.status)) {
+                request.log.warn(
+                    { muxUploadId: existingClip.muxUploadId, muxUploadStatus: upload.status },
+                    'Cannot verify whether the existing Mux upload is finished'
+                );
+                return reply.status(503).send({ error: 'Could not verify the existing upload. Please try again.' });
+            }
+            // A terminal upload can no longer produce a new asset.
             request.log.info(
                 {
                     muxUploadId: existingClip.muxUploadId,
-                    muxUploadStatus: upload?.status ?? 'unknown',
+                    muxUploadStatus: upload.status,
                     mediasourceId: asset.mediasourceId,
                 },
                 'Creating fresh direct upload after stale mux upload state'
@@ -232,8 +256,8 @@ export default async function assetRoutes(fastify) {
     }, async (request, reply) => {
         const { id } = request.params;
 
-        const asset = await prisma.asset.findUnique({
-            where: { id },
+        const asset = await prisma.asset.findFirst({
+            where: { id, ...teamScope(request.user) },
             include: {
                 clips: true,
                 formResponse: true,
@@ -245,11 +269,6 @@ export default async function assetRoutes(fastify) {
 
         if (!asset) {
             return reply.status(404).send({ error: 'Asset not found' });
-        }
-
-        // Ownership check — only asset owner or admin can view details (A6)
-        if (asset.userId !== request.user.id && !isAdminRole(request.user.role)) {
-            return reply.status(403).send({ error: 'Access denied' });
         }
 
         // Convert BigInt to string for JSON serialization
@@ -390,46 +409,63 @@ export default async function assetRoutes(fastify) {
     });
 
     /**
-     * PATCH /api/assets/:id/transcript
-     * Save transcript text + timestamped segments to the first clip.
-     * Body: { transcript: string, segments: [{word, start, end, confidence}, ...] }
+     * PATCH /api/assets/:id/clips/:clipId/transcript
+     * Save transcript text + timestamped segments to a specific owned clip.
+     * The legacy /api/assets/:id/transcript route remains available for older clients.
      */
-    fastify.patch('/api/assets/:id/transcript', {
-        preHandler: [fastify.authenticate],
-    }, async (request, reply) => {
-        const { id } = request.params;
-        const { transcript, segments } = request.body || {};
+    const saveTranscript = async (request, reply) => {
+        const { id, clipId: pathClipId } = request.params;
+        const { transcript, segments, clipId: bodyClipId } = request.body || {};
+        let clipId = pathClipId ?? bodyClipId;
 
         if (!transcript || typeof transcript !== 'string') {
             return reply.code(400).send({ error: 'transcript is required' });
         }
+        if (clipId !== undefined && (typeof clipId !== 'string' || !clipId.trim())) {
+            return reply.code(400).send({ error: 'clipId must be a non-empty string' });
+        }
+        if (pathClipId !== undefined && bodyClipId !== undefined && pathClipId !== bodyClipId) {
+            return reply.code(400).send({ error: 'clipId does not match the requested clip' });
+        }
 
-        // Find the first clip for this asset
-        const clip = await prisma.clip.findFirst({
-            where: { assetId: id },
-            orderBy: { clipIndex: 'asc' },
+        const data = {
+            transcript: transcript.slice(0, 10000),
+            transcriptSegments: Array.isArray(segments) ? segments : undefined,
+        };
+
+        if (clipId === undefined) {
+            const clip = await prisma.clip.findFirst({
+                where: { assetId: id, asset: { userId: request.user.id } },
+                orderBy: { clipIndex: 'asc' },
+            });
+            if (!clip) {
+                return reply.code(404).send({ error: 'No clip found for this asset' });
+            }
+            clipId = clip.id;
+        }
+
+        const updated = await prisma.clip.updateMany({
+            where: { id: clipId, assetId: id, asset: { userId: request.user.id } },
+            data,
         });
-
-        if (!clip) {
+        if (updated.count !== 1) {
             return reply.code(404).send({ error: 'No clip found for this asset' });
         }
 
-        // Update transcript text + segments JSON
-        await prisma.clip.update({
-            where: { id: clip.id },
-            data: {
-                transcript: transcript.slice(0, 10000),
-                transcriptSegments: Array.isArray(segments) ? segments : undefined,
-            },
-        });
-
         request.log.info(
-            { clipId: clip.id, segmentCount: segments?.length ?? 0 },
+            { clipId, segmentCount: segments?.length ?? 0 },
             'Transcript saved for clip'
         );
 
-        return { ok: true, clipId: clip.id, segmentCount: segments?.length ?? 0 };
-    });
+        return { ok: true, clipId, segmentCount: segments?.length ?? 0 };
+    };
+
+    fastify.patch('/api/assets/:id/transcript', {
+        preHandler: [fastify.authenticate],
+    }, saveTranscript);
+    fastify.patch('/api/assets/:id/clips/:clipId/transcript', {
+        preHandler: [fastify.authenticate],
+    }, saveTranscript);
 
     /**
      * GET /api/messages

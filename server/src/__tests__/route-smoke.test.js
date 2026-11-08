@@ -5,6 +5,7 @@ import formbody from '@fastify/formbody';
 import csrfProtection from '@fastify/csrf-protection';
 import fastifyJwt from '@fastify/jwt';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { requireRole } from '../lib/authorization.js';
 
 const prismaMock = {
     user: {
@@ -75,9 +76,7 @@ beforeEach(async () => {
         return reply.status(401).send({ error: 'Unauthorized' });
     });
 
-    app.decorate('authorizeAdmin', async (request, reply) => {
-        return reply.status(403).send({ error: 'Admin access required' });
-    });
+    app.decorate('requireRole', requireRole);
 
     app.decorate('clipAuthenticate', async () => null);
 

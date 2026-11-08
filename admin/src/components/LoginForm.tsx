@@ -1,8 +1,9 @@
 import { useState, FormEvent } from "react";
 import { login, setToken } from "@/lib/api";
+import type { User } from "@/lib/types";
 
 interface LoginFormProps {
-  onSuccess: (userName: string, role?: string, phone?: string) => void;
+  onSuccess: (user: User) => void;
 }
 
 export function LoginForm({ onSuccess }: LoginFormProps) {
@@ -40,7 +41,7 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
     try {
       const res = await login(phoneNumber, pin);
       setToken(res.token);
-      onSuccess(res.user.name, res.user.role, res.user.phoneNumber);
+      onSuccess(res.user);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed");
     } finally {

@@ -106,9 +106,9 @@ struct PermissionsView: View {
     private var photoLibraryNote: String? {
         switch permissions.photoLibraryStatus {
         case .limited:
-            "With limited access, originals and Archive re-upload work only for videos you've shared with Fixer. Other videos upload as their current version, which may include Photos edits."
+            "With limited access, originals are available only for videos you've shared with Fixer. Other selections may include Photos edits. Archive re-upload always asks you to pick a video."
         case .denied:
-            "Without access, videos upload as their current version, which may include Photos edits, and Archive re-upload asks you to pick the video."
+            "Without access, videos upload as their current version, which may include Photos edits. Archive re-upload always asks you to pick a video."
         default:
             nil
         }

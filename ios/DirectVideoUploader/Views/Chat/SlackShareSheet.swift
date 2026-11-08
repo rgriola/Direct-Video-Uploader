@@ -53,6 +53,7 @@ struct SlackShareSheet: View {
                         .foregroundStyle(Theme.white)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, Theme.space12)
+                        .frame(minHeight: 44)
                         .background(Theme.purple)
                         .clipShape(RoundedRectangle(cornerRadius: Theme.radiusMd))
                 }

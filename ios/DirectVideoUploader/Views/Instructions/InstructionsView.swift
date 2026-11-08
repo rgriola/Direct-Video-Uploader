@@ -33,6 +33,7 @@ struct InstructionsView: View {
                     .padding(Theme.space16)
                     .contentShape(Rectangle())
             }
+            .accessibilityLabel("Close")
         }
     }
 
@@ -97,7 +98,7 @@ struct InstructionsView: View {
                     instructionRow(
                         icon: "archivebox.fill",
                         text:
-                            "Uploads move to Archive upon completion & are held for 7 days. The clip metadata, Slack, and web link live here."
+                            "Archive shows uploads from the last 7 days and older uploads that need details or upload recovery. Find clip metadata, Slack, and web links here."
                     )
                     instructionRow(
                         icon: "plus.circle.fill",
@@ -327,7 +328,7 @@ struct InstructionsView: View {
                 VStack(alignment: .leading, spacing: Theme.space16) {
                     instructionRow(
                         emoji: "🗓️",
-                        text: "Completed and unfinished uploads are held for 7 days."
+                        text: "Completed uploads appear for 7 days. Older uploads needing details or recovery stay available."
                     )
                     instructionRow(
                         emoji: "🔗",

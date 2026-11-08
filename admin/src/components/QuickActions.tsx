@@ -5,6 +5,7 @@ import { Icon, type IconName } from "./Icon";
 interface QuickActionsProps {
   onAction: (action: string) => void;
   addLog: (type: LogEntry["type"], msg: string) => void;
+  canCleanup: boolean;
 }
 
 const buttons: { key: string; icon: IconName; label: string; sub: string }[] = [
@@ -14,7 +15,7 @@ const buttons: { key: string; icon: IconName; label: string; sub: string }[] = [
   { key: "cleanup", icon: "cleanup", label: "Cleanup Assets", sub: "Stale UPLOADING" },
 ];
 
-export function QuickActions({ onAction }: QuickActionsProps) {
+export function QuickActions({ onAction, canCleanup }: QuickActionsProps) {
   return (
     <div className="bg-(--card) border border-(--border-subtle) rounded-(--radius-xl) overflow-hidden mb-8">
 
@@ -27,7 +28,7 @@ export function QuickActions({ onAction }: QuickActionsProps) {
       </div>
 
       <div className="grid grid-cols-4 gap-4 px-6 py-4 max-[900px]:grid-cols-2 max-[600px]:grid-cols-1">
-        {buttons.map((btn) => (
+        {buttons.filter((btn) => btn.key !== "cleanup" || canCleanup).map((btn) => (
           <button
             key={btn.key}
             onClick={() => onAction(btn.key)}

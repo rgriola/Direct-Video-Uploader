@@ -15,6 +15,7 @@ const prismaMock = {
         findFirst: vi.fn(),
         create: vi.fn(),
         update: vi.fn(),
+        updateMany: vi.fn(),
         delete: vi.fn(),
     },
     user: {
@@ -76,6 +77,7 @@ beforeEach(async () => {
     prismaMock.clip.findFirst.mockResolvedValue(null);
     prismaMock.clip.create.mockResolvedValue({});
     prismaMock.clip.update.mockResolvedValue({});
+    prismaMock.clip.updateMany.mockResolvedValue({ count: 1 });
     prismaMock.clip.delete.mockResolvedValue({});
 
     prismaMock.user.findUnique.mockResolvedValue({ id: 'user-1', name: 'Fallback User' });
@@ -191,6 +193,55 @@ describe('assets route deeper coverage', () => {
             muxUploadId: 'upload-existing',
         });
         expect(prismaMock.clip.create).not.toHaveBeenCalled();
+    });
+
+    it.each([
+        ['missing upload', null, 503],
+        ['missing status', {}, 503],
+        ['unknown status', { status: 'new_state' }, 503],
+        ['waiting without URL', { status: 'waiting' }, 503],
+        ['already processing', { status: 'asset_created' }, 409],
+    ])('preserves the clip when the existing mux upload is %s', async (_label, upload, status) => {
+        prismaMock.asset.findUnique.mockResolvedValue({
+            id: 'asset-1', userId: 'user-1', mediasourceId: '100000001',
+            mediasourceUrl: '/clips/100000001', originalFileName: 'video.mp4',
+        });
+        prismaMock.clip.findFirst.mockResolvedValue({
+            id: 'clip-existing', muxUploadId: 'upload-existing',
+        });
+        muxMock.getMuxUpload.mockResolvedValue(upload);
+
+        const response = await app.inject({
+            method: 'POST',
+            url: '/api/assets/asset-1/mux-upload',
+            payload: { metadata: { mimeType: 'video/mp4' } },
+        });
+
+        expect(response.statusCode).toBe(status);
+        expect(prismaMock.clip.delete).not.toHaveBeenCalled();
+        expect(prismaMock.asset.update).not.toHaveBeenCalled();
+        expect(prismaMock.clip.create).not.toHaveBeenCalled();
+        expect(muxMock.createDirectUpload).not.toHaveBeenCalled();
+    });
+
+    it('preserves the clip if checking mux upload status throws', async () => {
+        prismaMock.asset.findUnique.mockResolvedValue({ id: 'asset-1', userId: 'user-1' });
+        prismaMock.clip.findFirst.mockResolvedValue({
+            id: 'clip-existing', muxUploadId: 'upload-existing',
+        });
+        muxMock.getMuxUpload.mockRejectedValue(new Error('Mux unavailable'));
+
+        const response = await app.inject({
+            method: 'POST',
+            url: '/api/assets/asset-1/mux-upload',
+            payload: { metadata: { mimeType: 'video/mp4' } },
+        });
+
+        expect(response.statusCode).toBe(503);
+        expect(prismaMock.clip.delete).not.toHaveBeenCalled();
+        expect(prismaMock.asset.update).not.toHaveBeenCalled();
+        expect(prismaMock.clip.create).not.toHaveBeenCalled();
+        expect(muxMock.createDirectUpload).not.toHaveBeenCalled();
     });
 
     it('replaces stale mux upload and creates a fresh processing clip', async () => {
@@ -335,8 +386,8 @@ describe('assets route deeper coverage', () => {
         });
 
         expect(response.statusCode).toBe(200);
-        expect(prismaMock.clip.update).toHaveBeenCalledWith({
-            where: { id: 'clip-1' },
+        expect(prismaMock.clip.updateMany).toHaveBeenCalledWith({
+            where: { id: 'clip-1', assetId: 'asset-1', asset: { userId: 'user-1' } },
             data: {
                 transcript: 'First sentence. Second sentence.',
                 transcriptSegments: [
@@ -346,5 +397,78 @@ describe('assets route deeper coverage', () => {
             },
         });
         expect(response.json()).toEqual({ ok: true, clipId: 'clip-1', segmentCount: 2 });
+    });
+
+    it('saves a transcript only to the requested owned clip', async () => {
+        const response = await app.inject({
+            method: 'PATCH',
+            url: '/api/assets/asset-1/clips/clip-original/transcript',
+            payload: { transcript: 'hello', clipId: 'clip-original', segments: [] },
+        });
+
+        expect(response.statusCode).toBe(200);
+        expect(response.json()).toEqual({ ok: true, clipId: 'clip-original', segmentCount: 0 });
+        expect(prismaMock.clip.updateMany).toHaveBeenCalledWith({
+            where: { id: 'clip-original', assetId: 'asset-1', asset: { userId: 'user-1' } },
+            data: { transcript: 'hello', transcriptSegments: [] },
+        });
+        expect(prismaMock.clip.findFirst).not.toHaveBeenCalled();
+        expect(prismaMock.clip.update).not.toHaveBeenCalled();
+    });
+
+    it('uses the path clip when the request body omits a clip identifier', async () => {
+        const response = await app.inject({
+            method: 'PATCH',
+            url: '/api/assets/asset-1/clips/clip-original/transcript',
+            payload: { transcript: 'hello' },
+        });
+
+        expect(response.statusCode).toBe(200);
+        expect(response.json()).toEqual({ ok: true, clipId: 'clip-original', segmentCount: 0 });
+        expect(prismaMock.clip.updateMany).toHaveBeenCalledWith({
+            where: { id: 'clip-original', assetId: 'asset-1', asset: { userId: 'user-1' } },
+            data: { transcript: 'hello', transcriptSegments: undefined },
+        });
+    });
+
+    it('rechecks ownership when updating a legacy first-clip transcript', async () => {
+        prismaMock.clip.findFirst.mockResolvedValue({ id: 'clip-1' });
+        prismaMock.clip.updateMany.mockResolvedValue({ count: 0 });
+        const response = await app.inject({
+            method: 'PATCH',
+            url: '/api/assets/asset-1/transcript',
+            payload: { transcript: 'hello' },
+        });
+
+        expect(response.statusCode).toBe(404);
+        expect(prismaMock.clip.update).not.toHaveBeenCalled();
+    });
+
+    it('rejects invalid or replaced clip identifiers without updating another clip', async () => {
+        const invalid = await app.inject({
+            method: 'PATCH',
+            url: '/api/assets/asset-1/transcript',
+            payload: { transcript: 'hello', clipId: '' },
+        });
+        expect(invalid.statusCode).toBe(400);
+        expect(prismaMock.clip.updateMany).not.toHaveBeenCalled();
+
+        const mismatch = await app.inject({
+            method: 'PATCH',
+            url: '/api/assets/asset-1/clips/clip-original/transcript',
+            payload: { transcript: 'hello', clipId: 'clip-other' },
+        });
+        expect(mismatch.statusCode).toBe(400);
+        expect(prismaMock.clip.updateMany).not.toHaveBeenCalled();
+
+        prismaMock.clip.updateMany.mockResolvedValue({ count: 0 });
+        const missing = await app.inject({
+            method: 'PATCH',
+            url: '/api/assets/asset-1/clips/clip-replaced/transcript',
+            payload: { transcript: 'hello', clipId: 'clip-replaced' },
+        });
+        expect(missing.statusCode).toBe(404);
+        expect(prismaMock.clip.findFirst).not.toHaveBeenCalled();
+        expect(prismaMock.clip.update).not.toHaveBeenCalled();
     });
 });

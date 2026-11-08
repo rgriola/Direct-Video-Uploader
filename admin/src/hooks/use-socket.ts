@@ -49,6 +49,18 @@ export function useSocket(onAssetChange?: () => void) {
 
   const clearLogs = useCallback(() => setLogs([]), []);
 
+  const disconnect = useCallback(() => {
+    if (_socket) {
+      _socket.removeAllListeners();
+      _socket.disconnect();
+      _socket = null;
+    }
+    _connected = false;
+    setConnected(false);
+    setSocketId(null);
+    setLogs([]);
+  }, []);
+
   const connect = useCallback(() => {
     const token = getToken();
     if (!token) return;
@@ -121,5 +133,5 @@ export function useSocket(onAssetChange?: () => void) {
     };
   }, []);
 
-  return { connected, socketId, logs, addLog, clearLogs, connect, sendPing };
+  return { connected, socketId, logs, addLog, clearLogs, connect, disconnect, sendPing };
 }

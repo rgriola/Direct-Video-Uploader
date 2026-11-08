@@ -4,9 +4,13 @@ import SwiftUI
 struct InputBar: View {
     var onSend: (String) -> Void
     var onAttach: () -> Void
+    var attachmentDisabled = false
+    var restoreAttachmentFocus: Bool
+    var onAttachmentFocusRestored: () -> Void
     
     @State private var text = ""
     @FocusState private var isFocused: Bool
+    @AccessibilityFocusState private var attachmentIsFocused: Bool
     
     var body: some View {
         VStack(spacing: 0) {
@@ -24,15 +28,25 @@ struct InputBar: View {
                         .font(Theme.display32)
                         .symbolRenderingMode(.palette)
                         .foregroundStyle(Theme.white, Theme.purple)
+                        .tapTarget()
                     }
+                .accessibilityLabel("Attach video")
+                .accessibilityFocused($attachmentIsFocused)
+                .disabled(attachmentDisabled)
+                .task(id: restoreAttachmentFocus && !attachmentDisabled) {
+                    guard restoreAttachmentFocus, !attachmentDisabled else { return }
+                    attachmentIsFocused = true
+                    onAttachmentFocusRestored()
+                }
                 
                 // Text field
                 HStack {
                    
-                    TextField("", text: $text, prompt: Text("Slack from here # or @").foregroundColor(Theme.secondaryText))
+                    TextField("Message", text: $text, prompt: Text("Slack from here # or @").foregroundColor(Theme.secondaryText))
                         .font(Theme.font16Regular)
                         .foregroundStyle(Theme.black)
                         .padding(.horizontal, 12)
+                        .frame(minHeight: 44)
                         .focused($isFocused)
                         .onSubmit {
                             sendMessage()
@@ -50,11 +64,12 @@ struct InputBar: View {
                                         text.isEmpty ? Theme.purple : Theme.white,
                                         text.isEmpty ? Theme.white : Theme.purple
                                     )
+                                    .tapTarget()
                                 }
                                 .disabled(text.isEmpty)
+                                .accessibilityLabel("Send message")
                         }
-                        .padding(.horizontal, 4)
-                        .padding(.vertical, 2)
+                        .padding(.leading, 4)
                         .background(Theme.lightGray)
                         .clipShape(Capsule())
                 
