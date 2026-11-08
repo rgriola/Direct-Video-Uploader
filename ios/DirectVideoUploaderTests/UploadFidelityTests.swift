@@ -1317,7 +1317,7 @@ struct PendingFormSubmissionTests {
 }
 
 struct TranscriptDeliveryTests {
-    private struct Payload: Decodable {
+    nonisolated private struct Payload: Decodable, Sendable {
         let transcript: String
         let segments: [TranscriptSegment]
         let clipId: String
