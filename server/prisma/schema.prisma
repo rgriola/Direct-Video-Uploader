@@ -70,16 +70,27 @@ model Asset {
   moderatedAt      DateTime?   @map("moderated_at")
   moderatedById    String?     @map("moderated_by_id")
   moderationReason String?     @map("moderation_reason")
+  mediaSyncState   MediaSyncState @default(PENDING) @map("media_sync_state")
+  mediaSyncError   String?     @map("media_sync_error")
+  mediaSyncRevision Int        @default(0) @map("media_sync_revision")
+  mediaSyncNextAt  DateTime?   @default(now()) @map("media_sync_next_at")
+  mediaPlaybackReset Boolean   @default(false) @map("media_playback_reset")
+  mediaCreateOperationId String? @map("media_create_operation_id")
+  mediaCreateMuxAssetId String? @map("media_create_mux_asset_id")
+  mediaCreateStartedAt DateTime? @map("media_create_started_at")
   createdAt        DateTime    @default(now()) @map("created_at")
   updatedAt        DateTime    @updatedAt @map("updated_at")
 
   user         User          @relation(fields: [userId], references: [id])
   clips        Clip[]
+  muxAssetReferences MuxAssetReference[]
   formResponse FormResponse?
   messages     ChatMessage[]
 
   @@index([userId])
   @@index([moderation, createdAt])
+  @@index([mediaSyncState, mediaSyncNextAt])
+  @@index([moderation, mediaSyncNextAt])
   @@map("assets")
 }
 
@@ -95,6 +106,23 @@ enum AssetModeration {
   PAUSED
   FLAGGED_FOR_REMOVAL
   REMOVED
+}
+
+enum MediaSyncState {
+  PENDING
+  SYNCED
+  ERROR
+}
+
+model MuxAssetReference {
+  muxAssetId String @id @map("mux_asset_id")
+  assetId    String @map("asset_id")
+  clipId     String? @map("clip_id")
+
+  asset Asset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@index([assetId])
+  @@map("mux_asset_references")
 }
 
 enum AuditTargetType {
