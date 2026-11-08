@@ -3780,6 +3780,13 @@ struct ArchiveMediaTaskOwnerTests {
         let locallyFailedReady = ArchiveRetryIntent(
             asset: try asset(status: "READY", clipID: "one"))
         #expect(locallyFailedReady.permits(try asset(status: "READY", clipID: "one")))
+
+        let paused = try JSONDecoder().decode(
+            Asset.self,
+            from: Data(
+                #"{"id":"asset","status":"ERROR","moderation":"PAUSED","clips":[{"id":"one","status":"ready","duration":7,"gpsLat":1}]}"#
+                    .utf8))
+        #expect(!intent.permits(paused))
     }
 
     @Test
@@ -3831,6 +3838,14 @@ struct ArchiveMediaTaskOwnerTests {
 
 @MainActor
 struct ArchiveRowStatusTests {
+    @Test
+    func pausedStateOverridesUploadAndRetryStatuses() {
+        #expect(ArchiveRowView.resolveStatus(
+            assetStatus: .error, needsDetails: true, isStuck: true,
+            isReuploading: true, hasReuploadError: true, reuploadComplete: false,
+            isChatUploading: true, isPaused: true) == .paused)
+    }
+
     @Test(arguments: [AssetStatus.ready, .uploading, .processing, .error])
     func failedLocalAttemptKeepsRetryEvenWhenCachedAssetLooksReady(status: AssetStatus) {
         #expect(ArchiveRowView.resolveStatus(
@@ -5065,7 +5080,7 @@ struct ChatFormRecoveryTests {
 struct ArchiveVisibilityTests {
     private func asset(
         createdAt: String?, completed: Bool, status: AssetStatus = .ready,
-        submittedAt: String? = nil
+        submittedAt: String? = nil, moderation: AssetModeration? = nil
     ) -> Asset {
         Asset(
             id: "asset", mediasourceId: nil, mediasourceUrl: nil, originalFileName: nil,
@@ -5076,7 +5091,7 @@ struct ArchiveVisibilityTests {
                     id: "form", assetId: nil, slug: nil, type: nil,
                     description: nil, priority: nil, submittedAt: submittedAt)
                 : nil,
-            userId: nil, updatedAt: nil)
+            userId: nil, updatedAt: nil, moderation: moderation)
     }
 
     @Test
@@ -5120,6 +5135,41 @@ struct ArchiveVisibilityTests {
                 asset(createdAt: "2000-01-01T00:00:00Z", completed: true, status: status),
                 cutoff: cutoff))
         }
+    }
+
+    @Test
+    func oldPausedAssetsRemainVisibleAndDoNotOfferUploadRecovery() {
+        let cutoff = Date(timeIntervalSince1970: 1_700_000_000)
+        let oldDate = "2000-01-01T00:00:00Z"
+        let paused = asset(
+            createdAt: oldDate, completed: true, status: .error, moderation: .paused)
+
+        #expect(ArchiveListView.isVisible(paused, cutoff: cutoff))
+        #expect(!paused.needsUploadRecovery(at: cutoff))
+        #expect(!ArchiveListView.isVisible(
+            asset(createdAt: oldDate, completed: true), cutoff: cutoff))
+    }
+
+    @Test
+    func pausedAssetSnapshotInvalidatesRetryIntent() throws {
+        let owner = ArchiveMediaTaskOwner()
+        let scope = try #require(
+            PendingFormScope(userId: "user-1", serverURL: ServerConfig.baseURL))
+        let generation = UUID()
+        let active = asset(createdAt: "2000-01-01T00:00:00Z", completed: true, status: .error)
+        let paused = asset(
+            createdAt: "2000-01-01T00:00:00Z", completed: true,
+            status: .error, moderation: .paused)
+        owner.updateAssetSnapshot([active], scope: scope, sessionGeneration: generation)
+        let intent = try #require(owner.retryIntent(
+            for: active, scope: scope, sessionGeneration: generation))
+
+        owner.updateAssetSnapshot([paused], scope: scope, sessionGeneration: generation)
+
+        #expect(!owner.intentIsCurrent(
+            intent, assetId: active.id, scope: scope, sessionGeneration: generation))
+        #expect(owner.retryIntent(
+            for: paused, scope: scope, sessionGeneration: generation) == nil)
     }
 
     @Test

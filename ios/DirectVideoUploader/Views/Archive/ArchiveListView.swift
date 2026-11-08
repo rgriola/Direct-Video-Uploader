@@ -334,10 +334,18 @@ final class ArchiveMediaTaskOwner {
         for asset: Asset, scope: PendingFormScope, sessionGeneration: UUID
     ) -> ArchiveRetryIntent? {
         guard snapshotScope == scope, snapshotGeneration == sessionGeneration,
-              currentAssets[asset.id] == asset, let revision = assetRevisions[asset.id] else {
+              currentAssets[asset.id] == asset, asset.permitsMediaActions,
+              let revision = assetRevisions[asset.id] else {
             return nil
         }
         return ArchiveRetryIntent(asset: asset, observationRevision: revision)
+    }
+
+    func allowsMediaActions(
+        for asset: Asset, scope: PendingFormScope, sessionGeneration: UUID
+    ) -> Bool {
+        snapshotScope == scope && snapshotGeneration == sessionGeneration
+            && currentAssets[asset.id]?.permitsMediaActions == true
     }
 
     func intentIsCurrent(
@@ -458,7 +466,7 @@ nonisolated struct ArchiveRetryIntent {
     }
 
     func permits(_ asset: Asset) -> Bool {
-        self.asset == asset
+        self.asset.permitsMediaActions && asset.permitsMediaActions && self.asset == asset
     }
 }
 
@@ -577,6 +585,7 @@ struct ArchiveListView: View {
     }
 
     static func isVisible(_ asset: Asset, cutoff: Date) -> Bool {
+        if asset.isModerated { return true }
         if asset.formResponse == nil || asset.status != .ready { return true }
         if let submittedAt = asset.formResponse?.submittedAt,
            let submitted = DVUDateFormatting.parseISO(submittedAt), submitted >= cutoff {
@@ -1002,6 +1011,8 @@ struct ArchiveListView: View {
     ) -> Bool {
         guard pendingReuploadSelection == nil,
               let session = assetsSession, session.isCurrent(auth),
+              mediaTasks.allowsMediaActions(
+                for: asset, scope: session.scope, sessionGeneration: session.generation),
               interaction.isCurrentRow(assetId: asset.id, instanceId: rowID) else { return false }
         let retryIntent: ArchiveRetryIntent?
         if case .picker = kind {
@@ -1029,6 +1040,9 @@ struct ArchiveListView: View {
     private func rowModalIsCurrent(_ modal: ArchiveRowModalPresentation) -> Bool {
         activeRowModal?.id == modal.id && rowModalPresentation?.id == modal.id
             && modal.session.isCurrent(auth)
+            && mediaTasks.allowsMediaActions(
+                for: modal.asset, scope: modal.session.scope,
+                sessionGeneration: modal.session.generation)
     }
 
     private func finishRowModal() {
@@ -1362,11 +1376,23 @@ struct ArchiveListView: View {
                 decoded.assets, scope: session.scope, sessionGeneration: session.generation)
             refreshVersion += 1
             if let pendingReuploadSelection,
-               !visibleAssets.contains(where: { $0.id == pendingReuploadSelection.assetId }) {
+               (!visibleAssets.contains(where: { $0.id == pendingReuploadSelection.assetId })
+                || !decoded.assets.contains(where: {
+                    $0.id == pendingReuploadSelection.assetId && $0.permitsMediaActions
+                })) {
                 self.pendingReuploadSelection = nil
                 pendingHeaderFocus = true
                 announcements.append(
-                    "The selected video wasn't used because this upload is no longer available in Archive.")
+                    "The selected video wasn't used because this upload is paused or no longer available.")
+            }
+            if let modal = activeRowModal,
+               !decoded.assets.contains(where: {
+                   $0.id == modal.asset.id && $0.permitsMediaActions
+               }) {
+                rowModalPresentation = nil
+                selectedReuploadItem = nil
+                enqueueAnnouncement(
+                    "Playback, sharing, and re-upload are unavailable while this video is paused.")
             }
             if let modalFocusRequest,
                !visibleAssets.contains(where: { $0.id == modalFocusRequest.assetId }) {

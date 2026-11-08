@@ -164,6 +164,7 @@ struct ArchiveRowView: View {
     var onReuploadAnnouncement: (String) -> Void
     var onReuploadCompletion: (String, Bool) -> Void
     @Environment(AuthService.self) private var auth
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var rowID = UUID()
     @State private var isExpanded = false
     @AccessibilityFocusState private var rowIsFocused: Bool
@@ -225,6 +226,7 @@ struct ArchiveRowView: View {
     /// Consolidated display state — single source of truth for both the badge and
     /// the action buttons section. Priority order matters: check in this sequence.
     enum RowStatus {
+        case paused
         case needsDetails  // yellow — form not yet filled
         case failed  // red — error or stuck processing
         case reuploading  // blue — active re-upload in progress
@@ -242,14 +244,16 @@ struct ArchiveRowView: View {
             hasReuploadError: reuploadError != nil || mediaTasks.retryMessages[asset.id] != nil
                 || presentationState.failedChatUploadAssetIDs.contains(asset.id),
             reuploadComplete: completed,
-            isChatUploading: hasActiveChatUpload)
+            isChatUploading: hasActiveChatUpload,
+            isPaused: asset.isModerated)
     }
 
     static func resolveStatus(
         assetStatus: AssetStatus, needsDetails: Bool, isStuck: Bool,
         isReuploading: Bool, hasReuploadError: Bool, reuploadComplete: Bool,
-        isChatUploading: Bool = false
+        isChatUploading: Bool = false, isPaused: Bool = false
     ) -> RowStatus {
+        if isPaused { return .paused }
         if isChatUploading { return .processing }
         if isReuploading { return .reuploading }
         if hasReuploadError { return .failed }
@@ -264,8 +268,12 @@ struct ArchiveRowView: View {
         VStack(alignment: .leading, spacing: 0) {
             // MARK: - Collapsed Row (always visible)
             Button {
-                withAnimation(.easeInOut(duration: 0.25)) {
+                if reduceMotion {
                     isExpanded.toggle()
+                } else {
+                    withAnimation(.easeInOut(duration: 0.25)) {
+                        isExpanded.toggle()
+                    }
                 }
             } label: {
                 HStack(spacing: 12) {
@@ -314,6 +322,13 @@ struct ArchiveRowView: View {
                                 .lineLimit(1)
 
                             switch rowStatus {
+                            case .paused:
+                                Image(systemName: "pause.circle.fill")
+                                    .accessibilityHidden(true)
+                                    .foregroundStyle(Theme.secondaryText)
+                                Text("Paused")
+                                    .font(Theme.font11Semibold)
+                                    .foregroundStyle(Theme.secondaryText)
                             case .needsDetails:
                                 Circle()
                                     .fill(Theme.yellow)
@@ -349,7 +364,7 @@ struct ArchiveRowView: View {
                                     .font(Theme.font11Semibold)
                                     .foregroundStyle(Theme.green)
                             }
-                            if needsDetails && rowStatus != .needsDetails {
+                            if needsDetails && rowStatus != .needsDetails && rowStatus != .paused {
                                 Text("Needs Details")
                                     .font(Theme.font11Semibold)
                                     .foregroundStyle(Theme.warningText)
@@ -368,6 +383,7 @@ struct ArchiveRowView: View {
                         Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
                             .font(Theme.icon11)
                             .foregroundStyle(Theme.tertiaryText)
+                            .accessibilityHidden(true)
                     }
                 }
                 .padding(.vertical, 12)
@@ -376,6 +392,9 @@ struct ArchiveRowView: View {
             }
             .buttonStyle(.plain)
             .accessibilityFocused($rowIsFocused)
+            .accessibilityValue(isExpanded ? "Expanded" : "Collapsed")
+            .accessibilityHint(
+                isExpanded ? "Double-tap to collapse details" : "Double-tap to expand details")
 
             // MARK: - Expanded Detail
             if isExpanded {
@@ -490,6 +509,14 @@ struct ArchiveRowView: View {
                     // Action buttons — equal width
                     VStack(spacing: 8) {
                         switch rowStatus {
+                        case .paused:
+                            Label(
+                                "Playback, sharing, and re-upload are unavailable while this video is paused.",
+                                systemImage: "pause.circle.fill"
+                            )
+                            .font(.footnote.weight(.semibold))
+                            .foregroundStyle(Theme.secondaryText)
+                            .fixedSize(horizontal: false, vertical: true)
                         case .failed:
                             archiveButton(
                                 icon: "arrow.clockwise.circle.fill",
@@ -594,7 +621,7 @@ struct ArchiveRowView: View {
                                 }
                             }
 
-                            if needsDetails {
+                            if needsDetails && !asset.isModerated {
                                 addDetailsButton.id("add-details-\(asset.id)")
                             } else if rowStatus == .ready {
                                 archiveButton(
@@ -634,7 +661,7 @@ struct ArchiveRowView: View {
                             .foregroundStyle(Theme.errorText)
                             .fixedSize(horizontal: false, vertical: true)
                     }
-                    if photoAssociationDamaged {
+                    if photoAssociationDamaged && !asset.isModerated {
                         Button("Repair saved photo links") {
                             if !onRepairPhotoLinks(rowID) {
                                 onReuploadAnnouncement("Close the current sheet before repairing photo links.")
@@ -808,6 +835,11 @@ struct ArchiveRowView: View {
     }
 
     private func beginReupload() {
+        guard asset.permitsMediaActions else {
+            onReuploadAnnouncement(
+                "This video is paused. Playback, sharing, and re-upload are unavailable.")
+            return
+        }
         guard !isReuploadingVideo, !hasActiveArchiveUpload, !hasActiveChatUpload else {
             onReuploadAnnouncement("This upload is already in progress.")
             return
@@ -815,6 +847,12 @@ struct ArchiveRowView: View {
         guard let session = assetSession, session.isCurrent(auth) else {
             reuploadSession = nil
             failReupload("Your account or server changed. Refresh Archive before re-uploading.")
+            return
+        }
+        guard mediaTasks.allowsMediaActions(
+            for: asset, scope: session.scope, sessionGeneration: session.generation) else {
+            onReuploadAnnouncement(
+                "This upload changed. Refresh Archive before trying to re-upload.")
             return
         }
         reuploadSession = session

@@ -139,6 +139,32 @@ struct ModelDecodingTests {
     }
 
     @Test
+    func assetModerationDefaultsLegacyResponsesAndFailsClosedForUnknownValues() throws {
+        let legacy = try JSONDecoder().decode(
+            Asset.self, from: Data(#"{"id":"legacy","status":"READY"}"#.utf8))
+        #expect(legacy.moderation == nil)
+        #expect(legacy.permitsMediaActions)
+
+        for (rawValue, expected) in [
+            ("ACTIVE", AssetModeration.active),
+            ("PAUSED", .paused),
+            ("FLAGGED_FOR_REMOVAL", .flaggedForRemoval),
+            ("REMOVED", .removed),
+        ] {
+            let json = #"{"id":"asset-1","status":"READY","moderation":"\#(rawValue)"}"#
+            let asset = try JSONDecoder().decode(Asset.self, from: Data(json.utf8))
+            #expect(asset.moderation == expected)
+            #expect(asset.permitsMediaActions == (expected == .active))
+        }
+
+        let unknown = try JSONDecoder().decode(
+            Asset.self,
+            from: Data(#"{"id":"asset-1","status":"READY","moderation":"NEW_STATE"}"#.utf8))
+        #expect(unknown.moderation == .unknown)
+        #expect(!unknown.permitsMediaActions)
+    }
+
+    @Test
     func messageHistoryDecodesIncomingAndOutgoingPayloads() throws {
         let json = """
             {

@@ -16,13 +16,35 @@ nonisolated struct Asset: Codable, Identifiable, Sendable, Equatable {
     let formResponse: FormResponse?
     let userId: String?
     let updatedAt: String?
+    var moderation: AssetModeration? = nil
+
+    var isModerated: Bool {
+        guard let moderation else { return false }
+        return moderation != .active
+    }
+
+    var permitsMediaActions: Bool { !isModerated }
 
     func needsUploadRecovery(at date: Date) -> Bool {
+        guard permitsMediaActions else { return false }
         if status == .error { return true }
         guard status == .uploading || status == .processing else { return false }
         let timestamp = (status == .processing ? clips?.first?.createdAt : nil) ?? createdAt
         guard let timestamp, let created = DVUDateFormatting.parseISO(timestamp) else { return true }
         return date.timeIntervalSince(created) > 300
+    }
+}
+
+nonisolated enum AssetModeration: String, Codable, Sendable, Equatable {
+    case active = "ACTIVE"
+    case paused = "PAUSED"
+    case flaggedForRemoval = "FLAGGED_FOR_REMOVAL"
+    case removed = "REMOVED"
+    case unknown = "UNKNOWN"
+
+    init(from decoder: Decoder) throws {
+        let value = try decoder.singleValueContainer().decode(String.self)
+        self = Self(rawValue: value) ?? .unknown
     }
 }
 
