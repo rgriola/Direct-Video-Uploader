@@ -8,6 +8,8 @@ export interface User {
   team?: string | null;
   role?: string;
   status: string;
+  pausedAt?: string | null;
+  pausedById?: string | null;
   companyCode?: string | null;
   companyName?: string | null;
   assetCount?: number;
@@ -19,7 +21,7 @@ export interface User {
 
 export interface Clip {
   id: string;
-  storageUrl: string;
+  storageUrl?: string | null;
   fileSize?: string | null;
   resolution?: string | null;
   codec?: string | null;
@@ -33,6 +35,10 @@ export interface Asset {
   mediasourceId?: string | null;
   mediasourceUrl?: string | null;
   status: string;
+  moderation: "ACTIVE" | "PAUSED" | "FLAGGED_FOR_REMOVAL" | "REMOVED";
+  moderatedAt?: string | null;
+  moderatedById?: string | null;
+  moderationReason?: string | null;
   clipCount?: number;
   totalDuration?: number;
   clips?: Clip[];

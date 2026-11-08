@@ -2,7 +2,17 @@ import { useEffect, useState, useCallback } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster, toast } from "sonner";
 
-import { setToken, getToken, fetchHealth, fetchMe, cleanupAssets, deleteUser, logoutClipSession } from "@/lib/api";
+import {
+  setToken,
+  getToken,
+  fetchHealth,
+  fetchMe,
+  cleanupAssets,
+  deleteUser,
+  updateAssetModeration,
+  updateUserStatus,
+  logoutClipSession,
+} from "@/lib/api";
 import { useStats, useUsers, useAssets, useRefreshDashboard, useTriadStatus, useOrganizations } from "@/hooks/use-dashboard";
 import { useSocket } from "@/hooks/use-socket";
 
@@ -18,6 +28,7 @@ import { ActivityLog } from "@/components/ActivityLog";
 import { EndpointTable } from "@/components/EndpointTable";
 import { ChatHistory } from "@/components/ChatHistory";
 import { ErrorLog } from "@/components/ErrorLog";
+import { AuditLog } from "@/components/AuditLog";
 import { AdminTools } from "@/components/AdminTools";
 import { OrgPanel } from "@/components/OrgPanel";
 import type { User } from "@/lib/types";
@@ -58,11 +69,12 @@ function Dashboard() {
   const [userCompany, setUserCompany] = useState<string | null>(null);
   const [userCompanyCode, setUserCompanyCode] = useState<string | null>(null);
   const [showChatHistory, setShowChatHistory] = useState(false);
+  const [assetModeration, setAssetModeration] = useState<string>();
   const canManageTeam = isSuperAdmin || (userRole === "ADMIN" && !!userCompanyCode);
 
   const { data: stats } = useStats(loggedIn);
   const { data: users, isLoading: usersLoading } = useUsers(loggedIn);
-  const { data: assets, isLoading: assetsLoading } = useAssets(loggedIn);
+  const { data: assets, isLoading: assetsLoading } = useAssets(loggedIn, assetModeration);
   const { data: triadStatus, isLoading: triadLoading } = useTriadStatus(loggedIn && isSuperAdmin);
   const { data: organizations, isLoading: orgsLoading } = useOrganizations(loggedIn && canManageTeam);
   const refreshDashboard = useRefreshDashboard();
@@ -110,6 +122,7 @@ function Dashboard() {
     const token = getToken();
     if (token) localStorage.setItem(AUTH_TOKEN_KEY, token);
     queryClient.clear();
+    setAssetModeration(undefined);
     setLoggedIn(true);
     setUserRole(user.role ?? null);
     setUserName(user.name);
@@ -184,6 +197,38 @@ function Dashboard() {
     [addLog, refreshDashboard],
   );
 
+  const handleAssetModeration = useCallback(
+    async (
+      assetId: string,
+      moderation: "ACTIVE" | "PAUSED" | "FLAGGED_FOR_REMOVAL" | "REMOVED",
+      reason?: string,
+    ) => {
+      try {
+        const result = await updateAssetModeration(assetId, { moderation, reason });
+        toast.success(result.message);
+        addLog("http", `Asset ${assetId.slice(0, 8)}: ${moderation.toLowerCase()}`);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Failed to update asset moderation";
+        toast.error(message);
+        addLog("error", message);
+      } finally {
+        refreshDashboard();
+      }
+    },
+    [addLog, refreshDashboard],
+  );
+
+  const handleUserStatusChange = useCallback(async (targetUserId: string, status: "ACTIVE" | "SUSPENDED", reason?: string) => {
+    try {
+      const result = await updateUserStatus(targetUserId, { status, reason });
+      toast.success(result.message);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to update user status");
+    } finally {
+      refreshDashboard();
+    }
+  }, [refreshDashboard]);
+
   if (!loggedIn) {
     return <LoginForm onSuccess={handleLoginSuccess} />;
   }
@@ -196,6 +241,7 @@ function Dashboard() {
           clearToken();
           localStorage.removeItem(AUTH_TOKEN_KEY);
           queryClient.clear();
+          setAssetModeration(undefined);
           setLoggedIn(false);
           setUserRole(null);
           setUserName(null);
@@ -236,11 +282,20 @@ function Dashboard() {
           users={users}
           isLoading={usersLoading}
           onDeleteUser={isSuperAdmin ? handleDeleteUser : undefined}
+          canManageStatus={canManageTeam}
+          onUserStatusChange={handleUserStatusChange}
           currentUserId={userId ?? undefined}
           organizations={organizations}
           onRefresh={() => refreshDashboard()}
         />
-        <AssetList assets={assets} isLoading={assetsLoading} />
+        <AssetList
+          assets={assets}
+          isLoading={assetsLoading}
+          viewerRole={userRole}
+          moderationFilter={assetModeration}
+          onModerationFilterChange={setAssetModeration}
+          onModerate={canManageTeam ? handleAssetModeration : undefined}
+        />
       </div>
 
       {isSuperAdmin && (
@@ -259,6 +314,8 @@ function Dashboard() {
         <ActivityLog logs={logs} onClear={clearLogs} />
         {isSuperAdmin && <ErrorLog />}
       </div>
+
+      {isSuperAdmin && <div className="mb-8"><AuditLog /></div>}
 
       <EndpointTable />
 

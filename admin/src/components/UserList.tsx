@@ -79,6 +79,8 @@ interface UserListProps {
   currentUserId?: string;
   organizations?: Organization[];
   onRefresh?: () => void;
+  canManageStatus?: boolean;
+  onUserStatusChange?: (userId: string, status: "ACTIVE" | "SUSPENDED", reason?: string) => Promise<void>;
 }
 
 export function UserList({
@@ -88,6 +90,8 @@ export function UserList({
   currentUserId,
   organizations,
   onRefresh,
+  canManageStatus,
+  onUserStatusChange,
 }: UserListProps) {
   /* Multi-expand: multiple users can be open at once (Set of user IDs) */
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -138,6 +142,8 @@ export function UserList({
               isSelf={user.id === currentUserId}
               organizations={organizations}
               onRefresh={onRefresh}
+              canManageStatus={canManageStatus}
+              onUserStatusChange={onUserStatusChange}
             />
           ))
         )}
@@ -161,6 +167,8 @@ interface UserRowProps {
   isSelf: boolean;
   organizations?: Organization[];
   onRefresh?: () => void;
+  canManageStatus?: boolean;
+  onUserStatusChange?: (userId: string, status: "ACTIVE" | "SUSPENDED", reason?: string) => Promise<void>;
 }
 
 function UserRow({
@@ -172,6 +180,8 @@ function UserRow({
   isSelf,
   organizations,
   onRefresh,
+  canManageStatus,
+  onUserStatusChange,
 }: UserRowProps) {
   const s = avatarStyle(color);
   const initials = user.name
@@ -243,6 +253,8 @@ function UserRow({
           isSelf={isSelf}
           organizations={organizations}
           onRefresh={onRefresh}
+          canManageStatus={canManageStatus}
+          onUserStatusChange={onUserStatusChange}
         />
       )}
     </div>
@@ -253,6 +265,13 @@ function UserRow({
 
 /** Renders the ONLINE / OFFLINE / NEVER SEEN pill based on user state */
 function StatusPill({ user }: { user: User }) {
+  if (user.status === "SUSPENDED") {
+    return (
+      <span className={`${pillBase} bg-(--accent-red-glow) text-(--accent-red) border border-(--accent-red)/30`}>
+        PAUSED
+      </span>
+    );
+  }
   if (user.isOnline) {
     return (
       <span
@@ -286,6 +305,8 @@ interface UserDetailsProps {
   isSelf: boolean;
   organizations?: Organization[];
   onRefresh?: () => void;
+  canManageStatus?: boolean;
+  onUserStatusChange?: (userId: string, status: "ACTIVE" | "SUSPENDED", reason?: string) => Promise<void>;
 }
 
 /** Expanded panel showing phone, asset count, last login, team (mobile), iOS status, company, delete button */
@@ -295,12 +316,15 @@ function UserDetails({
   isSelf,
   organizations,
   onRefresh,
+  canManageStatus,
+  onUserStatusChange,
 }: UserDetailsProps) {
   const [confirming, setConfirming] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [editingCompany, setEditingCompany] = useState(false);
   const [selectedCode, setSelectedCode] = useState(user.companyCode ?? "");
   const [savingCompany, setSavingCompany] = useState(false);
+  const [savingStatus, setSavingStatus] = useState(false);
 
   async function handleDelete() {
     if (!confirming) {
@@ -331,6 +355,24 @@ function UserDetails({
       );
     } finally {
       setSavingCompany(false);
+    }
+  }
+
+  async function handleToggleStatus() {
+    const nextStatus = user.status === "SUSPENDED" ? "ACTIVE" : "SUSPENDED";
+    const reason = window.prompt(
+      `${nextStatus === "SUSPENDED" ? "Optional reason for pausing" : "Optional reason for unpausing"} ${user.name}:`,
+      "",
+    );
+    if (reason === null) return;
+
+    setSavingStatus(true);
+    try {
+      await onUserStatusChange?.(user.id, nextStatus, reason.trim() || undefined);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to update user status");
+    } finally {
+      setSavingStatus(false);
     }
   }
 
@@ -380,6 +422,18 @@ function UserDetails({
           <span className="text-(length:--text-xs) bg-(--accent-blue-glow) text-(--accent-blue) px-1.5 py-px rounded-(--radius-sm) font-semibold">
             Connected
           </span>
+        </div>
+      )}
+
+      {canManageStatus && !isSelf && (
+        <div className="pt-2">
+          <button
+            onClick={handleToggleStatus}
+            disabled={savingStatus}
+            className="px-3 py-1.5 rounded-(--radius-lg) text-(length:--text-xs) font-semibold bg-(--secondary) border border-(--border-subtle) text-(--foreground) hover:border-(--accent-amber)/50 disabled:opacity-50"
+          >
+            {savingStatus ? "Saving..." : user.status === "SUSPENDED" ? "Unpause User" : "Pause User"}
+          </button>
         </div>
       )}
 

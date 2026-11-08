@@ -79,8 +79,9 @@ export async function fetchUsers() {
   return api<{ users: User[] }>("GET", "/api/admin/users");
 }
 
-export async function fetchAssets() {
-  return api<{ assets: Asset[] }>("GET", "/api/admin/assets");
+export async function fetchAssets(moderation?: string) {
+  const query = moderation ? `?moderation=${encodeURIComponent(moderation)}` : "";
+  return api<{ assets: Asset[] }>("GET", `/api/admin/assets${query}`);
 }
 
 export async function fetchMessages() {
@@ -120,6 +121,31 @@ export async function deleteUser(userId: string) {
 
 export async function updateUser(userId: string, data: { companyCode?: string | null; name?: string; team?: string; email?: string }) {
   return api<{ user: User; message: string }>("PATCH", `/api/admin/users/${userId}`, data);
+}
+
+export async function updateUserStatus(userId: string, data: { status: "ACTIVE" | "SUSPENDED"; reason?: string }) {
+  return api<{ user: Pick<User, "id" | "status">; message: string }>("PATCH", `/api/admin/users/${userId}/status`, data);
+}
+
+export async function updateAssetModeration(
+  assetId: string,
+  data: { moderation: "ACTIVE" | "PAUSED" | "FLAGGED_FOR_REMOVAL" | "REMOVED"; reason?: string },
+) {
+  return api<{ asset: Pick<Asset, "id" | "moderation">; message: string }>("PATCH", `/api/admin/assets/${assetId}/moderation`, data);
+}
+
+export interface AuditLog {
+  id: string;
+  actorUserId: string;
+  targetType: "USER" | "ASSET";
+  targetId: string;
+  action: string;
+  reason?: string | null;
+  createdAt: string;
+}
+
+export async function fetchAuditLogs() {
+  return api<{ logs: AuditLog[] }>("GET", "/api/admin/audit-logs?limit=50");
 }
 
 /* ─── Organization API ─── */

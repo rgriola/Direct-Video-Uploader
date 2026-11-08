@@ -24,11 +24,11 @@ export function useUsers(enabled = true) {
   });
 }
 
-export function useAssets(enabled = true) {
+export function useAssets(enabled = true, moderation?: string) {
   return useQuery({
-    queryKey: ["assets"],
+    queryKey: ["assets", moderation ?? "default"],
     queryFn: async () => {
-      const data = await fetchAssets();
+      const data = await fetchAssets(moderation);
       return data.assets;
     },
     refetchInterval: 15_000,

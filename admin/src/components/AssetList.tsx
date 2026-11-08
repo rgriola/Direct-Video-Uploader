@@ -19,6 +19,7 @@
  */
 
 import { useState } from "react";
+import { toast } from "sonner";
 import type { Asset } from "@/lib/types";
 import { panelHeader, subTextPanelHeader } from "@/lib/types";
 import { Icon, type IconName } from "./Icon";
@@ -64,9 +65,24 @@ function formatDuration(seconds: number | null | undefined): string {
 interface AssetListProps {
   assets?: Asset[];
   isLoading: boolean;
+  viewerRole?: string | null;
+  moderationFilter?: string;
+  onModerationFilterChange?: (moderation?: string) => void;
+  onModerate?: (
+    assetId: string,
+    moderation: "ACTIVE" | "PAUSED" | "FLAGGED_FOR_REMOVAL" | "REMOVED",
+    reason?: string,
+  ) => Promise<void>;
 }
 
-export function AssetList({ assets, isLoading }: AssetListProps) {
+export function AssetList({
+  assets,
+  isLoading,
+  viewerRole,
+  moderationFilter,
+  onModerationFilterChange,
+  onModerate,
+}: AssetListProps) {
   /* Accordion: only one row expanded at a time. Stores asset.id or null. */
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
@@ -80,6 +96,18 @@ export function AssetList({ assets, isLoading }: AssetListProps) {
             {assets?.length ?? 0}
           </span>
         </h2>
+        {(viewerRole === "ADMIN" || viewerRole === "SUPER_ADMIN") && (
+          <select
+            aria-label="Filter assets by moderation"
+            value={moderationFilter ?? ""}
+            onChange={(event) => onModerationFilterChange?.(event.target.value || undefined)}
+            className="px-2 py-1 rounded-(--radius-md) text-(length:--text-xs) bg-(--card) border border-(--border) text-(--foreground)"
+          >
+            <option value="">Active assets</option>
+            <option value="PAUSED">Paused assets</option>
+            {viewerRole === "SUPER_ADMIN" && <option value="FLAGGED_FOR_REMOVAL">Removal queue</option>}
+          </select>
+        )}
       </div>
 
       {/* Scrollable list — max 400px, then scrolls */}
@@ -95,6 +123,8 @@ export function AssetList({ assets, isLoading }: AssetListProps) {
               asset={asset}
               isExpanded={expandedId === asset.id}
               onToggle={() => setExpandedId(expandedId === asset.id ? null : asset.id)}
+              viewerRole={viewerRole}
+              onModerate={onModerate}
             />
           ))
         )}
@@ -113,9 +143,11 @@ interface AssetRowProps {
   asset: Asset;
   isExpanded: boolean;
   onToggle: () => void;
+  viewerRole?: string | null;
+  onModerate?: AssetListProps["onModerate"];
 }
 
-function AssetRow({ asset, isExpanded, onToggle }: AssetRowProps) {
+function AssetRow({ asset, isExpanded, onToggle, viewerRole, onModerate }: AssetRowProps) {
   const clip = asset.clips?.[0];
   const missingForm = !asset.formResponse && asset.status === "READY";
 
@@ -135,9 +167,45 @@ function AssetRow({ asset, isExpanded, onToggle }: AssetRowProps) {
 
   // Clip viewer URL: prefer mediasourceUrl, fall back to /clips/:id
   const clipUrl = asset.mediasourceUrl || `/clips/${asset.mediasourceId || asset.id}`;
+  const isSuperAdmin = viewerRole === "SUPER_ADMIN";
+
+  async function changeModeration(
+    moderation: "ACTIVE" | "PAUSED" | "FLAGGED_FOR_REMOVAL" | "REMOVED",
+  ) {
+    let reason: string | undefined;
+    if (moderation === "FLAGGED_FOR_REMOVAL" || moderation === "REMOVED") {
+      if (moderation === "REMOVED" && asset.moderation === "REMOVED") {
+        reason = asset.moderationReason ?? "Retry media cleanup";
+      } else {
+        const entered = window.prompt(
+          moderation === "REMOVED" ? "Reason for permanent removal:" : "Reason for flagging this asset:",
+          "",
+        );
+        if (entered === null) return;
+        reason = entered.trim();
+        if (!reason) {
+          toast.error("A reason is required");
+          return;
+        }
+      }
+    } else {
+      const entered = window.prompt("Optional moderation note:", "");
+      if (entered === null) return;
+      reason = entered.trim() || undefined;
+    }
+
+    if (
+      moderation === "REMOVED" &&
+      asset.moderation !== "REMOVED" &&
+      !window.confirm("Permanently remove this asset and delete its media? This cannot be undone.")
+    ) {
+      return;
+    }
+    await onModerate?.(asset.id, moderation, reason);
+  }
 
   return (
-    <div className={`border-b border-(--border-subtle) last:border-b-0 ${missingForm ? "border-l-3 border-l-(--accent-red) bg-(--accent-red-glow)" : ""}`}>
+    <div className={`border-b border-(--border-subtle) last:border-b-0 ${missingForm ? "border-l-3 border-l-(--accent-red) bg-(--accent-red-glow)" : ""} ${asset.moderation !== "ACTIVE" ? "opacity-80" : ""}`}>
 
       {/* ── Collapsed row — always visible, click to toggle ── */}
       <button
@@ -173,6 +241,11 @@ function AssetRow({ asset, isExpanded, onToggle }: AssetRowProps) {
           <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-(--radius-md) text-(length:--text-xs) font-semibold ${statusClasses[asset.status] ?? ""}`}>
             {asset.status}
           </span>
+          {asset.moderation !== "ACTIVE" && (
+            <span className="inline-flex items-center px-2 py-0.5 rounded-(--radius-md) text-(length:--text-xs) font-semibold bg-(--accent-amber-glow) text-(--accent-amber)">
+              {asset.moderation === "FLAGGED_FOR_REMOVAL" ? "FLAGGED" : asset.moderation}
+            </span>
+          )}
           <Icon
             name="expand"
             className={`shrink-0 w-4 h-4 text-(--muted-foreground) transition-transform ${isExpanded ? "rotate-180" : ""}`}
@@ -200,23 +273,94 @@ function AssetRow({ asset, isExpanded, onToggle }: AssetRowProps) {
           {/* Clip details (resolution, codec, orientation, file size, duration) */}
           {clip && <ClipSection clip={clip} />}
 
+          {asset.moderationReason && (
+            <p className="mb-3 text-(length:--text-xs) text-(--muted-foreground)">
+              Moderation note: {asset.moderationReason}
+            </p>
+          )}
+
+          {onModerate && viewerRole && (
+            <div className="flex flex-wrap gap-2 py-2">
+              {asset.moderation === "ACTIVE" && (
+                <>
+                  <ModerationButton label="Pause playback" onClick={() => void changeModeration("PAUSED")} />
+                  <ModerationButton label="Flag for removal" onClick={() => void changeModeration("FLAGGED_FOR_REMOVAL")} />
+                </>
+              )}
+              {asset.moderation === "PAUSED" && (
+                <>
+                  <ModerationButton
+                    label="Retry playback revocation"
+                    onClick={() => void changeModeration("PAUSED")}
+                  />
+                  <ModerationButton label="Unpause" onClick={() => void changeModeration("ACTIVE")} />
+                  <ModerationButton label="Flag for removal" onClick={() => void changeModeration("FLAGGED_FOR_REMOVAL")} />
+                </>
+              )}
+              {asset.moderation === "FLAGGED_FOR_REMOVAL" && isSuperAdmin && (
+                <>
+                  <ModerationButton
+                    label="Retry playback revocation"
+                    onClick={() => void changeModeration("FLAGGED_FOR_REMOVAL")}
+                  />
+                  <ModerationButton label="Restore asset" onClick={() => void changeModeration("ACTIVE")} />
+                  <ModerationButton
+                    label="Remove permanently"
+                    destructive
+                    onClick={() => void changeModeration("REMOVED")}
+                  />
+                </>
+              )}
+            </div>
+          )}
+
           {/* Footer: timestamp + clip viewer link */}
           <div className="flex items-center justify-between mt-2 pt-2 border-t border-(--border-subtle)">
             <span className="text-(length:--text-xs) text-(--muted-foreground)">
               {asset.createdAt ? new Date(asset.createdAt).toLocaleString() : ""}
             </span>
-            <a
-              href={clipUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-(length:--text-xs) font-semibold text-(--accent-blue) hover:underline no-underline inline-flex items-center gap-1"
-            >
-              Play Clip <Icon name="arrowUpRight" />
-            </a>
+            {asset.moderation === "ACTIVE" ? (
+              <a
+                href={clipUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-(length:--text-xs) font-semibold text-(--accent-blue) hover:underline no-underline inline-flex items-center gap-1"
+              >
+                Play Clip <Icon name="arrowUpRight" />
+              </a>
+            ) : (
+              <span className="text-(length:--text-xs) text-(--muted-foreground)">
+                Playback disabled while {asset.moderation.toLowerCase().replace(/_/g, " ")}
+              </span>
+            )}
           </div>
         </div>
       )}
     </div>
+  );
+}
+
+function ModerationButton({
+  label,
+  onClick,
+  destructive = false,
+}: {
+  label: string;
+  onClick: () => void;
+  destructive?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`px-3 py-1.5 rounded-(--radius-lg) text-(length:--text-xs) font-semibold border ${
+        destructive
+          ? "border-(--accent-red)/40 text-(--accent-red) hover:bg-(--accent-red-glow)"
+          : "border-(--border-subtle) text-(--foreground) hover:border-(--accent-blue)/50"
+      }`}
+    >
+      {label}
+    </button>
   );
 }
 
