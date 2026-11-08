@@ -4,6 +4,8 @@ Operational reference for the MacBook Air home server hosting Postgres 18 + Fast
 
 **Domains:** As of Oct 11, 2026 the apex `ms-fixer.com` (production, used by the iOS Release build and the public site) and `dev.ms-fixer.com` (kept as a secondary/testing hostname) both route through the same Cloudflare Tunnel to this home server. Cloud Run no longer receives any traffic for either hostname.
 
+We do not use Google Cloud or Render. 
+
 ## Services running on this Mac
 
 | Service | Managed by | Plist/config |
@@ -64,7 +66,7 @@ launchctl load ~/Library/LaunchAgents/com.msfixer.fastify.plist
 ```
 
 ## Schema changes
-
+>> NOTE We do not run anything on google or render. These are legacy set ups. we run our own Database on a laptop"
 **Cloud Build caution:** `cloudbuild.yaml` still runs `prisma db push --accept-data-loss`.
 Confirm its trigger is disabled or replace and validate that workflow before a merge
 that could invoke it. The Cloud database's migration baseline has not been verified.
