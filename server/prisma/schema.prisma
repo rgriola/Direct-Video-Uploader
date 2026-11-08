@@ -32,6 +32,8 @@ model User {
   pinHash     String     @map("pin_hash")
   role        UserRole   @default(USER) @map("role")
   status      UserStatus @default(ACTIVE)
+  pausedAt    DateTime?  @map("paused_at")
+  pausedById  String?    @map("paused_by_id")
   lastLoginAt DateTime?  @map("last_login_at")
   createdAt   DateTime   @default(now()) @map("created_at")
   updatedAt   DateTime   @updatedAt @map("updated_at")
@@ -64,6 +66,10 @@ model Asset {
   clipCount        Int         @default(0) @map("clip_count")
   totalDuration    Int         @default(0) @map("total_duration_seconds")
   status           AssetStatus @default(UPLOADING)
+  moderation       AssetModeration @default(ACTIVE)
+  moderatedAt      DateTime?   @map("moderated_at")
+  moderatedById    String?     @map("moderated_by_id")
+  moderationReason String?     @map("moderation_reason")
   createdAt        DateTime    @default(now()) @map("created_at")
   updatedAt        DateTime    @updatedAt @map("updated_at")
 
@@ -73,6 +79,7 @@ model Asset {
   messages     ChatMessage[]
 
   @@index([userId])
+  @@index([moderation, createdAt])
   @@map("assets")
 }
 
@@ -81,6 +88,32 @@ enum AssetStatus {
   PROCESSING
   READY
   ERROR
+}
+
+enum AssetModeration {
+  ACTIVE
+  PAUSED
+  FLAGGED_FOR_REMOVAL
+  REMOVED
+}
+
+enum AuditTargetType {
+  USER
+  ASSET
+}
+
+model AuditLog {
+  id          String          @id @default(uuid())
+  actorUserId String          @map("actor_user_id")
+  targetType  AuditTargetType @map("target_type")
+  targetId    String          @map("target_id")
+  action      String          @db.VarChar(50)
+  reason      String?
+  createdAt   DateTime        @default(now()) @map("created_at")
+
+  @@index([targetType, targetId, createdAt])
+  @@index([actorUserId, createdAt])
+  @@map("audit_logs")
 }
 
 // ─── Clips (individual video files) ──────────────────────
