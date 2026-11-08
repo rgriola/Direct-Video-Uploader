@@ -1,8 +1,8 @@
 # Fixer Roadmap — iOS Modernization → Web App Expansion
 
-_Drafted: October 19, 2026 · Updated: November 6, 2026_
+_Drafted: October 19, 2026 · Updated: November 7, 2026_
 _Owner: Rod_
-_Status: **In progress** — Step 1 verified; Step 2.1 live; Step 2.3 in workspace_
+_Status: **In progress** — Step 1 verified; Steps 2.1 and 2.3 deployed; Step 2.2 implemented, migration/deployment pending_
 
 ```mermaid
 flowchart TD
@@ -61,15 +61,15 @@ flowchart TD
 | iOS hot spot | `ChatViewModel.swift` is 1,582 lines | Don't touch in Step 1. |
 | iOS ↔ roles | iOS `User` model doesn't decode `role` | New roles won't break the app. ✅ |
 | Server roles | `SUPER_ADMIN`, `ADMIN`, and `USER` are deployed; one Team Admin has no organization | Assign that account an organization before deploying team scoping. |
-| Server auth | Role guards and HTTP team scoping are implemented and tested in the workspace, not yet deployed | Socket.IO and media access are separate outstanding isolation work. |
+| Server auth | Role guards and HTTP team scoping were deployed on Nov 7, 2026 (per Rod) | Socket.IO event scoping remains open (2.4); this does not scope every real-time event. |
 | User status | `UserStatus { ACTIVE, SUSPENDED }` already exists | "Pause a member" maps to `SUSPENDED`. Label it **Paused** in the UI. No enum change needed. |
-| Video soft delete | No moderation state on `Asset`. Deletes are hard deletes | Add a moderation state (Step 2.2). |
-| Migrations | Versioned migrations are committed and applied on the home server | Cloud Build still needs its separate destructive `db push` workflow addressed. |
+| Video moderation | Step 2.2 moderation states and server/admin controls are implemented; migration is not yet applied | Pause/flag/remove revokes Mux public playback IDs; unpause/restore issues a new ID. Apply the migration before deploying. |
+| Migrations | Versioned migrations are committed and applied on the home server | Cloud Build and Render are no longer used; their legacy scripts still need safe migration workflows if reused. |
 | Original files | iOS uploads **straight to Mux** (direct-upload PUT). The original never reaches our server. Mux doesn't give back the byte-exact original | Keeping originals means changing the upload pipeline (Step 4). |
 | Legacy local path | `Clip.storageUrl` + an `uploads/` folder exist. The Mux webhook **deletes** the local file after `mux:ready` (`mux-webhooks.js:145`) | Reuse the idea, but keep the file instead of deleting it. |
 | ⚠️ Public uploads folder | `index.js:267` serves `uploads/` with `@fastify/static` and **no auth**. Through the tunnel, anything placed there is publicly downloadable by URL | Must be removed or put behind auth **before** originals are stored (Step 4.1). |
 | Thumbnails | Webhook already writes `Clip.thumbnailUrl` (`image.mux.com/<id>/thumbnail.png?width=640`) | Thumbnails are frontend-only work. |
-| Mux settings | `playback_policy: public`, `cors_origin: '*'` | Fine for playback. Downloads come from our storage, so Mux static MP4s aren't needed. |
+| Mux settings | Uploads still begin with `playback_policy: public`, `cors_origin: '*'` | Step 2.2 deletes public playback IDs when an asset is paused, flagged, or removed; restoring playback creates a new ID, so old public URLs stay revoked. |
 | Admin web app | One `App.tsx`, no router. Active theme: `theme-a-editorial.css` (imported in `main.tsx`). Three alternates sit unused | See the Themes note in Step 3. |
 
 ---
@@ -327,12 +327,12 @@ Compliant: system toolbars, tab bar, alerts and confirmation dialogs, the full-w
 - [x] Baseline migration: `migrations/20260928133253_init` (from `main`) matches `schema.prisma` and is applied on the home server (`prisma migrate status`: up to date)
 - [x] Commit `server/prisma/migrations/`
 - [x] Home server uses `prisma migrate deploy` only (runbook). Removed the `db:push` npm script
-- [ ] Cloud Build (`cloudbuild.yaml`) and the unused `scripts/render-build.sh` still run `db push --accept-data-loss`. Switching Cloud SQL to `migrate deploy` needs `prisma migrate resolve --applied 20260928133253_init` there first
+- [ ] Before reusing the legacy Cloud Build or Render workflows, replace their `db push --accept-data-loss` commands and verify the database migration baseline. The Render script also seeds demo accounts.
 - [x] Take a `pg_dump` before the first real migration (`scripts/pg-backup.sh`)
 
-**Cloud Build caution:** `cloudbuild.yaml` still uses `db push --accept-data-loss`. Before
-any merge that could trigger Cloud Build, verify whether that trigger is active and disable
-or safely migrate its database workflow; home-server deployment alone does not address it.
+**Legacy cloud workflows:** The owner confirmed on Nov 7, 2026 that Cloud Build and Render
+are no longer used. Their configuration files remain in the repository and must be
+reviewed and migrated safely before either workflow is reused.
 
 ### 2.1 Roles & Super Admin Seed
 
@@ -358,9 +358,9 @@ or safely migrate its database workflow; home-server deployment alone does not a
 ### 2.2 Pause, Flag & Remove (Soft Delete)
 
 **Members:**
-- [ ] Pause = `User.status = SUSPENDED` (shown as **Paused**)
-- [ ] Add `pausedAt`, `pausedById`
-- [ ] Paused users can't log in (the `authenticate` check already enforces `status`). Their videos stay visible to admins
+- [x] Pause = `User.status = SUSPENDED` (shown as **Paused**)
+- [x] Add `pausedAt`, `pausedById`
+- [x] Paused users can't log in (the `authenticate` check already enforces `status`). Their videos stay visible to admins; active WebSocket sessions are disconnected on pause.
 
 **Videos:** add a moderation state that is separate from processing `status`:
 
@@ -371,15 +371,24 @@ or safely migrate its database workflow; home-server deployment alone does not a
 | `FLAGGED_FOR_REMOVAL` | Team Admin, Super Admin | Super admin removal queue | Yes, Super Admin can restore |
 | `REMOVED` | **Super Admin only** | Nobody (audit row kept) | No. Original file and Mux asset are deleted |
 
-- [ ] Fields: `moderation`, `moderatedAt`, `moderatedById`, `moderationReason`
-- [ ] All list queries default to `moderation = ACTIVE`. Admin views can opt in to see paused/flagged items
-- [ ] Removal job: delete the stored original (Step 4), delete the Mux asset, revoke share links (Step 5), keep the DB row as a tombstone
-- [ ] Audit log table: who did what to which user/video, and when. Super Admin can view it
+- [x] Fields: `moderation`, `moderatedAt`, `moderatedById`, `moderationReason`
+- [x] Asset lists default to active for admins; owners continue to see their active and paused assets. Admins can opt in to paused assets; only Super Admin can view flagged assets. The iOS Archive keeps older paused assets visible, labels them **Paused**, and suppresses playback, sharing, and retry actions.
+- [ ] Removal marks a tombstone, deletes Mux media and any legacy local original, and supports retry from the Super Admin audit log when cleanup fails. Share-link revocation is deferred until Step 5 adds share links; Step 4 must wire original-file storage into removal.
+- [x] Audit log table records actor, target, action, reason, and time; Super Admin can view the log.
+
+**Implementation/rollout status (Nov 7, 2026):** Server, dashboard, and iOS Archive changes are implemented; the additive migration
+has not been applied and Step 2.2 is not deployed. The iOS Archive decodes moderation,
+keeps paused assets visible regardless of age, and suppresses their playback, sharing,
+and retry actions. Mux playback revocation is not instantaneous for viewers already
+playing a video; Mux may let an existing session continue briefly after its playback ID
+is deleted. The unauthenticated `/uploads/` static path remains a separate exposure:
+legacy local files reachable there cannot be paused reliably until Step 4.1 replaces or
+protects that path. Apply the migration on the home server before deploying the code.
 
 ### 2.3 API Authorization & Team Scoping
 
-**Workspace implementation:** HTTP scoping and dashboard role gating are implemented and
-locally tested, but not committed or deployed. Step 2 as a whole is not complete.
+**Deployment status (Nov 7, 2026):** Rod reports that Step 2.3 was deployed. Step 2 as a
+whole is not complete.
 
 - [x] `requireRole` replaces `authorizeAdmin` and the inline admin check.
 - [x] `userScope(user)` and `teamScope(user)` produce Prisma filters: Super Admin sees all,
@@ -510,10 +519,9 @@ are public, and `/uploads/` is unauthenticated (4.1). Do not treat HTTP scoping 
 end-to-end media or real-time isolation. Dashboard sign-in still uses phone and PIN without
 a company code; the planned web-login policy remains part of Step 3. Stored auth tokens
 are not bound to their issuing server across launches, and existing transport and logout
-hardening still need a separate review. Verify or disable the Cloud Build and Render
-deployment triggers and replace their destructive `prisma db push --accept-data-loss`
-workflows before a merge that could invoke them; the cloud database migration baselines
-are not verified. The Render build script also seeds demo accounts.
+hardening still need a separate review. Cloud Build and Render are no longer used, per
+the owner; their legacy scripts retain destructive schema-push behavior and must be
+reviewed before any reuse. The Render build script also seeds demo accounts.
 
 ### 2.4 Real-Time (Socket.IO) Scoping
 
