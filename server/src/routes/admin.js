@@ -10,6 +10,7 @@ import { deleteMuxAsset, isMuxEnabled } from '../lib/mux.js';
 import { redactCompanyCode, redactPersonName, redactPhoneNumber } from '../lib/redact.js';
 import { teamScope, userScope } from '../lib/authorization.js';
 import { checkRoleChange, isSuperAdmin, ROLES, sameOrganization } from '../lib/roles.js';
+import { invalidateUserSockets } from '../ws/rooms.js';
 
 const ALL_ROLES = [ROLES.SUPER_ADMIN, ROLES.ADMIN, ROLES.USER];
 const ADMIN_ROLES = [ROLES.SUPER_ADMIN, ROLES.ADMIN];
@@ -520,6 +521,7 @@ export default async function adminRoutes(fastify) {
             },
         });
         await prisma.user.delete({ where: { id } });
+        invalidateUserSockets(fastify, [id]);
 
         request.log.warn(
             {
@@ -662,7 +664,7 @@ export default async function adminRoutes(fastify) {
         // Use a transaction to safely handle FK when changing code:
         // 1. Null out users' FK → 2. Update org → 3. Re-assign users
         const isCodeChange = data.companyCode && data.companyCode !== code;
-        const updated = await prisma.$transaction(async (tx) => {
+        const { updated, affectedUserIds } = await prisma.$transaction(async (tx) => {
             let affectedUserIds = [];
             if (isCodeChange) {
                 // Find which users have the old code before nulling
@@ -690,8 +692,10 @@ export default async function adminRoutes(fastify) {
                 });
             }
 
-            return org;
+            return { updated: org, affectedUserIds };
         });
+
+        invalidateUserSockets(fastify, affectedUserIds, { dashboardOnly: true });
 
         request.log.info(
             { companyName: updated.companyName, companyCode: updated.companyCode },
@@ -811,6 +815,10 @@ export default async function adminRoutes(fastify) {
             throw err;
         }
 
+        if (updated.companyCode !== user.companyCode) {
+            invalidateUserSockets(fastify, [id], { dashboardOnly: true });
+        }
+
         request.log.info(
             {
                 userName: redactPersonName(updated.name),
@@ -867,6 +875,7 @@ export default async function adminRoutes(fastify) {
         if (result.count !== 1) {
             return reply.status(404).send({ error: 'User not found' });
         }
+        invalidateUserSockets(fastify, [id], { dashboardOnly: true });
         const updated = { id: target.id, name: target.name, role, companyCode: target.companyCode };
 
         request.log.warn(

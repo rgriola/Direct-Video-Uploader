@@ -2,7 +2,7 @@
 
 _Drafted: October 19, 2026 · Updated: November 7, 2026_
 _Owner: Rod_
-_Status: **In progress** — Step 1 verified; Steps 2.1 and 2.3 deployed; Step 2.2 implemented, migration/deployment pending_
+_Status: **In progress** — Step 1 verified; Steps 2.1 and 2.3 deployed; Steps 2.2 and 2.4 implemented, deployment pending; Step 2.2 migration pending_
 
 ```mermaid
 flowchart TD
@@ -61,7 +61,7 @@ flowchart TD
 | iOS hot spot | `ChatViewModel.swift` is 1,582 lines | Don't touch in Step 1. |
 | iOS ↔ roles | iOS `User` model doesn't decode `role` | New roles won't break the app. ✅ |
 | Server roles | `SUPER_ADMIN`, `ADMIN`, and `USER` are deployed; one Team Admin has no organization | Assign that account an organization before deploying team scoping. |
-| Server auth | Role guards and HTTP team scoping were deployed on Nov 7, 2026 (per Rod) | Socket.IO event scoping remains open (2.4); this does not scope every real-time event. |
+| Server auth | Role guards and HTTP team scoping were deployed on Nov 7, 2026 (per Rod); Step 2.4 socket scoping is implemented in the workspace | Deploy Step 2.4 with the matching dashboard after the Step 2.2 migration. |
 | User status | `UserStatus { ACTIVE, SUSPENDED }` already exists | "Pause a member" maps to `SUSPENDED`. Label it **Paused** in the UI. No enum change needed. |
 | Video moderation | Step 2.2 moderation states and server/admin controls are implemented; migration is not yet applied | Pause/flag/remove revokes Mux public playback IDs; unpause/restore issues a new ID. Apply the migration before deploying. |
 | Migrations | Versioned migrations are committed and applied on the home server | Cloud Build and Render are no longer used; their legacy scripts still need safe migration workflows if reused. |
@@ -376,14 +376,15 @@ reviewed and migrated safely before either workflow is reused.
 - [ ] Removal marks a tombstone, deletes Mux media and any legacy local original, and supports retry from the Super Admin audit log when cleanup fails. Share-link revocation is deferred until Step 5 adds share links; Step 4 must wire original-file storage into removal.
 - [x] Audit log table records actor, target, action, reason, and time; Super Admin can view the log.
 
-**Implementation/rollout status (Nov 7, 2026):** Server, dashboard, and iOS Archive changes are implemented; the additive migration
-has not been applied and Step 2.2 is not deployed. The iOS Archive decodes moderation,
-keeps paused assets visible regardless of age, and suppresses their playback, sharing,
-and retry actions. Mux playback revocation is not instantaneous for viewers already
-playing a video; Mux may let an existing session continue briefly after its playback ID
-is deleted. The unauthenticated `/uploads/` static path remains a separate exposure:
-legacy local files reachable there cannot be paused reliably until Step 4.1 replaces or
-protects that path. Apply the migration on the home server before deploying the code.
+**Implementation/rollout status (Nov 7, 2026):**
+Server, dashboard, and iOS Archive changes are implemented; the additive migration has not been applied and Step 2.2 is not deployed. The iOS Archive decodes moderation, keeps paused assets visible regardless of age, and suppresses their playback, sharing, and retry actions.
+
+**Deployment is blocked on Mux moderation reconciliation:**
+Mux can create a public playback ID when a paused upload finishes processing. The ready webhook attempts to revoke it, but a missed or repeatedly failing webhook can leave that ID public; the sync job currently logs this condition without revoking it.
+
+Concurrent pause, unpause, and ready events can also race remote Mux operations. Resolve and test these cases before relying on pause or deploying Step 2.2. Revocation is not instantaneous for viewers already playing a video; Mux may let an existing session continue briefly after its playback ID is deleted.
+
+The unauthenticated `/uploads/` static path remains a separate exposure: legacy local files reachable there cannot be paused reliably until Step 4.1 replaces or protects that path. Apply the migration on the home server before deploying the code.
 
 ### 2.3 API Authorization & Team Scoping
 
@@ -401,7 +402,7 @@ whole is not complete.
 - [x] Restrict global diagnostics, cleanup, organization changes, and permanent user
   deletion to Super Admin. Team Admins can create members only in their own organization.
 - [x] **Decided: team = Organization** (`companyCode`). The free-text `User.team` field is a label only
-- [ ] Before rollout, assign the existing unassigned Team Admin to an organization and notify
+- [ ] SKIP >> Before rollout, assign the existing unassigned Team Admin to an organization and notify
   affected admins that their global access will become team-scoped.
 
 **iOS compatibility (workspace only):** Pending-form metadata is stored per account and
@@ -440,9 +441,7 @@ callbacks finish; physical-device verification remains required.
 
 **Additional client release blockers found in review:**
 
-- Photos-first trimming and account/server-scoped, fingerprint-verified photo associations
-  are implemented in the workspace; physical-device validation remains required. Failed
-  saves and asset creation retain the preview. Cancelling an already-submitted Photos
+- Photos-first trimming and account/server-scoped, fingerprint-verified photo associations are implemented in the workspace; physical-device validation remains required. Failed saves and asset creation retain the preview. Cancelling an already-submitted Photos
   transaction may still leave a copy in Photos. Legacy associations are preserved but
   never auto-selected, including earlier scoped v2 links whose provenance cannot be proved.
   Every Archive retry requires selecting and confirming a Photos representation. A v3 local
@@ -504,8 +503,8 @@ callbacks finish; physical-device verification remains required.
   a reliable dismissal-completion signal to the shared presentation gate. VoiceOver focus,
   queued announcements, and competing sheets need a lifecycle-safe solution before release.
 
-**Validation:** The current server coverage suite passed 173 tests in 22 files, including
-the disposable PostgreSQL authorization tests. The latest full iOS 27 simulator suite passed
+**Validation:** The current server coverage suite passed 209 tests in 24 files, including
+the disposable PostgreSQL authorization and Socket.IO tests. The latest full iOS 27 simulator suite passed
 227 tests in 29 suites, including the real background PUT, Photos-link, and retry-intent
 regressions; Swift source and test hashes were unchanged during the run. The Release simulator
 build also passed. The admin production build and iOS launch-screen guard also passed.
@@ -514,9 +513,9 @@ across tabs and sheets, keyboard validation, form dismissal, upload and recovery
 locked/unlocked file protection, and actual Socket.IO redirect behavior. Testing on the oldest
 supported iOS version also remains open.
 
-**Isolation is not complete:** Socket.IO events are still global (2.4), Mux playback URLs
-are public, and `/uploads/` is unauthenticated (4.1). Do not treat HTTP scoping alone as
-end-to-end media or real-time isolation. Dashboard sign-in still uses phone and PIN without
+**Isolation is not complete:** Step 2.4 socket scoping is implemented but not deployed;
+Mux playback URLs are public, and `/uploads/` is unauthenticated (4.1). Do not treat HTTP
+and socket scoping as end-to-end media isolation. Dashboard sign-in still uses phone and PIN without
 a company code; the planned web-login policy remains part of Step 3. Stored auth tokens
 are not bound to their issuing server across launches, and existing transport and logout
 hardening still need a separate review. Cloud Build and Render are no longer used, per
@@ -525,8 +524,27 @@ reviewed before any reuse. The Render build script also seeds demo accounts.
 
 ### 2.4 Real-Time (Socket.IO) Scoping
 
-- [ ] Audit every dashboard `emit`. Right now any dashboard socket may receive every org's events
-- [ ] Rooms: `team:<id>`, `user:<id>`, `super`. Emit to the narrowest room
+**Implementation/rollout status:** Implemented in the workspace; not yet deployed. Resolve the
+Step 2.2 Mux moderation blocker and apply its pending migration before deploying the server,
+then rebuild the dashboard and restart the server as described in the home-server runbook.
+
+- [x] Audit server emits. The existing rich upload, form, and Mux notifications were already
+  owner-targeted, rather than global dashboard broadcasts; keep their iOS payloads owner-only.
+- [x] Authenticate socket connections against current database status, role, and organization;
+  disconnect expired sessions and invalidate affected sockets on authorization changes.
+- [x] Join `user:<id>`, `team:<companyCode>`, and `super` rooms using server-checked identity.
+  Active-asset changes send a **payload-free** refresh to current team admins and super admins;
+  unassigned owners' changes go only to super admins. The dashboard rechecks access and clears
+  stale scoped data when its socket is invalidated.
+- [x] Exercise delivery, reauthorization, suspension, expiration, and cross-team isolation with
+  real Socket.IO clients; verify dashboard refresh and scope changes in a browser.
+- [ ] Deploy the server and dashboard and verify the behavior on the home server.
+
+Refresh delivery is best-effort; the dashboard also polls. Rooms, socket tracking, and
+revocation are process-local and assume the current single-process deployment. Multiple
+server instances would need a shared adapter and coordinated authorization invalidation.
+Authorization changes made directly in the database bypass socket invalidation; restart the
+server after such changes so existing connections must authenticate again.
 
 ### 2.5 Tests
 
@@ -535,6 +553,7 @@ reviewed before any reuse. The Render build script also seeds demo accounts.
 - [x] HTTP authorization integration tests use a disposable PostgreSQL database for multiple
   organizations, role scopes, shared clips, stale cookies, and destructive-operation guards.
   CI provisions that database and runs migrations before the coverage suite.
+- [x] Socket.IO integration tests cover owner-only payloads and scoped dashboard refreshes.
 - [ ] Moderation visibility tests (paused/flagged/removed hidden correctly)
 - [ ] Complete the full per-endpoint matrix, including moderation and Socket.IO.
 

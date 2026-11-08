@@ -8,6 +8,8 @@ import { generateMediasourceId, dbRetry, parseClientMetadata, serializeClip, not
 import { isMuxEnabled, createDirectUpload } from '../lib/mux.js';
 import { teamScope } from '../lib/authorization.js';
 import { isSuperAdmin } from '../lib/roles.js';
+import { notifyDashboardAssetChange } from '../ws/dashboard-notifications.js';
+import { userRoom } from '../ws/rooms.js';
 
 // Allowed video MIME types — kept for reference if local upload is re-enabled
 const ALLOWED_VIDEO_MIMES = new Set([
@@ -55,6 +57,8 @@ export default async function assetRoutes(fastify) {
                 status: 'UPLOADING',
             },
         }));
+
+        await notifyDashboardAssetChange(fastify, asset.id);
 
         return {
             asset: {
@@ -221,7 +225,7 @@ export default async function assetRoutes(fastify) {
         // Push form request via WebSocket
         const originalName = clientMeta.fileName || asset.originalFileName || asset.mediasourceId;
 
-        notifyUserSockets(fastify.io, fastify.userSockets?.get(request.user.id), {
+        notifyUserSockets(fastify.io, request.user.id, {
             assetId: id,
             asset: { mediasourceId: asset.mediasourceId, mediasourceUrl: asset.mediasourceUrl, originalFileName: originalName },
             userName: request.user.name,
@@ -229,6 +233,7 @@ export default async function assetRoutes(fastify) {
             clip: { id: clipId, fileSize: clientMeta.fileSize || '0' },
             messageText: `🎬 #${asset.mediasourceId} uploading to Mediasoure.`,
         });
+        await notifyDashboardAssetChange(fastify, id);
 
         return {
             uploadUrl: muxResult.uploadUrl,
@@ -385,29 +390,23 @@ export default async function assetRoutes(fastify) {
         });
 
         // Push confirmation via WebSocket — include metadata for rich confirmation card
-        const io = fastify.io;
-        const userSockets = fastify.userSockets?.get(request.user.id);
         const clip = asset.clips?.[0];
         const messageFallbackText = "High five. I'll text when the video is done. Metadata is ready, and you can Slack your team below.";
-        if (userSockets) {
-            for (const socketId of userSockets) {
-                io.to(socketId).emit('form:confirmed', {
-                    assetId: id,
-                    mediasourceId: asset.mediasourceId,
-                    mediasourceUrl: asset.mediasourceUrl,
-                    originalFileName: asset.originalFileName ?? clip?.originalFileName,
-                    capturedAt: clip?.capturedAt?.toISOString(),
-                    formType: formResponse.type,
-                    formDescription: formResponse.description,
-                    formPriority: formResponse.priority,
-                    messageCode: 'WS_FORM_CONFIRMED',
-                    messageParams: {},
-                    messageFallbackText,
-                    messageSchemaVersion: 1,
-                    message: messageFallbackText,
-                });
-            }
-        }
+        fastify.io.to(userRoom(request.user.id)).emit('form:confirmed', {
+            assetId: id,
+            mediasourceId: asset.mediasourceId,
+            mediasourceUrl: asset.mediasourceUrl,
+            originalFileName: asset.originalFileName ?? clip?.originalFileName,
+            capturedAt: clip?.capturedAt?.toISOString(),
+            formType: formResponse.type,
+            formDescription: formResponse.description,
+            formPriority: formResponse.priority,
+            messageCode: 'WS_FORM_CONFIRMED',
+            messageParams: {},
+            messageFallbackText,
+            messageSchemaVersion: 1,
+            message: messageFallbackText,
+        });
 
         // Persist user's form submission (meaningful event); confirmation is ephemeral (Option B)
         await prisma.chatMessage.create({
@@ -427,6 +426,8 @@ export default async function assetRoutes(fastify) {
                 },
             },
         });
+
+        await notifyDashboardAssetChange(fastify, id);
 
         return { formResponse };
     });

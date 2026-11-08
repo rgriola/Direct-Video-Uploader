@@ -34,6 +34,7 @@ const muxMock = {
     createDirectUpload: vi.fn(),
     getMuxUpload: vi.fn(),
 };
+const notifyDashboardAssetChange = vi.fn();
 
 vi.mock('../lib/prisma.js', () => ({
     default: prismaMock,
@@ -45,6 +46,7 @@ vi.mock('../lib/mux.js', () => ({
     getMuxUpload: muxMock.getMuxUpload,
     MUX_ENV_KEY: 'test-env',
 }));
+vi.mock('../ws/dashboard-notifications.js', () => ({ notifyDashboardAssetChange }));
 
 let assetRoutes;
 let app;
@@ -57,6 +59,7 @@ beforeAll(async () => {
 
 beforeEach(async () => {
     vi.clearAllMocks();
+    notifyDashboardAssetChange.mockResolvedValue(undefined);
 
     prismaMock.$executeRawUnsafe.mockResolvedValue(undefined);
     prismaMock.$queryRawUnsafe.mockResolvedValue([{ val: 100000001 }]);
@@ -136,6 +139,8 @@ describe('assets route deeper coverage', () => {
         const body = response.json();
         expect(body.asset.mediasourceId).toBe('100000001');
         expect(body.asset.status).toBe('UPLOADING');
+        expect(notifyDashboardAssetChange.mock.calls[0][0].io).toBe(app.io);
+        expect(notifyDashboardAssetChange.mock.calls[0][1]).toBe('asset-1');
     });
 
     it('rejects unsupported mux upload mime types', async () => {
@@ -331,7 +336,9 @@ describe('assets route deeper coverage', () => {
         expect(prismaMock.clip.delete).toHaveBeenCalledWith({ where: { id: 'clip-stale' } });
         expect(prismaMock.clip.create).toHaveBeenCalledTimes(1);
         expect(prismaMock.asset.update).toHaveBeenCalled();
-        expect(ioToSpy).toHaveBeenCalledWith('socket-1');
+        expect(ioToSpy).toHaveBeenCalledWith('user:user-1');
+        expect(notifyDashboardAssetChange.mock.calls[0][0].io).toBe(app.io);
+        expect(notifyDashboardAssetChange.mock.calls[0][1]).toBe('asset-1');
         expect(ioEmitSpy).toHaveBeenCalledWith(
             'upload:complete',
             expect.objectContaining({
@@ -372,7 +379,9 @@ describe('assets route deeper coverage', () => {
         });
 
         expect(response.statusCode).toBe(200);
-        expect(ioToSpy).toHaveBeenCalledWith('socket-1');
+        expect(ioToSpy).toHaveBeenCalledWith('user:user-1');
+        expect(notifyDashboardAssetChange.mock.calls[0][0].io).toBe(app.io);
+        expect(notifyDashboardAssetChange.mock.calls[0][1]).toBe('asset-1');
         expect(ioEmitSpy).toHaveBeenCalledWith(
             'form:confirmed',
             expect.objectContaining({

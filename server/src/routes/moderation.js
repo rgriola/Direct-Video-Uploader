@@ -8,6 +8,7 @@ import {
 } from '../lib/mux.js';
 import { teamScope } from '../lib/authorization.js';
 import { isSuperAdmin, ROLES } from '../lib/roles.js';
+import { invalidateUserSockets } from '../ws/rooms.js';
 
 const ADMIN_ROLES = [ROLES.ADMIN, ROLES.SUPER_ADMIN];
 const MAX_REASON_LENGTH = 500;
@@ -32,13 +33,6 @@ function canTransitionModeration(current, next, isSuperAdmin) {
 
 function actorId(user) {
     return user.id;
-}
-
-function disconnectUserSockets(fastify, userId) {
-    const sockets = fastify.userSockets?.get(userId) || [];
-    for (const socketId of sockets) {
-        fastify.io?.sockets?.sockets?.get(socketId)?.disconnect(true);
-    }
 }
 
 async function writeUserStatus({ id, currentStatus, status, actor, reason, pausedAt, protectLastSuperAdmin }) {
@@ -248,7 +242,7 @@ export default async function moderationRoutes(fastify) {
             return reply.status(404).send({ error: 'User not found' });
         }
         if (target.status === status) {
-            if (status === 'SUSPENDED') disconnectUserSockets(fastify, id);
+            if (status === 'SUSPENDED') invalidateUserSockets(fastify, [id]);
             return { user: { id, status }, message: `User is already ${status === 'ACTIVE' ? 'active' : 'paused'}` };
         }
 
@@ -268,9 +262,7 @@ export default async function moderationRoutes(fastify) {
             return reply.status(409).send({ error: 'User status changed; refresh and try again' });
         }
 
-        if (status === 'SUSPENDED') {
-            disconnectUserSockets(fastify, id);
-        }
+        invalidateUserSockets(fastify, [id]);
 
         request.log.info({ targetUserId: id, status }, 'Admin changed user status');
         return { user: { id, status }, message: status === 'SUSPENDED' ? 'User paused' : 'User unpaused' };

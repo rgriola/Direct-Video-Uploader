@@ -50,7 +50,8 @@ beforeEach(async () => {
         request.user = { ...actor };
     });
     app.decorate('requireRole', requireRole);
-    app.decorate('io', { of: () => ({ sockets: new Map() }) });
+    app.decorate('io', { of: () => ({ sockets: new Map() }), sockets: { sockets: new Map() } });
+    app.decorate('socketAuthState', { revision: 0 });
     app.decorate('userSockets', new Map());
     app.decorate('iosSockets', new Set());
     app.decorate('adminSockets', new Set());
@@ -73,6 +74,24 @@ describe('PATCH /api/admin/users/:id/role', () => {
             where: { id: 'user-1', companyCode: 'NEWS', role: 'USER' },
             data: { role: 'ADMIN' },
         }));
+    });
+
+    it('reconnects dashboards after a role change without disconnecting iOS', async () => {
+        prismaMock.user.findFirst.mockResolvedValue(target());
+        const dashboard = { disconnect: vi.fn() };
+        const phone = { disconnect: vi.fn() };
+        app.userSockets.set('user-1', new Set(['dashboard', 'phone']));
+        app.adminSockets.add('dashboard');
+        app.iosSockets.add('phone');
+        app.io.sockets.sockets.set('dashboard', dashboard);
+        app.io.sockets.sockets.set('phone', phone);
+
+        const res = await patchRole('user-1', { role: 'ADMIN' });
+
+        expect(res.statusCode).toBe(200);
+        expect(app.socketAuthState.revision).toBe(1);
+        expect(dashboard.disconnect).toHaveBeenCalledWith(true);
+        expect(phone.disconnect).not.toHaveBeenCalled();
     });
 
     it('lets a team admin demote another team admin in their organization', async () => {
@@ -220,6 +239,28 @@ describe('PATCH /api/admin/users/:id/role', () => {
 });
 
 describe('PATCH /api/admin/users/:id organization guard', () => {
+    it('reconnects dashboards when a user moves organizations', async () => {
+        actor = SUPER;
+        prismaMock.user.findFirst.mockResolvedValue(target({ role: 'ADMIN' }));
+        prismaMock.organization.findUnique.mockResolvedValue({ companyCode: 'SPRT' });
+        const dashboard = { disconnect: vi.fn() };
+        const phone = { disconnect: vi.fn() };
+        app.userSockets.set('user-1', new Set(['dashboard', 'phone']));
+        app.adminSockets.add('dashboard');
+        app.iosSockets.add('phone');
+        app.io.sockets.sockets.set('dashboard', dashboard);
+        app.io.sockets.sockets.set('phone', phone);
+
+        const res = await app.inject({
+            method: 'PATCH', url: '/api/admin/users/user-1', payload: { companyCode: 'SPRT' },
+        });
+
+        expect(res.statusCode).toBe(200);
+        expect(app.socketAuthState.revision).toBe(1);
+        expect(dashboard.disconnect).toHaveBeenCalledWith(true);
+        expect(phone.disconnect).not.toHaveBeenCalled();
+    });
+
     it('refuses to remove the organization from an admin', async () => {
         actor = SUPER;
         prismaMock.user.findFirst.mockResolvedValue(target({ id: 'admin-2', role: 'ADMIN' }));

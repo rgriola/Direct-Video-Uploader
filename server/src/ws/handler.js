@@ -8,6 +8,8 @@ import prisma from '../lib/prisma.js';
 import * as slack from '../lib/slack.js';
 import { PUBLIC_URL } from '../lib/config.js';
 import { redactPersonName } from '../lib/redact.js';
+import { ROLES } from '../lib/roles.js';
+import { joinAuthorizedRooms } from './rooms.js';
 
 /** Greeting templates — `{time}` is replaced with time-of-day, `{name}` with first name. */
 const GREETINGS = [
@@ -100,6 +102,18 @@ function buildContent({ code, params = {}, fallbackText, text, ...extra }) {
     };
 }
 
+function emitSystemNote(socket, code, text) {
+    socket.emit('message:new', {
+        id: crypto.randomUUID(),
+        userId: null,
+        assetId: null,
+        direction: 'INCOMING',
+        messageType: 'SYSTEM_NOTE',
+        content: buildContent({ code, fallbackText: text }),
+        createdAt: new Date().toISOString(),
+    });
+}
+
 /**
  * Handle a Slack command — parse #channels and @mentions, post via Slack API,
  * persist to DB, and send confirmation/error bubble back to iOS.
@@ -153,8 +167,8 @@ async function handleSlackCommand(socket, userId, assetId, channels, mentions, o
     let asset = null;
     try {
         const where = assetId
-            ? { id: assetId, userId }
-            : { userId, status: 'READY' };
+            ? { id: assetId, userId, moderation: 'ACTIVE' }
+            : { userId, status: 'READY', moderation: 'ACTIVE' };
         asset = await prisma.asset.findFirst({
             where,
             orderBy: { createdAt: 'desc' },
@@ -301,6 +315,7 @@ export function setupWebSocket(io, fastify) {
     // Track which sockets belong to which user
     const userSockets = new Map(); // userId → Set<socketId>
     fastify.decorate('userSockets', userSockets);
+    fastify.decorate('socketAuthState', { revision: 0 });
 
     // Debounce map for text-message auto-replies: userId → { timer, texts[] }
     const pendingReplies = new Map();
@@ -318,36 +333,86 @@ export function setupWebSocket(io, fastify) {
     });
 
     io.use(async (socket, next) => {
+        const reject = (message) => {
+            next(new Error(message));
+            // Socket.IO queues CONNECT_ERROR on the next tick; iOS also needs the transport closed.
+            process.nextTick(() => socket.conn?.close());
+        };
+        const token = socket.handshake.auth?.token
+            || socket.handshake.headers?.authorization?.replace('Bearer ', '');
+
+        if (!token) {
+            log.warn({ socketId: socket.id }, 'WS auth rejected: no token provided');
+            return reject('Authentication required');
+        }
+
+        let decoded;
         try {
-            const token = socket.handshake.auth?.token
-                || socket.handshake.headers?.authorization?.replace('Bearer ', '');
-
-            if (!token) {
-                log.warn({ socketId: socket.id }, 'WS auth rejected: no token provided');
-                return next(new Error('Authentication required'));
-            }
-
-            // Verify JWT
-            const decoded = fastify.jwt.verify(token);
-            socket.userId = decoded.id;
-            socket.userName = decoded.name;
-            socket.phoneNumber = decoded.phoneNumber;
-
-            // Device tracking — sent from iOS in the Socket.IO CONNECT auth payload
-            socket.deviceId = socket.handshake.auth?.deviceId || null;
-            socket.deviceName = socket.handshake.auth?.deviceName || null;
-            socket.deviceModel = socket.handshake.auth?.deviceModel || null;
-            next();
+            decoded = fastify.jwt.verify(token);
         } catch (err) {
             log.warn({ err: { message: err.message }, socketId: socket.id }, 'WS auth rejected: token verification failed');
-            next(new Error('Invalid token'));
+            return reject('Invalid token');
         }
+        if (typeof decoded?.id !== 'string' || !decoded.id) {
+            log.warn({ socketId: socket.id }, 'WS auth rejected: token has no user ID');
+            return reject('Invalid token');
+        }
+
+        let user;
+        let revision;
+        try {
+            for (let attempt = 0; attempt < 3; attempt++) {
+                revision = fastify.socketAuthState.revision;
+                user = await prisma.user.findUnique({
+                    where: { id: decoded.id },
+                    select: { id: true, name: true, phoneNumber: true, role: true, status: true, companyCode: true },
+                });
+                if (revision === fastify.socketAuthState.revision) break;
+            }
+        } catch (err) {
+            log.error({ err: { message: err.message }, socketId: socket.id }, 'WS auth could not load user');
+            return reject('Authentication unavailable');
+        }
+
+        if (revision !== fastify.socketAuthState.revision) {
+            log.warn({ socketId: socket.id }, 'WS auth changed during connection');
+            return reject('Authorization changed; reconnect');
+        }
+        if (!user || user.status !== 'ACTIVE' || !Object.values(ROLES).includes(user.role)) {
+            log.warn({ userId: decoded.id, socketId: socket.id }, 'WS auth rejected: account unavailable');
+            return reject('Account unavailable');
+        }
+
+        socket.userId = user.id;
+        socket.userName = user.name;
+        socket.phoneNumber = user.phoneNumber;
+        socket.authUser = user;
+        socket.authRevision = revision;
+        socket.authExpiresAt = Number.isFinite(decoded.exp) ? decoded.exp * 1000 : null;
+
+        // Device tracking — sent from iOS in the Socket.IO CONNECT auth payload
+        socket.deviceId = socket.handshake.auth?.deviceId || null;
+        socket.deviceName = socket.handshake.auth?.deviceName || null;
+        socket.deviceModel = socket.handshake.auth?.deviceModel || null;
+        next();
     });
 
     io.on('connection', (socket) => {
+        if (socket.authRevision !== fastify.socketAuthState.revision) {
+            log.warn({ socketId: socket.id }, 'WS authorization changed before connection');
+            socket.disconnect(true);
+            return;
+        }
+        if (socket.authExpiresAt !== null && socket.authExpiresAt <= Date.now()) {
+            log.warn({ socketId: socket.id }, 'WS token expired before connection');
+            socket.disconnect(true);
+            return;
+        }
+
         const userId = socket.userId;
         const clientType = socket.handshake.auth?.clientType || 'unknown';
         socket.clientType = clientType;
+        joinAuthorizedRooms(socket, socket.authUser);
 
         // Track client type
         if (clientType === 'ios') {
@@ -364,6 +429,19 @@ export function setupWebSocket(io, fastify) {
 
         // Track user for disconnect cleanup
         connectedUsers.add(userId);
+
+        let expiryTimer;
+        const scheduleExpiry = () => {
+            const remaining = socket.authExpiresAt - Date.now();
+            if (remaining <= 0) {
+                log.info({ socketId: socket.id }, 'WS token expired');
+                socket.disconnect(true);
+                return;
+            }
+            expiryTimer = setTimeout(scheduleExpiry, Math.min(remaining, 2_147_483_647));
+            expiryTimer.unref?.();
+        };
+        if (socket.authExpiresAt !== null) scheduleExpiry();
 
         if (clientType === 'ios') {
             // Count only iOS sockets for this user (ignore admin dashboard connections)
@@ -469,6 +547,21 @@ export function setupWebSocket(io, fastify) {
 
                 if (!sanitized) return; // Drop empty messages
 
+                if (assetId !== undefined && assetId !== null) {
+                    let asset;
+                    if (typeof assetId === 'string' && assetId.length > 0) {
+                        asset = await prisma.asset.findFirst({
+                            where: { id: assetId, userId, moderation: 'ACTIVE' },
+                            select: { id: true },
+                        });
+                    }
+                    if (!asset) {
+                        log.warn({ userId, assetId: typeof assetId === 'string' ? assetId : null }, 'WS message rejected: asset unavailable');
+                        emitSystemNote(socket, 'WS_ASSET_UNAVAILABLE', 'This video is unavailable. Refresh and try again.');
+                        return;
+                    }
+                }
+
                 log.info(
                     {
                         userName: redactPersonName(socket.userName),
@@ -546,12 +639,14 @@ export function setupWebSocket(io, fastify) {
                 }
             } catch (err) {
                 log.error({ err }, 'message:send websocket handler failed');
+                emitSystemNote(socket, 'WS_MESSAGE_SEND_FAILED', 'Could not send your message. Please try again.');
             }
         });
 
         // ─── Disconnect ────────────────────────────────────────
 
         socket.on('disconnect', () => {
+            if (expiryTimer) clearTimeout(expiryTimer);
             // Clean up client type tracking
             const wasIos = iosSockets.delete(socket.id);
             adminSockets.delete(socket.id);

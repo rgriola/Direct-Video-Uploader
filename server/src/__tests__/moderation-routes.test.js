@@ -73,6 +73,7 @@ beforeEach(async () => {
     app = Fastify({ logger: false });
     app.decorate('authenticate', async request => { request.user = { ...actor }; });
     app.decorate('requireRole', requireRole);
+    app.decorate('socketAuthState', { revision: 0 });
     app.decorate('userSockets', new Map([['user-1', new Set(['socket-1'])]]));
     app.decorate('io', { sockets: { sockets: new Map([['socket-1', { disconnect }]]) } });
     await app.register(moderationRoutes);
@@ -115,6 +116,7 @@ describe('PATCH /api/admin/users/:id/status', () => {
             },
         });
         expect(disconnect).toHaveBeenCalledWith(true);
+        expect(app.socketAuthState.revision).toBe(1);
     });
 
     it('prevents pausing the last active Super Admin', async () => {

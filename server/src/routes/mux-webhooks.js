@@ -13,6 +13,8 @@ import Mux from '@mux/mux-node';
 import { disableMuxPlayback, getMuxAsset, MUX_ENV_KEY } from '../lib/mux.js';
 import { dbRetry } from '../lib/utils.js';
 import { teamScope } from '../lib/authorization.js';
+import { notifyDashboardAssetChange } from '../ws/dashboard-notifications.js';
+import { userRoom } from '../ws/rooms.js';
 import fs from 'fs/promises';
 import path from 'path';
 
@@ -199,28 +201,24 @@ export default async function muxWebhookRoutes(fastify) {
 
                     // Notify only when the asset remains available for playback.
                     if (asset) {
-                        const ownerSockets = fastify.userSockets?.get(asset.userId);
-                        if (ownerSockets) {
-                            for (const sid of ownerSockets) {
-                                fastify.io.to(sid).emit('mux:ready', {
-                                    assetId: asset.id,
-                                    clipId: clip.id,
-                                    mediasourceId: asset.mediasourceId,
-                                    mediasourceUrl: asset.mediasourceUrl,
-                                    originalFileName: asset.originalFileName,
-                                    muxPlaybackId,
-                                    streamUrl,
-                                    thumbnailUrl,
-                                    formSlug: asset.formResponse?.slug || null,
-                                    formType: asset.formResponse?.type || null,
-                                    formDescription: asset.formResponse?.description || null,
-                                    formPriority: asset.formResponse?.priority || null,
-                                    duration: clip.duration,
-                                    resolution: clip.resolution,
-                                    fileSize: clip.fileSize?.toString() || null,
-                                });
-                            }
-                        }
+                        fastify.io.to(userRoom(asset.userId)).emit('mux:ready', {
+                            assetId: asset.id,
+                            clipId: clip.id,
+                            mediasourceId: asset.mediasourceId,
+                            mediasourceUrl: asset.mediasourceUrl,
+                            originalFileName: asset.originalFileName,
+                            muxPlaybackId,
+                            streamUrl,
+                            thumbnailUrl,
+                            formSlug: asset.formResponse?.slug || null,
+                            formType: asset.formResponse?.type || null,
+                            formDescription: asset.formResponse?.description || null,
+                            formPriority: asset.formResponse?.priority || null,
+                            duration: clip.duration,
+                            resolution: clip.resolution,
+                            fileSize: clip.fileSize?.toString() || null,
+                        });
+                        await notifyDashboardAssetChange(fastify, asset.id);
                     }
                 } else {
                     request.log.warn({ muxAssetId }, 'Mux asset ready but no matching clip found');
@@ -248,6 +246,7 @@ export default async function muxWebhookRoutes(fastify) {
                         where: { id: clip.assetId },
                         data: { status: 'ERROR' },
                     }));
+                    await notifyDashboardAssetChange(fastify, clip.assetId);
                 }
                 break;
             }
@@ -344,6 +343,7 @@ export default async function muxWebhookRoutes(fastify) {
                         return reply.status(404).send({ error: 'Clip not found' });
                     }
 
+                    await notifyDashboardAssetChange(fastify, clip.assetId);
                     return { status: 'ready', muxPlaybackId: playbackId, streamUrl, thumbnailUrl };
                 }
             }

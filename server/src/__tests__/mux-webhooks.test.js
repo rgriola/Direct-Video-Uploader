@@ -27,6 +27,7 @@ const fsMock = {
 };
 
 const verifySignatureMock = vi.fn();
+const notifyDashboardAssetChange = vi.fn();
 
 vi.mock('../lib/prisma.js', () => ({
     default: prismaMock,
@@ -38,6 +39,7 @@ vi.mock('../lib/mux.js', () => ({
     getMuxUpload: muxLibMock.getMuxUpload,
     MUX_ENV_KEY: 'env-key-123',
 }));
+vi.mock('../ws/dashboard-notifications.js', () => ({ notifyDashboardAssetChange }));
 
 vi.mock('fs/promises', () => ({
     unlink: fsMock.unlink,
@@ -85,6 +87,7 @@ async function buildApp(secret = 'mux-webhook-secret') {
 
 beforeEach(() => {
     vi.clearAllMocks();
+    notifyDashboardAssetChange.mockResolvedValue(undefined);
     actor = { id: 'user-1', role: 'USER' };
 
     prismaMock.$transaction.mockImplementation(async callback => callback(prismaMock));
@@ -253,6 +256,9 @@ describe('mux-webhooks routes focused coverage', () => {
             data: { status: 'READY' },
         });
         expect(fsMock.unlink).toHaveBeenCalledWith(expect.stringContaining('/uploads/test-clip.mp4'));
+        expect(app.io.to).toHaveBeenCalledWith('user:user-1');
+        expect(notifyDashboardAssetChange.mock.calls[0][0].io).toBe(app.io);
+        expect(notifyDashboardAssetChange.mock.calls[0][1]).toBe('asset-1');
         expect(ioEmitSpy).toHaveBeenCalledWith(
             'mux:ready',
             expect.objectContaining({
@@ -299,6 +305,7 @@ describe('mux-webhooks routes focused coverage', () => {
             },
         });
         expect(ioEmitSpy).not.toHaveBeenCalled();
+        expect(notifyDashboardAssetChange).not.toHaveBeenCalled();
     });
 
     it('handles mux asset errored events by setting clip and asset to ERROR', async () => {

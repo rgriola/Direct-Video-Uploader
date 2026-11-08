@@ -13,6 +13,7 @@ import prisma from '../lib/prisma.js';
 import { dbRetry } from '../lib/utils.js';
 import * as slack from '../lib/slack.js';
 import { redactPersonName } from '../lib/redact.js';
+import { notifyDashboardAssetChange } from '../ws/dashboard-notifications.js';
 import fs from 'fs/promises';
 import path from 'path';
 
@@ -24,7 +25,8 @@ let cleanupLog = null;
 /**
  * Find and clean up orphaned UPLOADING assets.
  */
-async function cleanupOrphanedUploads(log = cleanupLog) {
+async function cleanupOrphanedUploads(fastify) {
+    const log = fastify?.log ?? null;
     try {
         const cutoff = new Date(Date.now() - ORPHAN_THRESHOLD_MS);
 
@@ -65,6 +67,7 @@ async function cleanupOrphanedUploads(log = cleanupLog) {
                 where: { id: asset.id },
                 data: { status: 'ERROR' },
             }));
+            await notifyDashboardAssetChange(fastify, asset.id);
 
             log?.warn(
                 {
@@ -99,9 +102,9 @@ export function startUploadCleanup(fastify) {
         { intervalMinutes: 5, orphanThresholdMinutes: 60 },
         'Upload cleanup worker started'
     );
-    intervalId = setInterval(() => cleanupOrphanedUploads(cleanupLog), CLEANUP_INTERVAL_MS);
+    intervalId = setInterval(() => cleanupOrphanedUploads(fastify), CLEANUP_INTERVAL_MS);
     // Run once immediately on startup
-    cleanupOrphanedUploads(cleanupLog);
+    cleanupOrphanedUploads(fastify);
 }
 
 /**

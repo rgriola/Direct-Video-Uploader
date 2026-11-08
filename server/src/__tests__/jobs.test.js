@@ -2,6 +2,8 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const prismaMock = {
+    $transaction: vi.fn(),
+    $queryRaw: vi.fn(),
     clip: {
         findMany: vi.fn(),
         update: vi.fn(),
@@ -21,6 +23,7 @@ const muxMock = {
     getMuxAsset: vi.fn(),
     getMuxUpload: vi.fn(),
 };
+const notifyDashboardAssetChange = vi.fn();
 
 const slackMock = {
     isConfigured: vi.fn(),
@@ -42,6 +45,7 @@ vi.mock('../lib/mux.js', () => ({
     getMuxAsset: muxMock.getMuxAsset,
     getMuxUpload: muxMock.getMuxUpload,
 }));
+vi.mock('../ws/dashboard-notifications.js', () => ({ notifyDashboardAssetChange }));
 
 vi.mock('../lib/slack.js', () => ({
     isConfigured: slackMock.isConfigured,
@@ -77,11 +81,14 @@ beforeEach(() => {
 
     muxState.enabled = true;
 
+    prismaMock.$transaction.mockImplementation(async callback => callback(prismaMock));
+    prismaMock.$queryRaw.mockResolvedValue([{ moderation: 'ACTIVE' }]);
     prismaMock.clip.findMany.mockResolvedValue([]);
     prismaMock.clip.update.mockResolvedValue({});
     prismaMock.asset.findMany.mockResolvedValue([]);
     prismaMock.asset.update.mockResolvedValue({});
     prismaMock.asset.findUnique.mockResolvedValue({
+        moderation: 'ACTIVE',
         originalFileName: 'field.mp4',
         formResponse: {
             slug: 'slug',
@@ -93,6 +100,7 @@ beforeEach(() => {
 
     muxMock.getMuxAsset.mockResolvedValue(null);
     muxMock.getMuxUpload.mockResolvedValue(null);
+    notifyDashboardAssetChange.mockResolvedValue(undefined);
 
     slackMock.isConfigured.mockReturnValue(false);
     slackMock.postToChannel.mockResolvedValue({ ok: true });
@@ -191,6 +199,99 @@ describe('background jobs coverage', () => {
                 muxPlaybackId: 'playback-1',
             })
         );
+        expect(fastify.io.to).toHaveBeenCalledWith('user:user-1');
+        expect(notifyDashboardAssetChange).toHaveBeenCalledWith(fastify, 'asset-1');
+    });
+
+    it.each(['PAUSED', 'FLAGGED_FOR_REMOVAL', 'REMOVED'])(
+        'does not publish or emit playback when the asset is %s',
+        async (moderation) => {
+            const { fastify, ioEmitSpy } = createFastifyHarness();
+            prismaMock.clip.findMany.mockResolvedValueOnce([{
+                id: 'clip-1',
+                muxAssetId: 'mux-1',
+                createdAt: new Date(),
+                asset: { id: 'asset-1', mediasourceId: '100000001', userId: 'user-1' },
+            }]);
+            prismaMock.$queryRaw.mockResolvedValueOnce([{ moderation }]);
+            muxMock.getMuxAsset.mockResolvedValue({
+                status: 'ready',
+                playback_ids: [{ policy: 'public', id: 'playback-1' }],
+            });
+
+            startMuxSync(fastify);
+            await vi.advanceTimersByTimeAsync(10_000);
+
+            expect(prismaMock.clip.update).not.toHaveBeenCalled();
+            expect(prismaMock.asset.update).not.toHaveBeenCalled();
+            expect(ioEmitSpy).not.toHaveBeenCalled();
+            expect(notifyDashboardAssetChange).not.toHaveBeenCalled();
+            expect(fastify.log.error).toHaveBeenCalledWith(
+                { clipId: 'clip-1', muxAssetId: 'mux-1' },
+                'Mux sync skipped moderated clip; check public playback revocation'
+            );
+        }
+    );
+
+    it('reports a ready Mux asset without a public playback ID', async () => {
+        const { fastify } = createFastifyHarness();
+        prismaMock.clip.findMany.mockResolvedValueOnce([{
+            id: 'clip-1',
+            muxAssetId: 'mux-1',
+            createdAt: new Date(),
+            asset: { id: 'asset-1', mediasourceId: '100000001', userId: 'user-1' },
+        }]);
+        muxMock.getMuxAsset.mockResolvedValue({ status: 'ready', playback_ids: [] });
+
+        startMuxSync(fastify);
+        await vi.advanceTimersByTimeAsync(10_000);
+
+        expect(fastify.log.warn).toHaveBeenCalledWith(
+            { clipId: 'clip-1', muxAssetId: 'mux-1' },
+            'Mux sync ready asset has no public playback ID'
+        );
+        expect(prismaMock.clip.update).not.toHaveBeenCalled();
+    });
+
+    it('does not warn when moderated playback has already been revoked', async () => {
+        const { fastify, ioEmitSpy } = createFastifyHarness();
+        prismaMock.clip.findMany.mockResolvedValueOnce([{
+            id: 'clip-1',
+            muxAssetId: 'mux-1',
+            createdAt: new Date(),
+            asset: { id: 'asset-1', mediasourceId: '100000001', userId: 'user-1' },
+        }]);
+        prismaMock.$queryRaw.mockResolvedValueOnce([{ moderation: 'PAUSED' }]);
+        muxMock.getMuxAsset.mockResolvedValue({ status: 'ready', playback_ids: [] });
+
+        startMuxSync(fastify);
+        await vi.advanceTimersByTimeAsync(10_000);
+
+        expect(fastify.log.error).not.toHaveBeenCalled();
+        expect(fastify.log.warn).not.toHaveBeenCalled();
+        expect(prismaMock.clip.update).not.toHaveBeenCalled();
+        expect(ioEmitSpy).not.toHaveBeenCalled();
+    });
+
+    it('does not backfill a playback ID after an asset is moderated', async () => {
+        const { fastify } = createFastifyHarness();
+        prismaMock.clip.findMany
+            .mockResolvedValueOnce([])
+            .mockResolvedValueOnce([{ id: 'clip-1', assetId: 'asset-1', muxAssetId: 'mux-1', muxUploadId: 'upload-1' }]);
+        prismaMock.$queryRaw.mockResolvedValueOnce([{ moderation: 'PAUSED' }]);
+        muxMock.getMuxAsset.mockResolvedValue({
+            status: 'ready',
+            playback_ids: [{ policy: 'public', id: 'playback-1' }],
+        });
+
+        startMuxSync(fastify);
+        await vi.advanceTimersByTimeAsync(15_000);
+
+        expect(prismaMock.clip.findMany).toHaveBeenLastCalledWith(expect.objectContaining({
+            where: expect.objectContaining({ asset: { moderation: 'ACTIVE' } }),
+        }));
+        expect(prismaMock.clip.update).not.toHaveBeenCalled();
+        expect(notifyDashboardAssetChange).not.toHaveBeenCalled();
     });
 
     it('marks clip as ERROR on mux errored status and sends slack alert', async () => {

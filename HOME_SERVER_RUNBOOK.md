@@ -115,8 +115,8 @@ modify a Super Admin.
   clip-specific transcript route that older servers do not provide; transcript delivery
   will fail until the server is updated. Their legacy route can ignore a clip ID in the
   request body.
-- HTTP scoping alone does not isolate global dashboard Socket.IO events, public Mux
-  playback URLs, or `/uploads/`. Do not treat this phase as end-to-end media isolation.
+- HTTP scoping alone does not provide team-scoped dashboard refreshes or isolate public
+  Mux playback URLs and `/uploads/`. Do not treat this phase as end-to-end media isolation.
 - Do not re-upload while the original transfer may still be active: the existing Mux
   idempotency flow can return the same waiting upload URL to both attempts. A failed
   Mux status lookup now leaves the existing clip untouched; an upload already handed
@@ -142,6 +142,31 @@ modify a Super Admin.
   build workflows use `prisma db push --accept-data-loss`; the cloud migration baselines
   are unverified, and the Render workflow also seeds demo accounts.
 - Finish the physical-device checks described in `iOS-Modernization.md` before rollout.
+
+## Step 2.4 socket scoping rollout
+
+The server and dashboard changes are implemented in the workspace but not yet deployed.
+Deployment is blocked on Step 2.2 Mux moderation reconciliation: a moderated upload can
+gain a public playback ID when processing finishes if the ready webhook is missed or keeps
+failing, and concurrent moderation and ready events can race Mux operations. Resolve and
+test those cases first. The Step 2.2 moderation migration is also still pending; apply it
+before deploying this server version. Rebuild the dashboard and restart Fastify using the
+commands above so the server and dashboard are updated together.
+
+- Rich upload, form, and Mux notifications remain owner-only. Active asset changes also
+  trigger a payload-free refresh for the owner's Team Admins and Super Admins; changes for
+  an unassigned owner go only to Super Admins.
+- Socket authentication reloads current account status, role, and organization. Changes
+  through the API reconnect affected dashboards when roles or organizations change;
+  suspension and deletion disconnect all of the affected user's sockets. Dashboard access
+  and scoped data are rechecked. Direct database changes bypass this invalidation, so restart
+  Fastify after making them.
+- Notifications are best-effort and dashboard polling remains enabled. Verify cross-team
+  isolation, reconnect after a team change, and suspension after deploying.
+- Rooms, connection tracking, and authorization invalidation are process-local. The current
+  single Fastify process is required; multiple instances need a shared Socket.IO adapter
+  and coordinated revocation before relying on these guarantees.
+- This does not make public Mux playback URLs or the unauthenticated `/uploads/` path private.
 
 ## Backup & restore
 

@@ -162,7 +162,9 @@ beforeEach(async () => {
 
     app.decorate('io', {
         of: () => ({ sockets: new Map([['s1', {}], ['s2', {}]]) }),
+        sockets: { sockets: new Map() },
     });
+    app.decorate('socketAuthState', { revision: 0 });
     app.decorate('userSockets', new Map([['user-1', new Set(['s1'])]]));
     app.decorate('iosSockets', new Set(['s1']));
     app.decorate('adminSockets', new Set(['s2']));
@@ -321,6 +323,15 @@ describe('admin routes deeper coverage', () => {
     });
 
     it('updates organization code in transaction and reassigns affected users', async () => {
+        const firstDashboard = { disconnect: vi.fn() };
+        const secondDashboard = { disconnect: vi.fn() };
+        const phone = { disconnect: vi.fn() };
+        app.userSockets.set('user-1', new Set(['s1', 's2']));
+        app.userSockets.set('user-2', new Set(['s3']));
+        app.adminSockets.add('s3');
+        app.io.sockets.sockets.set('s1', phone);
+        app.io.sockets.sockets.set('s2', firstDashboard);
+        app.io.sockets.sockets.set('s3', secondDashboard);
         prismaMock.organization.findUnique
             .mockResolvedValueOnce({
                 id: 'org-1',
@@ -366,6 +377,10 @@ describe('admin routes deeper coverage', () => {
             data: { companyCode: 'SLMX' },
         });
         expect(response.json().organization.companyCode).toBe('SLMX');
+        expect(app.socketAuthState.revision).toBe(1);
+        expect(firstDashboard.disconnect).toHaveBeenCalledWith(true);
+        expect(secondDashboard.disconnect).toHaveBeenCalledWith(true);
+        expect(phone.disconnect).not.toHaveBeenCalled();
     });
 
     it('rejects deleting own admin account', async () => {
@@ -391,6 +406,11 @@ describe('admin routes deeper coverage', () => {
     });
 
     it('deletes user data including mux assets and local files', async () => {
+        const dashboard = { disconnect: vi.fn() };
+        const phone = { disconnect: vi.fn() };
+        app.userSockets.set('user-delete', new Set(['dashboard', 'phone']));
+        app.io.sockets.sockets.set('dashboard', dashboard);
+        app.io.sockets.sockets.set('phone', phone);
         muxState.enabled = true;
         prismaMock.user.findUnique.mockResolvedValueOnce({
             id: 'user-delete',
@@ -417,6 +437,9 @@ describe('admin routes deeper coverage', () => {
         expect(prismaMock.errorLog.deleteMany).toHaveBeenCalledWith({ where: { userId: 'user-delete' } });
         expect(prismaMock.asset.deleteMany).toHaveBeenCalledWith({ where: { userId: 'user-delete' } });
         expect(prismaMock.user.delete).toHaveBeenCalledWith({ where: { id: 'user-delete' } });
+        expect(app.socketAuthState.revision).toBe(1);
+        expect(dashboard.disconnect).toHaveBeenCalledWith(true);
+        expect(phone.disconnect).toHaveBeenCalledWith(true);
         expect(response.json().deleted).toEqual({
             assets: 2,
             clips: 2,

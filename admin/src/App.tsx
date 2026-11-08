@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { Fragment, useEffect, useState, useCallback, useRef } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster, toast } from "sonner";
 
@@ -68,71 +68,148 @@ function Dashboard() {
   const [userId, setUserId] = useState<string | null>(null);
   const [userCompany, setUserCompany] = useState<string | null>(null);
   const [userCompanyCode, setUserCompanyCode] = useState<string | null>(null);
+  const [refreshingAccess, setRefreshingAccess] = useState(false);
+  const [accessError, setAccessError] = useState<string | null>(null);
+  const authGeneration = useRef(0);
+  const [dashboardSession, setDashboardSession] = useState(0);
   const [showChatHistory, setShowChatHistory] = useState(false);
   const [assetModeration, setAssetModeration] = useState<string>();
   const canManageTeam = isSuperAdmin || (userRole === "ADMIN" && !!userCompanyCode);
 
-  const { data: stats } = useStats(loggedIn);
-  const { data: users, isLoading: usersLoading } = useUsers(loggedIn);
-  const { data: assets, isLoading: assetsLoading } = useAssets(loggedIn, assetModeration);
-  const { data: triadStatus, isLoading: triadLoading } = useTriadStatus(loggedIn && isSuperAdmin);
-  const { data: organizations, isLoading: orgsLoading } = useOrganizations(loggedIn && canManageTeam);
+  const queriesEnabled = loggedIn && !refreshingAccess;
+  const { data: stats } = useStats(queriesEnabled);
+  const { data: users, isLoading: usersLoading } = useUsers(queriesEnabled);
+  const { data: assets, isLoading: assetsLoading } = useAssets(queriesEnabled, assetModeration);
+  const { data: triadStatus, isLoading: triadLoading } = useTriadStatus(queriesEnabled && isSuperAdmin);
+  const { data: organizations, isLoading: orgsLoading } = useOrganizations(queriesEnabled && canManageTeam);
   const refreshDashboard = useRefreshDashboard();
 
-  const { connected, socketId, logs, addLog, clearLogs, connect, disconnect } = useSocket(() => {
-    refreshDashboard("upload:complete");
+  const applyUser = useCallback((user: User) => {
+    setUserRole(user.role ?? null);
+    setUserName(user.name ?? null);
+    setUserId(user.id ?? null);
+    setUserPhone(user.phoneNumber ?? null);
+    setUserCompany(user.companyName ?? null);
+    setUserCompanyCode(user.companyCode ?? null);
+  }, []);
+
+  const forgetSession = useCallback(() => {
+    authGeneration.current += 1;
+    clearToken();
+    localStorage.removeItem(AUTH_TOKEN_KEY);
+    queryClient.clear();
+    setAssetModeration(undefined);
+    setLoggedIn(false);
+    setUserRole(null);
+    setUserName(null);
+    setUserPhone(null);
+    setUserId(null);
+    setUserCompany(null);
+    setUserCompanyCode(null);
+    setShowChatHistory(false);
+    setRefreshingAccess(false);
+    setAccessError(null);
+    void logoutClipSession();
+  }, []);
+
+  const clearScopedDashboard = useCallback(() => {
+    authGeneration.current += 1;
+    queryClient.clear();
+    setUserRole(null);
+    setUserCompany(null);
+    setUserCompanyCode(null);
+    setAssetModeration(undefined);
+    setShowChatHistory(false);
+    setAccessError(null);
+    setRefreshingAccess(true);
+  }, []);
+
+  const reloadAccess = useCallback(() => {
+    const token = getToken();
+    if (!token) return;
+    clearScopedDashboard();
+    const generation = authGeneration.current;
+    void fetchMe().then(({ user }) => {
+      if (authGeneration.current !== generation || getToken() !== token) return;
+      if (!user) throw new Error("Account unavailable");
+      applyUser(user);
+      setRefreshingAccess(false);
+    }).catch((error: unknown) => {
+      if (authGeneration.current !== generation || getToken() !== token) return;
+      setAccessError(error instanceof Error ? error.message : "Could not verify dashboard access.");
+    });
+  }, [applyUser, clearScopedDashboard]);
+
+  const { connected, socketId, logs, addLog, clearLogs, connect, disconnect, retryConnection } = useSocket({
+    onAssetChange: () => refreshDashboard("upload:complete"),
+    onAuthorizationLost: () => {
+      clearLogs();
+      clearScopedDashboard();
+    },
+    onReconnected: () => {
+      clearLogs();
+      reloadAccess();
+    },
+    onConnectionError: (error) => {
+      if (["Account unavailable", "Invalid token", "Authentication required"].includes(error.message)) {
+        forgetSession();
+        toast.error("Your session expired or your account is unavailable. Sign in again.");
+      } else {
+        setAccessError("Could not connect to live updates. Retry the connection or sign in again.");
+      }
+    },
   });
 
   // Restore saved token on mount (avoids re-login on page refresh)
   useEffect(() => {
     const saved = localStorage.getItem(AUTH_TOKEN_KEY);
     if (!saved) return;
+    const generation = ++authGeneration.current;
 
     async function restoreSession(token: string) {
       try {
         setToken(token);
         const { user } = await fetchMe();
-        if (user) {
-          setLoggedIn(true);
-          setUserRole(user.role ?? null);
-          setUserName(user.name ?? null);
-          setUserId(user.id ?? null);
-          setUserPhone(user.phoneNumber ?? null);
-          setUserCompany(user.companyName ?? null);
-          setUserCompanyCode(user.companyCode ?? null);
-          addLog("auth", `Session restored: ${user.name}`);
-          connect();
-        }
+        if (authGeneration.current !== generation || getToken() !== token) return;
+        if (!user) throw new Error("Account unavailable");
+        setLoggedIn(true);
+        applyUser(user);
+        addLog("auth", `Session restored: ${user.name}`);
+        connect();
       } catch (err) {
+        if (authGeneration.current !== generation || getToken() !== token) return;
         const msg = err instanceof Error ? err.message : "";
         // Only clear the saved token on definitive auth rejections (401/403),
         // not on transient network errors — so the session persists through
         // server restarts or brief connectivity issues.
-        if (msg === "HTTP 401" || msg === "HTTP 403" || msg === "Unauthorized" || msg === "Admin access required") {
+        if (["HTTP 401", "HTTP 403", "Unauthorized", "Admin access required", "Account suspended", "Account unavailable"].includes(msg)) {
+          clearToken();
           localStorage.removeItem(AUTH_TOKEN_KEY);
+          toast.error("Your session expired or your account is unavailable. Sign in again.");
         }
       }
     }
 
     void restoreSession(saved);
-  }, [addLog, connect]);
+  }, [addLog, applyUser, connect]);
 
   const handleLoginSuccess = useCallback((user: User) => {
+    authGeneration.current += 1;
     // Token is already set in api.ts by the LoginForm; mirror it to localStorage
     const token = getToken();
     if (token) localStorage.setItem(AUTH_TOKEN_KEY, token);
     queryClient.clear();
     setAssetModeration(undefined);
+    setShowChatHistory(false);
+    setDashboardSession((session) => session + 1);
+    setRefreshingAccess(false);
+    setAccessError(null);
     setLoggedIn(true);
-    setUserRole(user.role ?? null);
-    setUserName(user.name);
-    setUserPhone(user.phoneNumber ?? null);
-    setUserId(user.id);
-    setUserCompany(user.companyName ?? null);
-    setUserCompanyCode(user.companyCode ?? null);
+    applyUser(user);
+    clearLogs();
     addLog("auth", `Dashboard auth: ${user.name}`);
     connect();
-  }, [addLog, connect, setLoggedIn]);
+  }, [addLog, applyUser, clearLogs, connect]);
 
   const handleAction = useCallback(
     async (action: string) => {
@@ -238,25 +315,30 @@ function Dashboard() {
       <Header
         onLogout={() => {
           disconnect();
-          clearToken();
-          localStorage.removeItem(AUTH_TOKEN_KEY);
-          queryClient.clear();
-          setAssetModeration(undefined);
-          setLoggedIn(false);
-          setUserRole(null);
-          setUserName(null);
-          setUserPhone(null);
-          setUserId(null);
-          setUserCompany(null);
-          setUserCompanyCode(null);
-          setShowChatHistory(false);
-          void logoutClipSession();
+          forgetSession();
         }}
         userName={userName}
         userPhone={userPhone}
         userCompany={userCompany}
       />
 
+      {(refreshingAccess || accessError) && (
+        <div className="mb-6">
+          <p role={accessError ? "alert" : "status"}>{accessError ?? "Refreshing dashboard access..."}</p>
+          {accessError && (
+            <button type="button" className="underline" onClick={() => {
+              setAccessError(null);
+              if (connected) reloadAccess();
+              else retryConnection();
+            }}>
+              Retry access check
+            </button>
+          )}
+        </div>
+      )}
+
+      {!refreshingAccess && (
+        <Fragment key={dashboardSession}>
       {isSuperAdmin && (
         <TriadStatusPanel
           triad={triadStatus}
@@ -327,6 +409,8 @@ function Dashboard() {
             companyCode={isSuperAdmin ? undefined : userCompanyCode ?? undefined}
           />
         </div>
+      )}
+        </Fragment>
       )}
 
       <footer className="mt-16 pt-6 border-t border-(--border-subtle) flex flex-wrap items-center justify-between gap-3">

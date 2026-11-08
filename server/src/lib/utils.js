@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import bcrypt from 'bcrypt';
+import { userRoom } from '../ws/rooms.js';
 
 const BCRYPT_ROUNDS = 10;
 
@@ -105,7 +106,7 @@ export function serializeClip(clip) {
  * logic that was duplicated across upload and mux-upload routes.
  *
  * @param {import('socket.io').Server} io - Socket.IO server instance
- * @param {Set<string>|undefined} socketIds - Set of socket IDs for the user
+ * @param {string} userId - Owner of the upload
  * @param {object} payload - Event data
  * @param {string} payload.assetId
  * @param {object} payload.asset - { mediasourceId, mediasourceUrl, originalFileName }
@@ -114,40 +115,35 @@ export function serializeClip(clip) {
  * @param {object} payload.clip - { id, storageUrl?, fileSize, originalFileName }
  * @param {string} payload.messageText - Text for the FORM_REQUEST message
  */
-export function notifyUserSockets(io, socketIds, payload) {
-    if (!socketIds) return;
-
+export function notifyUserSockets(io, userId, payload) {
     const { assetId, asset, userName, metadata, clip, messageText } = payload;
     const hasRichMeta = metadata.gpsLat
         || metadata.codec !== 'Unknown'
         || metadata.deviceModel !== 'Unknown Device';
 
-    for (const socketId of socketIds) {
-        // 1. Upload complete with full metadata
-        io.to(socketId).emit('upload:complete', {
-            assetId,
-            mediasourceId: asset.mediasourceId,
-            mediasourceUrl: asset.mediasourceUrl,
+    const ownerSockets = io.to(userRoom(userId));
+    ownerSockets.emit('upload:complete', {
+        assetId,
+        mediasourceId: asset.mediasourceId,
+        mediasourceUrl: asset.mediasourceUrl,
+        originalFileName: asset.originalFileName,
+        userName,
+        hasRichMeta,
+        metadata,
+        clip: {
+            id: clip.id,
+            storageUrl: clip.storageUrl || undefined,
+            fileSize: clip.fileSize,
             originalFileName: asset.originalFileName,
-            userName,
-            hasRichMeta,
-            metadata,
-            clip: {
-                id: clip.id,
-                storageUrl: clip.storageUrl || undefined,
-                fileSize: clip.fileSize,
-                originalFileName: asset.originalFileName,
-            },
-        });
+        },
+    });
 
-        // 2. Form request event — opens the form sheet on iOS
-        io.to(socketId).emit('form:request', {
-            assetId,
-            originalFileName: asset.originalFileName,
-            capturedAt: metadata.capturedAt,
-            clipCount: 1,
-            duration: metadata.duration,
-            prefilledData: {},
-        });
-    }
+    ownerSockets.emit('form:request', {
+        assetId,
+        originalFileName: asset.originalFileName,
+        capturedAt: metadata.capturedAt,
+        clipCount: 1,
+        duration: metadata.duration,
+        prefilledData: {},
+    });
 }

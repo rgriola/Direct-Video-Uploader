@@ -34,7 +34,7 @@ The UX is intentionally modeled after text messaging work-flow: Opening the app 
 4. User fills slug/description form → server stores metadata, sends confirmation.
 5. Mux processes video → webhook/sync marks clip READY → server notifies user.
 6. User types `#channel` or `@name` → server posts to **Slack** with thumbnail + clip link.
-7. **Clip viewer** at `/clips/:slug` is a public, server-rendered page with Mux player.
+7. **Clip viewer** at `/clips/:slug` is a server-rendered page for authorized viewers, with a Mux player.
 
 ---
 
@@ -162,7 +162,7 @@ Replace the device type and runtime with installed iPhone options if needed. If 
 | **Clip Viewer**   | Server-rendered HTML at `/clips/:slug`       |
 | **Slack**         | Bot API (`fixer-video` bot)                  |
 | **Transcription** | Apple Speech (opt-in; may use Apple's servers) |
-| **Hosting**       | GCP (Cloud Run + Cloud SQL + Secret Manager) |
+| **Hosting**       | Home server + Cloudflare Tunnel              |
 
 ---
 
@@ -171,6 +171,10 @@ Replace the device type and runtime with installed iPhone options if needed. If 
 - **Chat-based UX** — Upload flow feels like texting, not a file manager
 - **Mux direct upload** — iOS uploads to Mux CDN via tus protocol (no server bottleneck)
 - **Real-time WebSocket** — Greeting, upload progress, form requests, Mux ready notifications, Slack confirmations
+- **Scoped dashboard refreshes** — Step 2.4 sends payload-free asset-change signals to the
+  relevant team admins and super admins; rich upload and form events remain owner-only.
+  This is implemented in the workspace but not yet deployed. Step 2.2 Mux moderation
+  reconciliation is a rollout blocker; see the [roadmap](iOS-Modernization.md).
 - **Context form** — Slug, type, description, priority with auto-focus and swipe-dismiss prevention
 - **Video trim** — Pre-upload trimming via native `UIVideoEditorController`
 - **PHAsset fast path** — Zero-copy video loading from Photos library (instant, no file copy)
@@ -244,7 +248,8 @@ The Fastify server and Postgres 18 run on a home MacBook Air instead of Cloud Ru
 
 - **Services**: `brew services` manages Postgres 18; a `launchd` `LaunchAgent` (`~/Library/LaunchAgents/com.msfixer.fastify.plist`) keeps Fastify running (`KeepAlive`, auto-restart).
 - **Tunnel**: `cloudflared` runs as a system `LaunchDaemon`, config at `/etc/cloudflared/config.yml`, routing both `ms-fixer.com` and `dev.ms-fixer.com` → `http://localhost:3000`.
-- **Access control**: Cloudflare Zero Trust protects the admin dashboard (site root) with email one-time-PIN login, on both domains. `/api/*`, `/socket.io/*`, `/uploads/*`, and `/clips/*` bypass Access. App authentication protects the applicable API and clip routes, but `/uploads/*` is currently unauthenticated, Mux playback URLs are public, and dashboard Socket.IO events are not yet organization-scoped.
+- **Access control**: Cloudflare Zero Trust protects the admin dashboard (site root) with email one-time-PIN login, on both domains. `/api/*`, `/socket.io/*`, `/uploads/*`, and `/clips/*` bypass Access. App authentication protects the applicable API and clip routes, but `/uploads/*` is currently unauthenticated and Mux playback URLs are public. Step 2.4's scoped, payload-free dashboard refreshes are implemented but not yet deployed.
+- **Real-time deployment**: Socket rooms and authorization invalidation are process-local, matching the current single-server deployment. Multiple server processes require a shared Socket.IO adapter and coordinated revocation. Refreshes are best-effort; dashboard polling remains enabled.
 - **CORS/WebSocket origins**: `PUBLIC_URL` (defaults to `https://ms-fixer.com`) plus its `www.` variant are always allowed; additional origins (e.g. `https://dev.ms-fixer.com`) can be added via the comma-separated `EXTRA_CORS_ORIGINS` env var.
 - **Migrations**: schema changes go through `prisma migrate dev` locally, then `prisma migrate deploy` on the home server (not `db push`, to avoid destructive drift on real data).
 - **Backups**: nightly `pg_dump` with 7-day local retention, encrypted offsite copy.

@@ -13,6 +13,8 @@ import prisma from '../lib/prisma.js';
 import { getMuxAsset, getMuxUpload, isMuxEnabled } from '../lib/mux.js';
 import { dbRetry } from '../lib/utils.js';
 import * as slack from '../lib/slack.js';
+import { notifyDashboardAssetChange } from '../ws/dashboard-notifications.js';
+import { userRoom } from '../ws/rooms.js';
 
 const SYNC_INTERVAL_MS = 2 * 60 * 1000;  // 2 minutes
 const STALE_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes before alerting
@@ -26,7 +28,6 @@ async function syncProcessingClips(fastify) {
     if (!isMuxEnabled) return;
     const log = fastify.log;
     const io = fastify.io;
-    const userSockets = fastify.userSockets;
 
     try {
         const stuckClips = await prisma.clip.findMany({
@@ -64,54 +65,75 @@ async function syncProcessingClips(fastify) {
                 const muxAsset = await getMuxAsset(clip.muxAssetId);
 
                 if (muxAsset?.status === 'ready') {
-                    const playbackId = muxAsset.playback_ids?.find(p => p.policy === 'public')?.id;
-                    if (playbackId) {
+                    const playbackId = muxAsset.playback_ids?.find(playback => playback.policy === 'public')?.id;
+                    const result = await dbRetry(() => prisma.$transaction(async tx => {
+                        const rows = await tx.$queryRaw`
+                            SELECT moderation FROM assets WHERE id = ${clip.asset.id} FOR UPDATE
+                        `;
+                        if (!rows.length) return { state: 'missing' };
+                        if (rows[0].moderation !== 'ACTIVE') return { state: 'moderated' };
+                        if (!playbackId) return { state: 'missingPlayback' };
+
                         const streamUrl = `https://stream.mux.com/${playbackId}.m3u8`;
                         const thumbnailUrl = `https://image.mux.com/${playbackId}/thumbnail.png?width=640`;
-
-                        await dbRetry(() => prisma.clip.update({
+                        await tx.clip.update({
                             where: { id: clip.id },
                             data: { muxPlaybackId: playbackId, streamUrl, thumbnailUrl, status: 'READY' },
-                        }));
-                        await dbRetry(() => prisma.asset.update({
+                        });
+                        await tx.asset.update({
                             where: { id: clip.asset.id },
                             data: { status: 'READY' },
-                        }));
+                        });
+                        return { state: 'ready', playbackId, streamUrl, thumbnailUrl };
+                    }));
 
-                        log.info(
-                            { clipId: clip.id, mediasourceId: clip.asset.mediasourceId, ageMinutes: ageMin },
-                            'Mux sync moved clip to ready'
-                        );
-
-                        // Notify only the asset owner (not all clients)
-                        const ownerSockets = userSockets?.get(clip.asset.userId);
-                        if (ownerSockets) {
-                            // Fetch form response for the payload
-                            const fullAsset = await prisma.asset.findUnique({
-                                where: { id: clip.asset.id },
-                                include: { formResponse: true },
-                            });
-                            for (const sid of ownerSockets) {
-                                io.to(sid).emit('mux:ready', {
-                                    assetId: clip.asset.id,
-                                    clipId: clip.id,
-                                    mediasourceId: clip.asset.mediasourceId,
-                                    mediasourceUrl: clip.asset.mediasourceUrl,
-                                    originalFileName: fullAsset?.originalFileName || null,
-                                    muxPlaybackId: playbackId,
-                                    streamUrl,
-                                    thumbnailUrl,
-                                    formSlug: fullAsset?.formResponse?.slug || null,
-                                    formType: fullAsset?.formResponse?.type || null,
-                                    formDescription: fullAsset?.formResponse?.description || null,
-                                    formPriority: fullAsset?.formResponse?.priority || null,
-                                    duration: clip.duration,
-                                    resolution: clip.resolution,
-                                    fileSize: clip.fileSize?.toString() || null,
-                                });
-                            }
+                    if (result.state === 'moderated') {
+                        if (playbackId) {
+                            log.error(
+                                { clipId: clip.id, muxAssetId: clip.muxAssetId },
+                                'Mux sync skipped moderated clip; check public playback revocation'
+                            );
                         }
+                        continue;
                     }
+                    if (result.state === 'missingPlayback') {
+                        log.warn({ clipId: clip.id, muxAssetId: clip.muxAssetId }, 'Mux sync ready asset has no public playback ID');
+                        continue;
+                    }
+                    if (result.state !== 'ready') continue;
+
+                    const fullAsset = await prisma.asset.findUnique({
+                        where: { id: clip.asset.id },
+                        include: { formResponse: true },
+                    });
+                    if (!fullAsset || fullAsset.moderation !== 'ACTIVE') {
+                        log.warn({ clipId: clip.id }, 'Mux sync skipped ready notification for unavailable asset');
+                        continue;
+                    }
+
+                    log.info(
+                        { clipId: clip.id, mediasourceId: clip.asset.mediasourceId, ageMinutes: ageMin },
+                        'Mux sync moved clip to ready'
+                    );
+
+                    io.to(userRoom(clip.asset.userId)).emit('mux:ready', {
+                        assetId: clip.asset.id,
+                        clipId: clip.id,
+                        mediasourceId: clip.asset.mediasourceId,
+                        mediasourceUrl: clip.asset.mediasourceUrl,
+                        originalFileName: fullAsset.originalFileName || null,
+                        muxPlaybackId: result.playbackId,
+                        streamUrl: result.streamUrl,
+                        thumbnailUrl: result.thumbnailUrl,
+                        formSlug: fullAsset.formResponse?.slug || null,
+                        formType: fullAsset.formResponse?.type || null,
+                        formDescription: fullAsset.formResponse?.description || null,
+                        formPriority: fullAsset.formResponse?.priority || null,
+                        duration: clip.duration,
+                        resolution: clip.resolution,
+                        fileSize: clip.fileSize?.toString() || null,
+                    });
+                    await notifyDashboardAssetChange(fastify, clip.asset.id);
                 } else if (muxAsset?.status === 'errored') {
                     await dbRetry(() => prisma.clip.update({
                         where: { id: clip.id },
@@ -121,6 +143,7 @@ async function syncProcessingClips(fastify) {
                         where: { id: clip.asset.id },
                         data: { status: 'ERROR' },
                     }));
+                    await notifyDashboardAssetChange(fastify, clip.asset.id);
 
                     log.error({ clipId: clip.id, mediasourceId: clip.asset.mediasourceId }, 'Mux sync moved clip to error');
 
@@ -158,6 +181,7 @@ async function syncProcessingClips(fastify) {
                     where: { id: clip.asset.id },
                     data: { status: 'ERROR' },
                 }));
+                await notifyDashboardAssetChange(fastify, clip.asset.id);
                 if (slack.isConfigured()) {
                     await slack.postToChannel('general',
                         `⚠️ Upload failed — clip #${clip.asset.mediasourceId} had no Mux asset after ${ageMin}min (auto-marked ERROR)`,
@@ -182,13 +206,14 @@ async function syncProcessingClips(fastify) {
  * Backfill READY clips that are missing muxPlaybackId.
  * These clips were marked READY before playback data was saved.
  */
-async function backfillMissingPlaybackIds(log) {
+async function backfillMissingPlaybackIds(fastify) {
     if (!isMuxEnabled) return;
+    const log = fastify.log;
 
     try {
         const clips = await prisma.clip.findMany({
-            where: { status: 'READY', muxPlaybackId: null, muxUploadId: { not: null } },
-            select: { id: true, muxUploadId: true, muxAssetId: true },
+            where: { status: 'READY', muxPlaybackId: null, muxUploadId: { not: null }, asset: { moderation: 'ACTIVE' } },
+            select: { id: true, assetId: true, muxUploadId: true, muxAssetId: true },
         });
 
         if (clips.length === 0) return;
@@ -214,11 +239,21 @@ async function backfillMissingPlaybackIds(log) {
                 if (playbackId) {
                     const streamUrl = `https://stream.mux.com/${playbackId}.m3u8`;
                     const thumbnailUrl = `https://image.mux.com/${playbackId}/thumbnail.png?width=640`;
-                    await dbRetry(() => prisma.clip.update({
-                        where: { id: clip.id },
-                        data: { muxPlaybackId: playbackId, streamUrl, thumbnailUrl },
+                    const updated = await dbRetry(() => prisma.$transaction(async tx => {
+                        const rows = await tx.$queryRaw`
+                            SELECT moderation FROM assets WHERE id = ${clip.assetId} FOR UPDATE
+                        `;
+                        if (!rows.length || rows[0].moderation !== 'ACTIVE') return false;
+                        await tx.clip.update({
+                            where: { id: clip.id },
+                            data: { muxPlaybackId: playbackId, streamUrl, thumbnailUrl },
+                        });
+                        return true;
                     }));
-                    log.info({ clipId: clip.id, muxPlaybackId: playbackId }, 'Mux backfill wrote playback id');
+                    if (updated) {
+                        log.info({ clipId: clip.id, muxPlaybackId: playbackId }, 'Mux backfill wrote playback id');
+                        await notifyDashboardAssetChange(fastify, clip.assetId);
+                    }
                 }
             }
         }
@@ -244,7 +279,7 @@ export function startMuxSync(fastify) {
     setTimeout(() => syncProcessingClips(fastify), 10_000);
 
     // Backfill READY clips missing playback data (one-time on boot)
-    setTimeout(() => backfillMissingPlaybackIds(log), 15_000);
+    setTimeout(() => backfillMissingPlaybackIds(fastify), 15_000);
 
     // Then run on interval
     intervalId = setInterval(() => syncProcessingClips(fastify), SYNC_INTERVAL_MS);

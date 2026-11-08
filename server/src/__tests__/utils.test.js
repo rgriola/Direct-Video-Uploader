@@ -121,7 +121,7 @@ describe('lib/utils', () => {
         expect(serializeClip({ id: 'clip-2', fileSize: null }).fileSize).toBeNull();
     });
 
-    it('emits upload complete and form request events to each user socket', () => {
+    it('emits upload complete and form request events to the owner room', () => {
         const emitted = [];
         const io = {
             to: vi.fn((socketId) => ({
@@ -132,7 +132,7 @@ describe('lib/utils', () => {
         };
 
         const capturedAt = new Date('2026-05-09T18:00:00.000Z');
-        notifyUserSockets(io, new Set(['sock-a', 'sock-b']), {
+        notifyUserSockets(io, 'user-1', {
             assetId: 'asset-1',
             asset: {
                 mediasourceId: '123456789',
@@ -155,28 +155,15 @@ describe('lib/utils', () => {
             messageText: 'ignored by helper',
         });
 
-        expect(io.to).toHaveBeenCalledTimes(4);
-        expect(emitted).toHaveLength(4);
-        expect(emitted.filter((e) => e.event === 'upload:complete')).toHaveLength(2);
-        expect(emitted.filter((e) => e.event === 'form:request')).toHaveLength(2);
+        expect(io.to).toHaveBeenCalledOnce();
+        expect(io.to).toHaveBeenCalledWith('user:user-1');
+        expect(emitted).toHaveLength(2);
+        expect(emitted.filter((e) => e.event === 'upload:complete')).toHaveLength(1);
+        expect(emitted.filter((e) => e.event === 'form:request')).toHaveLength(1);
 
         const formRequest = emitted.find((e) => e.event === 'form:request');
         expect(formRequest.payload.assetId).toBe('asset-1');
         expect(formRequest.payload.capturedAt).toBe(capturedAt);
     });
 
-    it('is a no-op when no sockets are available', () => {
-        const io = { to: vi.fn() };
-
-        notifyUserSockets(io, undefined, {
-            assetId: 'asset-1',
-            asset: {},
-            userName: 'name',
-            metadata: {},
-            clip: {},
-            messageText: 'text',
-        });
-
-        expect(io.to).not.toHaveBeenCalled();
-    });
 });

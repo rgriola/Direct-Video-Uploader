@@ -21,6 +21,7 @@ function makeLog(type: LogEntry["type"], msg: string): LogEntry {
 // ─── Module-level singleton ─────────────────────────────────
 // Survives HMR remounts — only ONE socket ever exists.
 let _socket: Socket | null = null;
+let _socketToken: string | null = null;
 let _connected = false;
 
 // HMR cleanup — Vite calls import.meta.hot.dispose on module replacement
@@ -28,20 +29,28 @@ if (import.meta.hot) {
   import.meta.hot.dispose(() => {
     _socket?.disconnect();
     _socket = null;
+    _socketToken = null;
     _connected = false;
   });
 }
 
-export function useSocket(onAssetChange?: () => void) {
-  const onAssetChangeRef = useRef(onAssetChange);
+interface SocketCallbacks {
+  onAssetChange?: () => void;
+  onAuthorizationLost?: () => void;
+  onReconnected?: () => void;
+  onConnectionError?: (error: Error) => void;
+}
+
+export function useSocket(callbacks: SocketCallbacks = {}) {
+  const callbacksRef = useRef(callbacks);
   const [connected, setConnected] = useState(_connected);
   const [socketId, setSocketId] = useState<string | null>(_socket?.id ?? null);
   const [logs, setLogs] = useState<LogEntry[]>([]);
 
   // Keep the callback ref fresh without causing reconnects
   useEffect(() => {
-    onAssetChangeRef.current = onAssetChange;
-  }, [onAssetChange]);
+    callbacksRef.current = callbacks;
+  }, [callbacks]);
 
   const addLog = useCallback((type: LogEntry["type"], msg: string) => {
     setLogs((prev) => [makeLog(type, msg), ...prev].slice(0, 50));
@@ -55,18 +64,19 @@ export function useSocket(onAssetChange?: () => void) {
       _socket.disconnect();
       _socket = null;
     }
+    _socketToken = null;
     _connected = false;
     setConnected(false);
     setSocketId(null);
     setLogs([]);
   }, []);
 
-  const connect = useCallback(() => {
+  const connect = useCallback((reauthorize = false) => {
     const token = getToken();
     if (!token) return;
 
     // Already connected — skip
-    if (_socket?.connected) {
+    if (_socket?.connected && _socketToken === token) {
       setConnected(true);
       setSocketId(_socket.id ?? null);
       return;
@@ -77,6 +87,10 @@ export function useSocket(onAssetChange?: () => void) {
       _socket.removeAllListeners();
       _socket.disconnect();
       _socket = null;
+      _socketToken = null;
+      _connected = false;
+      setConnected(false);
+      setSocketId(null);
     }
 
     const s = io("", {
@@ -88,19 +102,39 @@ export function useSocket(onAssetChange?: () => void) {
       reconnectionDelay: 3000,
     });
     _socket = s;
+    _socketToken = token;
+    let hasConnected = false;
+    let needsAccessRefresh = reauthorize;
 
     s.on("connect", () => {
       _connected = true;
       setConnected(true);
       setSocketId(s.id ?? null);
+      if ((hasConnected || needsAccessRefresh) && _socket === s && getToken() === token) {
+        callbacksRef.current.onReconnected?.();
+      }
+      hasConnected = true;
+      needsAccessRefresh = false;
       addLog("ws", `Connected (${s.id})`);
     });
 
-    s.on("disconnect", () => {
+    s.on("disconnect", (reason) => {
       _connected = false;
       setConnected(false);
       setSocketId(null);
       addLog("ws", "Disconnected");
+      if (reason === "io server disconnect" && _socket === s && getToken() === token) {
+        callbacksRef.current.onAuthorizationLost?.();
+        s.connect();
+      }
+    });
+
+    s.on("connect_error", (error) => {
+      addLog("ws", `Connection failed: ${error.message}`);
+      if (_socket === s && getToken() === token) {
+        needsAccessRefresh = true;
+        callbacksRef.current.onConnectionError?.(error);
+      }
     });
 
     s.on("message:new", (data: { content?: { text?: string }; messageType?: string; type?: string }) => {
@@ -109,7 +143,11 @@ export function useSocket(onAssetChange?: () => void) {
 
     s.on("upload:complete", (data: { assetId?: string }) => {
       addLog("ws", `Upload complete: ${data.assetId?.slice(0, 8)}...`);
-      onAssetChangeRef.current?.();
+      callbacksRef.current.onAssetChange?.();
+    });
+
+    s.on("dashboard:asset-changed", () => {
+      callbacksRef.current.onAssetChange?.();
     });
 
     s.on("form:request", (data: { assetId?: string }) => {
@@ -120,6 +158,16 @@ export function useSocket(onAssetChange?: () => void) {
       addLog("ws", `Form confirmed: ${data.message}`);
     });
   }, [addLog]);
+
+  const retryConnection = useCallback(() => {
+    if (_socket?.connected) {
+      callbacksRef.current.onReconnected?.();
+    } else if (_socket) {
+      _socket.connect();
+    } else {
+      connect(true);
+    }
+  }, [connect]);
 
   const sendPing = useCallback(() => {
     _socket?.emit("message:send", { text: "Dashboard ping 🏓" });
@@ -133,5 +181,5 @@ export function useSocket(onAssetChange?: () => void) {
     };
   }, []);
 
-  return { connected, socketId, logs, addLog, clearLogs, connect, disconnect, sendPing };
+  return { connected, socketId, logs, addLog, clearLogs, connect, disconnect, retryConnection, sendPing };
 }
