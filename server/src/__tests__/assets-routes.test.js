@@ -5,11 +5,13 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 const prismaMock = {
     $executeRawUnsafe: vi.fn(),
     $queryRawUnsafe: vi.fn(),
+    $transaction: vi.fn(),
     asset: {
         create: vi.fn(),
         findUnique: vi.fn(),
         findMany: vi.fn(),
         update: vi.fn(),
+        updateMany: vi.fn(),
     },
     clip: {
         findFirst: vi.fn(),
@@ -17,7 +19,9 @@ const prismaMock = {
         update: vi.fn(),
         updateMany: vi.fn(),
         delete: vi.fn(),
+        deleteMany: vi.fn(),
     },
+    muxAssetReference: { findFirst: vi.fn() },
     user: {
         findUnique: vi.fn(),
     },
@@ -35,6 +39,8 @@ const muxMock = {
     getMuxUpload: vi.fn(),
 };
 const notifyDashboardAssetChange = vi.fn();
+const queueAssetMediaSync = vi.fn();
+const withAssetMediaLock = vi.fn();
 
 vi.mock('../lib/prisma.js', () => ({
     default: prismaMock,
@@ -47,6 +53,8 @@ vi.mock('../lib/mux.js', () => ({
     MUX_ENV_KEY: 'test-env',
 }));
 vi.mock('../ws/dashboard-notifications.js', () => ({ notifyDashboardAssetChange }));
+vi.mock('../lib/media-reconciliation.js', () => ({ queueAssetMediaSync }));
+vi.mock('../lib/media-lock.js', () => ({ withAssetMediaLock }));
 
 let assetRoutes;
 let app;
@@ -63,6 +71,12 @@ beforeEach(async () => {
 
     prismaMock.$executeRawUnsafe.mockResolvedValue(undefined);
     prismaMock.$queryRawUnsafe.mockResolvedValue([{ val: 100000001 }]);
+    prismaMock.$transaction.mockImplementation(async callback => callback(prismaMock));
+    queueAssetMediaSync.mockResolvedValue({ count: 1 });
+    withAssetMediaLock.mockImplementation(async (_id, work) => ({
+        acquired: true,
+        value: await work(async () => {}),
+    }));
 
     prismaMock.asset.create.mockResolvedValue({
         id: 'asset-1',
@@ -76,12 +90,15 @@ beforeEach(async () => {
     prismaMock.asset.findUnique.mockResolvedValue(null);
     prismaMock.asset.findMany.mockResolvedValue([]);
     prismaMock.asset.update.mockResolvedValue({});
+    prismaMock.asset.updateMany.mockResolvedValue({ count: 1 });
 
     prismaMock.clip.findFirst.mockResolvedValue(null);
     prismaMock.clip.create.mockResolvedValue({});
     prismaMock.clip.update.mockResolvedValue({});
     prismaMock.clip.updateMany.mockResolvedValue({ count: 1 });
     prismaMock.clip.delete.mockResolvedValue({});
+    prismaMock.clip.deleteMany.mockResolvedValue({ count: 1 });
+    prismaMock.muxAssetReference.findFirst.mockResolvedValue(null);
 
     prismaMock.user.findUnique.mockResolvedValue({ id: 'user-1', name: 'Fallback User' });
     prismaMock.formResponse.upsert.mockResolvedValue({
@@ -210,6 +227,38 @@ describe('assets route deeper coverage', () => {
         });
     });
 
+    it.each([
+        ['a playback reset', { mediaPlaybackReset: true, mediaCreateOperationId: null }],
+        ['an uncertain playback creation', { mediaPlaybackReset: false, mediaCreateOperationId: 'operation-1' }],
+    ])('hides active media during %s', async (_label, pending) => {
+        prismaMock.asset.findMany.mockResolvedValue([{
+            id: 'asset-1',
+            moderation: 'ACTIVE',
+            ...pending,
+            mediaCreateMuxAssetId: 'mux-1',
+            mediaCreateStartedAt: new Date(),
+            mediaSyncRevision: 3,
+            mediaSyncError: 'internal error',
+            clips: [{
+                id: 'clip-1',
+                storageUrl: '/uploads/old.mp4',
+                muxPlaybackId: 'old-id',
+                streamUrl: 'old-stream',
+                thumbnailUrl: 'old-thumbnail',
+            }],
+            formResponse: null,
+        }]);
+
+        const response = await app.inject({ method: 'GET', url: '/api/assets/mine' });
+        const asset = response.json().assets[0];
+        expect(asset.clips[0]).toMatchObject({
+            storageUrl: null, muxPlaybackId: null, streamUrl: null, thumbnailUrl: null,
+        });
+        expect(asset).not.toHaveProperty('mediaCreateOperationId');
+        expect(asset).not.toHaveProperty('mediaCreateMuxAssetId');
+        expect(asset).not.toHaveProperty('mediaSyncError');
+    });
+
     it('reuses existing waiting mux upload for idempotency', async () => {
         prismaMock.asset.findUnique.mockResolvedValue({
             id: 'asset-1',
@@ -269,8 +318,8 @@ describe('assets route deeper coverage', () => {
         });
 
         expect(response.statusCode).toBe(status);
-        expect(prismaMock.clip.delete).not.toHaveBeenCalled();
-        expect(prismaMock.asset.update).not.toHaveBeenCalled();
+        expect(prismaMock.clip.deleteMany).not.toHaveBeenCalled();
+        expect(prismaMock.asset.updateMany).not.toHaveBeenCalled();
         expect(prismaMock.clip.create).not.toHaveBeenCalled();
         expect(muxMock.createDirectUpload).not.toHaveBeenCalled();
     });
@@ -289,8 +338,8 @@ describe('assets route deeper coverage', () => {
         });
 
         expect(response.statusCode).toBe(503);
-        expect(prismaMock.clip.delete).not.toHaveBeenCalled();
-        expect(prismaMock.asset.update).not.toHaveBeenCalled();
+        expect(prismaMock.clip.deleteMany).not.toHaveBeenCalled();
+        expect(prismaMock.asset.updateMany).not.toHaveBeenCalled();
         expect(prismaMock.clip.create).not.toHaveBeenCalled();
         expect(muxMock.createDirectUpload).not.toHaveBeenCalled();
     });
@@ -333,9 +382,13 @@ describe('assets route deeper coverage', () => {
         expect(response.json().uploadUrl).toBe('https://mux.example/upload/new');
         expect(response.json().muxUploadId).toBe('upload-new');
 
-        expect(prismaMock.clip.delete).toHaveBeenCalledWith({ where: { id: 'clip-stale' } });
+        expect(prismaMock.clip.deleteMany).toHaveBeenCalledWith({
+            where: { id: 'clip-stale', assetId: 'asset-1', status: 'PROCESSING', muxAssetId: null },
+        });
         expect(prismaMock.clip.create).toHaveBeenCalledTimes(1);
-        expect(prismaMock.asset.update).toHaveBeenCalled();
+        expect(prismaMock.asset.updateMany).toHaveBeenCalled();
+        expect(prismaMock.clip.create.mock.invocationCallOrder[0]).toBeLessThan(muxMock.createDirectUpload.mock.invocationCallOrder[0]);
+        expect(queueAssetMediaSync).toHaveBeenCalledTimes(2);
         expect(ioToSpy).toHaveBeenCalledWith('user:user-1');
         expect(notifyDashboardAssetChange.mock.calls[0][0].io).toBe(app.io);
         expect(notifyDashboardAssetChange.mock.calls[0][1]).toBe('asset-1');
@@ -347,6 +400,84 @@ describe('assets route deeper coverage', () => {
             })
         );
     });
+
+    it('retains the upload reference but withholds the URL if moderation changes during creation', async () => {
+        prismaMock.asset.findUnique
+            .mockResolvedValueOnce({
+                id: 'asset-1', userId: 'user-1', moderation: 'ACTIVE', mediasourceId: '100000001',
+            })
+            .mockResolvedValueOnce({ id: 'asset-1', userId: 'user-1', moderation: 'PAUSED' });
+
+        const response = await app.inject({
+            method: 'POST',
+            url: '/api/assets/asset-1/mux-upload',
+            payload: { metadata: { mimeType: 'video/mp4' } },
+        });
+
+        expect(response.statusCode).toBe(409);
+        expect(response.body).not.toContain('https://mux.example/upload/new');
+        expect(prismaMock.clip.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+            data: { muxUploadId: 'upload-new' },
+        }));
+        expect(queueAssetMediaSync).toHaveBeenCalledTimes(2);
+        expect(ioEmitSpy).not.toHaveBeenCalled();
+    });
+
+    it('marks a failed upload creation as an error without exposing an upload URL', async () => {
+        prismaMock.asset.findUnique.mockResolvedValue({ id: 'asset-1', userId: 'user-1', moderation: 'ACTIVE' });
+        muxMock.createDirectUpload.mockRejectedValueOnce(new Error('Mux unavailable'));
+
+        const response = await app.inject({
+            method: 'POST',
+            url: '/api/assets/asset-1/mux-upload',
+            payload: { metadata: { mimeType: 'video/mp4' } },
+        });
+
+        expect(response.statusCode).toBe(502);
+        expect(prismaMock.clip.updateMany).toHaveBeenCalledWith(expect.objectContaining({ data: { status: 'ERROR' } }));
+        expect(queueAssetMediaSync).toHaveBeenCalledTimes(2);
+        expect(ioEmitSpy).not.toHaveBeenCalled();
+    });
+
+    it('does not replace a stale clip that still has a retained Mux reference', async () => {
+        prismaMock.asset.findUnique.mockResolvedValue({ id: 'asset-1', userId: 'user-1', moderation: 'ACTIVE' });
+        prismaMock.clip.findFirst.mockResolvedValue({ id: 'clip-stale', muxUploadId: 'upload-stale' });
+        muxMock.getMuxUpload.mockResolvedValue({ status: 'timed_out' });
+        prismaMock.muxAssetReference.findFirst.mockResolvedValue({ muxAssetId: 'mux-late' });
+
+        const response = await app.inject({
+            method: 'POST',
+            url: '/api/assets/asset-1/mux-upload',
+            payload: { metadata: { mimeType: 'video/mp4' } },
+        });
+
+        expect(response.statusCode).toBe(409);
+        expect(prismaMock.clip.deleteMany).not.toHaveBeenCalled();
+        expect(queueAssetMediaSync).toHaveBeenCalledWith(prismaMock, 'asset-1');
+        expect(muxMock.createDirectUpload).not.toHaveBeenCalled();
+    });
+
+    it.each(['muxPlaybackId', 'storageUrl', 'streamUrl', 'thumbnailUrl'])(
+        'does not replace a stale clip with an unresolved %s',
+        async field => {
+            prismaMock.asset.findUnique.mockResolvedValue({ id: 'asset-1', userId: 'user-1', moderation: 'ACTIVE' });
+            prismaMock.clip.findFirst.mockResolvedValue({
+                id: 'clip-stale', muxUploadId: 'upload-stale', [field]: 'unresolved-media',
+            });
+            muxMock.getMuxUpload.mockResolvedValue({ status: 'timed_out' });
+
+            const response = await app.inject({
+                method: 'POST',
+                url: '/api/assets/asset-1/mux-upload',
+                payload: { metadata: { mimeType: 'video/mp4' } },
+            });
+
+            expect(response.statusCode).toBe(409);
+            expect(prismaMock.clip.deleteMany).not.toHaveBeenCalled();
+            expect(queueAssetMediaSync).toHaveBeenCalledWith(prismaMock, 'asset-1');
+            expect(muxMock.createDirectUpload).not.toHaveBeenCalled();
+        },
+    );
 
     it('submits form and emits coded form confirmation payload', async () => {
         prismaMock.asset.findUnique.mockResolvedValue({

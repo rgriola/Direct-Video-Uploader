@@ -12,6 +12,9 @@ const prismaMock = {
     },
     asset: {
         findFirst: vi.fn(),
+        findUnique: vi.fn(),
+        findMany: vi.fn(),
+        update: vi.fn(),
         updateMany: vi.fn(),
     },
     clip: {
@@ -25,18 +28,13 @@ const prismaMock = {
     },
 };
 
-const muxMock = {
-    deleteMuxAsset: vi.fn(),
-    disableMuxPlayback: vi.fn(),
-    enableMuxPlayback: vi.fn(),
-};
+const reconcileAssetMedia = vi.fn();
+const recordMuxAssetReference = vi.fn();
+const withAssetMediaLock = vi.fn();
 
 vi.mock('../lib/prisma.js', () => ({ default: prismaMock }));
-vi.mock('../lib/mux.js', () => ({
-    deleteMuxAsset: muxMock.deleteMuxAsset,
-    disableMuxPlayback: muxMock.disableMuxPlayback,
-    enableMuxPlayback: muxMock.enableMuxPlayback,
-}));
+vi.mock('../lib/media-reconciliation.js', () => ({ reconcileAssetMedia, recordMuxAssetReference }));
+vi.mock('../lib/media-lock.js', () => ({ withAssetMediaLock }));
 
 let moderationRoutes;
 let app;
@@ -60,15 +58,20 @@ beforeEach(async () => {
     prismaMock.user.findFirst.mockResolvedValue(null);
     prismaMock.user.updateMany.mockResolvedValue({ count: 1 });
     prismaMock.asset.findFirst.mockResolvedValue(null);
+    prismaMock.asset.findUnique.mockResolvedValue({ moderation: 'PAUSED', mediaSyncState: 'SYNCED' });
+    prismaMock.asset.findMany.mockResolvedValue([]);
+    prismaMock.asset.update.mockResolvedValue({});
     prismaMock.asset.updateMany.mockResolvedValue({ count: 1 });
     prismaMock.clip.findMany.mockResolvedValue([]);
     prismaMock.clip.update.mockResolvedValue({});
     prismaMock.clip.updateMany.mockResolvedValue({ count: 1 });
     prismaMock.auditLog.create.mockResolvedValue({});
     prismaMock.auditLog.findMany.mockResolvedValue([]);
-    muxMock.deleteMuxAsset.mockResolvedValue(true);
-    muxMock.disableMuxPlayback.mockResolvedValue({ ok: true });
-    muxMock.enableMuxPlayback.mockResolvedValue({ ok: true, playbackId: 'playback-restored' });
+    reconcileAssetMedia.mockResolvedValue({ state: 'SYNCED', message: 'Media reconciliation completed' });
+    withAssetMediaLock.mockImplementation(async (_id, work) => ({
+        acquired: true,
+        value: await work(async () => {}),
+    }));
 
     app = Fastify({ logger: false });
     app.decorate('authenticate', async request => { request.user = { ...actor }; });
@@ -151,14 +154,8 @@ describe('PATCH /api/admin/users/:id/status', () => {
 });
 
 describe('PATCH /api/admin/assets/:id/moderation', () => {
-    it('pauses an asset and revokes its Mux playback ID', async () => {
+    it('pauses an asset, clears playback, and queues reconciliation', async () => {
         prismaMock.asset.findFirst.mockResolvedValue({ id: 'asset-1', moderation: 'ACTIVE' });
-        prismaMock.clip.findMany.mockResolvedValue([{
-            id: 'clip-1',
-            muxAssetId: 'mux-1',
-            muxPlaybackId: 'playback-1',
-            storageUrl: null,
-        }]);
 
         const response = await app.inject({
             method: 'PATCH',
@@ -167,29 +164,31 @@ describe('PATCH /api/admin/assets/:id/moderation', () => {
         });
 
         expect(response.statusCode).toBe(200);
-        expect(muxMock.disableMuxPlayback).toHaveBeenCalledWith('mux-1');
-        expect(prismaMock.clip.update).toHaveBeenCalledWith({
-            where: { id: 'clip-1' },
-            data: { muxPlaybackId: null, streamUrl: null, thumbnailUrl: null },
-        });
+        expect(response.json().mediaSyncState).toBe('SYNCED');
+        expect(reconcileAssetMedia).toHaveBeenCalledWith(expect.anything(), 'asset-1');
+        expect(prismaMock.clip.updateMany).not.toHaveBeenCalled();
         expect(prismaMock.asset.updateMany).toHaveBeenCalledWith(expect.objectContaining({
             where: { id: 'asset-1', moderation: 'ACTIVE' },
-            data: expect.objectContaining({ moderation: 'PAUSED', moderatedById: 'admin-1' }),
+            data: expect.objectContaining({
+                moderation: 'PAUSED',
+                moderatedById: 'admin-1',
+                mediaSyncState: 'PENDING',
+                mediaPlaybackReset: true,
+                mediaSyncRevision: { increment: 1 },
+            }),
         }));
     });
 
-    it('allows retrying playback revocation after partial failure without duplicate audit entries', async () => {
+    it('reports pending failure and retries without duplicate audit entries', async () => {
         prismaMock.asset.findFirst
             .mockResolvedValueOnce({ id: 'asset-1', moderation: 'ACTIVE' })
             .mockResolvedValueOnce({ id: 'asset-1', moderation: 'PAUSED' });
-        prismaMock.clip.findMany.mockResolvedValue([{
-            id: 'clip-1',
-            muxAssetId: 'mux-1',
-            muxPlaybackId: 'playback-1',
-        }]);
-        muxMock.disableMuxPlayback
-            .mockResolvedValueOnce({ ok: false, error: 'temporary outage' })
-            .mockResolvedValueOnce({ ok: true });
+        reconcileAssetMedia
+            .mockResolvedValueOnce({ state: 'ERROR', message: 'Mux revocation failed' })
+            .mockResolvedValueOnce({ state: 'SYNCED', message: 'Media reconciliation completed' });
+        prismaMock.asset.findUnique
+            .mockResolvedValueOnce({ moderation: 'PAUSED', mediaSyncState: 'ERROR' })
+            .mockResolvedValueOnce({ moderation: 'PAUSED', mediaSyncState: 'SYNCED' });
 
         const payload = { moderation: 'PAUSED' };
         const failed = await app.inject({
@@ -203,19 +202,19 @@ describe('PATCH /api/admin/assets/:id/moderation', () => {
             payload,
         });
 
-        expect(failed.statusCode).toBe(502);
+        expect(failed.statusCode).toBe(202);
+        expect(failed.json()).toMatchObject({
+            mediaSyncState: 'ERROR',
+            message: expect.stringContaining('Mux revocation failed'),
+        });
         expect(retried.statusCode).toBe(200);
         expect(prismaMock.auditLog.create).toHaveBeenCalledTimes(1);
     });
 
-    it('restores a flagged asset with a new playback ID', async () => {
+    it('queues a flagged asset restore with playback reset required', async () => {
         actor = SUPER_ADMIN;
         prismaMock.asset.findFirst.mockResolvedValue({ id: 'asset-1', moderation: 'FLAGGED_FOR_REMOVAL' });
-        prismaMock.clip.findMany.mockResolvedValue([{
-            id: 'clip-1',
-            muxAssetId: 'mux-1',
-            muxPlaybackId: null,
-        }]);
+        prismaMock.asset.findUnique.mockResolvedValue({ moderation: 'ACTIVE', mediaSyncState: 'SYNCED' });
 
         const response = await app.inject({
             method: 'PATCH',
@@ -224,29 +223,18 @@ describe('PATCH /api/admin/assets/:id/moderation', () => {
         });
 
         expect(response.statusCode).toBe(200);
-        expect(muxMock.enableMuxPlayback).toHaveBeenCalledWith('mux-1');
-        expect(prismaMock.clip.update).toHaveBeenCalledWith({
-            where: { id: 'clip-1' },
-            data: {
-                muxPlaybackId: 'playback-restored',
-                streamUrl: 'https://stream.mux.com/playback-restored.m3u8',
-                thumbnailUrl: 'https://image.mux.com/playback-restored/thumbnail.png?width=640',
-            },
-        });
+        expect(prismaMock.asset.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+            data: expect.objectContaining({ moderation: 'ACTIVE', mediaPlaybackReset: true }),
+        }));
         expect(prismaMock.auditLog.create).toHaveBeenCalledWith(expect.objectContaining({
             data: expect.objectContaining({ action: 'ASSET_RESTORED' }),
         }));
     });
 
-    it('revokes playback if moderation changes before a restore can commit', async () => {
+    it('rejects a stale moderation transition without starting reconciliation', async () => {
         actor = SUPER_ADMIN;
         prismaMock.asset.findFirst.mockResolvedValue({ id: 'asset-1', moderation: 'FLAGGED_FOR_REMOVAL' });
         prismaMock.asset.updateMany.mockResolvedValueOnce({ count: 0 });
-        prismaMock.clip.findMany.mockResolvedValue([{
-            id: 'clip-1',
-            muxAssetId: 'mux-1',
-            muxPlaybackId: null,
-        }]);
 
         const response = await app.inject({
             method: 'PATCH',
@@ -255,23 +243,13 @@ describe('PATCH /api/admin/assets/:id/moderation', () => {
         });
 
         expect(response.statusCode).toBe(409);
-        expect(muxMock.enableMuxPlayback).toHaveBeenCalledWith('mux-1');
-        expect(muxMock.disableMuxPlayback).toHaveBeenCalledWith('mux-1');
-        expect(prismaMock.clip.update).toHaveBeenCalledWith({
-            where: { id: 'clip-1' },
-            data: { muxPlaybackId: null, streamUrl: null, thumbnailUrl: null },
-        });
+        expect(reconcileAssetMedia).not.toHaveBeenCalled();
         expect(prismaMock.auditLog.create).not.toHaveBeenCalled();
     });
 
-    it('persists playback for an active asset under a state lock without a transition audit', async () => {
+    it('retries reconciliation for an active asset without a transition audit', async () => {
         prismaMock.asset.findFirst.mockResolvedValue({ id: 'asset-1', moderation: 'ACTIVE' });
-        prismaMock.clip.findMany.mockResolvedValue([{
-            id: 'clip-1',
-            muxAssetId: 'mux-1',
-            muxPlaybackId: null,
-        }]);
-        prismaMock.$queryRaw.mockResolvedValueOnce([{ moderation: 'ACTIVE' }]);
+        prismaMock.asset.findUnique.mockResolvedValue({ moderation: 'ACTIVE', mediaSyncState: 'SYNCED' });
 
         const response = await app.inject({
             method: 'PATCH',
@@ -280,26 +258,14 @@ describe('PATCH /api/admin/assets/:id/moderation', () => {
         });
 
         expect(response.statusCode).toBe(200);
-        expect(prismaMock.clip.update).toHaveBeenCalledWith({
-            where: { id: 'clip-1' },
-            data: {
-                muxPlaybackId: 'playback-restored',
-                streamUrl: 'https://stream.mux.com/playback-restored.m3u8',
-                thumbnailUrl: 'https://image.mux.com/playback-restored/thumbnail.png?width=640',
-            },
-        });
+        expect(reconcileAssetMedia).toHaveBeenCalledWith(expect.anything(), 'asset-1');
         expect(prismaMock.auditLog.create).not.toHaveBeenCalled();
     });
 
-    it('removes a flagged asset only for Super Admin and preserves its tombstone', async () => {
+    it('queues removal for a Super Admin and preserves its tombstone', async () => {
         actor = SUPER_ADMIN;
         prismaMock.asset.findFirst.mockResolvedValue({ id: 'asset-1', moderation: 'FLAGGED_FOR_REMOVAL' });
-        prismaMock.clip.findMany.mockResolvedValue([{
-            id: 'clip-1',
-            muxAssetId: 'mux-1',
-            muxPlaybackId: 'playback-1',
-            storageUrl: null,
-        }]);
+        prismaMock.asset.findUnique.mockResolvedValue({ moderation: 'REMOVED', mediaSyncState: 'SYNCED' });
 
         const response = await app.inject({
             method: 'PATCH',
@@ -308,20 +274,99 @@ describe('PATCH /api/admin/assets/:id/moderation', () => {
         });
 
         expect(response.statusCode).toBe(200);
-        expect(muxMock.deleteMuxAsset).toHaveBeenCalledWith('mux-1');
+        expect(reconcileAssetMedia).toHaveBeenCalledWith(expect.anything(), 'asset-1');
         expect(prismaMock.asset.updateMany).toHaveBeenCalledWith(expect.objectContaining({
             data: expect.objectContaining({ moderation: 'REMOVED' }),
         }));
-        expect(prismaMock.clip.updateMany).toHaveBeenCalledWith({
-            where: { assetId: 'asset-1' },
-            data: {
-                muxAssetId: null,
-                muxPlaybackId: null,
-                streamUrl: null,
-                thumbnailUrl: null,
-                storageUrl: null,
-            },
+        expect(prismaMock.clip.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('does not report success for a moderation state superseded during reconciliation', async () => {
+        prismaMock.asset.findFirst.mockResolvedValue({ id: 'asset-1', moderation: 'ACTIVE' });
+        prismaMock.asset.findUnique.mockResolvedValue({ moderation: 'ACTIVE', mediaSyncState: 'SYNCED' });
+
+        const response = await app.inject({
+            method: 'PATCH',
+            url: '/api/admin/assets/asset-1/moderation',
+            payload: { moderation: 'PAUSED' },
         });
+
+        expect(response.statusCode).toBe(409);
+        expect(response.json().error).toContain('moderation changed');
+    });
+});
+
+describe('POST /api/admin/assets/:id/media-sync/confirm-create', () => {
+    const url = '/api/admin/assets/asset-1/media-sync/confirm-create';
+    const payload = { operationId: 'operation-1', confirmed: true, reason: 'Mux confirmed the request cannot complete later' };
+
+    it('requires a Super Admin and explicit confirmation', async () => {
+        expect((await app.inject({ method: 'POST', url, payload })).statusCode).toBe(403);
+        actor = SUPER_ADMIN;
+        expect((await app.inject({ method: 'POST', url, payload: { ...payload, confirmed: false } })).statusCode).toBe(400);
+        expect(withAssetMediaLock).not.toHaveBeenCalled();
+    });
+
+    describe('GET /api/admin/media-issues', () => {
+        it('restricts recovery details to Super Admins', async () => {
+            const response = await app.inject({ method: 'GET', url: '/api/admin/media-issues' });
+            expect(response.statusCode).toBe(403);
+            expect(prismaMock.asset.findMany).not.toHaveBeenCalled();
+        });
+
+        it('includes unresolved removed assets and reports truncation', async () => {
+            actor = SUPER_ADMIN;
+            prismaMock.asset.findMany.mockResolvedValue(Array.from({ length: 101 }, (_, index) => ({
+                id: `asset-${index}`, moderation: 'REMOVED', mediaSyncState: 'ERROR',
+            })));
+            const response = await app.inject({ method: 'GET', url: '/api/admin/media-issues' });
+            expect(response.statusCode).toBe(200);
+            expect(response.json().issues).toHaveLength(100);
+            expect(response.json().hasMore).toBe(true);
+            expect(prismaMock.asset.findMany).toHaveBeenCalledWith(expect.objectContaining({
+                where: expect.objectContaining({ OR: expect.arrayContaining([
+                    { moderation: { not: 'ACTIVE' }, mediaSyncState: 'PENDING' },
+                ]) }),
+            }));
+        });
+    });
+
+    it('records a matching confirmation before retrying reconciliation', async () => {
+        actor = SUPER_ADMIN;
+        prismaMock.$queryRaw.mockResolvedValueOnce([{
+            media_create_operation_id: 'operation-1',
+            media_create_mux_asset_id: 'mux-operation-1',
+        }]);
+
+        const response = await app.inject({ method: 'POST', url, payload });
+
+        expect(response.statusCode).toBe(200);
+        expect(prismaMock.asset.update).toHaveBeenCalledWith(expect.objectContaining({
+            data: expect.objectContaining({
+                mediaCreateOperationId: null,
+                mediaPlaybackReset: true,
+                mediaSyncState: 'PENDING',
+            }),
+        }));
+        expect(prismaMock.auditLog.create).toHaveBeenCalledWith(expect.objectContaining({
+            data: expect.objectContaining({
+                action: 'MEDIA_CREATE_CONFIRMED',
+                reason: `Operation ${payload.operationId}: ${payload.reason}`,
+            }),
+        }));
+        expect(recordMuxAssetReference).toHaveBeenCalledWith(prismaMock, {
+            assetId: 'asset-1', muxAssetId: 'mux-operation-1',
+        });
+        expect(reconcileAssetMedia).toHaveBeenCalledWith(expect.anything(), 'asset-1');
+    });
+
+    it('does not confirm a stale or currently running operation', async () => {
+        actor = SUPER_ADMIN;
+        prismaMock.$queryRaw.mockResolvedValueOnce([{ media_create_operation_id: 'other-operation' }]);
+        expect((await app.inject({ method: 'POST', url, payload })).statusCode).toBe(409);
+        withAssetMediaLock.mockResolvedValueOnce({ acquired: false });
+        expect((await app.inject({ method: 'POST', url, payload })).statusCode).toBe(409);
+        expect(prismaMock.auditLog.create).not.toHaveBeenCalled();
     });
 });
 

@@ -249,6 +249,46 @@ describe('clip routes deeper coverage', () => {
         expect(prismaMock.clip.findMany).not.toHaveBeenCalled();
     });
 
+    it.each([
+        ['reset', { mediaPlaybackReset: true, mediaCreateOperationId: null }],
+        ['uncertain create', { mediaPlaybackReset: false, mediaCreateOperationId: 'operation-1' }],
+    ])('does not expose playback in the viewer or status endpoint during %s', async (_label, pending) => {
+        const cookieHeader = authCookieFor({
+            id: 'viewer-1', name: 'Viewer', role: 'SUPER_ADMIN', companyCode: null,
+        });
+        prismaMock.asset.findFirst.mockResolvedValue({
+            id: 'asset-1',
+            mediasourceId: '100000111',
+            status: 'READY',
+            moderation: 'ACTIVE',
+            userId: 'uploader-1',
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            ...pending,
+        });
+        prismaMock.clip.findFirst.mockResolvedValue({ muxPlaybackId: 'old-playback-id', status: 'READY' });
+        prismaMock.clip.findMany.mockResolvedValue([{
+            id: 'clip-1',
+            status: 'READY',
+            muxPlaybackId: 'old-playback-id',
+            streamUrl: 'https://stream.mux.com/old-playback-id.m3u8',
+            storageUrl: '/uploads/old-video.mp4',
+            createdAt: new Date(),
+        }]);
+        const status = await app.inject({
+            method: 'GET', url: '/clips/100000111/status', headers: { cookie: cookieHeader },
+        });
+        const page = await app.inject({
+            method: 'GET', url: '/clips/100000111', headers: { cookie: cookieHeader },
+        });
+
+        expect(status.json()).toMatchObject({ ready: false, muxPlaybackId: null });
+        expect(page.statusCode).toBe(200);
+        expect(page.body).not.toContain('old-playback-id');
+        expect(page.body).not.toContain('/uploads/old-video.mp4');
+        expect(page.body).toContain('Video Processing');
+    });
+
     it('redirects unauthenticated clip viewer requests to login', async () => {
         const response = await app.inject({
             method: 'GET',
