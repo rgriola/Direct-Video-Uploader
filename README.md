@@ -64,7 +64,7 @@ Direct-Video-Uploader/
 │       └── hooks/          # TanStack Query, Socket.IO real-time
 ├── scripts/dev.js          # Triad launcher (DB + Server + Admin)
 ├── Dockerfile              # Multi-stage Docker build (Fastify + Vite)
-├── cloudbuild.yaml         # Google Cloud Build CI/CD pipeline definition
+├── cloudbuild.yaml         # Legacy Google Cloud Build pipeline (not in use)
 ├── PROJECT_SPEC.md         # Full product specification (v4)
 ├── PROJECT_STATUS.md       # Detailed progress log with every session
 ├── STABILITY_PLAN.md       # Security + reliability hardening (Phases A–C)
@@ -214,19 +214,21 @@ The server expects these in `server/.env` (see `.env.example`):
 
 ---
 
-## Deployment (Google Cloud Platform)
+## Legacy Cloud Deployment
 
-On Hold: The project is fully containerized and uses **Google Cloud Build** for automated CI/CD deployment to **Google Cloud Run** and **Cloud SQL**:
+Cloud Build and Render are no longer used for deployment (confirmed by the project owner on Nov 7, 2026). The legacy configuration remains in the repository; it must be reviewed before reuse because it runs `prisma db push --accept-data-loss`. The Render build script also seeds demo accounts.
+
+The former Cloud Build pipeline performed these steps:
 
 ```bash
-# Deploys automatically via Cloud Build on git push to main
+# Historical Cloud Build steps (not in use)
 # 1. Builds multi-stage Dockerfile (bundles React admin into Fastify static public/)
 # 2. Pushes container image to Google Artifact Registry
-# 3. Executes Prisma schema sync (npx prisma db push) via ephemeral Cloud SQL Auth Proxy
+# 3. Runs npx prisma db push --accept-data-loss via ephemeral Cloud SQL Auth Proxy
 # 4. Deploys service to Cloud Run with Secret Manager environment variables
 ```
 
-### Architecture on GCP
+### Former Architecture on GCP
 
 - **Cloud Run**: Hosts the unified Node.js Fastify server + Vite React admin static bundle. Auto-scales down to zero when idle.
 - **Cloud SQL**: Managed PostgreSQL instance, connected securely via Unix Sockets (`/cloudsql/...`).
