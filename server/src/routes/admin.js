@@ -21,6 +21,18 @@ function scopedUserFilter(user) {
     return Prisma.empty;
 }
 
+function scopedAssetFilter(user, moderationStates) {
+    const scope = userScope(user);
+    const moderationFilter = Prisma.sql`a.moderation IN (${Prisma.join(moderationStates)})`;
+    if (scope.companyCode) {
+        return Prisma.sql`WHERE u.company_code = ${scope.companyCode} AND ${moderationFilter}`;
+    }
+    if (scope.id) {
+        return Prisma.sql`WHERE u.id = ${scope.id} AND ${moderationFilter}`;
+    }
+    return Prisma.sql`WHERE ${moderationFilter}`;
+}
+
 export default async function adminRoutes(fastify) {
 
     /**
@@ -147,6 +159,8 @@ export default async function adminRoutes(fastify) {
                    u.company_code AS "companyCode",
                    o.company_name AS "companyName",
                    u.created_at AS "createdAt",
+                   u.paused_at AS "pausedAt",
+                   u.paused_by_id AS "pausedById",
                    u.last_login_at AS "lastLoginAt",
                    (SELECT COUNT(*)::int FROM assets a WHERE a.user_id = u.id) AS "assetCount"
             FROM users u
@@ -175,11 +189,26 @@ export default async function adminRoutes(fastify) {
      */
     fastify.get('/api/admin/assets', {
         preHandler: [fastify.authenticate, fastify.requireRole(...ALL_ROLES)],
-    }, async (request) => {
-        const userFilter = scopedUserFilter(request.user);
+    }, async (request, reply) => {
+        const requestedModeration = request.query?.moderation;
+        if (requestedModeration && !['ACTIVE', 'PAUSED', 'FLAGGED_FOR_REMOVAL'].includes(requestedModeration)) {
+            return reply.status(400).send({ error: 'Invalid moderation filter' });
+        }
+        if (requestedModeration === 'FLAGGED_FOR_REMOVAL' && !isSuperAdmin(request.user.role)) {
+            return reply.status(403).send({ error: 'Only a Super Admin can view the removal queue' });
+        }
+        const moderationStates = requestedModeration
+            ? [requestedModeration]
+            : request.user.role === ROLES.USER
+                ? ['ACTIVE', 'PAUSED']
+                : ['ACTIVE'];
+        const assetFilter = scopedAssetFilter(request.user, moderationStates);
         const assets = await prisma.$queryRaw`
             SELECT a.id, a.mediasource_id AS "mediasourceId",
                    a.mediasource_url AS "mediasourceUrl", a.status,
+                   a.moderation, a.moderated_at AS "moderatedAt",
+                   a.moderated_by_id AS "moderatedById",
+                   a.moderation_reason AS "moderationReason",
                    a.clip_count::int AS "clipCount", a.total_duration_seconds::int AS "totalDuration",
                    a.created_at AS "createdAt",
                    json_build_object('id', u.id, 'name', u.name, 'phoneNumber', u.phone_number) AS "user",
@@ -201,7 +230,7 @@ export default async function adminRoutes(fastify) {
             FROM assets a
             JOIN users u ON u.id = a.user_id
             LEFT JOIN form_responses fr ON fr.asset_id = a.id
-            ${userFilter}
+            ${assetFilter}
             ORDER BY a.created_at DESC
             LIMIT 50
         `;
@@ -482,6 +511,14 @@ export default async function adminRoutes(fastify) {
         const assetDeleted = await prisma.asset.deleteMany({ where: { userId: id } });
 
         // 5. Delete the user record
+        await prisma.auditLog.create({
+            data: {
+                actorUserId: request.user.id,
+                targetType: 'USER',
+                targetId: id,
+                action: 'USER_DELETED',
+            },
+        });
         await prisma.user.delete({ where: { id } });
 
         request.log.warn(

@@ -41,6 +41,10 @@ const prismaMock = {
         update: vi.fn(),
         delete: vi.fn(),
     },
+    auditLog: {
+        create: vi.fn(),
+        findMany: vi.fn(),
+    },
 };
 
 const muxMock = {
@@ -137,6 +141,8 @@ beforeEach(async () => {
         createdAt: new Date('2026-05-09T00:00:00.000Z'),
     });
     prismaMock.organization.delete.mockResolvedValue({});
+    prismaMock.auditLog.create.mockResolvedValue({});
+    prismaMock.auditLog.findMany.mockResolvedValue([]);
 
     muxMock.deleteMuxAsset.mockResolvedValue(true);
     fsMock.unlink.mockResolvedValue(undefined);
