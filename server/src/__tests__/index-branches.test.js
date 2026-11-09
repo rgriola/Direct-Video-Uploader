@@ -1,5 +1,10 @@
 // Last updated: May 9, 2026 - 9:07pm - GPT-5.3-Codex
+import { readFileSync } from 'fs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+const packageVersion = JSON.parse(
+    readFileSync(new URL('../../package.json', import.meta.url), 'utf8'),
+).version;
 
 const fastifyState = {
     instances: [],
@@ -478,6 +483,10 @@ describe('index branch-heavy coverage', () => {
             const healthRoute = fastify.__routes.GET.get(url);
             expect(healthRoute.options.preHandler).toBeUndefined();
             expect((await healthRoute.handler({}, makeReply())).status).toBe('ok');
+        }
+        for (const url of ['/api/health', '/api/health/live']) {
+            const body = await fastify.__routes.GET.get(url).handler({}, makeReply());
+            expect(body.version).toBe(packageVersion);
         }
         prismaMock.user.findUnique.mockResolvedValue({
             id: 'matrix-actor', name: 'Matrix Actor', phoneNumber: '5581000000',
