@@ -2,7 +2,7 @@
 
 _Drafted: October 19, 2026 · Updated: November 8, 2026_
 _Owner: Rod_
-_Status: **In progress** — Step 1 verified; Steps 2.1 and 2.3 deployed; Steps 2.2, 2.4, and 2.5 merged to `main`; Step 2.5 passed GitHub CI per the owner; Step 3.1's routing foundation is in progress. The earlier web app is reported deployed, while the matching server and real-Mux rollout checks remain unconfirmed._
+_Status: **In progress** — Step 1 verified; Steps 2.1 and 2.3 deployed; Steps 2.2, 2.4, and 2.5 and the Step 3.1 routing foundation merged to `main`. The owner reported CI and CodeQL passed for Step 3.1. Step 3.2 thumbnails await CI and merge. The earlier web app is reported deployed, while the matching server and real-Mux rollout checks remain unconfirmed._
 
 ```mermaid
 flowchart TD
@@ -69,9 +69,9 @@ flowchart TD
 | Original files | iOS uploads **straight to Mux** (direct-upload PUT). The original never reaches our server. Mux doesn't give back the byte-exact original | Keeping originals means changing the upload pipeline (Step 4). |
 | Legacy local path | `Clip.storageUrl` and an `uploads/` folder exist. The merged coordinator cleans legacy files after Mux readiness or permanent removal | Step 4 must retain and manage original files explicitly instead. |
 | ⚠️ Public uploads folder | The uploads route is unauthenticated. The merged code adds moderation/reference checks, but known active files remain reachable by URL without authentication | Replace it with authenticated or signed access **before** originals are stored (Step 4.1); confirm the running server version separately. |
-| Thumbnails | Webhook already writes `Clip.thumbnailUrl` (`image.mux.com/<id>/thumbnail.png?width=640`) | Thumbnails are frontend-only work. |
+| Thumbnails | The Mux reconciler writes `Clip.thumbnailUrl`; the Step 3.2 work exposes it in scoped lists and renders list-sized images only when playback is available. | Deploy the matching dashboard and server together; active Mux image URLs remain public. |
 | Mux settings | Previously issued uploads can request automatic public playback; uploads from the merged code omit the playback policy and retain `cors_origin: '*'` | Drain or cancel legacy uploads, verify Mux cleanup, and test with real Mux before relying on moderation. |
-| Web app | Step 3.1's feature branch adds role-gated hash routes and an owner-videos view while preserving existing admin tools. Active theme: `theme-a-editorial.css`; three alternates sit unused | Finish the remaining Step 3.1 work and verify the feature is deployed with a matching server. See the Themes note below. |
+| Web app | The merged Step 3.1 foundation adds role-gated hash routes and an owner-videos view while preserving existing admin tools. Active theme: `theme-a-editorial.css`; three alternates sit unused | Finish the remaining Step 3.1 work and verify the feature is deployed with a matching server. See the Themes note below. |
 
 ---
 
@@ -594,9 +594,10 @@ tests against a migrated disposable `dvu_scope_test_*` database with matching
 
 ### 3.1 Routing & Layouts
 
-**Foundation status:** The feature branch adds role-gated routes and an owner-videos view.
-It preserves the existing admin dashboard and phone-and-PIN sign-in; company-code enforcement
-was intentionally deferred. These changes have not yet been merged or deployed.
+**Foundation status:** Role-gated routes and an owner-videos view were merged into `main`
+after the owner reported CI and CodeQL passed. The foundation preserves the existing admin
+dashboard and phone-and-PIN sign-in; company-code enforcement was intentionally deferred.
+Deployment of this foundation and its matching server version has not been independently confirmed.
 
 - [x] Add TanStack Router with hash-based deep links compatible with the existing static server.
 - [x] Split authentication and route-gated Super Admin, Team Admin, and User views.
@@ -632,15 +633,25 @@ The Step 2.2 migration, legacy-upload, and real-Mux checks remain open.
 
 ### 3.2 Thumbnails
 
-- [ ] Render `clip.thumbnailUrl`. Make sure the asset list endpoints `select` it
-- [ ] List-sized images: `thumbnail.webp?width=320&fit_mode=smartcrop`. Optional hover preview: `animated.webp?width=320&end=4`
-- [ ] `loading="lazy"` with fixed aspect-ratio boxes
-- [ ] Status fallbacks:
-  - `UPLOADING`: progress
-  - `PROCESSING`: shimmer
+- [x] Render `clip.thumbnailUrl` in owner and scoped admin asset lists. Suppress thumbnail
+  URLs whenever playback is unavailable, including for Super Admins.
+- [x] Request Mux list images as `thumbnail.webp?width=320&fit_mode=smartcrop`.
+- [x] Use `loading="lazy"` with fixed aspect-ratio boxes and a fallback for missing or failed images.
+- [x] Status fallbacks:
+  - `UPLOADING`: indeterminate progress; the dashboard does not receive a reliable percentage
+  - `PROCESSING`: shimmer that respects reduced-motion preferences
   - `ERROR`: error tile
-  - `PAUSED`: dimmed with a badge
-- [ ] Live refresh on socket `mux:ready` / `upload:complete`
+  - `PAUSED`: dimmed placeholder and badge, without requesting the thumbnail
+- [x] Refresh owner lists on `mux:ready` / `upload:complete`, and admin lists on scoped
+  `dashboard:asset-changed` signals.
+- [ ] Optional hover preview: `animated.webp?width=320&end=4`.
+
+The thumbnail feature requires deploying the matching dashboard and server together. Mux
+thumbnail URLs are public while playback is active; hiding them from API responses does
+not make previously exposed URLs private or instantly revoke them.
+Local validation passed the dashboard tests, typecheck, isolated build, and PostgreSQL-backed
+authorization, reconciliation, and socket tests. Mux was mocked; GitHub CI and real-Mux
+validation for this step remain pending.
 
 ---
 

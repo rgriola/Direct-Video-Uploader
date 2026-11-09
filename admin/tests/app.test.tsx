@@ -419,6 +419,53 @@ describe("role-separated web application", () => {
     expect(requestPaths().filter((path) => path === "/api/assets/mine").length).toBeGreaterThanOrEqual(5);
   });
 
+  it.each([
+    ["USER", "/api/assets/mine", ["upload:complete", "mux:ready"]],
+    ["ADMIN", "/api/admin/assets", ["dashboard:asset-changed"]],
+    ["SUPER_ADMIN", "/api/admin/assets", ["dashboard:asset-changed"]],
+  ] as const)("refreshes %s thumbnails from scoped socket events", async (role, path, events) => {
+    currentUser = account(role);
+    const initial = video("10001", "Live thumbnail story", { status: "PROCESSING" });
+    if (role === "USER") myAssets = [initial];
+    else adminAssets = [initial];
+    renderApp();
+    await signIn();
+    await screen.findByText("Live thumbnail story");
+    const row = () => {
+      const button = screen.getByText("Live thumbnail story").closest("button");
+      if (!button) throw new Error("Expected the video row");
+      return button;
+    };
+    expect(row().querySelector("img")).toBeNull();
+    const socket = latestSocket();
+    act(() => socket.serverEmit("connect"));
+
+    for (const [index, event] of events.entries()) {
+      const playbackId = `playback-${index}`;
+      const ready = video("10001", "Live thumbnail story", {
+        clips: [{ id: "clip-10001", thumbnailUrl: `https://image.mux.com/${playbackId}/thumbnail.png?width=640` }],
+      });
+      if (role === "USER") myAssets = [ready];
+      else adminAssets = [ready];
+      act(() => socket.serverEmit(event, { assetId: "10001" }));
+      await waitFor(() => expect(row().querySelector("img")?.getAttribute("src"))
+        .toBe(`https://image.mux.com/${playbackId}/thumbnail.webp?width=320&fit_mode=smartcrop`));
+    }
+
+    const paused = video("10001", "Live thumbnail story", {
+      moderation: "PAUSED",
+      mediaPlaybackUnavailable: true,
+      clips: [{ id: "clip-10001", thumbnailUrl: "https://image.mux.com/stale/thumbnail.png" }],
+    });
+    if (role === "USER") myAssets = [paused];
+    else adminAssets = [paused];
+    act(() => socket.serverEmit(role === "USER" ? "mux:ready" : "dashboard:asset-changed", { assetId: "10001" }));
+    await screen.findByText("Paused");
+    expect(row().querySelector("img")).toBeNull();
+    expect(requestPaths().filter((requestPath) => requestPath === path).length)
+      .toBeGreaterThanOrEqual(events.length + 2);
+  });
+
   it("clears privileged data while reconnecting and enforces a changed role", async () => {
     currentUser = account("SUPER_ADMIN");
     adminAssets = [video("10001", "Super-only story")];

@@ -200,7 +200,9 @@ production rebuild, restart Fastify so it registers the new hashed files; see th
   available clips. Hash routes provide role-specific homes and 403/404 pages. The current
   login remains phone and PIN without a company code; server authorization still enforces
   access. Deploy the dashboard with the matching server and verify Cloudflare Access permits
-  intended web users. Profile/PIN changes, richer video details, and thumbnails remain planned.
+  intended web users. The Step 3.2 work adds lazy thumbnails and status fallbacks to scoped
+  lists, with indeterminate upload progress. Mux thumbnail URLs remain public while playback
+  is active. Profile/PIN changes and richer video details remain planned.
 
 ---
 

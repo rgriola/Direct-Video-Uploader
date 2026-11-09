@@ -68,6 +68,14 @@ body {
     transform: rotate(360deg);
   }
 }
+@keyframes thumbnail-shimmer {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
 .animate-fade-in {
   animation: fade-in 0.3s ease;
 }
@@ -76,4 +84,9 @@ body {
 }
 .animate-spin-once {
   animation: spin-once 0.6s linear;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .thumbnail-shimmer {
+    animation: thumbnail-shimmer 1.6s linear infinite;
+  }
 }
