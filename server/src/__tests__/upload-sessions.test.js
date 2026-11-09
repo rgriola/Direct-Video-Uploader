@@ -19,6 +19,7 @@ function createDatabase({ moderation = "ACTIVE" } = {}) {
   const clipId = randomUUID();
   const ownerId = randomUUID();
   const state = {
+    owner: { status: "ACTIVE" },
     asset: { id: assetId, userId: ownerId, moderation, status: "UPLOADING" },
     clip: {
       id: clipId,
@@ -42,6 +43,7 @@ function createDatabase({ moderation = "ACTIVE" } = {}) {
   });
   const includeSession = session => session && ({
     ...session,
+    owner: { ...state.owner },
     asset: { userId: state.asset.userId, moderation: state.asset.moderation, status: state.asset.status },
     clip: { ...state.clip },
     parts: [...state.parts.values()]
@@ -92,6 +94,8 @@ function createDatabase({ moderation = "ACTIVE" } = {}) {
       },
     },
     uploadPart: {
+      findMany: async ({ where }) => [...state.parts.values()]
+        .filter(part => part.uploadSessionId === where.uploadSessionId),
       upsert: async ({ where, create, update }) => {
         const key = partKey(
           where.uploadSessionId_partNumber.uploadSessionId,
