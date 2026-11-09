@@ -173,9 +173,9 @@ Replace the device type and runtime with installed iPhone options if needed. If 
 - **Real-time WebSocket** — Greeting, upload progress, form requests, Mux ready notifications, Slack confirmations
 - **Scoped dashboard refreshes** — Step 2.4 sends payload-free asset-change signals to the
   relevant team admins and super admins; rich upload and form events remain owner-only.
-  Step 2.4 is pushed but not yet deployed. The Step 2.2 reconciliation fix is on a development
-  branch; legacy-upload draining, pending migrations, and real-Mux checks remain rollout blockers.
-  See the [roadmap](iOS-Modernization.md).
+  Step 2.4 and the Step 2.2 reconciliation fix are merged to `main`; the owner reports the web
+  app deployed. The matching server version, migration status, legacy-upload draining, and
+  real-Mux checks remain unconfirmed. See the [roadmap](iOS-Modernization.md).
 - **Context form** — Slug, type, description, priority with auto-focus and swipe-dismiss prevention
 - **Video trim** — Pre-upload trimming via native `UIVideoEditorController`
 - **PHAsset fast path** — Zero-copy video loading from Photos library (instant, no file copy)
@@ -249,7 +249,7 @@ The Fastify server and Postgres 18 run on a home MacBook Air instead of Cloud Ru
 
 - **Services**: `brew services` manages Postgres 18; a `launchd` `LaunchAgent` (`~/Library/LaunchAgents/com.msfixer.fastify.plist`) keeps Fastify running (`KeepAlive`, auto-restart).
 - **Tunnel**: `cloudflared` runs as a system `LaunchDaemon`, config at `/etc/cloudflared/config.yml`, routing both `ms-fixer.com` and `dev.ms-fixer.com` → `http://localhost:3000`.
-- **Access control**: Cloudflare Zero Trust protects the admin dashboard (site root) with email one-time-PIN login, on both domains. `/api/*`, `/socket.io/*`, `/uploads/*`, and `/clips/*` bypass Access. App authentication protects the applicable API and clip routes, but active `/uploads/*` URLs remain unauthenticated and Mux playback URLs are public. The Step 2.2 development-branch fix gates moderated legacy files; Step 2.4's scoped, payload-free dashboard refreshes are pushed but not yet deployed.
+- **Access control**: Cloudflare Zero Trust protects the admin dashboard (site root) with email one-time-PIN login, on both domains. `/api/*`, `/socket.io/*`, `/uploads/*`, and `/clips/*` bypass Access. App authentication protects the applicable API and clip routes, but active `/uploads/*` URLs remain unauthenticated and Mux playback URLs are public. The merged Step 2.2 code gates moderated legacy files, and Step 2.4 scopes payload-free dashboard refreshes; confirm the running server version before relying on either.
 - **Real-time deployment**: Socket rooms and authorization invalidation are process-local, matching the current single-server deployment. Multiple server processes require a shared Socket.IO adapter and coordinated revocation. Refreshes are best-effort; dashboard polling remains enabled.
 - **CORS/WebSocket origins**: `PUBLIC_URL` (defaults to `https://ms-fixer.com`) plus its `www.` variant are always allowed; additional origins (e.g. `https://dev.ms-fixer.com`) can be added via the comma-separated `EXTRA_CORS_ORIGINS` env var.
 - **Migrations**: schema changes go through `prisma migrate dev` locally, then `prisma migrate deploy` on the home server (not `db push`, to avoid destructive drift on real data).

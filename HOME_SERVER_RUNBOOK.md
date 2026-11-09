@@ -143,10 +143,11 @@ modify a Super Admin.
 
 ## Step 2.2 moderation reconciliation rollout
 
-The reconciliation fix is on a development branch, not deployed. Step 2.4 is pushed
-to `main` but is also not deployed. The Step 2.2 moderation migration and the two reconciliation
-migrations have only been applied to a disposable test database. Do not rely on pause or
-permanent removal in production until the following checks pass against the actual Mux account.
+The Step 2.2 reconciliation fix and Step 2.4 are merged to `main`; the owner reports the web
+app deployed. The matching server version, production migration status, legacy-upload draining,
+and real-Mux checks have not been confirmed. Verify what is already deployed and which checks
+have passed before taking further action. Do not rely on pause or permanent removal in
+production until the following checks pass against the actual Mux account.
 
 1. Back up the home database and establish a rollback/restore plan. Stop issuing uploads and
    stop **all** old Fastify processes before deploying; old code can create or publish public
@@ -184,10 +185,11 @@ permanent removal in production until the following checks pass against the actu
    asset ID cannot be verified or revoked automatically. Shared, invalid, or symlinked local
    media also requires manual investigation. Keep such assets and references; do not clear
    their fields or hard-delete their owners to bypass an error.
-4. With the old server stopped, apply the pending migrations using the schema workflow above,
-   build the matching dashboard, and start only the updated server. Confirm Mux credentials,
-   webhook signature verification, and the media worker are configured. New direct uploads
-   do not request an automatic playback ID; the coordinator creates one only for active media.
+4. With the old server stopped, check migration status and apply any pending migrations using
+   the schema workflow above, build the matching dashboard, and start only the updated server.
+   Confirm Mux credentials, webhook signature verification, and the media worker are configured.
+   New direct uploads do not request an automatic playback ID; the coordinator creates one only
+   for active media.
 5. In the Super Admin **Moderation Audit** panel, inspect **Media requiring attention** and
    retry or resolve errors. `PENDING` and `ERROR` are not completed revocations: the app hides
    playback immediately and the dashboard hides its playback link while access is blocked.
@@ -216,7 +218,7 @@ lock. Nuclear Reset returns 409 while any asset record remains. With no assets i
 non-media data, preserves users, audit history, and the media-ID sequence, and does not
 delete or verify Mux videos.
 
-**Limitations:** Active Mux playback IDs remain public URLs. The workspace `/uploads/` route
+**Limitations:** Active Mux playback IDs remain public URLs. The merged `/uploads/` route
 is still unauthenticated for known active files, although it denies moderated, unreferenced,
 and symlinked paths and sends `Cache-Control: no-store`. Neither mechanism is team-scoped media
 authorization. A viewer already streaming, a previously cached response, or a downloaded
@@ -224,9 +226,10 @@ file may remain playable after a pause or removal.
 
 ## Step 2.4 socket scoping rollout
 
-Step 2.4 is pushed to `main` but not deployed. Deploy it with the matching dashboard only
-after the Step 2.2 checks and pending migrations above. Rebuild the dashboard and restart
-Fastify using the commands above so the server and dashboard are updated together.
+Step 2.4 is merged to `main`, and the owner reports the web app deployed. Confirm the
+matching server version and complete the Step 2.2 checks and required migrations above
+before relying on the behavior. If an update is still needed, rebuild the dashboard and
+restart Fastify using the commands above so the server and dashboard are updated together.
 
 - Rich upload, form, and Mux notifications remain owner-only. Active asset changes also
   trigger a payload-free refresh for the owner's Team Admins and Super Admins; changes for
