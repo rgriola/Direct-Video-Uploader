@@ -5,11 +5,13 @@ import {
   lstat,
   mkdir,
   open,
+  readFile,
   readdir,
   realpath,
   rm,
   unlink,
 } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { Readable, Transform, Writable } from "node:stream";
 import { pipeline } from "node:stream/promises";
@@ -30,6 +32,13 @@ export class StorageError extends Error {
   constructor(message, options) {
     super(message, options);
     this.name = "StorageError";
+  }
+}
+
+class StorageBusyError extends StorageError {
+  constructor(options) {
+    super("Upload session is busy", options);
+    this.name = "StorageBusyError";
   }
 }
 
@@ -178,37 +187,178 @@ function createPartSizeLimiter() {
   });
 }
 
-async function acquireSessionLock(sessionPath) {
-  const lockPath = path.join(sessionPath, SESSION_LOCK);
-  let handle;
+async function acquireSessionLock(sessionPath, lockName = SESSION_LOCK) {
+  const lockPath = path.join(sessionPath, lockName);
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    let handle;
+    try {
+      handle = await open(
+        lockPath,
+        constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | NOFOLLOW,
+        0o600,
+      );
+      await handle.writeFile(JSON.stringify({ host: os.hostname(), pid: process.pid }));
+      await handle.close();
+      return async () => {
+        let lock;
+        try {
+          lock = JSON.parse(await readFile(lockPath, "utf8"));
+        } catch (error) {
+          if (error.code === "ENOENT") return;
+          throw error;
+        }
+        if (lock.host !== os.hostname() || lock.pid !== process.pid) {
+          throw new StorageError("Upload session lock ownership changed");
+        }
+        await unlink(lockPath);
+      };
+    } catch (error) {
+      const cleanupErrors = [];
+      if (handle) {
+        try {
+          await handle.close();
+        } catch (closeError) {
+          cleanupErrors.push(closeError);
+        }
+        try {
+          await unlink(lockPath);
+        } catch (unlinkError) {
+          if (unlinkError.code !== "ENOENT") cleanupErrors.push(unlinkError);
+        }
+      }
+      if (cleanupErrors.length) {
+        throw new AggregateError(
+          [error, ...cleanupErrors],
+          "Could not acquire or clean up the upload lock",
+          { cause: error },
+        );
+      }
+      if (error.code !== "EEXIST" || handle) throw error;
+      await clearStaleSessionLock(lockPath);
+    }
+  }
+  throw new StorageBusyError();
+}
+
+async function clearStaleSessionLock(lockPath) {
+  const recoveryPath = `${lockPath}.recovery`;
+  let recoveryHandle;
   try {
-    handle = await open(
-      lockPath,
+    recoveryHandle = await open(
+      recoveryPath,
       constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | NOFOLLOW,
       0o600,
     );
   } catch (error) {
-    if (error.code === "EEXIST") throw new StorageError("Upload session is busy", { cause: error });
+    if (error.code === "EEXIST") throw new StorageBusyError();
     throw error;
   }
-  await handle.close();
-  return async () => {
+
+  let recoveryError;
+  try {
+    await recoveryHandle.close();
+    let lock;
     try {
-      await unlink(lockPath);
+      lock = JSON.parse(await readFile(lockPath, "utf8"));
     } catch (error) {
-      if (error.code !== "ENOENT") throw error;
+      if (error.code === "ENOENT") return;
+      throw new StorageError("Upload session lock is invalid", { cause: error });
     }
-  };
+    if (lock.host !== os.hostname() || !Number.isSafeInteger(lock.pid) || lock.pid < 1) {
+      throw new StorageBusyError();
+    }
+    try {
+      process.kill(lock.pid, 0);
+    } catch (error) {
+      if (error.code !== "ESRCH") throw new StorageBusyError({ cause: error });
+      await unlink(lockPath);
+      return;
+    }
+    throw new StorageBusyError();
+  } catch (error) {
+    recoveryError = error;
+    throw error;
+  } finally {
+    try {
+      await unlink(recoveryPath);
+    } catch (releaseError) {
+      if (releaseError.code !== "ENOENT") {
+        if (recoveryError) {
+          throw new AggregateError(
+            [recoveryError, releaseError],
+            "Upload lock recovery and cleanup both failed",
+            { cause: recoveryError },
+          );
+        }
+        throw releaseError;
+      }
+    }
+  }
 }
 
 async function assertSessionUnlocked(sessionPath) {
+  const lockPath = path.join(sessionPath, SESSION_LOCK);
   try {
-    await lstat(path.join(sessionPath, SESSION_LOCK));
+    await lstat(lockPath);
+  } catch (error) {
+    if (error.code === "ENOENT") return;
+    throw error;
+  }
+  await clearStaleSessionLock(lockPath);
+  try {
+    await lstat(lockPath);
   } catch (error) {
     if (error.code === "ENOENT") return;
     throw error;
   }
   throw new StorageError("Upload session is busy");
+}
+
+function isProcessAlive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    if (error.code === "ESRCH") return false;
+    throw error;
+  }
+}
+
+async function readPart(filePath, partNumber) {
+  const hash = createHash("sha256");
+  let sizeBytes = 0n;
+  for await (const chunk of createReadStream(filePath, { flags: constants.O_RDONLY | NOFOLLOW })) {
+    hash.update(chunk);
+    sizeBytes += BigInt(chunk.length);
+  }
+  return { partNumber, sizeBytes: sizeBytes.toString(), sha256: hash.digest("hex") };
+}
+
+async function removeStalePartials(directory) {
+  let entries;
+  try {
+    entries = await readdir(directory);
+  } catch (error) {
+    if (error.code === "ENOENT") return;
+    throw error;
+  }
+  for (const name of entries) {
+    const match = /^\.partial-(\d+)-/.exec(name);
+    if (!match || isProcessAlive(Number(match[1]))) continue;
+    const filePath = path.join(directory, name);
+    const info = await lstat(filePath);
+    if (!info.isFile() || info.isSymbolicLink()) {
+      throw new StorageError("Partial storage path is not a regular file");
+    }
+    await unlink(filePath);
+  }
+}
+
+function hasActivePartials(entries) {
+  return entries.some(name => {
+    const match = /^\.partial-(\d+)-/.exec(name);
+    return match && isProcessAlive(Number(match[1]));
+  });
 }
 
 export function createLocalStorageDriver({ root = resolveLocalStorageRoot() } = {}) {
@@ -345,21 +495,49 @@ export function createLocalStorageDriver({ root = resolveLocalStorageRoot() } = 
       const part = validatePartNumber(partNumber);
       const source = asReadable(body);
       const { sessionPath } = await getSession(uploadId);
-      const partsPath = await ensureDirectory(await getRoot(), [SESSION_DIRECTORY, uploadId, "parts"], {
-        create: true,
-      });
+      const rootPath = await getRoot();
+      const currentSession = await getSessionDirectory(uploadId);
+      if (!currentSession || currentSession !== sessionPath) {
+        throw new StorageError("Upload session not found");
+      }
+      const candidatePartsPath = path.join(currentSession, "parts");
+      try {
+        await mkdir(candidatePartsPath, { mode: 0o700 });
+      } catch (error) {
+        if (error.code !== "EEXIST") throw error;
+      }
+      const partsPath = await ensureDirectory(rootPath, [SESSION_DIRECTORY, uploadId, "parts"]);
       const partPath = path.join(partsPath, part);
-      const temporaryPath = path.join(partsPath, `${PARTIAL_PART_PREFIX}${part}-${randomUUID()}`);
+      const temporaryPath = path.join(partsPath, `${PARTIAL_PART_PREFIX}${process.pid}-${part}-${randomUUID()}`);
       const handle = await open(
         temporaryPath,
         constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | NOFOLLOW,
         0o600,
       );
+      const hash = createHash("sha256");
+      let sizeBytes = 0n;
+      const meter = new Transform({
+        transform(chunk, _encoding, callback) {
+          hash.update(chunk);
+          sizeBytes += BigInt(chunk.length);
+          callback(null, chunk);
+        },
+      });
       try {
         // Completion either sees this temporary part or blocks the writer with the session lock.
         await assertSessionUnlocked(sessionPath);
-        await pipeline(source, createPartSizeLimiter(), handle.createWriteStream({ autoClose: true }));
-        await link(temporaryPath, partPath);
+        await pipeline(source, createPartSizeLimiter(), meter, handle.createWriteStream({ autoClose: true }));
+        const result = { partNumber, sizeBytes: sizeBytes.toString(), sha256: hash.digest("hex") };
+        try {
+          await link(temporaryPath, partPath);
+        } catch (error) {
+          if (error.code !== "EEXIST") throw error;
+          const existing = await readPart(partPath, partNumber);
+          if (existing.sizeBytes !== result.sizeBytes || existing.sha256 !== result.sha256) {
+            throw new StorageError(`Upload part ${partNumber} already exists with different content`, { cause: error });
+          }
+        }
+        return result;
       } finally {
         try {
           await handle.close();
@@ -371,7 +549,79 @@ export function createLocalStorageDriver({ root = resolveLocalStorageRoot() } = 
           }
         }
       }
-      return { partNumber, uploadId };
+    },
+
+    async listParts(uploadId) {
+      await getSession(uploadId);
+      const partsPath = await ensureDirectory(await getRoot(), [SESSION_DIRECTORY, uploadId, "parts"])
+        .catch(error => {
+          if (error.code === "ENOENT") return null;
+          throw error;
+        });
+      if (!partsPath) return [];
+      const names = (await readdir(partsPath))
+        .filter(name => /^\d{5}$/.test(name))
+        .sort((left, right) => Number(left) - Number(right));
+      const parts = [];
+      for (const name of names) {
+        const filePath = await existingFile(await getRoot(), [SESSION_DIRECTORY, uploadId, "parts", name]);
+        if (filePath) parts.push(await readPart(filePath, Number(name)));
+      }
+      return parts;
+    },
+
+    async recoverUpload(uploadId) {
+      const { sessionPath, manifest } = await getSession(uploadId);
+      const release = await acquireSessionLock(sessionPath);
+      try {
+        const rootPath = await getRoot();
+        await removeStalePartials(path.join(sessionPath, "parts"));
+        const segments = parseStorageKey(manifest.key);
+        let destinationDirectory;
+        try {
+          destinationDirectory = await ensureDirectory(rootPath, segments.slice(0, -1));
+        } catch (error) {
+          if (error.code !== "ENOENT") throw error;
+        }
+        if (destinationDirectory) await removeStalePartials(destinationDirectory);
+      } finally {
+        await release();
+      }
+      return this.listParts(uploadId);
+    },
+
+    async withCompletionLock(uploadId, work) {
+      validateUploadId(uploadId);
+      if (typeof work !== "function") throw new TypeError("Completion lock requires a callback");
+      const uploadsPath = await ensureDirectory(await getRoot(), [SESSION_DIRECTORY], { create: true });
+      let release;
+      try {
+        release = await acquireSessionLock(uploadsPath, `.completion-${uploadId}`);
+      } catch (error) {
+        if (error instanceof StorageBusyError) return { acquired: false };
+        throw error;
+      }
+
+      let workError;
+      try {
+        return { acquired: true, value: await work() };
+      } catch (error) {
+        workError = error;
+        throw error;
+      } finally {
+        try {
+          await release();
+        } catch (releaseError) {
+          if (workError) {
+            throw new AggregateError(
+              [workError, releaseError],
+              "Upload completion and lock release both failed",
+              { cause: workError },
+            );
+          }
+          throw releaseError;
+        }
+      }
     },
 
     async completeUpload(uploadId, { expectedSha256, expectedSizeBytes } = {}) {
@@ -379,6 +629,7 @@ export function createLocalStorageDriver({ root = resolveLocalStorageRoot() } = 
         && (typeof expectedSha256 !== "string" || !/^[a-f0-9]{64}$/i.test(expectedSha256))) {
         throw new StorageError("Expected SHA-256 must contain 64 hexadecimal characters");
       }
+      await this.recoverUpload(uploadId);
       const expectedSize = parseExpectedSize(expectedSizeBytes);
       const rootPath = await getRoot();
       const { sessionPath, manifest } = await getSession(uploadId);
@@ -386,8 +637,11 @@ export function createLocalStorageDriver({ root = resolveLocalStorageRoot() } = 
       try {
         const partsPath = await ensureDirectory(rootPath, [SESSION_DIRECTORY, uploadId, "parts"]);
         const entries = await readdir(partsPath);
-        if (entries.some(name => name.startsWith(PARTIAL_PART_PREFIX))) {
+        if (hasActivePartials(entries)) {
           throw new StorageError("Upload parts are still being written");
+        }
+        if (entries.some(name => name.startsWith(PARTIAL_PART_PREFIX))) {
+          throw new StorageError("Stale upload parts require recovery");
         }
         const partNames = entries
           .filter(name => /^\d{5}$/.test(name))
@@ -408,7 +662,7 @@ export function createLocalStorageDriver({ root = resolveLocalStorageRoot() } = 
         const keySegments = parseStorageKey(manifest.key);
         const destinationDirectory = await ensureDirectory(rootPath, keySegments.slice(0, -1), { create: true });
         const destinationPath = path.join(destinationDirectory, keySegments.at(-1));
-        const temporaryPath = path.join(destinationDirectory, `.partial-${randomUUID()}`);
+        const temporaryPath = path.join(destinationDirectory, `${PARTIAL_PART_PREFIX}${process.pid}-${randomUUID()}`);
         const outputHandle = await open(
           temporaryPath,
           constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | NOFOLLOW,
@@ -486,8 +740,17 @@ export function createLocalStorageDriver({ root = resolveLocalStorageRoot() } = 
     async abortUpload(uploadId) {
       const sessionPath = await getSessionDirectory(uploadId);
       if (!sessionPath) return false;
+      await this.recoverUpload(uploadId);
       const release = await acquireSessionLock(sessionPath);
       try {
+        const partsPath = path.join(sessionPath, "parts");
+        const entries = await readdir(partsPath).catch(error => {
+          if (error.code === "ENOENT") return [];
+          throw error;
+        });
+        if (hasActivePartials(entries)) {
+          throw new StorageError("Upload parts are still being written");
+        }
         await rm(sessionPath, { recursive: true, force: false });
       } finally {
         await release();
