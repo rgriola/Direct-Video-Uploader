@@ -1,7 +1,7 @@
 {
   "lastUpdated": "May 9, 2026 - 6:40pm - GPT-5.3-Codex",
   "name": "direct-video-uploader-server",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "type": "module",
   "main": "src/index.js",
   "scripts": {
