@@ -108,5 +108,11 @@ jobs:
       - name: Verify lockfile unchanged
         run: git diff --exit-code -- package-lock.json
 
+      - name: Type-check admin
+        run: npm run typecheck
+
+      - name: Test admin
+        run: npm test
+
       - name: Build admin
         run: npm run build
