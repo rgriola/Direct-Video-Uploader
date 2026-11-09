@@ -868,6 +868,327 @@ integration('role and organization endpoint matrix', () => {
         }
     });
 
+    describe('moderation visibility', () => {
+        for (const [teamIndex, team] of teams.entries()) {
+            it.each(['ACTIVE', 'PAUSED', 'FLAGGED_FOR_REMOVAL', 'REMOVED'])(
+                `${team.key} asset in %s`,
+                async moderation => {
+                    await prisma.asset.update({
+                        where: { id: team.asset.id },
+                        data: { moderation, mediaPlaybackReset: false },
+                    });
+                    try {
+                        for (const actor of signedInActors) {
+                            const scoped = SCOPED[teamIndex][actor.index] === 200;
+                            const isSuper = actor.role === 'SUPER_ADMIN';
+                            const isOwner = actor.id === team.userId;
+                            const expectedDefault = (moderation === 'ACTIVE' && scoped)
+                                || (moderation === 'PAUSED' && isOwner);
+
+                            const mine = await request(actor, 'GET', '/api/assets/mine');
+                            expect(mine.statusCode).toBe(200);
+                            expect(mine.json().assets.some(asset => asset.id === team.asset.id))
+                                .toBe(isOwner && ['ACTIVE', 'PAUSED'].includes(moderation));
+
+                            const list = await request(actor, 'GET', '/api/admin/assets');
+                            expect(list.statusCode).toBe(200);
+                            expect(list.json().assets.some(asset => asset.id === team.asset.id)).toBe(expectedDefault);
+
+                            const filtered = await request(actor, 'GET', `/api/admin/assets?moderation=${moderation}`);
+                            if (moderation === 'REMOVED') {
+                                expect(filtered.statusCode).toBe(400);
+                            } else if (moderation === 'FLAGGED_FOR_REMOVAL' && !isSuper) {
+                                expect(filtered.statusCode).toBe(403);
+                            } else {
+                                expect(filtered.statusCode).toBe(200);
+                                const listed = filtered.json().assets.find(asset => asset.id === team.asset.id);
+                                expect(Boolean(listed)).toBe(scoped);
+                                if (listed) expect(listed.mediaPlaybackUnavailable).toBe(moderation !== 'ACTIVE');
+                            }
+
+                            const detail = await request(actor, 'GET', `/api/assets/${team.asset.id}`);
+                            const canViewDetail = (['ACTIVE', 'PAUSED'].includes(moderation) && scoped)
+                                || (moderation === 'FLAGGED_FOR_REMOVAL' && isSuper);
+                            expect(detail.statusCode).toBe(canViewDetail ? 200 : 404);
+                            if (canViewDetail) {
+                                const clip = detail.json().asset.clips.find(item => item.id === team.asset.clipId);
+                                if (moderation === 'ACTIVE') {
+                                    expect(clip).toMatchObject({
+                                        storageUrl: `/uploads/${team.asset.fileName}`,
+                                        muxPlaybackId: team.asset.playbackId,
+                                        streamUrl: `https://stream.mux.com/${team.asset.playbackId}.m3u8`,
+                                    });
+                                } else {
+                                    expect(clip).toMatchObject({
+                                        storageUrl: null, muxPlaybackId: null, streamUrl: null, thumbnailUrl: null,
+                                    });
+                                }
+                            } else {
+                                expect(detail.body).not.toContain(team.asset.playbackId);
+                            }
+
+                            const muxStatus = await request(actor, 'GET', `/api/mux/status/${team.asset.clipId}`);
+                            expect(muxStatus.statusCode).toBe(moderation === 'ACTIVE' && scoped ? 200 : 404);
+                            if (muxStatus.statusCode === 200) {
+                                expect(muxStatus.json().muxPlaybackId).toBe(team.asset.playbackId);
+                            } else {
+                                expect(muxStatus.body).not.toContain(team.asset.playbackId);
+                            }
+
+                            const owner = signedInActors.find(item => item.id === team.userId);
+                            const canViewShared = moderation === 'ACTIVE'
+                                && (isSuper || actor.companyCode === owner.companyCode);
+                            const sharedStatus = await request(
+                                actor, 'GET', `/clips/${team.asset.mediasourceId}/status`,
+                                undefined, clipHeadersFor(actor),
+                            );
+                            const sharedPage = await request(
+                                actor, 'GET', `/clips/${team.asset.mediasourceId}`,
+                                undefined, clipHeadersFor(actor),
+                            );
+                            expect(sharedStatus.statusCode).toBe(canViewShared ? 200 : 404);
+                            expect(sharedPage.statusCode).toBe(canViewShared ? 200 : 404);
+                            if (canViewShared) {
+                                expect(sharedStatus.json().muxPlaybackId).toBe(team.asset.playbackId);
+                                expect(sharedPage.body).toContain(team.asset.playbackId);
+                            } else {
+                                expect(sharedStatus.body).not.toContain(team.asset.playbackId);
+                                expect(sharedPage.body).not.toContain(team.asset.playbackId);
+                            }
+                        }
+
+                        const local = await app.inject({ method: 'GET', url: `/uploads/${team.asset.fileName}` });
+                        expect(local.statusCode).toBe(moderation === 'ACTIVE' ? 200 : 404);
+                        if (moderation === 'ACTIVE') {
+                            expect(local.body).toBe(team.asset.id);
+                            expect(local.headers['cache-control']).toBe('no-store');
+                        }
+
+                        if (moderation !== 'ACTIVE') {
+                            const owner = signedInActors.find(actor => actor.id === team.userId);
+                            const callsBefore = mux.createDirectUpload.mock.calls.length;
+                            const form = await request(owner, 'POST', `/api/assets/${team.asset.id}/form`, {
+                                slug: 'denied', description: 'Must not be saved',
+                            });
+                            const upload = await request(owner, 'POST', `/api/assets/${team.asset.id}/mux-upload`, {
+                                metadata: { mimeType: 'video/mp4' },
+                            });
+                            expect(form.statusCode).toBe(409);
+                            expect(upload.statusCode).toBe(409);
+                            expect(await prisma.formResponse.findUnique({ where: { assetId: team.asset.id } })).toBeNull();
+                            expect(mux.createDirectUpload.mock.calls.length).toBe(callsBefore);
+                        }
+                    } finally {
+                        await prisma.asset.update({
+                            where: { id: team.asset.id },
+                            data: { moderation: 'ACTIVE', mediaPlaybackReset: false },
+                        });
+                    }
+                },
+            );
+        }
+
+        for (const [teamIndex, team] of teams.entries()) {
+            it.each([
+                ['playback reset', { mediaPlaybackReset: true }],
+                ['uncertain create', {
+                    mediaCreateOperationId: 'matrix-pending-operation',
+                    mediaCreateMuxAssetId: 'matrix-pending-mux',
+                    mediaCreateStartedAt: new Date('2026-01-01T00:00:00Z'),
+                }],
+            ])(`${team.key} asset with %s`, async (_label, pending) => {
+                await prisma.asset.update({ where: { id: team.asset.id }, data: pending });
+                try {
+                    for (const actor of signedInActors) {
+                        if (SCOPED[teamIndex][actor.index] !== 200) continue;
+
+                        const list = await request(actor, 'GET', '/api/admin/assets');
+                        const listed = list.json().assets.find(asset => asset.id === team.asset.id);
+                        expect(listed.mediaPlaybackUnavailable).toBe(true);
+                        expect(listed.mediaCreateOperationId).toBe(
+                            actor.role === 'SUPER_ADMIN' ? (pending.mediaCreateOperationId || null) : null,
+                        );
+                        expect(listed.mediaCreateMuxAssetId).toBe(
+                            actor.role === 'SUPER_ADMIN' ? (pending.mediaCreateMuxAssetId || null) : null,
+                        );
+
+                        const detail = await request(actor, 'GET', `/api/assets/${team.asset.id}`);
+                        expect(detail.statusCode).toBe(200);
+                        expect(detail.json().asset.clips[0]).toMatchObject({
+                            storageUrl: null, muxPlaybackId: null, streamUrl: null, thumbnailUrl: null,
+                        });
+
+                        const muxStatus = await request(actor, 'GET', `/api/mux/status/${team.asset.clipId}`);
+                        expect(muxStatus.statusCode).toBe(200);
+                        expect(muxStatus.body).not.toContain(team.asset.playbackId);
+                        expect(muxStatus.json()).not.toHaveProperty('streamUrl');
+
+                        const sharedStatus = await request(
+                            actor, 'GET', `/clips/${team.asset.mediasourceId}/status`,
+                            undefined, clipHeadersFor(actor),
+                        );
+                        const sharedPage = await request(
+                            actor, 'GET', `/clips/${team.asset.mediasourceId}`,
+                            undefined, clipHeadersFor(actor),
+                        );
+                        expect(sharedStatus.statusCode).toBe(200);
+                        expect(sharedStatus.json()).toMatchObject({ ready: false, muxPlaybackId: null });
+                        expect(sharedPage.statusCode).toBe(200);
+                        expect(sharedPage.body).not.toContain(team.asset.playbackId);
+                        expect(sharedPage.body).not.toContain(`/uploads/${team.asset.fileName}`);
+                    }
+                    const local = await app.inject({ method: 'GET', url: `/uploads/${team.asset.fileName}` });
+                    expect(local.statusCode).toBe(404);
+                } finally {
+                    await prisma.asset.update({
+                        where: { id: team.asset.id },
+                        data: {
+                            mediaPlaybackReset: false,
+                            mediaCreateOperationId: null,
+                            mediaCreateMuxAssetId: null,
+                            mediaCreateStartedAt: null,
+                        },
+                    });
+                }
+            });
+        }
+
+        it.each(signedInActors.flatMap(actor => [
+            { actor, moderation: 'ACTIVE', expectedStatus: 200 },
+            { actor, moderation: 'PAUSED', expectedStatus: 200 },
+            { actor, moderation: 'FLAGGED_FOR_REMOVAL', expectedStatus: 404 },
+            { actor, moderation: 'REMOVED', expectedStatus: 404 },
+        ]))('$actor.key transcript updates with $moderation moderation', async ({ actor, moderation, expectedStatus }) => {
+            const asset = primaryAssets.find(item => item.userId === actor.id);
+            await prisma.asset.update({ where: { id: asset.id }, data: { moderation } });
+            try {
+                const variants = [
+                    { url: `/api/assets/${asset.id}/transcript` },
+                    { url: `/api/assets/${asset.id}/transcript`, clipId: asset.clipId },
+                    { url: `/api/assets/${asset.id}/clips/${asset.clipId}/transcript`, clipId: asset.clipId },
+                ];
+                for (const [index, variant] of variants.entries()) {
+                    await prisma.clip.update({ where: { id: asset.clipId }, data: { transcript: 'Original' } });
+                    const transcript = `Transcript ${index}`;
+                    const response = await request(actor, 'PATCH', variant.url, {
+                        transcript, ...(variant.clipId ? { clipId: variant.clipId } : {}),
+                    });
+                    expect(response.statusCode, response.body).toBe(expectedStatus);
+                    expect((await prisma.clip.findUnique({ where: { id: asset.clipId } })).transcript)
+                        .toBe(expectedStatus === 200 ? transcript : 'Original');
+                }
+            } finally {
+                await prisma.clip.update({ where: { id: asset.clipId }, data: { transcript: null } });
+                await prisma.asset.update({ where: { id: asset.id }, data: { moderation: 'ACTIVE' } });
+            }
+        });
+
+        for (const team of teams) {
+            it.each(['ACTIVE', 'PAUSED', 'FLAGGED_FOR_REMOVAL', 'REMOVED'])(
+                `${team.key} non-owner transcript updates with %s moderation`,
+                async moderation => {
+                    await prisma.asset.update({ where: { id: team.asset.id }, data: { moderation } });
+                    await prisma.clip.update({ where: { id: team.asset.clipId }, data: { transcript: 'Original' } });
+                    try {
+                        for (const actor of signedInActors.filter(item => item.id !== team.userId)) {
+                            for (const url of [
+                                `/api/assets/${team.asset.id}/transcript`,
+                                `/api/assets/${team.asset.id}/clips/${team.asset.clipId}/transcript`,
+                            ]) {
+                                const response = await request(actor, 'PATCH', url, { transcript: 'Not allowed' });
+                                expect(response.statusCode).toBe(404);
+                            }
+                        }
+                        expect((await prisma.clip.findUnique({ where: { id: team.asset.clipId } })).transcript)
+                            .toBe('Original');
+                    } finally {
+                        await prisma.clip.update({ where: { id: team.asset.clipId }, data: { transcript: null } });
+                        await prisma.asset.update({ where: { id: team.asset.id }, data: { moderation: 'ACTIVE' } });
+                    }
+                },
+            );
+        }
+
+        it.each([
+            ['legacy', asset => `/api/assets/${asset.id}/transcript`, false],
+            ['legacy with clip ID', asset => `/api/assets/${asset.id}/transcript`, true],
+            ['clip-specific', asset => `/api/assets/${asset.id}/clips/${asset.clipId}/transcript`, true],
+        ])('waits for a concurrent flag before accepting a %s transcript', async (_label, route, useClipId) => {
+            const asset = teams[0].asset;
+            const owner = signedInActors.find(actor => actor.id === asset.userId);
+            const blocker = await pool.connect();
+            let transactionOpen = false;
+            let saving;
+            try {
+                await blocker.query('BEGIN');
+                transactionOpen = true;
+                await blocker.query(
+                    "UPDATE assets SET moderation = 'FLAGGED_FOR_REMOVAL' WHERE id = $1",
+                    [asset.id],
+                );
+                saving = request(owner, 'PATCH', route(asset), {
+                    transcript: 'Must not be saved',
+                    ...(useClipId ? { clipId: asset.clipId } : {}),
+                });
+                await waitForBlockedQuery(pool, 'SELECT id FROM assets');
+                await blocker.query('COMMIT');
+                transactionOpen = false;
+
+                expect((await saving).statusCode).toBe(404);
+                expect((await prisma.clip.findUnique({ where: { id: asset.clipId } })).transcript).toBeNull();
+            } finally {
+                if (transactionOpen) await blocker.query('ROLLBACK');
+                blocker.release();
+                if (saving) await saving;
+                await prisma.asset.update({ where: { id: asset.id }, data: { moderation: 'ACTIVE' } });
+                await prisma.clip.update({ where: { id: asset.clipId }, data: { transcript: null } });
+            }
+        });
+
+        it('holds moderation until an already-authorized transcript write commits', async () => {
+            const asset = teams[0].asset;
+            const owner = signedInActors.find(actor => actor.id === asset.userId);
+            const clipBlocker = await pool.connect();
+            const moderator = await pool.connect();
+            let transactionOpen = false;
+            let saving;
+            let flagging;
+            try {
+                await clipBlocker.query('BEGIN');
+                transactionOpen = true;
+                await clipBlocker.query('SELECT id FROM clips WHERE id = $1 FOR UPDATE', [asset.clipId]);
+                saving = request(owner, 'PATCH', `/api/assets/${asset.id}/clips/${asset.clipId}/transcript`, {
+                    transcript: 'Saved before the flag',
+                });
+                await waitForBlockedQuery(pool, 'UPDATE "public"."clips"');
+
+                const pid = (await moderator.query('SELECT pg_backend_pid() AS pid')).rows[0].pid;
+                flagging = moderator.query(
+                    "UPDATE assets SET moderation = 'FLAGGED_FOR_REMOVAL' WHERE id = $1",
+                    [asset.id],
+                );
+                await waitForBlockedQuery(pool, 'UPDATE assets SET moderation', pid);
+                await clipBlocker.query('COMMIT');
+                transactionOpen = false;
+
+                expect((await saving).statusCode).toBe(200);
+                await flagging;
+                expect((await prisma.asset.findUnique({ where: { id: asset.id } })).moderation)
+                    .toBe('FLAGGED_FOR_REMOVAL');
+                expect((await prisma.clip.findUnique({ where: { id: asset.clipId } })).transcript)
+                    .toBe('Saved before the flag');
+            } finally {
+                if (transactionOpen) await clipBlocker.query('ROLLBACK');
+                clipBlocker.release();
+                if (saving) await saving;
+                if (flagging) await flagging;
+                moderator.release();
+                await prisma.asset.update({ where: { id: asset.id }, data: { moderation: 'ACTIVE' } });
+                await prisma.clip.update({ where: { id: asset.clipId }, data: { transcript: null } });
+            }
+        });
+    });
+
     it('rejects invalid credentials and suspended or deleted accounts', async () => {
         const invalid = await app.inject({
             method: 'GET', url: '/api/auth/me', headers: { authorization: 'Bearer invalid' },
