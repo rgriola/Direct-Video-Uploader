@@ -19,3 +19,21 @@ export async function acquireIntegrationDatabaseLock(pool) {
         }
     };
 }
+
+export async function waitForBlockedQuery(pool, queryFragment, pid = null) {
+    const deadline = Date.now() + 4000;
+    while (Date.now() < deadline) {
+        const result = await pool.query(`
+            SELECT EXISTS (
+                SELECT 1 FROM pg_stat_activity
+                WHERE datname = current_database()
+                  AND wait_event_type = 'Lock'
+                  AND ($1::integer IS NULL OR pid = $1)
+                  AND query LIKE $2
+            ) AS waiting
+        `, [pid, `%${queryFragment}%`]);
+        if (result.rows[0].waiting) return;
+        await new Promise(resolve => setTimeout(resolve, 20));
+    }
+    throw new Error(`Timed out waiting for a database lock: ${queryFragment}`);
+}

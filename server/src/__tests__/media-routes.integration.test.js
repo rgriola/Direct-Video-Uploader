@@ -2,7 +2,7 @@ import Fastify from 'fastify';
 import { readFile } from 'node:fs/promises';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { requireRole } from '../lib/authorization.js';
-import { acquireIntegrationDatabaseLock } from './helpers/database-lock.js';
+import { acquireIntegrationDatabaseLock, waitForBlockedQuery } from './helpers/database-lock.js';
 
 const muxApi = vi.hoisted(() => ({
     createDirectUpload: vi.fn(),
@@ -138,24 +138,6 @@ integration('media routes against PostgreSQL', () => {
 
     async function createAsset(data = {}) {
         return prisma.asset.create({ data: { id: assetId, userId, ...data } });
-    }
-
-    async function waitForLock(queryFragment, pid = null) {
-        const deadline = Date.now() + 4000;
-        while (Date.now() < deadline) {
-            const result = await pool.query(`
-                SELECT EXISTS (
-                    SELECT 1 FROM pg_stat_activity
-                    WHERE datname = current_database()
-                      AND wait_event_type = 'Lock'
-                      AND ($1::integer IS NULL OR pid = $1)
-                      AND query LIKE $2
-                ) AS waiting
-            `, [pid, `%${queryFragment}%`]);
-            if (result.rows[0].waiting) return;
-            await new Promise(resolve => setTimeout(resolve, 20));
-        }
-        throw new Error(`Timed out waiting for a database lock: ${queryFragment}`);
     }
 
     it('does not return an upload URL when moderation changes during Mux creation', async () => {
@@ -308,7 +290,7 @@ integration('media routes against PostgreSQL', () => {
         try {
             await entered.promise;
             deleting = requestAs(adminId, 'DELETE', `/api/admin/users/${userId}`);
-            await waitForLock('SELECT role FROM users');
+            await waitForBlockedQuery(pool, 'SELECT role FROM users');
         } finally {
             release.resolve();
         }
@@ -326,14 +308,14 @@ integration('media routes against PostgreSQL', () => {
             await blocker.query('BEGIN');
             await blocker.query('SELECT id FROM assets WHERE id = $1 FOR UPDATE', [assetId]);
             const deleting = requestAs(adminId, 'DELETE', `/api/admin/users/${userId}`);
-            await waitForLock('SELECT id, moderation, media_sync_state');
+            await waitForBlockedQuery(pool, 'SELECT id, moderation, media_sync_state');
 
             const pid = (await inserter.query('SELECT pg_backend_pid() AS pid')).rows[0].pid;
             const creating = inserter.query(
                 'INSERT INTO assets (id, user_id, updated_at) VALUES ($1, $2, NOW())',
                 ['media-routes-late-asset', userId],
             ).then(() => null, err => err);
-            await waitForLock('INSERT INTO assets', pid);
+            await waitForBlockedQuery(pool, 'INSERT INTO assets', pid);
             await blocker.query('COMMIT');
 
             expect((await deleting).statusCode).toBe(200);
@@ -364,7 +346,7 @@ integration('media routes against PostgreSQL', () => {
         try {
             await entered.promise;
             cleanup = requestAs(adminId, 'POST', '/api/admin/cleanup-assets', {});
-            await waitForLock('SELECT id FROM assets WHERE id IN');
+            await waitForBlockedQuery(pool, 'SELECT id FROM assets WHERE id IN');
         } finally {
             release.resolve();
         }
@@ -383,7 +365,7 @@ integration('media routes against PostgreSQL', () => {
             await blocker.query('BEGIN');
             await blocker.query('SELECT id FROM assets WHERE id = $1 FOR UPDATE', [assetId]);
             const cleanup = requestAs(adminId, 'POST', '/api/admin/cleanup-assets', {});
-            await waitForLock('SELECT id FROM assets WHERE id IN');
+            await waitForBlockedQuery(pool, 'SELECT id FROM assets WHERE id IN');
 
             const pid = (await inserter.query('SELECT pg_backend_pid() AS pid')).rows[0].pid;
             const statement = kind === 'clip'
@@ -391,7 +373,7 @@ integration('media routes against PostgreSQL', () => {
                 : 'INSERT INTO mux_asset_references (mux_asset_id, asset_id) VALUES ($1, $2)';
             const creating = inserter.query(statement, ['media-routes-late-child', assetId])
                 .then(() => null, err => err);
-            await waitForLock('INSERT INTO', pid);
+            await waitForBlockedQuery(pool, 'INSERT INTO', pid);
             await blocker.query('COMMIT');
 
             const response = await cleanup;
@@ -419,9 +401,9 @@ integration('media routes against PostgreSQL', () => {
             const pause = requestAs(adminId, 'PATCH', `/api/admin/assets/${assetId}/moderation`, {
                 moderation: 'PAUSED',
             });
-            await waitForLock('UPDATE "public"."assets"');
+            await waitForBlockedQuery(pool, 'UPDATE "public"."assets"');
             const cleanup = cleanupOrphanedUploads(app, { fileSystem });
-            await waitForLock('SELECT id FROM assets WHERE id =');
+            await waitForBlockedQuery(pool, 'SELECT id FROM assets WHERE id =');
             await blocker.query('COMMIT');
 
             expect([200, 202]).toContain((await pause).statusCode);
@@ -456,14 +438,14 @@ integration('media routes against PostgreSQL', () => {
             await blocker.query('BEGIN');
             await blocker.query('LOCK TABLE chat_messages IN ACCESS EXCLUSIVE MODE');
             const reset = requestAs(adminId, 'POST', '/api/admin/nuclear-reset', {});
-            await waitForLock('DELETE FROM "public"."chat_messages"');
+            await waitForBlockedQuery(pool, 'DELETE FROM "public"."chat_messages"');
 
             const pid = (await inserter.query('SELECT pg_backend_pid() AS pid')).rows[0].pid;
             const creating = inserter.query(
                 'INSERT INTO assets (id, user_id, updated_at) VALUES ($1, $2, NOW())',
                 [assetId, userId],
             );
-            await waitForLock('INSERT INTO assets', pid);
+            await waitForBlockedQuery(pool, 'INSERT INTO assets', pid);
             await blocker.query('COMMIT');
 
             const response = await reset;
