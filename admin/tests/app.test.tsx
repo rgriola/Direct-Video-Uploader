@@ -330,7 +330,7 @@ describe("role-separated web application", () => {
 
     await screen.findByRole("heading", { name: "My Videos" });
     expect(window.location.hash).toBe("#/videos");
-    expect(requestPaths()).toContain("/api/assets/mine");
+    await waitFor(() => expect(requestPaths()).toContain("/api/assets/mine"));
   });
 
   it("restores a saved session before rendering the matching role", async () => {
