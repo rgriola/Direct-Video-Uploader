@@ -4,6 +4,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 
 const prismaMock = {
     $executeRawUnsafe: vi.fn(),
+    $queryRaw: vi.fn(),
     $queryRawUnsafe: vi.fn(),
     $transaction: vi.fn(),
     asset: {
@@ -70,6 +71,7 @@ beforeEach(async () => {
     notifyDashboardAssetChange.mockResolvedValue(undefined);
 
     prismaMock.$executeRawUnsafe.mockResolvedValue(undefined);
+    prismaMock.$queryRaw.mockResolvedValue([{ id: 'asset-1' }]);
     prismaMock.$queryRawUnsafe.mockResolvedValue([{ val: 100000001 }]);
     prismaMock.$transaction.mockImplementation(async callback => callback(prismaMock));
     queueAssetMediaSync.mockResolvedValue({ count: 1 });
@@ -558,6 +560,19 @@ describe('assets route deeper coverage', () => {
         expect(missingClip.json()).toEqual({ error: 'No clip found for this asset' });
     });
 
+    it('does not update a transcript when the owned asset cannot be locked for writing', async () => {
+        prismaMock.$queryRaw.mockResolvedValueOnce([]);
+        const response = await app.inject({
+            method: 'PATCH',
+            url: '/api/assets/asset-1/clips/clip-original/transcript',
+            payload: { transcript: 'hello' },
+        });
+
+        expect(response.statusCode).toBe(404);
+        expect(prismaMock.clip.findFirst).not.toHaveBeenCalled();
+        expect(prismaMock.clip.updateMany).not.toHaveBeenCalled();
+    });
+
     it('saves transcript text and segment list', async () => {
         prismaMock.clip.findFirst.mockResolvedValue({ id: 'clip-1' });
 
@@ -575,7 +590,11 @@ describe('assets route deeper coverage', () => {
 
         expect(response.statusCode).toBe(200);
         expect(prismaMock.clip.updateMany).toHaveBeenCalledWith({
-            where: { id: 'clip-1', assetId: 'asset-1', asset: { userId: 'user-1' } },
+            where: {
+                id: 'clip-1',
+                assetId: 'asset-1',
+                asset: { userId: 'user-1', moderation: { in: ['ACTIVE', 'PAUSED'] } },
+            },
             data: {
                 transcript: 'First sentence. Second sentence.',
                 transcriptSegments: [
@@ -597,7 +616,11 @@ describe('assets route deeper coverage', () => {
         expect(response.statusCode).toBe(200);
         expect(response.json()).toEqual({ ok: true, clipId: 'clip-original', segmentCount: 0 });
         expect(prismaMock.clip.updateMany).toHaveBeenCalledWith({
-            where: { id: 'clip-original', assetId: 'asset-1', asset: { userId: 'user-1' } },
+            where: {
+                id: 'clip-original',
+                assetId: 'asset-1',
+                asset: { userId: 'user-1', moderation: { in: ['ACTIVE', 'PAUSED'] } },
+            },
             data: { transcript: 'hello', transcriptSegments: [] },
         });
         expect(prismaMock.clip.findFirst).not.toHaveBeenCalled();
@@ -614,12 +637,16 @@ describe('assets route deeper coverage', () => {
         expect(response.statusCode).toBe(200);
         expect(response.json()).toEqual({ ok: true, clipId: 'clip-original', segmentCount: 0 });
         expect(prismaMock.clip.updateMany).toHaveBeenCalledWith({
-            where: { id: 'clip-original', assetId: 'asset-1', asset: { userId: 'user-1' } },
+            where: {
+                id: 'clip-original',
+                assetId: 'asset-1',
+                asset: { userId: 'user-1', moderation: { in: ['ACTIVE', 'PAUSED'] } },
+            },
             data: { transcript: 'hello', transcriptSegments: undefined },
         });
     });
 
-    it('rechecks ownership when updating a legacy first-clip transcript', async () => {
+    it('rechecks ownership and moderation when updating a legacy first-clip transcript', async () => {
         prismaMock.clip.findFirst.mockResolvedValue({ id: 'clip-1' });
         prismaMock.clip.updateMany.mockResolvedValue({ count: 0 });
         const response = await app.inject({
@@ -629,6 +656,20 @@ describe('assets route deeper coverage', () => {
         });
 
         expect(response.statusCode).toBe(404);
+        expect(prismaMock.clip.findFirst).toHaveBeenCalledWith({
+            where: {
+                assetId: 'asset-1',
+                asset: { userId: 'user-1', moderation: { in: ['ACTIVE', 'PAUSED'] } },
+            },
+            orderBy: { clipIndex: 'asc' },
+        });
+        expect(prismaMock.clip.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+            where: {
+                id: 'clip-1',
+                assetId: 'asset-1',
+                asset: { userId: 'user-1', moderation: { in: ['ACTIVE', 'PAUSED'] } },
+            },
+        }));
         expect(prismaMock.clip.update).not.toHaveBeenCalled();
     });
 
