@@ -67,8 +67,9 @@ launchctl load ~/Library/LaunchAgents/com.msfixer.fastify.plist
 
 ## Schema changes
 
-Cloud Build and Render are retired, not deployment targets. Their legacy scripts still use
-`prisma db push --accept-data-loss` and must not be reused without a separate migration review.
+Cloud Build and Render are retired, not deployment targets. `cloudbuild.yaml` has been removed.
+The legacy Render script still uses `prisma db push --accept-data-loss` and must not be reused
+without a separate migration review.
 
 This DB uses Prisma migrations (not `db push`). Workflow:
 1. Edit `server/prisma/schema.prisma`
@@ -137,8 +138,8 @@ modify a Super Admin.
   physical-device and locked-device validation are still required. Repeated live form
   requests can reopen completed details, and resubmitting them can overwrite existing
   details. See the iOS roadmap before distributing the client.
-- Do not use the legacy Cloud Build or Render workflows; both use
-  `prisma db push --accept-data-loss`, and the Render workflow also seeds demo accounts.
+- Do not use the legacy Render workflow; it uses `prisma db push --accept-data-loss` and seeds
+  demo accounts. The Cloud Build pipeline has been removed.
 - Finish the physical-device checks described in `iOS-Modernization.md` before rollout.
 
 ## Step 2.2 moderation reconciliation rollout

@@ -120,7 +120,7 @@ explicit test infrastructure, review, and release gates.
 - [ ] **P3-02:** Exercise duplicate, reordered, and missing Mux events, reconciliation, and cleanup.
 - [ ] **P3-03:** Verify idempotency across creation, retries, expired upload URLs, completion, form submission, and intended sharing side effects.
 - [ ] **P3-04:** Verify viewer access/privacy and copy/share links match the approved sharing model; preserve older supported client compatibility.
-- [ ] **P3-05:** Review the active deployment path, migration safety, restart recovery, and rollback using the [operations runbook](../HOME_SERVER_RUNBOOK.md). If the [Cloud Build path](../cloudbuild.yaml) is active, resolve its data-loss-accepting schema push before release use.
+- [ ] **P3-05:** Review the active deployment path, migration safety, restart recovery, and rollback using the [operations runbook](../HOME_SERVER_RUNBOOK.md). The legacy Cloud Build pipeline has been removed; confirm its GCP trigger is disabled.
 - [ ] **P3-GATE:** Repeated/reordered requests and restarts converge to one logical result per intended operation; unauthorized requests remain denied and accepted work is not lost.
 
 ## P4: Privacy, accessibility, and release surfaces
