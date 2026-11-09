@@ -1,0 +1,74 @@
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { getUploadSessionConfig } from '../lib/upload-session-config.js';
+import { signUploadPart, verifyUploadPart } from '../lib/upload-part-signing.js';
+
+vi.mock('../routes/auth.js', () => ({ default: vi.fn() }));
+vi.mock('../routes/assets.js', () => ({ default: vi.fn() }));
+vi.mock('../routes/admin.js', () => ({ default: vi.fn() }));
+vi.mock('../routes/moderation.js', () => ({ default: vi.fn() }));
+vi.mock('../routes/clips.js', () => ({ default: vi.fn() }));
+vi.mock('../routes/errors.js', () => ({ default: vi.fn() }));
+vi.mock('../routes/mux-webhooks.js', () => ({ default: vi.fn() }));
+vi.mock('../routes/upload-sessions.js', () => ({ default: vi.fn() }));
+vi.mock('../lib/storage/driver.js', () => ({ createStorageDriver: vi.fn(() => ({ provider: 'local' })) }));
+
+const originalEnv = { ...process.env };
+
+afterEach(() => {
+    process.env = { ...originalEnv };
+    vi.clearAllMocks();
+});
+
+describe('upload session configuration', () => {
+    it('defaults to disabled and rejects unsafe enabled configurations', () => {
+        expect(getUploadSessionConfig({})).toEqual({ enabled: false });
+        expect(getUploadSessionConfig({ UPLOAD_SESSIONS_ENABLED: 'false' })).toEqual({ enabled: false });
+        expect(() => getUploadSessionConfig({ UPLOAD_SESSIONS_ENABLED: 'yes' })).toThrow(/true or false/);
+        expect(() => getUploadSessionConfig({ UPLOAD_SESSIONS_ENABLED: 'true' })).toThrow(/at least 32 bytes/);
+        const secret = 'a'.repeat(32);
+        expect(() => getUploadSessionConfig({
+            UPLOAD_SESSIONS_ENABLED: 'true', UPLOAD_SESSION_SIGNING_SECRET: secret, JWT_SECRET: secret,
+        })).toThrow(/differ from JWT_SECRET/);
+        expect(getUploadSessionConfig({
+            UPLOAD_SESSIONS_ENABLED: 'true', UPLOAD_SESSION_SIGNING_SECRET: secret, JWT_SECRET: 'other',
+        })).toEqual({ enabled: true, signingSecret: secret, storageDriver: 'local' });
+    });
+
+    it('does not register upload routes unless explicitly enabled', async () => {
+        const { registerApplicationRoutes } = await import('../routes/index.js');
+        const { default: uploadSessionRoutes } = await import('../routes/upload-sessions.js');
+        const fastify = { register: vi.fn(async () => {}) };
+        delete process.env.UPLOAD_SESSIONS_ENABLED;
+        await registerApplicationRoutes(fastify);
+        expect(fastify.register).not.toHaveBeenCalledWith(uploadSessionRoutes, expect.anything());
+
+        process.env.UPLOAD_SESSIONS_ENABLED = 'true';
+        process.env.UPLOAD_SESSION_SIGNING_SECRET = 'x'.repeat(32);
+        process.env.JWT_SECRET = 'other';
+        await registerApplicationRoutes(fastify);
+        expect(fastify.register).toHaveBeenCalledWith(uploadSessionRoutes, expect.objectContaining({
+            signingSecret: 'x'.repeat(32),
+            storageDriver: 'local',
+        }));
+    });
+});
+
+describe('signed upload parts', () => {
+    it('binds the capability to its owner, session, part, size, and expiry', () => {
+        const secret = 'x'.repeat(32);
+        const claims = { ownerId: 'owner', sessionId: 'session', partNumber: 1, sizeBytes: 9, expires: 123 };
+        const signature = signUploadPart(secret, claims);
+        expect(verifyUploadPart(secret, claims, signature)).toBe(true);
+        for (const change of [
+            { ownerId: 'other' },
+            { sessionId: 'other' },
+            { partNumber: 2 },
+            { sizeBytes: 10 },
+            { expires: 124 },
+        ]) {
+            expect(verifyUploadPart(secret, { ...claims, ...change }, signature)).toBe(false);
+        }
+        expect(verifyUploadPart('y'.repeat(32), claims, signature)).toBe(false);
+        expect(verifyUploadPart(secret, claims, 'invalid')).toBe(false);
+    });
+});
