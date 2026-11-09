@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { acquireIntegrationDatabaseLock } from './helpers/database-lock.js';
+import { notifyDashboardAssetChange } from '../ws/dashboard-notifications.js';
 
 vi.mock('../ws/dashboard-notifications.js', () => ({
     notifyDashboardAssetChange: vi.fn(async () => {}),
@@ -53,6 +54,7 @@ integration('media reconciliation against PostgreSQL', () => {
     });
 
     beforeEach(async () => {
+        vi.clearAllMocks();
         await prisma.asset.deleteMany({ where: { userId: 'media-reconcile-user' } });
         remoteAssets = new Map();
         remoteUploads = new Map();
@@ -133,10 +135,14 @@ integration('media reconciliation against PostgreSQL', () => {
         const clip = await prisma.clip.findUnique({ where: { id: 'media-reconcile-clip' } });
         expect(clip.muxPlaybackId).toBe('new-mux-active');
         expect(clip.status).toBe('READY');
+        expect(clip.thumbnailUrl).toBe('https://image.mux.com/new-mux-active/thumbnail.png?width=640');
+        expect(fastify.io.to).toHaveBeenCalledWith('user:media-reconcile-user');
         expect(emitted).toHaveBeenCalledWith('mux:ready', expect.objectContaining({
             clipId: clip.id,
             muxPlaybackId: 'new-mux-active',
+            thumbnailUrl: clip.thumbnailUrl,
         }));
+        expect(notifyDashboardAssetChange).toHaveBeenCalledWith(fastify, 'media-reconcile-asset');
 
         await reconcile(fastify, 'media-reconcile-asset');
         expect(muxApi.createMuxPublicPlayback).toHaveBeenCalledTimes(1);

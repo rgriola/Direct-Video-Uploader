@@ -878,6 +878,9 @@ integration('role and organization endpoint matrix', () => {
                         data: { moderation, mediaPlaybackReset: false },
                     });
                     try {
+                        const thumbnailUrl = moderation === 'ACTIVE'
+                            ? `https://image.mux.com/${team.asset.playbackId}/thumbnail.png`
+                            : null;
                         for (const actor of signedInActors) {
                             const scoped = SCOPED[teamIndex][actor.index] === 200;
                             const isSuper = actor.role === 'SUPER_ADMIN';
@@ -887,12 +890,23 @@ integration('role and organization endpoint matrix', () => {
 
                             const mine = await request(actor, 'GET', '/api/assets/mine');
                             expect(mine.statusCode).toBe(200);
-                            expect(mine.json().assets.some(asset => asset.id === team.asset.id))
-                                .toBe(isOwner && ['ACTIVE', 'PAUSED'].includes(moderation));
+                            const owned = mine.json().assets.find(asset => asset.id === team.asset.id);
+                            expect(Boolean(owned)).toBe(isOwner && ['ACTIVE', 'PAUSED'].includes(moderation));
+                            if (owned) {
+                                expect(owned.clips[0]).toMatchObject({ id: team.asset.clipId, thumbnailUrl });
+                            } else {
+                                expect(mine.body).not.toContain(team.asset.playbackId);
+                            }
 
                             const list = await request(actor, 'GET', '/api/admin/assets');
                             expect(list.statusCode).toBe(200);
-                            expect(list.json().assets.some(asset => asset.id === team.asset.id)).toBe(expectedDefault);
+                            const defaultListed = list.json().assets.find(asset => asset.id === team.asset.id);
+                            expect(Boolean(defaultListed)).toBe(expectedDefault);
+                            if (defaultListed) {
+                                expect(defaultListed.clips[0]).toMatchObject({ id: team.asset.clipId, thumbnailUrl });
+                            } else {
+                                expect(list.body).not.toContain(team.asset.playbackId);
+                            }
 
                             const filtered = await request(actor, 'GET', `/api/admin/assets?moderation=${moderation}`);
                             if (moderation === 'REMOVED') {
@@ -903,7 +917,12 @@ integration('role and organization endpoint matrix', () => {
                                 expect(filtered.statusCode).toBe(200);
                                 const listed = filtered.json().assets.find(asset => asset.id === team.asset.id);
                                 expect(Boolean(listed)).toBe(scoped);
-                                if (listed) expect(listed.mediaPlaybackUnavailable).toBe(moderation !== 'ACTIVE');
+                                if (listed) {
+                                    expect(listed.mediaPlaybackUnavailable).toBe(moderation !== 'ACTIVE');
+                                    expect(listed.clips[0]).toMatchObject({ id: team.asset.clipId, thumbnailUrl });
+                                } else {
+                                    expect(filtered.body).not.toContain(team.asset.playbackId);
+                                }
                             }
 
                             const detail = await request(actor, 'GET', `/api/assets/${team.asset.id}`);
@@ -1005,12 +1024,21 @@ integration('role and organization endpoint matrix', () => {
                         const list = await request(actor, 'GET', '/api/admin/assets');
                         const listed = list.json().assets.find(asset => asset.id === team.asset.id);
                         expect(listed.mediaPlaybackUnavailable).toBe(true);
+                        expect(listed.clips[0]).toMatchObject({ id: team.asset.clipId, thumbnailUrl: null });
+                        expect(list.body).not.toContain(team.asset.playbackId);
                         expect(listed.mediaCreateOperationId).toBe(
                             actor.role === 'SUPER_ADMIN' ? (pending.mediaCreateOperationId || null) : null,
                         );
                         expect(listed.mediaCreateMuxAssetId).toBe(
                             actor.role === 'SUPER_ADMIN' ? (pending.mediaCreateMuxAssetId || null) : null,
                         );
+
+                        if (actor.id === team.userId) {
+                            const mine = await request(actor, 'GET', '/api/assets/mine');
+                            const owned = mine.json().assets.find(asset => asset.id === team.asset.id);
+                            expect(owned.clips[0]).toMatchObject({ id: team.asset.clipId, thumbnailUrl: null });
+                            expect(mine.body).not.toContain(team.asset.playbackId);
+                        }
 
                         const detail = await request(actor, 'GET', `/api/assets/${team.asset.id}`);
                         expect(detail.statusCode).toBe(200);
@@ -1052,6 +1080,52 @@ integration('role and organization endpoint matrix', () => {
                 }
             });
         }
+
+        it('orders multiple clips newest first and redacts every thumbnail when playback is unavailable', async () => {
+            const team = teams[0];
+            const clipId = 'matrix-latest-clip-z';
+            const tiedClipId = 'matrix-latest-clip-a';
+            const thumbnailUrl = 'https://image.mux.com/matrix-latest-playback/thumbnail.png';
+            const tiedThumbnailUrl = 'https://image.mux.com/matrix-tied-playback/thumbnail.png';
+            const createdAt = new Date('2100-01-01T00:00:00Z');
+            await prisma.clip.createMany({
+                data: [
+                    { id: tiedClipId, assetId: team.asset.id, status: 'READY', thumbnailUrl: tiedThumbnailUrl, createdAt },
+                    { id: clipId, assetId: team.asset.id, status: 'READY', thumbnailUrl, createdAt },
+                ],
+            });
+            try {
+                const owner = signedInActors.find(actor => actor.id === team.userId);
+                const superAdmin = signedInActors.find(actor => actor.role === 'SUPER_ADMIN');
+                const mine = await request(owner, 'GET', '/api/assets/mine');
+                const owned = mine.json().assets.find(asset => asset.id === team.asset.id);
+                expect(owned.clips).toHaveLength(1);
+                expect(owned.clips[0]).toMatchObject({ id: clipId, thumbnailUrl });
+
+                const active = await request(superAdmin, 'GET', '/api/admin/assets');
+                const activeClips = active.json().assets.find(asset => asset.id === team.asset.id).clips;
+                expect(activeClips.map(clip => clip.id)).toEqual([clipId, tiedClipId, team.asset.clipId]);
+                expect(activeClips[0].thumbnailUrl).toBe(thumbnailUrl);
+                expect(activeClips[1].thumbnailUrl).toBe(tiedThumbnailUrl);
+                expect(activeClips[2].thumbnailUrl)
+                    .toBe(`https://image.mux.com/${team.asset.playbackId}/thumbnail.png`);
+
+                await prisma.asset.update({
+                    where: { id: team.asset.id }, data: { mediaPlaybackReset: true },
+                });
+                const unavailable = await request(superAdmin, 'GET', '/api/admin/assets');
+                const redacted = unavailable.json().assets.find(asset => asset.id === team.asset.id).clips;
+                expect(redacted.map(clip => clip.thumbnailUrl)).toEqual([null, null, null]);
+                expect(unavailable.body).not.toContain('matrix-latest-playback');
+                expect(unavailable.body).not.toContain('matrix-tied-playback');
+                expect(unavailable.body).not.toContain(team.asset.playbackId);
+            } finally {
+                await prisma.asset.update({
+                    where: { id: team.asset.id }, data: { mediaPlaybackReset: false },
+                });
+                await prisma.clip.deleteMany({ where: { id: { in: [clipId, tiedClipId] } } });
+            }
+        });
 
         it.each(signedInActors.flatMap(actor => [
             { actor, moderation: 'ACTIVE', expectedStatus: 200 },
