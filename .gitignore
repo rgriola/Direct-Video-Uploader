@@ -21,6 +21,7 @@ server/uploads/*.mov
 server/uploads/*.mp4
 server/uploads/*.avi
 server/uploads/*.mkv
+/server/.local-storage/
 
 # Xcode user data
 *.xcuserdata/
