@@ -64,7 +64,6 @@ Direct-Video-Uploader/
 │       └── hooks/          # TanStack Query, Socket.IO real-time
 ├── scripts/dev.js          # Triad launcher (DB + Server + Admin)
 ├── Dockerfile              # Multi-stage Docker build (Fastify + Vite)
-├── cloudbuild.yaml         # Legacy Google Cloud Build pipeline (not in use)
 ├── PROJECT_SPEC.md         # Full product specification (v4)
 ├── PROJECT_STATUS.md       # Detailed progress log with every session
 ├── STABILITY_PLAN.md       # Security + reliability hardening (Phases A–C)
@@ -235,7 +234,7 @@ The server expects these in `server/.env` (see `.env.example`):
 
 ## Legacy Cloud Deployment
 
-Cloud Build and Render are no longer used for deployment (confirmed by the project owner on Nov 7, 2026). The legacy configuration remains in the repository; it must be reviewed before reuse because it runs `prisma db push --accept-data-loss`. The Render build script also seeds demo accounts.
+Cloud Build and Render are no longer used for deployment (confirmed by the project owner on Nov 7, 2026). `cloudbuild.yaml` has been removed; any Cloud Build trigger still connected to this repository should be disabled in the Google Cloud console. The legacy Render build script remains; it must be reviewed before reuse because it runs `prisma db push --accept-data-loss` and seeds demo accounts.
 
 The former Cloud Build pipeline performed these steps:
 
