@@ -450,6 +450,63 @@ describe('index branch-heavy coverage', () => {
         expect(validationReply.payload).toEqual({ error: 'Validation failed' });
     });
 
+    it.each([
+        ['guest', null, null, 401, 401],
+        ['news user', 'USER', 'NEWS', 403, 403],
+        ['sport user', 'USER', 'SPRT', 403, 403],
+        ['news admin', 'ADMIN', 'NEWS', 403, 200],
+        ['sport admin', 'ADMIN', 'SPRT', 403, 200],
+        ['news super admin', 'SUPER_ADMIN', 'NEWS', 200, 200],
+        ['sport super admin', 'SUPER_ADMIN', 'SPRT', 200, 200],
+        ['unassigned admin', 'ADMIN', null, 403, 403],
+    ])('enforces metrics and production docs access for %s', async (_label, role, companyCode, metricsStatus, docsStatus) => {
+        process.env.NODE_ENV = 'production';
+        process.env.MUX_TOKEN_ID = 'tid';
+        process.env.MUX_TOKEN_SECRET = 'tsec';
+        process.env.MUX_ENV_KEY = 'env';
+        process.env.MUX_WEBHOOK_SECRET = 'web';
+        await importIndexModule();
+        const fastify = fastifyState.instances[0];
+        const metricsRoute = fastify.__routes.GET.get('/api/metrics');
+
+        expect([...fastify.__routes.GET.keys()].sort()).toEqual([
+            '/api/health', '/api/health/live', '/api/health/ready', '/api/metrics',
+        ].sort());
+        expect([...fastify.__routes.POST.keys()]).toEqual([]);
+        expect(metricsRoute.options.preHandler).toHaveLength(2);
+        for (const url of ['/api/health', '/api/health/live', '/api/health/ready']) {
+            const healthRoute = fastify.__routes.GET.get(url);
+            expect(healthRoute.options.preHandler).toBeUndefined();
+            expect((await healthRoute.handler({}, makeReply())).status).toBe('ok');
+        }
+        prismaMock.user.findUnique.mockResolvedValue({
+            id: 'matrix-actor', name: 'Matrix Actor', phoneNumber: '5581000000',
+            role, companyCode, status: 'ACTIVE',
+        });
+
+        const metricsRequest = {
+            user: { id: 'matrix-actor', role: 'SUPER_ADMIN', companyCode: 'SPRT' },
+            jwtVerify: role ? vi.fn().mockResolvedValue(undefined) : vi.fn().mockRejectedValue(new Error('missing token')),
+        };
+        const metricsReply = makeReply();
+        for (const hook of metricsRoute.options.preHandler) {
+            await hook(metricsRequest, metricsReply);
+            if (metricsReply.sent) break;
+        }
+        expect(metricsReply.statusCode ?? 200).toBe(metricsStatus);
+        if (metricsStatus === 200) {
+            const result = await metricsRoute.handler(metricsRequest, metricsReply);
+            expect(result.database.users).toBe(1);
+        }
+
+        const docsReply = makeReply();
+        await getDocsGuard(fastify)(
+            { headers: role ? { authorization: 'Bearer matrix-token' } : {} },
+            docsReply,
+        );
+        expect(docsReply.statusCode ?? 200).toBe(docsStatus);
+    });
+
     it('covers environment validation and shutdown/error signal handlers', async () => {
         process.env.NODE_ENV = 'production';
         delete process.env.DATABASE_URL;
