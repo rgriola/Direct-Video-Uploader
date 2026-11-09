@@ -34,6 +34,16 @@ launchctl load ~/Library/LaunchAgents/com.msfixer.fastify.plist
 sudo launchctl unload /Library/LaunchDaemons/com.cloudflare.cloudflared.plist
 sudo launchctl load /Library/LaunchDaemons/com.cloudflare.cloudflared.plist
 ```
+**To release a new server version:** `server/package.json` is the single source of truth for the
+version reported by `/api/health` and the API docs. It is read once at startup, so restart Fastify
+after deploying the bump.
+```bash
+cd ~/apps/direct-video-uploader/server
+npm version patch --no-git-tag-version   # or minor / major; updates package.json + package-lock.json
+launchctl unload ~/Library/LaunchAgents/com.msfixer.fastify.plist
+launchctl load ~/Library/LaunchAgents/com.msfixer.fastify.plist
+curl http://127.0.0.1:3000/api/health    # "version" should match package.json
+```
 
 **After any `npm ci` / `npm install` in `server/`:** the Prisma client stub gets reset. This is now handled automatically by the `postinstall` script (`prisma generate`), but if the server crash-loops with `SyntaxError: Named export 'PrismaClient' not found`, run manually:
 ```bash
