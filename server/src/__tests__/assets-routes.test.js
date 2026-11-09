@@ -23,6 +23,7 @@ const prismaMock = {
         deleteMany: vi.fn(),
     },
     muxAssetReference: { findFirst: vi.fn() },
+    uploadSession: { findFirst: vi.fn() },
     user: {
         findUnique: vi.fn(),
     },
@@ -101,6 +102,7 @@ beforeEach(async () => {
     prismaMock.clip.delete.mockResolvedValue({});
     prismaMock.clip.deleteMany.mockResolvedValue({ count: 1 });
     prismaMock.muxAssetReference.findFirst.mockResolvedValue(null);
+    prismaMock.uploadSession.findFirst.mockResolvedValue(null);
 
     prismaMock.user.findUnique.mockResolvedValue({ id: 'user-1', name: 'Fallback User' });
     prismaMock.formResponse.upsert.mockResolvedValue({
@@ -312,6 +314,21 @@ describe('assets route deeper coverage', () => {
             clipId: 'clip-existing',
             muxUploadId: 'upload-existing',
         });
+        expect(prismaMock.clip.create).not.toHaveBeenCalled();
+    });
+
+    it('does not mix a Mux upload with an original-file session', async () => {
+        prismaMock.asset.findUnique.mockResolvedValue({
+            id: 'asset-1', userId: 'user-1', moderation: 'ACTIVE',
+        });
+        prismaMock.uploadSession.findFirst.mockResolvedValue({ id: 'original-session' });
+
+        const response = await app.inject({
+            method: 'POST', url: '/api/assets/asset-1/mux-upload', payload: {},
+        });
+
+        expect(response.statusCode).toBe(409);
+        expect(muxMock.createDirectUpload).not.toHaveBeenCalled();
         expect(prismaMock.clip.create).not.toHaveBeenCalled();
     });
 

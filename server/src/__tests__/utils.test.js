@@ -119,6 +119,11 @@ describe('lib/utils', () => {
             fileSize: '123456789',
         });
         expect(serializeClip({ id: 'clip-2', fileSize: null }).fileSize).toBeNull();
+        const privateClip = serializeClip({
+            id: 'clip-3', fileSize: 1n, storageKey: 'originals/private', storageDriver: 'local',
+        });
+        expect(privateClip).not.toHaveProperty('storageKey');
+        expect(privateClip).not.toHaveProperty('storageDriver');
     });
 
     it('emits upload complete and form request events to the owner room', () => {

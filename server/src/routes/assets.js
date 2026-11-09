@@ -129,6 +129,13 @@ export default async function assetRoutes(fastify) {
                 if (asset.moderation !== 'ACTIVE') {
                     return { status: 409, body: { error: 'This asset is not accepting uploads while it is moderated' } };
                 }
+                const originalSession = await prisma.uploadSession.findFirst({
+                    where: { assetId: id },
+                    select: { id: true },
+                });
+                if (originalSession) {
+                    return { status: 409, body: { error: 'This asset is reserved for an original-file upload.' } };
+                }
 
                 const existingClip = await dbRetry(() => prisma.clip.findFirst({
                     where: {

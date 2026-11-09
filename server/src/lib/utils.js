@@ -91,11 +91,12 @@ export function parseClientMetadata(raw = {}) {
 }
 
 /**
- * Serialize a Prisma Clip record for JSON — converts BigInt fileSize to string.
+ * Serialize a Prisma Clip record without exposing private storage identifiers.
  */
 export function serializeClip(clip) {
+    const { storageKey: _storageKey, storageDriver: _storageDriver, ...visible } = clip;
     return {
-        ...clip,
+        ...visible,
         fileSize: clip.fileSize?.toString() || null,
     };
 }

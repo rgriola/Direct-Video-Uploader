@@ -36,6 +36,7 @@ export async function cleanupOrphanedUploads(fastify, { fileSystem = fs } = {}) 
                 status: 'UPLOADING',
                 moderation: 'ACTIVE',
                 createdAt: { lt: cutoff },
+                uploadSessions: { none: {} },
             },
             select: { id: true },
         }));
@@ -58,6 +59,7 @@ export async function cleanupOrphanedUploads(fastify, { fileSystem = fs } = {}) 
                                 mediaPlaybackReset: false,
                                 mediaCreateOperationId: null,
                                 createdAt: { lt: cutoff },
+                                uploadSessions: { none: {} },
                             },
                             include: {
                                 clips: { select: { id: true, storageUrl: true } },
