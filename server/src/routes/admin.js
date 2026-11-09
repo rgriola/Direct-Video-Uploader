@@ -214,8 +214,7 @@ export default async function adminRoutes(fastify) {
                    a.media_sync_error AS "mediaSyncError",
                    a.media_sync_next_at AS "mediaSyncNextAt",
                    a.media_playback_reset AS "mediaPlaybackReset",
-                   (a.moderation <> 'ACTIVE' OR a.media_playback_reset
-                       OR a.media_create_operation_id IS NOT NULL) AS "mediaPlaybackUnavailable",
+                   media_visibility.unavailable AS "mediaPlaybackUnavailable",
                    CASE WHEN ${isSuperAdmin(request.user.role)} THEN a.media_create_operation_id END AS "mediaCreateOperationId",
                    CASE WHEN ${isSuperAdmin(request.user.role)} THEN a.media_create_mux_asset_id END AS "mediaCreateMuxAssetId",
                    CASE WHEN ${isSuperAdmin(request.user.role)} THEN a.media_create_started_at END AS "mediaCreateStartedAt",
@@ -226,8 +225,10 @@ export default async function adminRoutes(fastify) {
                        (SELECT json_agg(json_build_object(
                            'id', c.id, 'assetId', c.asset_id,
                            'status', c.status, 'resolution', c.resolution,
-                           'duration', c.duration_seconds, 'orientation', c.orientation
-                       )) FROM clips c WHERE c.asset_id = a.id),
+                           'duration', c.duration_seconds, 'orientation', c.orientation,
+                           'thumbnailUrl', CASE WHEN media_visibility.unavailable
+                               THEN NULL ELSE c.thumbnail_url END
+                       ) ORDER BY c.created_at DESC, c.id DESC) FROM clips c WHERE c.asset_id = a.id),
                        '[]'::json
                    ) AS clips,
                    CASE WHEN fr.id IS NOT NULL THEN
@@ -240,6 +241,10 @@ export default async function adminRoutes(fastify) {
             FROM assets a
             JOIN users u ON u.id = a.user_id
             LEFT JOIN form_responses fr ON fr.asset_id = a.id
+            CROSS JOIN LATERAL (
+                SELECT (a.moderation <> 'ACTIVE' OR a.media_playback_reset
+                    OR a.media_create_operation_id IS NOT NULL) AS unavailable
+            ) media_visibility
             ${assetFilter}
             ORDER BY a.created_at DESC
             LIMIT 50

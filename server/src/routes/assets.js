@@ -297,7 +297,7 @@ export default async function assetRoutes(fastify) {
             where: { userId: request.user.id, moderation: { in: ['ACTIVE', 'PAUSED'] } },
             orderBy: { createdAt: 'desc' },
             include: {
-                clips: { take: 1, orderBy: { createdAt: 'desc' } },
+                clips: { take: 1, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }] },
                 formResponse: true,
             },
         });
