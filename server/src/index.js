@@ -34,6 +34,7 @@ import prisma from './lib/prisma.js';
 import { authenticate } from './lib/authentication.js';
 import { requireRole } from './lib/authorization.js';
 import { ROLES } from './lib/roles.js';
+import { SERVER_VERSION } from './lib/version.js';
 
 // ─── Global Crash Protection ─────────────────────────────
 // Prevent the process from dying on unhandled errors (Render shows 502 when this happens)
@@ -249,7 +250,7 @@ await fastify.register(fastifySwagger, {
         info: {
             title: 'Fixer API',
             description: 'Fixer server API documentation',
-            version: '1.0.0',
+            version: SERVER_VERSION,
         },
     },
 });
@@ -350,7 +351,7 @@ fastify.get('/api/health', async () => ({
     status: 'ok',
     timestamp: new Date().toISOString(),
     service: 'Fixer',
-    version: '1.0.0',
+    version: SERVER_VERSION,
     env: isProduction ? 'production' : 'development',
 }));
 
@@ -358,7 +359,7 @@ fastify.get('/api/health/live', async () => ({
     status: 'ok',
     timestamp: new Date().toISOString(),
     service: 'Fixer',
-    version: '1.0.0',
+    version: SERVER_VERSION,
     env: isProduction ? 'production' : 'development',
 }));
 
