@@ -70,6 +70,16 @@ function normalizeRequestId(rawValue) {
     return trimmed.slice(0, 128);
 }
 
+function requestPath(url) {
+    return typeof url === 'string' ? url.split('?', 1)[0] : url;
+}
+
+function redactSignedUrls(value) {
+    return typeof value === 'string'
+        ? value.replace(/([?&]signature=)[^&#\s"'`]+/gi, '$1[REDACTED]')
+        : value;
+}
+
 function validateEnvironment() {
     const missingCore = missingEnvVars(REQUIRED_PROD_ENV);
     const missingMux = missingEnvVars(REQUIRED_MUX_ENV);
@@ -113,7 +123,7 @@ const fastify = Fastify({
             req: (req) => ({
                 id: req.id,
                 method: req.method,
-                url: req.url,
+                url: requestPath(req.url),
                 ip: req.ip,
             }),
             res: (res) => ({
@@ -121,8 +131,8 @@ const fastify = Fastify({
             }),
             err: (err) => ({
                 type: err.name,
-                message: err.message,
-                ...(isProduction ? {} : { stack: err.stack }),
+                message: redactSignedUrls(err.message),
+                ...(isProduction ? {} : { stack: redactSignedUrls(err.stack) }),
             }),
         },
         // Pretty logs in dev, raw JSON in production (Render captures structured logs)
@@ -284,7 +294,7 @@ fastify.decorate('authenticate', authenticate);
 
 // Centralized error response policy: never leak stacks to clients in production.
 fastify.setErrorHandler((err, request, reply) => {
-    fastify.log.error({ err, url: request.raw?.url, method: request.method }, 'Request failed');
+    fastify.log.error({ err, url: requestPath(request.raw?.url), method: request.method }, 'Request failed');
 
     if (reply.sent) return;
 
@@ -308,6 +318,16 @@ fastify.setErrorHandler((err, request, reply) => {
     }
 
     return reply.status(statusCode).send({ error: err.message || 'Request failed' });
+});
+
+fastify.setNotFoundHandler((request, reply) => {
+    const url = requestPath(request.raw.url);
+    request.log.info(`Route ${request.method}:${url} not found`);
+    return reply.status(404).send({
+        message: `Route ${request.method}:${url} not found`,
+        error: 'Not Found',
+        statusCode: 404,
+    });
 });
 
 fastify.decorate('requireRole', requireRole);

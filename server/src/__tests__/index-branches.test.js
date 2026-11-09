@@ -62,6 +62,9 @@ const fastifyCtorMock = vi.fn((opts) => {
         setErrorHandler: vi.fn(function (fn) {
             this.__errorHandler = fn;
         }),
+        setNotFoundHandler: vi.fn(function (fn) {
+            this.__notFoundHandler = fn;
+        }),
         get: vi.fn(function (url, optsOrHandler, maybeHandler) {
             registerRoute(this.__routes.GET, url, optsOrHandler, maybeHandler);
         }),
@@ -266,6 +269,15 @@ describe('index branch-heavy coverage', () => {
         expect(fastify.__opts.genReqId({ headers: { 'x-request-id': '  req-123  ' } })).toBe('req-123');
         expect(fastify.__opts.genReqId({ headers: { 'x-request-id': [' req-456 '] } })).toBe('req-456');
         expect(typeof fastify.__opts.genReqId({ headers: { 'x-request-id': '' } })).toBe('string');
+        expect(fastify.__opts.logger.serializers.req({
+            id: 'r1', method: 'PUT', url: '/api/upload-sessions/id/parts/1?signature=secret', ip: '127.0.0.1',
+        }).url).toBe('/api/upload-sessions/id/parts/1');
+        const loggedError = fastify.__opts.logger.serializers.err({
+            name: 'Error',
+            message: 'failed /upload?expires=1&signature=secret',
+            stack: 'failed /upload?expires=1&signature=secret',
+        });
+        expect(JSON.stringify(loggedError)).not.toContain('secret');
 
         // child logger requestId fallback branch
         const childSpy = vi.fn(() => ({ childLogger: true }));
@@ -362,6 +374,23 @@ describe('index branch-heavy coverage', () => {
         await errorHandler({ statusCode: 400, message: 'bad input' }, { method: 'POST', raw: { url: '/api/assets' } }, badRequestReply);
         expect(badRequestReply.status).toHaveBeenCalledWith(400);
         expect(badRequestReply.payload).toEqual({ error: 'bad input' });
+
+        await errorHandler(
+            { statusCode: 400, message: 'bad input' },
+            { method: 'PUT', raw: { url: '/unknown?signature=secret' } },
+            makeReply(),
+        );
+        expect(fastify.log.error).toHaveBeenLastCalledWith(
+            expect.objectContaining({ url: '/unknown' }),
+            'Request failed',
+        );
+        const notFoundReply = makeReply();
+        const notFoundLog = { info: vi.fn() };
+        await fastify.__notFoundHandler({
+            method: 'PUT', raw: { url: '/unknown?signature=secret' }, log: notFoundLog,
+        }, notFoundReply);
+        expect(notFoundLog.info).toHaveBeenCalledWith('Route PUT:/unknown not found');
+        expect(notFoundReply.payload.message).toBe('Route PUT:/unknown not found');
 
         const sentReply = makeReply();
         sentReply.sent = true;
