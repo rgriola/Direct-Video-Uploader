@@ -25,6 +25,7 @@ export interface User extends SessionUser {
 export interface Clip {
   id: string;
   storageUrl?: string | null;
+  thumbnailUrl?: string | null;
   fileSize?: string | null;
   resolution?: string | null;
   codec?: string | null;

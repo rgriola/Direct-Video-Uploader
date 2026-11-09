@@ -23,21 +23,14 @@ import { toast } from "sonner";
 import type { Asset } from "@/lib/types";
 import { panelHeader, subTextPanelHeader } from "@/lib/types";
 import { Icon, type IconName } from "./Icon";
+import { AssetThumbnail } from "./AssetThumbnail";
 import { MediaSyncDetails } from "./MediaSyncDetails";
 
 // ─── Status Configuration ────────────────────────────────────────────
 //
 // Maps asset.status values to visual indicators used in AssetRow.
-//   statusIcons   → icon name shown inside the colored circle
 //   statusClasses → Tailwind classes for the status pill badge
 //   priorityColors → text color for the priority field in form response
-
-const statusIcons: Record<string, IconName> = {
-  READY: "success",
-  PROCESSING: "processing",
-  UPLOADING: "outgoing",
-  ERROR: "error",
-};
 
 const statusClasses: Record<string, string> = {
   READY: "bg-(--accent-green-glow) text-(--accent-green)",
@@ -92,7 +85,7 @@ export function AssetList({
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   return (
-    <div className="bg-(--card) border border-(--border-subtle) rounded-(--radius-xl) overflow-hidden">
+    <div className="@container bg-(--card) border border-(--border-subtle) rounded-(--radius-xl) overflow-hidden">
       {/* Panel header — "Assets [count]" */}
       <div className={panelHeader}>
         <h2 className="text-(length:--text-lg) font-semibold flex items-center gap-2">
@@ -141,7 +134,7 @@ export function AssetList({
 // ─── Asset Row ───────────────────────────────────────────────────────
 //
 // Each asset renders as a clickable row with two states:
-//   Collapsed: [icon] [title + detail summary] [badges + chevron]
+//   Collapsed: [thumbnail] [title + detail summary] [badges + chevron]
 //   Expanded:  collapsed row + detail panel underneath
 
 interface AssetRowProps {
@@ -173,10 +166,11 @@ function AssetRow({ asset, isExpanded, onToggle, viewerRole, onModerate }: Asset
   // Clip viewer URL: prefer mediasourceUrl, fall back to /clips/:id
   const clipUrl = asset.mediasourceUrl || (asset.mediasourceId ? `/clips/${asset.mediasourceId}` : null);
   const isSuperAdmin = viewerRole === "SUPER_ADMIN";
-  const canPlay = !!clipUrl && asset.moderation === "ACTIVE"
+  const playbackAvailable = asset.moderation === "ACTIVE"
     && !asset.mediaPlaybackUnavailable
     && !asset.mediaPlaybackReset
     && !asset.mediaCreateOperationId;
+  const canPlay = !!clipUrl && playbackAvailable;
 
   async function changeModeration(
     moderation: "ACTIVE" | "PAUSED" | "FLAGGED_FOR_REMOVAL" | "REMOVED",
@@ -220,12 +214,14 @@ function AssetRow({ asset, isExpanded, onToggle, viewerRole, onModerate }: Asset
       <button
         onClick={onToggle}
         aria-expanded={isExpanded}
-        className="flex items-center w-full px-6 py-4 hover:bg-(--card-hover) transition-colors cursor-pointer text-left bg-transparent border-0 text-inherit font-inherit"
+        className="grid w-full grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3.5 px-6 py-4 hover:bg-(--card-hover) transition-colors cursor-pointer text-left bg-transparent border-0 text-inherit font-inherit @[36rem]:flex @[36rem]:gap-x-0"
       >
-        {/* Status icon circle */}
-        <div className="w-10.5 h-10.5 rounded-(--radius-lg) bg-(--secondary) flex items-center justify-center text-(length:--text-base) mr-3.5 shrink-0">
-          <Icon name={statusIcons[asset.status] ?? "assets"} />
-        </div>
+        <AssetThumbnail
+          status={asset.status}
+          moderation={asset.moderation}
+          playbackAvailable={playbackAvailable}
+          thumbnailUrl={clip?.thumbnailUrl}
+        />
 
         {/* Title + detail line */}
         <div className="flex-1 min-w-0">
@@ -241,7 +237,7 @@ function AssetRow({ asset, isExpanded, onToggle, viewerRole, onModerate }: Asset
         </div>
 
         {/* Right side: badges + chevron */}
-        <div className="shrink-0 flex items-center gap-2">
+        <div className="col-start-2 flex min-w-0 flex-wrap items-center gap-2 pt-2 [&>span]:max-w-full @[36rem]:shrink-0 @[36rem]:flex-nowrap @[36rem]:pt-0">
           {missingForm && (
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-(--radius-md) text-(length:--text-xs) font-semibold bg-(--accent-red-glow) text-(--accent-red)">
               <Icon name="warning" /> No Form
