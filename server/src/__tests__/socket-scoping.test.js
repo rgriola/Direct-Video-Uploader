@@ -48,6 +48,7 @@ vi.mock('../lib/slack.js', () => ({
 vi.mock('../lib/config.js', () => ({ PUBLIC_URL: 'https://example.test' }));
 
 import prisma from '../lib/prisma.js';
+import * as slack from '../lib/slack.js';
 import { notifyUserSockets } from '../lib/utils.js';
 import { notifyDashboardAssetChange } from '../ws/dashboard-notifications.js';
 import { setupWebSocket } from '../ws/handler.js';
@@ -134,6 +135,8 @@ beforeEach(async () => {
     addUser('admin-lower', 'ADMIN', 'news');
     addUser('admin-unassigned', 'ADMIN', null);
     addUser('super', 'SUPER_ADMIN', null);
+    addUser('super-news', 'SUPER_ADMIN', 'NEWS');
+    addUser('super-sport', 'SUPER_ADMIN', 'SPRT');
     state.assets.set('asset-news', { id: 'asset-news', userId: 'owner-news', moderation: 'ACTIVE' });
     state.assets.set('asset-sport', { id: 'asset-sport', userId: 'owner-sport', moderation: 'ACTIVE' });
     state.assets.set('asset-unassigned', { id: 'asset-unassigned', userId: 'owner-unassigned', moderation: 'ACTIVE' });
@@ -165,7 +168,7 @@ describe('Socket.IO scoped delivery', () => {
     it('sends private events to every owner device and payload-free refreshes to the authorized team and super admin', async () => {
         const [
             ownerPhone, ownerDashboard, otherOwner, teamAdmin, otherAdmin,
-            lowerAdmin, orphanAdmin, superAdmin, teamAdminPhone,
+            lowerAdmin, orphanAdmin, superAdmin, teamAdminPhone, superNews, superSport,
         ] = await Promise.all([
             connectSocket('owner-news', 'ios', { headerOnly: true }),
             connectSocket('owner-news', 'admin'),
@@ -176,10 +179,12 @@ describe('Socket.IO scoped delivery', () => {
             connectSocket('admin-unassigned'),
             connectSocket('super'),
             connectSocket('admin-news', 'ios'),
+            connectSocket('super-news'),
+            connectSocket('super-sport'),
         ]);
         const sockets = [
             ownerPhone, ownerDashboard, otherOwner, teamAdmin, otherAdmin,
-            lowerAdmin, orphanAdmin, superAdmin, teamAdminPhone,
+            lowerAdmin, orphanAdmin, superAdmin, teamAdminPhone, superNews, superSport,
         ];
         const uploads = sockets.map(socket => observe(socket, 'upload:complete'));
         const forms = sockets.map(socket => observe(socket, 'form:request'));
@@ -195,11 +200,13 @@ describe('Socket.IO scoped delivery', () => {
         await notifyDashboardAssetChange(fastify, 'asset-news');
         await flush(sockets);
 
-        expect(uploads.map(events => events.length)).toEqual([1, 1, 0, 0, 0, 0, 0, 0, 0]);
-        expect(forms.map(events => events.length)).toEqual([1, 1, 0, 0, 0, 0, 0, 0, 0]);
-        expect(refreshes.map(events => events.length)).toEqual([0, 0, 0, 1, 0, 0, 0, 1, 0]);
+        expect(uploads.map(events => events.length)).toEqual([1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+        expect(forms.map(events => events.length)).toEqual([1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+        expect(refreshes.map(events => events.length)).toEqual([0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 1]);
         expect(refreshes[3][0]).toEqual([]);
         expect(refreshes[7][0]).toEqual([]);
+        expect(refreshes[9][0]).toEqual([]);
+        expect(refreshes[10][0]).toEqual([]);
         expect(uploads[0][0][0].metadata.gpsLat).toBe(35);
         expect(io.sockets.sockets.get(ownerDashboard.id).rooms.has('super')).toBe(false);
         expect(io.sockets.sockets.get(teamAdmin.id).rooms.has('team:NEWS')).toBe(true);
@@ -250,24 +257,33 @@ describe('Socket.IO scoped delivery', () => {
         await expect(connectSocket('admin-news')).rejects.toThrow('Account unavailable');
     });
 
-    it('sends unassigned uploads only to super admins and skips moderated assets', async () => {
-        const [teamAdmin, orphanAdmin, superAdmin] = await Promise.all([
-            connectSocket('admin-news'), connectSocket('admin-unassigned'), connectSocket('super'),
-        ]);
-        const teamEvents = observe(teamAdmin, 'dashboard:asset-changed');
-        const orphanEvents = observe(orphanAdmin, 'dashboard:asset-changed');
-        const superEvents = observe(superAdmin, 'dashboard:asset-changed');
+    it.each([
+        ['news', 'asset-news', 'admin-news', 'admin-sport'],
+        ['sport', 'asset-sport', 'admin-sport', 'admin-news'],
+    ].flatMap(([team, assetId, ownAdmin, otherAdmin]) =>
+        ['PAUSED', 'FLAGGED_FOR_REMOVAL', 'REMOVED'].map(moderation =>
+            ({ team, assetId, ownAdmin, otherAdmin, moderation }))))(
+        'skips $team assets in $moderation while limiting unassigned refreshes to super admins',
+        async ({ assetId, ownAdmin, otherAdmin, moderation }) => {
+            const sockets = await Promise.all([
+                connectSocket(ownAdmin),
+                connectSocket(otherAdmin),
+                connectSocket('admin-unassigned'),
+                connectSocket('super-news'),
+                connectSocket('super-sport'),
+            ]);
+            const refreshes = sockets.map(socket => observe(socket, 'dashboard:asset-changed'));
 
-        await notifyDashboardAssetChange(fastify, 'asset-unassigned');
-        state.assets.get('asset-news').moderation = 'PAUSED';
-        await notifyDashboardAssetChange(fastify, 'asset-news');
-        await flush([teamAdmin, orphanAdmin, superAdmin]);
+            await notifyDashboardAssetChange(fastify, 'asset-unassigned');
+            state.assets.get(assetId).moderation = moderation;
+            await notifyDashboardAssetChange(fastify, assetId);
+            await flush(sockets);
 
-        expect(teamEvents).toHaveLength(0);
-        expect(orphanEvents).toHaveLength(0);
-        expect(superEvents).toHaveLength(1);
-        expect(superEvents[0]).toEqual([]);
-    });
+            expect(refreshes.map(events => events.length)).toEqual([0, 0, 0, 1, 1]);
+            expect(refreshes[3][0]).toEqual([]);
+            expect(refreshes[4][0]).toEqual([]);
+        },
+    );
 
     it('fails closed and logs when current dashboard authorization cannot be checked', async () => {
         const [teamAdmin, superAdmin] = await Promise.all([connectSocket('admin-news'), connectSocket('super')]);
@@ -286,19 +302,64 @@ describe('Socket.IO scoped delivery', () => {
         );
     });
 
-    it("does not persist or send Slack messages for another user's asset", async () => {
-        const phone = await connectSocket('owner-news', 'ios');
-        const rejection = new Promise(resolve => {
-            phone.on('message:new', function onMessage(message) {
-                if (message.content?.code === 'WS_ASSET_UNAVAILABLE') {
-                    phone.off('message:new', onMessage);
-                    resolve(message);
-                }
-            });
-        });
-        phone.emit('message:send', { text: '#news share this', assetId: 'asset-sport' });
+    it.each([
+        'owner-news', 'owner-sport', 'admin-news', 'admin-sport',
+        'admin-unassigned', 'super-news', 'super-sport',
+    ])('keeps %s upload progress on the initiating socket', async actor => {
+        const otherActor = actor === 'owner-news' ? 'owner-sport' : 'owner-news';
+        const [sender, sameUser, otherUser] = await Promise.all([
+            connectSocket(actor), connectSocket(actor), connectSocket(otherActor),
+        ]);
+        const sameUserEvents = observe(sameUser, 'upload:progress');
+        const otherUserEvents = observe(otherUser, 'upload:progress');
 
-        expect((await rejection).messageType).toBe('SYSTEM_NOTE');
-        expect(prisma.chatMessage.create).not.toHaveBeenCalled();
+        for (const assetId of ['asset-news', 'asset-sport']) {
+            const progress = waitForEvent(sender, 'upload:progress');
+            sender.emit('video:upload', { assetId });
+            expect(await progress).toEqual({ assetId, percent: 0, status: 'uploading' });
+        }
+        await flush([sender, sameUser, otherUser]);
+        expect(sameUserEvents).toHaveLength(0);
+        expect(otherUserEvents).toHaveLength(0);
+    });
+
+    it.each([
+        ['owner-news', 'asset-sport'],
+        ['owner-sport', 'asset-news'],
+        ['owner-unassigned', 'asset-news'],
+        ['admin-news', 'asset-news'],
+        ['admin-sport', 'asset-sport'],
+        ['admin-unassigned', 'asset-news'],
+        ['super', 'asset-news'],
+        ['super-news', 'asset-news'],
+        ['super-sport', 'asset-sport'],
+    ])('allows %s to send messages only for owned active assets', async (actor, foreignAssetId) => {
+        const socket = await connectSocket(actor);
+        const ownAssetId = 'matrix-owned-asset';
+        state.assets.set(ownAssetId, { id: ownAssetId, userId: actor, moderation: 'ACTIVE' });
+
+        const accepted = waitForEvent(socket, 'message:new');
+        socket.emit('message:send', { text: '#news share this', assetId: ownAssetId });
+        expect((await accepted).content.code).toBe('WS_SLACK_NOT_CONFIGURED');
+        expect(prisma.chatMessage.create).toHaveBeenCalledWith({
+            data: expect.objectContaining({ userId: actor, assetId: ownAssetId, messageType: 'SLACK_POST' }),
+        });
+
+        for (const moderation of ['PAUSED', 'FLAGGED_FOR_REMOVAL', 'REMOVED']) {
+            state.assets.get(ownAssetId).moderation = moderation;
+            const writesBefore = prisma.chatMessage.create.mock.calls.length;
+            const rejected = waitForEvent(socket, 'message:new');
+            socket.emit('message:send', { text: '#news share this', assetId: ownAssetId });
+            expect((await rejected).content.code).toBe('WS_ASSET_UNAVAILABLE');
+            expect(prisma.chatMessage.create.mock.calls.length).toBe(writesBefore);
+        }
+
+        const writesBefore = prisma.chatMessage.create.mock.calls.length;
+        const rejected = waitForEvent(socket, 'message:new');
+        socket.emit('message:send', { text: '#news share this', assetId: foreignAssetId });
+        expect((await rejected).content.code).toBe('WS_ASSET_UNAVAILABLE');
+        expect(prisma.chatMessage.create.mock.calls.length).toBe(writesBefore);
+        expect(slack.postToChannel).not.toHaveBeenCalled();
+        expect(slack.postDM).not.toHaveBeenCalled();
     });
 });

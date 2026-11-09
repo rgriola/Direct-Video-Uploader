@@ -2,7 +2,7 @@
 
 _Drafted: October 19, 2026 · Updated: November 8, 2026_
 _Owner: Rod_
-_Status: **In progress** — Step 1 verified; Steps 2.1 and 2.3 deployed; Step 2.4 pushed but not deployed; Step 2.2 reconciliation fix on a development branch, with migrations and real-Mux rollout validation pending_
+_Status: **In progress** — Step 1 verified; Steps 2.1 and 2.3 deployed; Steps 2.2 and 2.4 merged to `main`; the web app is reported deployed, while server and real-Mux rollout checks remain unconfirmed; Step 2.5 tests pass locally and await CI_
 
 ```mermaid
 flowchart TD
@@ -32,7 +32,7 @@ flowchart TD
 
 ---
 
-## Locked Decisions (from Rod, Oct 19)
+## Locked Decisions (from Rod)
 
 | Topic | Decision |
 | --- | --- |
@@ -41,6 +41,7 @@ flowchart TD
 | Team Admin | Manages **only their organization's** videos and members. Can promote and demote other Team Admins in that organization and pause members when moderation is implemented. |
 | Users | **Every user gets web access** once their account exists. |
 | Shared clip links | Signed-in members of the same organization may view each other's shared clips. Regular list views remain limited to the user's own records. |
+| Transcript writes | Owners may finish transcripts for `ACTIVE` and `PAUSED` videos; flagged and removed videos reject transcript writes. The Step 2.5 implementation is not yet merged or deployed. |
 | Permanent user deletion | **Super Admin only**, including deletion of associated data. |
 | iOS role | **Upload only.** All management (users, moderation, sharing, downloads) happens in the desktop web app. |
 | Original video | The native original file is **stored by us**, not just by Mux. Mux is for playback only. **Local folder on the home server for testing**, cloud object storage later. |
@@ -61,15 +62,15 @@ flowchart TD
 | iOS hot spot | `ChatViewModel.swift` is 1,582 lines | Don't touch in Step 1. |
 | iOS ↔ roles | iOS `User` model doesn't decode `role` | New roles won't break the app. ✅ |
 | Server roles | `SUPER_ADMIN`, `ADMIN`, and `USER` are deployed; one Team Admin has no organization | Assign that account an organization before deploying team scoping. |
-| Server auth | Role guards and HTTP team scoping were deployed on Nov 7, 2026 (per Rod); Step 2.4 socket scoping is pushed but not deployed | Deploy with the matching dashboard after the Step 2.2 rollout checks and migrations. |
+| Server auth | Role guards and HTTP team scoping were deployed on Nov 7, 2026 (per Rod); Step 2.4 socket scoping is merged. The web app is reported deployed, but the matching server version is unconfirmed | Verify server and dashboard versions and the Step 2.2 rollout gates; then check socket scoping on the home server. |
 | User status | `UserStatus { ACTIVE, SUSPENDED }` already exists | "Pause a member" maps to `SUSPENDED`. Label it **Paused** in the UI. No enum change needed. |
-| Video moderation | Step 2.2 moderation and durable reconciliation are implemented on a development branch, not deployed | Apply the pending migrations and complete the legacy-upload and real-Mux checks before relying on pause or removal. |
-| Migrations | Existing baseline migrations are applied on the home server; the Step 2.2 moderation and reconciliation migrations are pending there | Cloud Build and Render are no longer used; their legacy scripts still need safe migration workflows if reused. |
+| Video moderation | Step 2.2 moderation and durable reconciliation are merged to `main`; the matching server deployment and real-Mux checks are unconfirmed | Verify migrations, legacy-upload draining, and real-Mux behavior before relying on pause or removal. |
+| Migrations | Existing baseline migrations were applied on the home server; the post-deployment status of the Step 2.2 moderation and reconciliation migrations is unconfirmed | Check migration status on the home server. Cloud Build and Render are no longer used; their legacy scripts still need safe migration workflows if reused. |
 | Original files | iOS uploads **straight to Mux** (direct-upload PUT). The original never reaches our server. Mux doesn't give back the byte-exact original | Keeping originals means changing the upload pipeline (Step 4). |
-| Legacy local path | `Clip.storageUrl` and an `uploads/` folder exist. The workspace coordinator cleans legacy files after Mux readiness or permanent removal | Step 4 must retain and manage original files explicitly instead. |
-| ⚠️ Public uploads folder | The deployed static route is unauthenticated. The workspace adds moderation/reference checks, but known active files remain reachable by URL without authentication | Replace it with authenticated or signed access **before** originals are stored (Step 4.1). |
+| Legacy local path | `Clip.storageUrl` and an `uploads/` folder exist. The merged coordinator cleans legacy files after Mux readiness or permanent removal | Step 4 must retain and manage original files explicitly instead. |
+| ⚠️ Public uploads folder | The uploads route is unauthenticated. The merged code adds moderation/reference checks, but known active files remain reachable by URL without authentication | Replace it with authenticated or signed access **before** originals are stored (Step 4.1); confirm the running server version separately. |
 | Thumbnails | Webhook already writes `Clip.thumbnailUrl` (`image.mux.com/<id>/thumbnail.png?width=640`) | Thumbnails are frontend-only work. |
-| Mux settings | Previously issued uploads can request automatic public playback; workspace uploads omit the playback policy and retain `cors_origin: '*'` | Drain or cancel legacy uploads, verify Mux cleanup, and test with real Mux before relying on moderation. |
+| Mux settings | Previously issued uploads can request automatic public playback; uploads from the merged code omit the playback policy and retain `cors_origin: '*'` | Drain or cancel legacy uploads, verify Mux cleanup, and test with real Mux before relying on moderation. |
 | Admin web app | One `App.tsx`, no router. Active theme: `theme-a-editorial.css` (imported in `main.tsx`). Three alternates sit unused | See the Themes note in Step 3. |
 
 ---
@@ -377,26 +378,30 @@ reviewed and migrated safely before either workflow is reused.
 - [ ] Deploy and verify removal against real Mux. Share-link revocation is deferred until Step 5; Step 4 must wire original-file storage into removal.
 - [x] Audit log table records actor, target, action, reason, and time; Super Admin can view the log.
 
-**Implementation/rollout status (Nov 8, 2026):** Server and dashboard reconciliation changes
-are on `fix/step-2-2-mux-moderation`; the earlier iOS Archive changes are
-implemented. Step 2.2 is not deployed and its moderation plus reconciliation migrations are
-pending on the home server. The iOS Archive keeps paused assets visible and suppresses their
-playback, sharing, and retry actions.
+**Implementation/rollout status:** The durable reconciliation fix is merged to `main`; the
+owner reports the web app deployed. The matching server version, production migration status,
+legacy-upload draining, and real-Mux validation have not been confirmed. The iOS Archive
+keeps paused assets visible and suppresses their playback, sharing, and retry actions.
 
-The workspace fix uses durable per-asset revisions and PostgreSQL advisory locks to reconcile
+The merged fix uses durable per-asset revisions and PostgreSQL advisory locks to reconcile
 late webhooks, missed webhooks, moderation changes, Mux playback creation and deletion, and
 legacy local files. New uploads do not request automatic public IDs. A playback creation with
 an unknown outcome stays unavailable until a Super Admin obtains confirmation from Mux and
 records it; incomplete cleanup remains visible and retryable. Hard user deletion requires
 verified media cleanup, and Nuclear Reset is blocked while any asset record remains.
 
-**Rollout remains blocked** until old server instances are stopped, legacy direct-upload URLs
-are drained or cancelled and verified, pending migrations are applied, and real-Mux staging
-checks and reconciliation are healthy. A `PENDING` or `ERROR` response does not prove that an
-old public Mux URL has stopped working. The workspace local route blocks moderated or unreferenced
+**Production verification remains open:** Confirm that old server instances were stopped,
+legacy direct-upload URLs were drained or cancelled and verified, required migrations were
+applied, and real-Mux staging checks and reconciliation are healthy. Do not rely on pause or
+removal until these gates pass. A `PENDING` or `ERROR` response does not prove that an
+old public Mux URL has stopped working. The merged local route blocks moderated or unreferenced
 files but remains unauthenticated for active files. Public URLs, already-playing streams, caches,
 and downloaded copies are not private or instantly revocable. See
 `HOME_SERVER_RUNBOOK.md` for the full rollout and recovery procedure.
+
+**Step 2.5 branch:** Owners can save transcripts on `ACTIVE` and `PAUSED` assets; both
+transcript endpoints return 404 for `FLAGGED_FOR_REMOVAL` and `REMOVED` assets. This policy
+is implemented and tested locally on the Step 2.5 feature branch, not yet merged or deployed.
 
 ### 2.3 API Authorization & Team Scoping
 
@@ -525,8 +530,9 @@ across tabs and sheets, keyboard validation, form dismissal, upload and recovery
 locked/unlocked file protection, and actual Socket.IO redirect behavior. Testing on the oldest
 supported iOS version also remains open.
 
-**Isolation is not complete:** Step 2.4 socket scoping is pushed but not deployed;
-Mux playback URLs are public, and active `/uploads/` files remain unauthenticated (4.1). Do not treat HTTP
+**Isolation is not complete:** Step 2.4 socket scoping is merged, but the matching server
+deployment and home-server verification are unconfirmed. Mux playback URLs are public, and
+active `/uploads/` files remain unauthenticated (4.1). Do not treat HTTP
 and socket scoping as end-to-end media isolation. Dashboard sign-in still uses phone and PIN without
 a company code; the planned web-login policy remains part of Step 3. Stored auth tokens
 are not bound to their issuing server across launches, and existing transport and logout
@@ -536,9 +542,10 @@ reviewed before any reuse. The Render build script also seeds demo accounts.
 
 ### 2.4 Real-Time (Socket.IO) Scoping
 
-**Implementation/rollout status:** Pushed to `main`; not yet deployed. Complete the Step 2.2
-legacy-upload, migration, and real-Mux validation gates before deploying the server, then
-rebuild the dashboard and restart the server as described in the home-server runbook.
+**Implementation/rollout status:** Merged to `main`; the owner reports the web app deployed.
+Confirm the matching server version and complete the Step 2.2 legacy-upload, migration, and
+real-Mux validation gates before relying on it. If the server still needs updating, follow the
+home-server runbook and deploy matching server and dashboard versions together.
 
 - [x] Audit server emits. The existing rich upload, form, and Mux notifications were already
   owner-targeted, rather than global dashboard broadcasts; keep their iOS payloads owner-only.
@@ -550,7 +557,7 @@ rebuild the dashboard and restart the server as described in the home-server run
   stale scoped data when its socket is invalidated.
 - [x] Exercise delivery, reauthorization, suspension, expiration, and cross-team isolation with
   real Socket.IO clients; verify dashboard refresh and scope changes in a browser.
-- [ ] Deploy the server and dashboard and verify the behavior on the home server.
+- [ ] Confirm the matching server and dashboard versions and verify the behavior on the home server.
 
 Refresh delivery is best-effort; the dashboard also polls. Rooms, socket tracking, and
 revocation are process-local and assume the current single-process deployment. Multiple
@@ -560,14 +567,23 @@ server after such changes so existing connections must authenticate again.
 
 ### 2.5 Tests
 
-- [ ] Role × endpoint matrix (3 roles × 2 teams × each route → 200/403/404)
+- [x] Role × endpoint matrix covers three roles across two teams plus an unassigned admin,
+  using production JWT authentication and database-backed identity. Tests cover each
+  registered application route and separately exercise inline health, metrics, and docs guards.
 - [x] Escalation and guardrail tests (2.1): `admin-role-routes.test.js`, `roles.test.js`, `bootstrap-super-admin.test.js`
 - [x] HTTP authorization integration tests use a disposable PostgreSQL database for multiple
   organizations, role scopes, shared clips, stale cookies, and destructive-operation guards.
   CI provisions that database and runs migrations before the coverage suite.
-- [x] Socket.IO integration tests cover owner-only payloads and scoped dashboard refreshes.
-- [ ] Moderation visibility tests (paused/flagged/removed hidden correctly)
-- [ ] Complete the full per-endpoint matrix, including moderation and Socket.IO.
+- [x] Socket.IO integration tests cover owner-only payloads and scoped dashboard refreshes,
+  including HTTP-triggered events, team changes, and suspension against PostgreSQL.
+- [x] Moderation visibility tests cover active, paused, flagged, and removed assets across
+  lists, details, clips, legacy uploads, Mux status, and transcript writes.
+- [ ] Run the complete Step 2.5 matrix in GitHub CI after publishing the feature branch.
+
+The full server coverage suite passed locally with 778 tests on the Step 2.5 branch.
+Mux is mocked in these tests; this is not a real-Mux rollout check. Run PostgreSQL-backed
+tests against a migrated disposable `dvu_scope_test_*` database with matching
+`DATABASE_URL` and `TEST_DATABASE_URL`, as provisioned by CI.
 
 ---
 

@@ -492,23 +492,37 @@ export default async function assetRoutes(fastify) {
             transcript: transcript.slice(0, 10000),
             transcriptSegments: Array.isArray(segments) ? segments : undefined,
         };
+        const transcriptAssetScope = {
+            userId: request.user.id,
+            moderation: { in: ['ACTIVE', 'PAUSED'] },
+        };
 
-        if (clipId === undefined) {
-            const clip = await prisma.clip.findFirst({
-                where: { assetId: id, asset: { userId: request.user.id } },
-                orderBy: { clipIndex: 'asc' },
-            });
-            if (!clip) {
-                return reply.code(404).send({ error: 'No clip found for this asset' });
+        const saved = await prisma.$transaction(async tx => {
+            // Serialize transcript writes with moderation changes to the parent asset.
+            const assets = await tx.$queryRaw`
+                SELECT id FROM assets
+                WHERE id = ${id} AND user_id = ${request.user.id}
+                  AND moderation IN ('ACTIVE', 'PAUSED')
+                FOR UPDATE
+            `;
+            if (!assets.length) return false;
+
+            if (clipId === undefined) {
+                const clip = await tx.clip.findFirst({
+                    where: { assetId: id, asset: transcriptAssetScope },
+                    orderBy: { clipIndex: 'asc' },
+                });
+                if (!clip) return false;
+                clipId = clip.id;
             }
-            clipId = clip.id;
-        }
 
-        const updated = await prisma.clip.updateMany({
-            where: { id: clipId, assetId: id, asset: { userId: request.user.id } },
-            data,
+            const updated = await tx.clip.updateMany({
+                where: { id: clipId, assetId: id, asset: transcriptAssetScope },
+                data,
+            });
+            return updated.count === 1;
         });
-        if (updated.count !== 1) {
+        if (!saved) {
             return reply.code(404).send({ error: 'No clip found for this asset' });
         }
 

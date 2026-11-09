@@ -378,7 +378,7 @@
 - [ ] Clips: form submit, status, viewer auth
 - [x] Webhooks: Mux signature, ready, error
 - [ ] Rate limiting (verify 429)
-- [ ] RBAC matrix (each role × each endpoint)
+- [ ] RBAC matrix (each role × each endpoint) — implemented locally in Step 2.5; awaiting CI
 
 ### 7.3 iOS Tests
 
