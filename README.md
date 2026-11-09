@@ -78,7 +78,7 @@ Direct-Video-Uploader/
 
 ### Prerequisites
 
-- **Node.js** 20+ and **npm**
+- **Node.js** 20.19+ (20.x), 22.x, or 24+ and **npm**
 - **PostgreSQL 18** (Homebrew recommended for local dev: `brew install postgresql@18`; Prisma manages schema)
 - **Xcode** with an iOS SDK compatible with iOS 18.6, plus **XcodeGen** (verified with Xcode 27.2)
 - Optional: Mux account, Slack bot token
@@ -144,8 +144,15 @@ Replace the device type and runtime with installed iPhone options if needed. If 
 | `npm run dev`         | **Triad launcher** — DB + Server `:3000` + Admin `:5173` (recommended) |
 | `npm run dev:admin`   | Starts Vite dev server only on `:5173`                                 |
 | `npm run build:admin` | Production build of React admin → `server/public/` (Vite only, fast)   |
+| `npm --prefix admin run typecheck` | Type-checks the web app and its tests                       |
+| `npm --prefix admin test` | Runs the web app's routing and session tests                        |
 | `npm run server`      | Starts Fastify server only                                             |
 | `npm run setup`       | Fresh setup: install deps, push schema, generate client, seed          |
+
+The admin build empties `server/public/`. To avoid replacing existing files while validating,
+run `npm --prefix admin run build -- --outDir <disposable-directory>` instead. After a
+production rebuild, restart Fastify so it registers the new hashed files; see the
+[home-server runbook](HOME_SERVER_RUNBOOK.md).
 
 ---
 
@@ -188,7 +195,12 @@ Replace the device type and runtime with installed iPhone options if needed. If 
 - **In-app instructions** — 5-page swipeable guide: First Things, iPhone Media, Steps to Use Fixer, What's Happening Inside Fixer, Archive. SF Symbol icons inline
 - **Server greetings** — 40+ randomized greeting combos using first name only, feature tips, no consecutive repeats. Greets every device independently
 - **Device tracking** — iOS sends `deviceId`, `deviceName`, `deviceModel` in WebSocket handshake auth. Server logs per-device connections
-- **Admin dashboard** — Stats, user management, asset list, nuclear reset, error logs
+- **Role-separated web dashboard (in progress)** — Super Admin and Team Admin retain the
+  existing management tools; users see their own active and paused videos and can open
+  available clips. Hash routes provide role-specific homes and 403/404 pages. The current
+  login remains phone and PIN without a company code; server authorization still enforces
+  access. Deploy the dashboard with the matching server and verify Cloudflare Access permits
+  intended web users. Profile/PIN changes, richer video details, and thumbnails remain planned.
 
 ---
 
