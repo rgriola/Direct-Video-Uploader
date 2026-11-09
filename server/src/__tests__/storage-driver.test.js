@@ -38,6 +38,9 @@ describe("StorageDriver registry", () => {
     const methods = Object.fromEntries([
       "createUpload",
       "uploadPart",
+      "listParts",
+      "recoverUpload",
+      "withCompletionLock",
       "completeUpload",
       "abortUpload",
       "getReadStream",
@@ -90,6 +93,18 @@ describe("local storage driver", () => {
     await driver.uploadPart(uploadId, 1, Buffer.from("native "));
     await driver.uploadPart(uploadId, 2, Buffer.from("original"));
     const expectedSha256 = createHash("sha256").update("native original").digest("hex");
+    expect(await driver.listParts(uploadId)).toEqual([
+      {
+        partNumber: 1,
+        sizeBytes: "7",
+        sha256: createHash("sha256").update("native ").digest("hex"),
+      },
+      {
+        partNumber: 2,
+        sizeBytes: "8",
+        sha256: createHash("sha256").update("original").digest("hex"),
+      },
+    ]);
     const result = await driver.completeUpload(uploadId, {
       expectedSha256,
       expectedSizeBytes: 15,
@@ -117,13 +132,26 @@ describe("local storage driver", () => {
       clipId: "clip",
     });
     await driver.uploadPart(uploadId, 1, Buffer.from("first"));
-    await expect(driver.uploadPart(uploadId, 1, Buffer.from("replacement"))).rejects.toMatchObject({
-      code: "EEXIST",
-    });
+    await expect(driver.uploadPart(uploadId, 1, Buffer.from("replacement")))
+      .rejects.toThrow("already exists with different content");
 
     const result = await driver.completeUpload(uploadId, { expectedSizeBytes: 5 });
     expect(result.key).toBe(key);
     expect(await readAll(await driver.getReadStream(key))).toEqual(Buffer.from("first"));
+  });
+
+  it("accepts identical part retries and rejects different content for a stored part", async () => {
+    const driver = createLocalStorageDriver({ root: await createTemporaryDirectory() });
+    const { uploadId } = await driver.createUpload({
+      ownerId: "owner",
+      assetId: "asset",
+      clipId: "clip",
+    });
+    const first = await driver.uploadPart(uploadId, 1, Buffer.from("same"));
+    await expect(driver.uploadPart(uploadId, 1, Buffer.from("same"))).resolves.toEqual(first);
+    await expect(driver.uploadPart(uploadId, 1, Buffer.from("different")))
+      .rejects.toThrow("already exists with different content");
+    await driver.abortUpload(uploadId);
   });
 
   it("rejects missing parts and checksum or size mismatches without publishing a partial object", async () => {
@@ -204,7 +232,7 @@ describe("local storage driver", () => {
       clipId: "clip",
     });
     const lockPath = path.join(root, ".uploads", uploadId, ".busy");
-    await writeFile(lockPath, "", { flag: "wx" });
+    await writeFile(lockPath, JSON.stringify({ host: os.hostname(), pid: process.pid }), { flag: "wx" });
 
     await expect(driver.uploadPart(uploadId, 1, Buffer.from("part"))).rejects.toThrow("session is busy");
     await expect(driver.completeUpload(uploadId)).rejects.toThrow("session is busy");
@@ -214,6 +242,103 @@ describe("local storage driver", () => {
     await driver.uploadPart(uploadId, 1, Buffer.from("part"));
     await driver.completeUpload(uploadId);
     expect(await readAll(await driver.getReadStream(key))).toEqual(Buffer.from("part"));
+  });
+
+  it("recovers stale locks and partial files after the owning process exits", async () => {
+    const root = await createTemporaryDirectory();
+    const driver = createLocalStorageDriver({ root });
+    const { uploadId } = await driver.createUpload({
+      ownerId: "owner",
+      assetId: "asset",
+      clipId: "clip",
+    });
+    const sessionPath = path.join(root, ".uploads", uploadId);
+    const partsPath = path.join(sessionPath, "parts");
+    await mkdir(partsPath);
+    const stalePid = 999_999_999;
+    await writeFile(path.join(sessionPath, ".busy"), JSON.stringify({ host: os.hostname(), pid: stalePid }));
+    await writeFile(path.join(partsPath, `.partial-${stalePid}-00001-stale`), "partial");
+
+    await expect(driver.recoverUpload(uploadId)).resolves.toEqual([]);
+    await driver.uploadPart(uploadId, 1, Buffer.from("recovered"));
+    await driver.abortUpload(uploadId);
+  });
+
+  it("holds the completion lock across driver instances after session cleanup", async () => {
+    const root = await createTemporaryDirectory();
+    const driver = createLocalStorageDriver({ root });
+    const otherDriver = createLocalStorageDriver({ root });
+    const { uploadId } = await driver.createUpload({ ownerId: "owner", assetId: "asset", clipId: "clip" });
+    await driver.uploadPart(uploadId, 1, Buffer.from("part"));
+
+    let releaseCompletion;
+    let markStarted;
+    const started = new Promise(resolve => { markStarted = resolve; });
+    const gate = new Promise(resolve => { releaseCompletion = resolve; });
+    const completion = driver.withCompletionLock(uploadId, async () => {
+      await driver.completeUpload(uploadId);
+      markStarted();
+      await gate;
+      return "done";
+    });
+
+    await started;
+    try {
+      await expect(otherDriver.withCompletionLock(uploadId, async () => "unexpected"))
+        .resolves.toEqual({ acquired: false });
+    } finally {
+      releaseCompletion();
+      await completion;
+    }
+    await expect(completion).resolves.toEqual({ acquired: true, value: "done" });
+    await expect(otherDriver.withCompletionLock(uploadId, async () => "retry"))
+      .resolves.toEqual({ acquired: true, value: "retry" });
+  });
+
+  it("recovers stale completion locks and releases them after callback errors", async () => {
+    const root = await createTemporaryDirectory();
+    const driver = createLocalStorageDriver({ root });
+    const { uploadId } = await driver.createUpload({ ownerId: "owner", assetId: "asset", clipId: "clip" });
+    const lockPath = path.join(root, ".uploads", `.completion-${uploadId}`);
+    await writeFile(lockPath, JSON.stringify({ host: os.hostname(), pid: 999_999_999 }));
+
+    await expect(driver.withCompletionLock(uploadId, async () => {
+      throw new Error("completion failed");
+    })).rejects.toThrow("completion failed");
+    await expect(driver.withCompletionLock(uploadId, async () => "recovered"))
+      .resolves.toEqual({ acquired: true, value: "recovered" });
+    await driver.abortUpload(uploadId);
+  });
+
+  it("does not reclaim a lock while another recovery is in progress", async () => {
+    const root = await createTemporaryDirectory();
+    const driver = createLocalStorageDriver({ root });
+    const { uploadId } = await driver.createUpload({ ownerId: "owner", assetId: "asset", clipId: "clip" });
+    const lockPath = path.join(root, ".uploads", `.completion-${uploadId}`);
+    const recoveryPath = `${lockPath}.recovery`;
+    await writeFile(lockPath, JSON.stringify({ host: os.hostname(), pid: 999_999_999 }));
+    await writeFile(recoveryPath, "");
+
+    await expect(driver.withCompletionLock(uploadId, async () => "unexpected"))
+      .resolves.toEqual({ acquired: false });
+    await unlink(recoveryPath);
+    await expect(driver.withCompletionLock(uploadId, async () => "recovered"))
+      .resolves.toEqual({ acquired: true, value: "recovered" });
+    await driver.abortUpload(uploadId);
+  });
+
+  it("reports a changed lock owner without deleting the replacement lock", async () => {
+    const root = await createTemporaryDirectory();
+    const driver = createLocalStorageDriver({ root });
+    const { uploadId } = await driver.createUpload({ ownerId: "owner", assetId: "asset", clipId: "clip" });
+    const lockPath = path.join(root, ".uploads", `.completion-${uploadId}`);
+
+    await expect(driver.withCompletionLock(uploadId, async () => {
+      await writeFile(lockPath, JSON.stringify({ host: os.hostname(), pid: 999_999_999 }));
+    })).rejects.toThrow("lock ownership changed");
+    await expect(driver.withCompletionLock(uploadId, async () => "recovered"))
+      .resolves.toEqual({ acquired: true, value: "recovered" });
+    await driver.abortUpload(uploadId);
   });
 
   it("allows 50 MB parts and rejects larger parts without leaving a published part", async () => {

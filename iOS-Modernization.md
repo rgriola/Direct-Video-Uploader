@@ -2,7 +2,7 @@
 
 _Drafted: October 19, 2026 · Updated: November 9, 2026_
 _Owner: Rod_
-_Status: **In progress** — Step 1 verified; Steps 2.1 and 2.3 deployed; Steps 2.2, 2.4, 2.5, the Step 3.1 routing foundation, and Step 3.2 thumbnails merged to `main`. The owner reported CI and CodeQL passed for Steps 3.1 and 3.2. The Step 4.1 local storage foundation is implemented; upload integration and operational choices remain open. The matching server deployments and real-Mux rollout checks remain unconfirmed._
+_Status: **In progress** — Step 1 verified; Steps 2.1 and 2.3 deployed; Steps 2.2, 2.4, 2.5, the Step 3.1 routing foundation, Step 3.2 thumbnails, and Step 4.1 local storage are merged to `main`. The owner reported CI and CodeQL passed for Steps 3.1 and 3.2. The Step 4.2a upload-session persistence foundation is implemented on a feature branch; public upload routes, client integration, and operational choices remain open. The matching server deployments and real-Mux rollout checks remain unconfirmed._
 
 ```mermaid
 flowchart TD
@@ -682,7 +682,7 @@ sequenceDiagram
 ### 4.1 StorageDriver Abstraction + Local Driver
 
 - [x] Server driver registry and local driver contract:
-  - `createUpload`, `uploadPart`, `completeUpload`, `abortUpload`
+  - `createUpload`, `uploadPart`, `listParts`, `recoverUpload`, `withCompletionLock`, `completeUpload`, `abortUpload`
   - `getReadStream(range)`, `delete(key)`, `stat(key)`
 - [x] `local` driver: root folder from env `STORAGE_LOCAL_ROOT`; development-only
   fallback is `server/.local-storage`, while production requires an explicit absolute path.
@@ -696,14 +696,30 @@ sequenceDiagram
 - [ ] **Replace the guarded but unauthenticated `/uploads/` route.** All original-file access must go through authenticated or signed routes
 - [ ] Stop deleting originals in the `mux:ready` webhook (`mux-webhooks.js:145`)
 - [ ] Update `upload-cleanup.js` so it only removes **incomplete** uploads
-- [ ] Recover or expire incomplete sessions and stale local-driver locks after a server
-  restart before enabling production original uploads
+- [ ] Add a restart/expiry sweep and an operator procedure for ambiguous or orphaned
+  local-driver lock files before enabling production original uploads. Current recovery
+  is on session access and only reclaims valid same-host locks whose owning PID is gone.
 - [ ] Disk guardrails:
   - Free-space check before accepting an upload
   - Super Admin dashboard shows storage used
   - Alert below a threshold
 - [ ] Backups: originals are **not** covered by the nightly `pg_dump`. Decide on a copy target (second drive, or the future cloud bucket)
 - [ ] Future `s3` driver (Cloudflare R2 / S3 / GCS): implements the same interface using real presigned multipart URLs. Clients don't change
+
+### 4.2a Upload-Session Persistence Foundation
+
+- [x] Persist upload sessions, expected integrity metadata, part sizes/checksums, expiry,
+  completion state, and original storage metadata in PostgreSQL.
+- [x] Add an internal service for session creation/retry, resume, part recording,
+  completion, abort, expiry, and interrupted-completion recovery.
+- [x] Serialize completion and recovery for each upload, including across local server
+  processes, so a resume request cannot reopen an active completion.
+- [x] Verify completed size and SHA-256 before attaching original metadata to a clip.
+- [x] Apply the migration and pass the server coverage suite against an isolated
+  PostgreSQL 18 test database.
+- [ ] Confirm server CI and CodeQL results on the PR.
+- [ ] Add authenticated upload-session routes and define the client-facing request/response
+  contract. The service is not wired to public routes yet.
 
 ### 4.2 Upload Protocol (Why Parts)
 
@@ -735,7 +751,7 @@ sequenceDiagram
   - `expiresAt`, `maxDownloads?`, `downloadCount`, `revokedAt`, `lastAccessedAt`, `note` (e.g. "for CNN ingest server")
 - [ ] Create: `POST /api/assets/:id/share-links { expiresIn }`
   - Presets: 1 h / 24 h / 7 d, max 30 d
-  - Allowed: SUPER_ADMIN (any video), ADMIN (team videos), USER (own videos, *confirm*)
+  - Allowed: SUPER_ADMIN (any video), ADMIN (team videos), USER (own videos, *confirm*). 
 - [ ] Public download: `GET /d/:token`
   - Validate: not expired, not revoked, asset `ACTIVE`, download limit not reached
   - Local driver: stream the file with **HTTP Range** support (resumable, works with `curl`/`wget` for servers) and `Content-Disposition: attachment; filename="<original>"`

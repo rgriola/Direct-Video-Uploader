@@ -4,6 +4,9 @@ const factories = new Map();
 const requiredMethods = [
   "createUpload",
   "uploadPart",
+  "listParts",
+  "recoverUpload",
+  "withCompletionLock",
   "completeUpload",
   "abortUpload",
   "getReadStream",

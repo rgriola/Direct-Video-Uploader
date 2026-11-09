@@ -41,6 +41,7 @@ model User {
   organization Organization? @relation(fields: [companyCode], references: [companyCode])
   assets       Asset[]
   messages     ChatMessage[]
+  uploadSessions UploadSession[]
 
   @@map("users")
 }
@@ -83,6 +84,7 @@ model Asset {
 
   user         User          @relation(fields: [userId], references: [id])
   clips        Clip[]
+  uploadSessions UploadSession[]
   muxAssetReferences MuxAssetReference[]
   formResponse FormResponse?
   messages     ChatMessage[]
@@ -151,6 +153,9 @@ model Clip {
   clipIndex        Int        @default(0) @map("clip_index")
   originalFileName String?    @map("original_file_name")
   storageUrl       String?    @map("storage_url")
+  storageKey       String?    @unique @map("storage_key")
+  storageDriver    String?    @map("storage_driver")
+  sha256           String?    @db.VarChar(64)
   streamUrl        String?    @map("stream_url")
   thumbnailUrl     String?    @map("thumbnail_url")
   muxAssetId       String?    @map("mux_asset_id")
@@ -173,6 +178,7 @@ model Clip {
   createdAt        DateTime   @default(now()) @map("created_at")
 
   asset Asset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  uploadSessions UploadSession[]
 
   @@index([assetId])
   @@map("clips")
@@ -183,6 +189,54 @@ enum ClipStatus {
   PROCESSING
   READY
   ERROR
+}
+
+enum UploadSessionStatus {
+  OPEN
+  COMPLETING
+  COMPLETED
+  ABORTED
+  EXPIRED
+}
+
+model UploadSession {
+  id                String              @id
+  ownerId           String              @map("owner_id")
+  assetId           String              @map("asset_id")
+  clipId            String              @map("clip_id")
+  storageDriver     String              @default("local") @map("storage_driver")
+  storageKey        String              @unique @map("storage_key")
+  expectedSizeBytes BigInt?             @map("expected_size_bytes")
+  expectedSha256    String?             @map("expected_sha256") @db.VarChar(64)
+  status            UploadSessionStatus @default(OPEN)
+  expiresAt         DateTime            @map("expires_at")
+  completedAt       DateTime?           @map("completed_at")
+  createdAt         DateTime            @default(now()) @map("created_at")
+  updatedAt         DateTime            @updatedAt @map("updated_at")
+
+  owner  User         @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  asset  Asset        @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  clip   Clip         @relation(fields: [clipId], references: [id], onDelete: Cascade)
+  parts  UploadPart[]
+
+  @@index([ownerId, status, expiresAt])
+  @@index([assetId, status])
+  @@index([clipId, status])
+  @@map("upload_sessions")
+}
+
+model UploadPart {
+  uploadSessionId String   @map("upload_session_id")
+  partNumber      Int      @map("part_number")
+  sizeBytes       BigInt   @map("size_bytes")
+  sha256          String   @db.VarChar(64)
+  uploadedAt      DateTime @default(now()) @map("uploaded_at")
+
+  uploadSession UploadSession @relation(fields: [uploadSessionId], references: [id], onDelete: Cascade)
+
+  @@id([uploadSessionId, partNumber])
+  @@index([uploadedAt])
+  @@map("upload_parts")
 }
 
 // ─── Form Responses ──────────────────────────────────────
