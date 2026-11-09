@@ -24,19 +24,14 @@ import path from 'path';
 import crypto from 'crypto';
 import { fileURLToPath } from 'url';
 
-import authRoutes from './routes/auth.js';
-import assetRoutes from './routes/assets.js';
-import adminRoutes from './routes/admin.js';
-import moderationRoutes from './routes/moderation.js';
-import clipRoutes from './routes/clips.js';
-import errorRoutes from './routes/errors.js';
-import muxWebhookRoutes from './routes/mux-webhooks.js';
+import { registerApplicationRoutes } from './routes/index.js';
 import localUploadRoutes from './routes/local-uploads.js';
 import { setupWebSocket } from './ws/handler.js';
 import { startMuxSync, stopMuxSync } from './jobs/mux-sync.js';
 import { startUploadCleanup, stopUploadCleanup } from './jobs/upload-cleanup.js';
 import { CORS_ORIGINS, WS_CORS_ORIGINS } from './lib/config.js';
 import prisma from './lib/prisma.js';
+import { authenticate } from './lib/authentication.js';
 import { requireRole } from './lib/authorization.js';
 import { ROLES } from './lib/roles.js';
 
@@ -284,45 +279,7 @@ await fastify.register(fastifyStatic, {
 });
 
 // ─── Auth Decorator ──────────────────────────────────────
-fastify.decorate('authenticate', async function (request, reply) {
-    try {
-        await request.jwtVerify();
-
-        const user = await prisma.user.findUnique({
-            where: { id: request.user.id },
-            select: {
-                id: true,
-                name: true,
-                phoneNumber: true,
-                role: true,
-                status: true,
-                companyCode: true,
-            },
-        });
-
-        if (!user) {
-            return reply.status(401).send({ error: 'Unauthorized' });
-        }
-
-        if (user.status !== 'ACTIVE') {
-            return reply.status(403).send({ error: 'Account suspended' });
-        }
-
-        request.user = {
-            ...request.user,
-            id: user.id,
-            name: user.name,
-            phoneNumber: user.phoneNumber,
-            role: user.role || 'USER',
-            status: user.status,
-            companyCode: user.companyCode || null,
-        };
-    } catch (err) {
-        if (!reply.sent) {
-            reply.status(401).send({ error: 'Unauthorized' });
-        }
-    }
-});
+fastify.decorate('authenticate', authenticate);
 
 // Centralized error response policy: never leak stacks to clients in production.
 fastify.setErrorHandler((err, request, reply) => {
@@ -386,14 +343,7 @@ const io = new SocketIOServer(fastify.server, {
 fastify.decorate('io', io);
 
 // ─── Routes ──────────────────────────────────────────────
-await fastify.register(authRoutes);
-await fastify.register(assetRoutes);
-await fastify.register(adminRoutes);
-await fastify.register(moderationRoutes);
-
-await fastify.register(clipRoutes);
-await fastify.register(errorRoutes);
-await fastify.register(muxWebhookRoutes);
+await registerApplicationRoutes(fastify);
 
 // Health check
 fastify.get('/api/health', async () => ({
