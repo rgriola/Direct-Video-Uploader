@@ -735,7 +735,7 @@ sequenceDiagram
   - `expiresAt`, `maxDownloads?`, `downloadCount`, `revokedAt`, `lastAccessedAt`, `note` (e.g. "for CNN ingest server")
 - [ ] Create: `POST /api/assets/:id/share-links { expiresIn }`
   - Presets: 1 h / 24 h / 7 d, max 30 d
-  - Allowed: SUPER_ADMIN (any video), ADMIN (team videos), USER (own videos, *confirm*)
+  - Allowed: SUPER_ADMIN (any video), ADMIN (team videos), USER (own videos, *confirm*). 
 - [ ] Public download: `GET /d/:token`
   - Validate: not expired, not revoked, asset `ACTIVE`, download limit not reached
   - Local driver: stream the file with **HTTP Range** support (resumable, works with `curl`/`wget` for servers) and `Content-Disposition: attachment; filename="<original>"`
