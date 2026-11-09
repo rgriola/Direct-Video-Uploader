@@ -6,6 +6,16 @@ Operational reference for the MacBook Air home server hosting Postgres 18 + Fast
 
 We do not use Google Cloud or Render.
 
+## Current deployment verification
+
+Checked on 2026-11-09 after deploying the changes through PR #52: the production checkout is on
+`main` at `0356e5e`; local and both public `/api/health` endpoints report version `1.0.2`.
+`/api/health/ready` reports the database connected and Mux configured, and Prisma reports all
+six migrations applied. Repeat these checks after each release. A configured Mux health check
+does not validate actual upload, playback, moderation, or revocation behavior.
+On 2026-11-09 the owner reported that real-Mux testing worked as expected; the individual
+scenarios tested and legacy-upload inventory have not been recorded here.
+
 ## Services running on this Mac
 
 | Service | Managed by | Plist/config |
@@ -34,16 +44,85 @@ launchctl load ~/Library/LaunchAgents/com.msfixer.fastify.plist
 sudo launchctl unload /Library/LaunchDaemons/com.cloudflare.cloudflared.plist
 sudo launchctl load /Library/LaunchDaemons/com.cloudflare.cloudflared.plist
 ```
-**To release a new server version:** `server/package.json` is the single source of truth for the
-version reported by `/api/health` and the API docs. It is read once at startup, so restart Fastify
-after deploying the bump.
+
+## Deploying a release
+
+Merge the release to `main` only after its pull request's CI checks pass. Deploy from the
+production checkout on this Mac; do not run `npm version` or make source edits in that checkout.
+The deployment checkout must be clean before pulling. If `git status` shows changes, inspect and
+preserve them before continuing; do not discard them to make the pull work.
+
+Review the release's rollout notes before deployment. In particular, the Step 2.2 moderation
+reconciliation rollout below has required Mux and legacy-upload checks; completing a code deploy
+does not replace those checks.
+
+```bash
+cd ~/apps/direct-video-uploader
+git status --short --branch       # stop if there are local changes
+git fetch origin
+git --no-pager log --oneline HEAD..origin/main  # review incoming commits
+```
+
+Complete feature-specific pre-deployment gates before proceeding. Stop Fastify before updating the
+checkout, dependencies, or dashboard bundle, and verify that no old process is listening:
+
+```bash
+launchctl unload ~/Library/LaunchAgents/com.msfixer.fastify.plist
+lsof -nP -iTCP:3000 -sTCP:LISTEN     # should show no listener
+```
+
+Update the checkout, install the locked dependencies, inspect migration status, and build the
+dashboard. Stop and investigate if an install or build fails:
+
+```bash
+cd ~/apps/direct-video-uploader
+git switch main
+git pull --ff-only origin main
+git rev-parse --short HEAD        # record the deployed commit
+
+cd ~/apps/direct-video-uploader/server
+npm ci                            # runs prisma generate via postinstall
+npx prisma migrate status
+
+cd ../admin
+npm ci
+npm run build:check               # type-checks and builds into server/public
+```
+
+If migrations are pending, back up the database before applying them, then deploy the migrations.
+Do not run `migrate deploy` if status reports a failed migration; diagnose and follow the recovery
+instructions in the schema workflow below:
+
+```bash
+~/apps/direct-video-uploader/scripts/pg-backup.sh
+cd ~/apps/direct-video-uploader/server
+npx prisma migrate deploy
+```
+
+For a release with no pending migrations, skip the backup and `migrate deploy`. Once the build and
+any migrations have succeeded, start Fastify:
+
+```bash
+launchctl load ~/Library/LaunchAgents/com.msfixer.fastify.plist
+```
+
+After starting, verify the local and public endpoints, check the deployed version against
+`server/package.json`, and inspect the Fastify logs for startup errors:
+
 ```bash
 cd ~/apps/direct-video-uploader/server
-npm version patch --no-git-tag-version   # or minor / major; updates package.json + package-lock.json
-launchctl unload ~/Library/LaunchAgents/com.msfixer.fastify.plist
-launchctl load ~/Library/LaunchAgents/com.msfixer.fastify.plist
-curl http://127.0.0.1:3000/api/health    # "version" should match package.json
+node -p "require('./package.json').version"
+curl http://127.0.0.1:3000/api/health
+curl http://127.0.0.1:3000/api/health/ready
+curl https://ms-fixer.com/api/health
+curl https://dev.ms-fixer.com/api/health
 ```
+
+The health endpoint's version is read from `server/package.json` at process startup. To bump it,
+run `npm version patch --no-git-tag-version` (or `minor` / `major`) in the development checkout,
+commit both package files, and deploy that merged change through this procedure. Never bump the
+version only in the production checkout: restarting after an uncommitted bump changes the reported
+version without deploying the corresponding source.
 
 **After any `npm ci` / `npm install` in `server/`:** the Prisma client stub gets reset. This is now handled automatically by the `postinstall` script (`prisma generate`), but if the server crash-loops with `SyntaxError: Named export 'PrismaClient' not found`, run manually:
 ```bash
@@ -154,11 +233,10 @@ modify a Super Admin.
 
 ## Step 2.2 moderation reconciliation rollout
 
-The Step 2.2 reconciliation fix and Step 2.4 are merged to `main`; the owner reports the web
-app deployed. The matching server version, production migration status, legacy-upload draining,
-and real-Mux checks have not been confirmed. Verify what is already deployed and which checks
-have passed before taking further action. Do not rely on pause or permanent removal in
-production until the following checks pass against the actual Mux account.
+The Step 2.2 code is deployed, and the owner reports real-Mux testing worked as expected; see
+**Current deployment verification** above. The exact test scenarios and legacy-upload draining
+have not been recorded here. Complete and record any outstanding checks below before relying on
+pause or permanent removal in production.
 
 1. Back up the home database and establish a rollback/restore plan. Stop issuing uploads and
    stop **all** old Fastify processes before deploying; old code can create or publish public
@@ -237,10 +315,9 @@ file may remain playable after a pause or removal.
 
 ## Step 2.4 socket scoping rollout
 
-Step 2.4 is merged to `main`, and the owner reports the web app deployed. Confirm the
-matching server version and complete the Step 2.2 checks and required migrations above
-before relying on the behavior. If an update is still needed, rebuild the dashboard and
-restart Fastify using the commands above so the server and dashboard are updated together.
+Step 2.4 is included in the deployed `main` release; see **Current deployment verification**
+above. Verify the behavior below in the running dashboard before relying on it. Complete any
+remaining Step 2.2 Mux checks before relying on moderation or media-visibility behavior.
 
 - Rich upload, form, and Mux notifications remain owner-only. Active asset changes also
   trigger a payload-free refresh for the owner's Team Admins and Super Admins; changes for
