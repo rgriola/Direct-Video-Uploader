@@ -1,8 +1,8 @@
 # Fixer Roadmap — iOS Modernization → Web App Expansion
 
-_Drafted: October 19, 2026 · Updated: November 8, 2026_
+_Drafted: October 19, 2026 · Updated: November 9, 2026_
 _Owner: Rod_
-_Status: **In progress** — Step 1 verified; Steps 2.1 and 2.3 deployed; Steps 2.2, 2.4, and 2.5 and the Step 3.1 routing foundation merged to `main`. The owner reported CI and CodeQL passed for Step 3.1. Step 3.2 thumbnails await CI and merge. The earlier web app is reported deployed, while the matching server and real-Mux rollout checks remain unconfirmed._
+_Status: **In progress** — Step 1 verified; Steps 2.1 and 2.3 deployed; Steps 2.2, 2.4, 2.5, the Step 3.1 routing foundation, and Step 3.2 thumbnails merged to `main`. The owner reported CI and CodeQL passed for Steps 3.1 and 3.2. The Step 4.1 local storage foundation is implemented; upload integration and operational choices remain open. The matching server deployments and real-Mux rollout checks remain unconfirmed._
 
 ```mermaid
 flowchart TD
@@ -650,8 +650,9 @@ The thumbnail feature requires deploying the matching dashboard and server toget
 thumbnail URLs are public while playback is active; hiding them from API responses does
 not make previously exposed URLs private or instantly revoke them.
 Local validation passed the dashboard tests, typecheck, isolated build, and PostgreSQL-backed
-authorization, reconciliation, and socket tests. Mux was mocked; GitHub CI and real-Mux
-validation for this step remain pending.
+authorization, reconciliation, and socket tests. The owner reports CI and CodeQL passed
+before merge. Mux was mocked; real-Mux validation and matching server deployment remain
+unconfirmed.
 
 ---
 
@@ -680,17 +681,23 @@ sequenceDiagram
 
 ### 4.1 StorageDriver Abstraction + Local Driver
 
-- [ ] Server interface `StorageDriver`:
+- [x] Server driver registry and local driver contract:
   - `createUpload`, `uploadPart`, `completeUpload`, `abortUpload`
-  - `getReadStream(range)`, `signedReadUrl(key, ttl)`
-  - `delete(key)`, `stat(key)`
-- [ ] `local` driver: root folder from env `STORAGE_LOCAL_ROOT`
+  - `getReadStream(range)`, `delete(key)`, `stat(key)`
+- [x] `local` driver: root folder from env `STORAGE_LOCAL_ROOT`; development-only
+  fallback is `server/.local-storage`, while production requires an explicit absolute path.
   - Recommend an **external SSD** path, not the Air's internal disk
-  - Layout: `originals/<teamId>/<assetId>/<clipId>/<originalFileName>`
+  - Layout: `originals/<ownerId>/<assetId>/<clipId>/<opaqueId>`; the original filename
+    and authorization policy belong in the database/service layer added with upload wiring.
+  - Upload parts are written to private temporary storage, limited to 50 MB each, and
+    assembled atomically with computed size/SHA-256 and optional expected-value checks.
+- [ ] Add `signedReadUrl(key, ttl)` when the authenticated original-read flow is designed
 - [ ] Replace `Clip.storageUrl` (a public path) with `storageKey` + `storageDriver` + `sha256` + `sizeBytes`
 - [ ] **Replace the guarded but unauthenticated `/uploads/` route.** All original-file access must go through authenticated or signed routes
 - [ ] Stop deleting originals in the `mux:ready` webhook (`mux-webhooks.js:145`)
 - [ ] Update `upload-cleanup.js` so it only removes **incomplete** uploads
+- [ ] Recover or expire incomplete sessions and stale local-driver locks after a server
+  restart before enabling production original uploads
 - [ ] Disk guardrails:
   - Free-space check before accepting an upload
   - Super Admin dashboard shows storage used
