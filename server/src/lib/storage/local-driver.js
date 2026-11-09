@@ -21,8 +21,9 @@ const KEY_PREFIX = "originals";
 const SESSION_DIRECTORY = ".uploads";
 const SESSION_LOCK = ".busy";
 const PARTIAL_PART_PREFIX = ".partial-";
+const STORAGE_IDENTITY_FILE = ".dvu-storage-id";
 const MAX_PART_NUMBER = 10_000;
-const MAX_PART_SIZE_BYTES = 50 * 1024 * 1024;
+export const MAX_PART_SIZE_BYTES = 50 * 1024 * 1024;
 const DEFAULT_LOCAL_STORAGE_ROOT = path.resolve(fileURLToPath(new URL("../../../.local-storage", import.meta.url)));
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const IDENTIFIER_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
@@ -32,12 +33,13 @@ export class StorageError extends Error {
   constructor(message, options) {
     super(message, options);
     this.name = "StorageError";
+    if (options?.code) this.code = options.code;
   }
 }
 
 class StorageBusyError extends StorageError {
   constructor(options) {
-    super("Upload session is busy", options);
+    super("Upload session is busy", { ...options, code: "SESSION_BUSY" });
     this.name = "StorageBusyError";
   }
 }
@@ -75,7 +77,10 @@ function parseStorageKey(key) {
   assertIdentifier(segments[1], "Owner ID");
   assertIdentifier(segments[2], "Asset ID");
   assertIdentifier(segments[3], "Clip ID");
-  if (!UUID_PATTERN.test(segments[4])) throw new StorageError("Storage key is invalid");
+  const objectIds = segments[4].split(".");
+  if (![1, 2].includes(objectIds.length) || objectIds.some(id => !UUID_PATTERN.test(id))) {
+    throw new StorageError("Storage key is invalid");
+  }
   return segments;
 }
 
@@ -136,6 +141,59 @@ async function existingFile(root, segments) {
   return canonical;
 }
 
+async function readStorageIdentity(root) {
+  const filePath = await existingFile(root, [STORAGE_IDENTITY_FILE]);
+  if (!filePath) return null;
+  const handle = await open(filePath, constants.O_RDONLY | NOFOLLOW);
+  try {
+    const info = await handle.stat();
+    if (!info.isFile() || info.size > 64) {
+      throw new StorageError("Local storage identity is invalid", { code: "STORAGE_UNAVAILABLE" });
+    }
+    const identity = (await handle.readFile("utf8")).trim();
+    if (!UUID_PATTERN.test(identity)) {
+      throw new StorageError("Local storage identity is invalid", { code: "STORAGE_UNAVAILABLE" });
+    }
+    return identity.toLowerCase();
+  } finally {
+    await handle.close();
+  }
+}
+
+async function initializeStorageIdentity(root) {
+  const current = await readStorageIdentity(root);
+  if (current) return current;
+
+  const identity = randomUUID();
+  const temporaryPath = path.join(root, `.dvu-storage-id-${identity}`);
+  let handle;
+  try {
+    handle = await open(temporaryPath, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | NOFOLLOW, 0o600);
+    await handle.writeFile(`${identity}\n`);
+    await handle.sync();
+    await handle.close();
+    handle = null;
+    try {
+      await link(temporaryPath, path.join(root, STORAGE_IDENTITY_FILE));
+    } catch (error) {
+      if (error.code !== "EEXIST") throw error;
+    }
+  } finally {
+    try {
+      await handle?.close();
+    } finally {
+      try {
+        await unlink(temporaryPath);
+      } catch (error) {
+        if (error.code !== "ENOENT") throw error;
+      }
+    }
+  }
+  const registered = await readStorageIdentity(root);
+  if (!registered) throw new StorageError("Local storage identity could not be initialized");
+  return registered;
+}
+
 function validatePartNumber(partNumber) {
   if (!Number.isSafeInteger(partNumber) || partNumber < 1 || partNumber > MAX_PART_NUMBER) {
     throw new StorageError(`Part number must be between 1 and ${MAX_PART_NUMBER}`);
@@ -166,7 +224,7 @@ function parseExpectedSize(size) {
   throw new StorageError("Expected size must be a non-negative integer");
 }
 
-function createPartSizeLimiter() {
+function createPartSizeLimiter(expectedSizeBytes) {
   let bytes = 0;
   return new Transform({
     transform(chunk, _encoding, callback) {
@@ -179,10 +237,21 @@ function createPartSizeLimiter() {
       }
       bytes += buffer.length;
       if (bytes > MAX_PART_SIZE_BYTES) {
-        callback(new StorageError(`Upload parts cannot exceed ${MAX_PART_SIZE_BYTES} bytes`));
+        callback(new StorageError(`Upload parts cannot exceed ${MAX_PART_SIZE_BYTES} bytes`, { code: "PART_TOO_LARGE" }));
+        return;
+      }
+      if (expectedSizeBytes != null && bytes > expectedSizeBytes) {
+        callback(new StorageError("Upload part size does not match the signed size", { code: "PART_SIZE_MISMATCH" }));
         return;
       }
       callback(null, buffer);
+    },
+    flush(callback) {
+      if (expectedSizeBytes != null && bytes !== expectedSizeBytes) {
+        callback(new StorageError("Upload part size does not match the signed size", { code: "PART_SIZE_MISMATCH" }));
+        return;
+      }
+      callback();
     },
   });
 }
@@ -311,7 +380,7 @@ async function assertSessionUnlocked(sessionPath) {
     if (error.code === "ENOENT") return;
     throw error;
   }
-  throw new StorageError("Upload session is busy");
+  throw new StorageBusyError();
 }
 
 function isProcessAlive(pid) {
@@ -372,11 +441,34 @@ export function createLocalStorageDriver({ root = resolveLocalStorageRoot() } = 
   const configuredRoot = path.resolve(root);
   let canonicalRoot;
 
-  async function getRoot() {
+  async function getRoot({ create = true } = {}) {
     if (canonicalRoot) return canonicalRoot;
-    await mkdir(configuredRoot, { recursive: true, mode: 0o700 });
-    canonicalRoot = await realpath(configuredRoot);
+    if (create) await mkdir(configuredRoot, { recursive: true, mode: 0o700 });
+    try {
+      canonicalRoot = await realpath(configuredRoot);
+    } catch (error) {
+      if (error.code === "ENOENT") {
+        throw new StorageError("Local storage root is unavailable", { cause: error, code: "STORAGE_UNAVAILABLE" });
+      }
+      throw error;
+    }
     return canonicalRoot;
+  }
+
+  async function assertStorageLocation(key, { required = true } = {}) {
+    const segments = parseStorageKey(key);
+    const objectIds = segments[4].split(".");
+    if (objectIds.length === 1) {
+      if (required) throw new StorageError("Original has no verified storage location", { code: "STORAGE_UNAVAILABLE" });
+      return;
+    }
+    const rootPath = await getRoot({ create: false });
+    const identity = await readStorageIdentity(rootPath);
+    if (!identity || identity !== objectIds[0].toLowerCase()) {
+      throw new StorageError("Local storage location is unavailable or does not match the original", {
+        code: "STORAGE_UNAVAILABLE",
+      });
+    }
   }
 
   async function getSessionDirectory(uploadId, { create = false } = {}) {
@@ -420,6 +512,7 @@ export function createLocalStorageDriver({ root = resolveLocalStorageRoot() } = 
       }
       if (manifest.uploadId !== uploadId) throw new StorageError("Upload manifest does not match its session");
       const keySegments = parseStorageKey(manifest.key);
+      await assertStorageLocation(manifest.key, { required: false });
       if (manifest.ownerId !== keySegments[1]
         || manifest.assetId !== keySegments[2]
         || manifest.clipId !== keySegments[3]) {
@@ -442,9 +535,30 @@ export function createLocalStorageDriver({ root = resolveLocalStorageRoot() } = 
     return { sessionPath, manifest };
   }
 
-  async function openRegularFile(key) {
+  async function listPartFiles(uploadId) {
+    await getSession(uploadId);
     const rootPath = await getRoot();
+    const partsPath = await ensureDirectory(rootPath, [SESSION_DIRECTORY, uploadId, "parts"])
+      .catch(error => {
+        if (error.code === "ENOENT") return null;
+        throw error;
+      });
+    if (!partsPath) return [];
+    const names = (await readdir(partsPath))
+      .filter(name => /^\d{5}$/.test(name))
+      .sort((left, right) => Number(left) - Number(right));
+    const files = [];
+    for (const name of names) {
+      const filePath = await existingFile(rootPath, [SESSION_DIRECTORY, uploadId, "parts", name]);
+      if (filePath) files.push({ partNumber: Number(name), filePath });
+    }
+    return files;
+  }
+
+  async function openRegularFile(key) {
     const segments = parseStorageKey(key);
+    await assertStorageLocation(key, { required: false });
+    const rootPath = await getRoot();
     const filePath = await existingFile(rootPath, segments);
     if (!filePath) return null;
 
@@ -466,12 +580,13 @@ export function createLocalStorageDriver({ root = resolveLocalStorageRoot() } = 
       assertIdentifier(clipId, "Clip ID");
 
       const rootPath = await getRoot();
+      const storageIdentity = await initializeStorageIdentity(rootPath);
       const uploadsPath = await ensureDirectory(rootPath, [SESSION_DIRECTORY], { create: true });
       const uploadId = randomUUID();
       const sessionPath = path.join(uploadsPath, uploadId);
       await mkdir(sessionPath, { mode: 0o700 });
 
-      const key = `${KEY_PREFIX}/${ownerId}/${assetId}/${clipId}/${randomUUID()}`;
+      const key = `${KEY_PREFIX}/${ownerId}/${assetId}/${clipId}/${storageIdentity}.${randomUUID()}`;
       const manifest = JSON.stringify({ uploadId, ownerId, assetId, clipId, key });
       try {
         const handle = await open(
@@ -491,10 +606,21 @@ export function createLocalStorageDriver({ root = resolveLocalStorageRoot() } = 
       return { uploadId, key };
     },
 
-    async uploadPart(uploadId, partNumber, body) {
+    async assertStorageLocation(key) {
+      await assertStorageLocation(key);
+    },
+
+    async uploadPart(uploadId, partNumber, body, { expectedSizeBytes, commitPart } = {}) {
       const part = validatePartNumber(partNumber);
       const source = asReadable(body);
-      const { sessionPath } = await getSession(uploadId);
+      if (commitPart != null && typeof commitPart !== "function") {
+        throw new TypeError("Part publication requires a callback");
+      }
+      const expectedSize = parseExpectedSize(expectedSizeBytes);
+      if (expectedSize != null && expectedSize > BigInt(MAX_PART_SIZE_BYTES)) {
+        throw new StorageError(`Upload parts cannot exceed ${MAX_PART_SIZE_BYTES} bytes`, { code: "PART_TOO_LARGE" });
+      }
+      const { sessionPath, manifest } = await getSession(uploadId);
       const rootPath = await getRoot();
       const currentSession = await getSessionDirectory(uploadId);
       if (!currentSession || currentSession !== sessionPath) {
@@ -507,67 +633,104 @@ export function createLocalStorageDriver({ root = resolveLocalStorageRoot() } = 
         if (error.code !== "EEXIST") throw error;
       }
       const partsPath = await ensureDirectory(rootPath, [SESSION_DIRECTORY, uploadId, "parts"]);
-      const partPath = path.join(partsPath, part);
-      const temporaryPath = path.join(partsPath, `${PARTIAL_PART_PREFIX}${process.pid}-${part}-${randomUUID()}`);
-      const handle = await open(
-        temporaryPath,
-        constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | NOFOLLOW,
-        0o600,
-      );
-      const hash = createHash("sha256");
-      let sizeBytes = 0n;
-      const meter = new Transform({
-        transform(chunk, _encoding, callback) {
-          hash.update(chunk);
-          sizeBytes += BigInt(chunk.length);
-          callback(null, chunk);
-        },
-      });
+      const releasePart = await acquireSessionLock(partsPath, `.part-${part}`);
+      let workError;
       try {
-        // Completion either sees this temporary part or blocks the writer with the session lock.
-        await assertSessionUnlocked(sessionPath);
-        await pipeline(source, createPartSizeLimiter(), meter, handle.createWriteStream({ autoClose: true }));
-        const result = { partNumber, sizeBytes: sizeBytes.toString(), sha256: hash.digest("hex") };
+        const partPath = path.join(partsPath, part);
+        const temporaryPath = path.join(partsPath, `${PARTIAL_PART_PREFIX}${process.pid}-${part}-${randomUUID()}`);
+        const handle = await open(
+          temporaryPath,
+          constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | NOFOLLOW,
+          0o600,
+        );
+        const hash = createHash("sha256");
+        let sizeBytes = 0n;
+        const meter = new Transform({
+          transform(chunk, _encoding, callback) {
+            hash.update(chunk);
+            sizeBytes += BigInt(chunk.length);
+            callback(null, chunk);
+          },
+        });
         try {
-          await link(temporaryPath, partPath);
-        } catch (error) {
-          if (error.code !== "EEXIST") throw error;
-          const existing = await readPart(partPath, partNumber);
-          if (existing.sizeBytes !== result.sizeBytes || existing.sha256 !== result.sha256) {
-            throw new StorageError(`Upload part ${partNumber} already exists with different content`, { cause: error });
+          // Completion either sees this temporary part or blocks the writer with the session lock.
+          await assertSessionUnlocked(sessionPath);
+          await pipeline(
+            source,
+            createPartSizeLimiter(expectedSize == null ? null : Number(expectedSize)),
+            meter,
+            handle.createWriteStream({ autoClose: true }),
+          );
+          const result = { partNumber, sizeBytes: sizeBytes.toString(), sha256: hash.digest("hex") };
+          const assertMatchingPart = async filePath => {
+            const existing = await readPart(filePath, partNumber);
+            if (existing.sizeBytes !== result.sizeBytes || existing.sha256 !== result.sha256) {
+              throw new StorageError(`Upload part ${partNumber} already exists with different content`, {
+                code: "PART_CONFLICT",
+              });
+            }
+          };
+          const existingPath = await existingFile(rootPath, [SESSION_DIRECTORY, uploadId, "parts", part]);
+          if (existingPath) await assertMatchingPart(existingPath);
+          let published = false;
+          const publish = async () => {
+            if (published) throw new Error("Upload part was already published");
+            await assertStorageLocation(manifest.key, { required: false });
+            try {
+              await link(temporaryPath, partPath);
+            } catch (error) {
+              if (error.code !== "EEXIST") throw error;
+              await assertMatchingPart(partPath);
+            }
+            published = true;
+          };
+          if (commitPart) {
+            await commitPart(result, publish);
+          } else {
+            await publish();
           }
-        }
-        return result;
-      } finally {
-        try {
-          await handle.close();
+          if (!published) throw new Error("Upload part was not published");
+          return result;
         } finally {
           try {
-            await unlink(temporaryPath);
-          } catch (error) {
-            if (error.code !== "ENOENT") throw error;
+            await handle.close();
+          } finally {
+            try {
+              await unlink(temporaryPath);
+            } catch (error) {
+              if (error.code !== "ENOENT") throw error;
+            }
           }
+        }
+      } catch (error) {
+        workError = error;
+        throw error;
+      } finally {
+        try {
+          await releasePart();
+        } catch (releaseError) {
+          if (workError) {
+            throw new AggregateError(
+              [workError, releaseError],
+              "Upload part and lock release both failed",
+              { cause: workError },
+            );
+          }
+          throw releaseError;
         }
       }
     },
 
     async listParts(uploadId) {
-      await getSession(uploadId);
-      const partsPath = await ensureDirectory(await getRoot(), [SESSION_DIRECTORY, uploadId, "parts"])
-        .catch(error => {
-          if (error.code === "ENOENT") return null;
-          throw error;
-        });
-      if (!partsPath) return [];
-      const names = (await readdir(partsPath))
-        .filter(name => /^\d{5}$/.test(name))
-        .sort((left, right) => Number(left) - Number(right));
       const parts = [];
-      for (const name of names) {
-        const filePath = await existingFile(await getRoot(), [SESSION_DIRECTORY, uploadId, "parts", name]);
-        if (filePath) parts.push(await readPart(filePath, Number(name)));
+      for (const { partNumber, filePath } of await listPartFiles(uploadId)) {
+        parts.push(await readPart(filePath, partNumber));
       }
       return parts;
+    },
+
+    async listPartNumbers(uploadId) {
+      return (await listPartFiles(uploadId)).map(part => part.partNumber);
     },
 
     async recoverUpload(uploadId) {
@@ -638,7 +801,7 @@ export function createLocalStorageDriver({ root = resolveLocalStorageRoot() } = 
         const partsPath = await ensureDirectory(rootPath, [SESSION_DIRECTORY, uploadId, "parts"]);
         const entries = await readdir(partsPath);
         if (hasActivePartials(entries)) {
-          throw new StorageError("Upload parts are still being written");
+          throw new StorageError("Upload parts are still being written", { code: "SESSION_BUSY" });
         }
         if (entries.some(name => name.startsWith(PARTIAL_PART_PREFIX))) {
           throw new StorageError("Stale upload parts require recovery");
@@ -647,7 +810,7 @@ export function createLocalStorageDriver({ root = resolveLocalStorageRoot() } = 
           .filter(name => /^\d{5}$/.test(name))
           .sort((left, right) => Number(left) - Number(right));
         if (partNames.length === 0 || partNames.some((name, index) => Number(name) !== index + 1)) {
-          throw new StorageError("Upload parts must be numbered consecutively starting at 1");
+          throw new StorageError("Upload parts must be numbered consecutively starting at 1", { code: "INCOMPLETE_UPLOAD" });
         }
 
         const partPaths = [];
@@ -710,12 +873,13 @@ export function createLocalStorageDriver({ root = resolveLocalStorageRoot() } = 
 
           const sha256 = hash.digest("hex");
           if (expectedSize != null && sizeBytes !== expectedSize) {
-            throw new StorageError("Completed upload size does not match the expected size");
+            throw new StorageError("Completed upload size does not match the expected size", { code: "INTEGRITY_MISMATCH" });
           }
           if (expectedSha256 != null && sha256 !== expectedSha256.toLowerCase()) {
-            throw new StorageError("Completed upload SHA-256 does not match the expected checksum");
+            throw new StorageError("Completed upload SHA-256 does not match the expected checksum", { code: "INTEGRITY_MISMATCH" });
           }
 
+          await assertStorageLocation(manifest.key, { required: false });
           await link(temporaryPath, destinationPath);
           await unlink(temporaryPath);
           await rm(sessionPath, { recursive: true, force: true });
@@ -749,7 +913,7 @@ export function createLocalStorageDriver({ root = resolveLocalStorageRoot() } = 
           throw error;
         });
         if (hasActivePartials(entries)) {
-          throw new StorageError("Upload parts are still being written");
+          throw new StorageError("Upload parts are still being written", { code: "SESSION_BUSY" });
         }
         await rm(sessionPath, { recursive: true, force: false });
       } finally {
@@ -780,6 +944,7 @@ export function createLocalStorageDriver({ root = resolveLocalStorageRoot() } = 
       if (!opened) return false;
       await opened.handle.close();
       const segments = parseStorageKey(key);
+      await assertStorageLocation(key, { required: false });
       const filePath = await existingFile(await getRoot(), segments);
       if (!filePath) return false;
       await unlink(filePath);
