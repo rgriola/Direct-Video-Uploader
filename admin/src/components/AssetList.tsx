@@ -2,8 +2,8 @@
  * AssetList.tsx — Admin Dashboard panel showing all uploaded video assets.
  *
  * DATA FLOW:
- *   1. App.tsx fetches assets from GET /api/admin/assets (via TanStack Query hook `useAssets`)
- *   2. App.tsx passes the array of Asset objects + loading state as props to this component
+ *   1. Role dashboards fetch scoped assets through the dashboard query hooks
+ *   2. The dashboard passes the array of Asset objects + loading state to this component
  *   3. This component renders each asset as a clickable row (AssetRow)
  *   4. Clicking a row toggles an expanded detail panel (accordion-style, one at a time)
  *
@@ -66,6 +66,8 @@ function formatDuration(seconds: number | null | undefined): string {
 interface AssetListProps {
   assets?: Asset[];
   isLoading: boolean;
+  title?: string;
+  emptyText?: string;
   viewerRole?: string | null;
   moderationFilter?: string;
   onModerationFilterChange?: (moderation?: string) => void;
@@ -79,6 +81,8 @@ interface AssetListProps {
 export function AssetList({
   assets,
   isLoading,
+  title = "Assets",
+  emptyText = "No Assets on the server. Uploaded Video will appear here.",
   viewerRole,
   moderationFilter,
   onModerationFilterChange,
@@ -92,7 +96,7 @@ export function AssetList({
       {/* Panel header — "Assets [count]" */}
       <div className={panelHeader}>
         <h2 className="text-(length:--text-lg) font-semibold flex items-center gap-2">
-          <Icon name="assets" /> Assets{" "}
+          <Icon name="assets" /> {title}{" "}
           <span className={subTextPanelHeader}>
             {assets?.length ?? 0}
           </span>
@@ -116,7 +120,7 @@ export function AssetList({
         {isLoading ? (
           <Empty icon="assets" text="Loading assets..." />
         ) : !assets?.length ? (
-          <Empty icon="assets" text="No Assets on the server. Uploaded Video will appear here." />
+          <Empty icon="assets" text={emptyText} />
         ) : (
           assets.map((asset) => (
             <AssetRow
@@ -161,15 +165,15 @@ function AssetRow({ asset, isExpanded, onToggle, viewerRole, onModerate }: Asset
     asset.clipCount ? `${asset.clipCount} clip${asset.clipCount !== 1 ? "s" : ""}` : null,
     formatDuration(asset.totalDuration) || null,
     clip?.resolution ?? null,
-    `by ${asset.user?.name ?? "Unknown"}`,
+    asset.user?.name ? `by ${asset.user.name}` : null,
   ]
     .filter(Boolean)
     .join(" · ");
 
   // Clip viewer URL: prefer mediasourceUrl, fall back to /clips/:id
-  const clipUrl = asset.mediasourceUrl || `/clips/${asset.mediasourceId || asset.id}`;
+  const clipUrl = asset.mediasourceUrl || (asset.mediasourceId ? `/clips/${asset.mediasourceId}` : null);
   const isSuperAdmin = viewerRole === "SUPER_ADMIN";
-  const canPlay = asset.moderation === "ACTIVE"
+  const canPlay = !!clipUrl && asset.moderation === "ACTIVE"
     && !asset.mediaPlaybackUnavailable
     && !asset.mediaPlaybackReset
     && !asset.mediaCreateOperationId;
@@ -251,14 +255,19 @@ function AssetRow({ asset, isExpanded, onToggle, viewerRole, onModerate }: Asset
               {asset.moderation === "FLAGGED_FOR_REMOVAL" ? "FLAGGED" : asset.moderation}
             </span>
           )}
-          {asset.mediaSyncState === "ERROR" && (
+          {viewerRole !== "USER" && asset.mediaSyncState === "ERROR" && (
             <span className="inline-flex items-center px-2 py-0.5 rounded-(--radius-md) text-(length:--text-xs) font-semibold bg-(--accent-red-glow) text-(--accent-red)">
               MEDIA NEEDS ATTENTION
             </span>
           )}
-          {asset.mediaSyncState === "PENDING" && (
+          {viewerRole !== "USER" && asset.mediaSyncState === "PENDING" && (
             <span className="inline-flex items-center px-2 py-0.5 rounded-(--radius-md) text-(length:--text-xs) font-semibold bg-(--accent-amber-glow) text-(--accent-amber)">
               MEDIA PENDING
+            </span>
+          )}
+          {viewerRole === "USER" && asset.moderation === "ACTIVE" && (asset.mediaPlaybackUnavailable || asset.mediaPlaybackReset) && (
+            <span className="inline-flex items-center px-2 py-0.5 rounded-(--radius-md) text-(length:--text-xs) font-semibold bg-(--accent-amber-glow) text-(--accent-amber)">
+              PLAYBACK UNAVAILABLE
             </span>
           )}
           <Icon
@@ -293,7 +302,7 @@ function AssetRow({ asset, isExpanded, onToggle, viewerRole, onModerate }: Asset
               Moderation note: {asset.moderationReason}
             </p>
           )}
-          <MediaSyncDetails assetId={asset.id} media={asset} canConfirm={isSuperAdmin} />
+          {viewerRole !== "USER" && <MediaSyncDetails assetId={asset.id} media={asset} canConfirm={isSuperAdmin} />}
 
           {onModerate && viewerRole && (
             <div className="flex flex-wrap gap-2 py-2">
@@ -340,7 +349,7 @@ function AssetRow({ asset, isExpanded, onToggle, viewerRole, onModerate }: Asset
             </span>
             {canPlay ? (
               <a
-                href={clipUrl}
+                href={clipUrl ?? undefined}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-(length:--text-xs) font-semibold text-(--accent-blue) hover:underline no-underline inline-flex items-center gap-1"
@@ -349,9 +358,13 @@ function AssetRow({ asset, isExpanded, onToggle, viewerRole, onModerate }: Asset
               </a>
             ) : (
               <span className="text-(length:--text-xs) text-(--muted-foreground)">
-                {asset.moderation === "ACTIVE"
-                  ? "Playback unavailable while media reconciliation is in progress"
-                  : `Playback disabled while ${asset.moderation.toLowerCase().replace(/_/g, " ")}`}
+                {asset.moderation !== "ACTIVE"
+                  ? `Playback disabled while ${asset.moderation.toLowerCase().replace(/_/g, " ")}`
+                  : !clipUrl
+                    ? "Clip link is not available yet"
+                    : viewerRole === "USER"
+                      ? "Playback is temporarily unavailable"
+                      : "Playback unavailable while media reconciliation is in progress"}
               </span>
             )}
           </div>

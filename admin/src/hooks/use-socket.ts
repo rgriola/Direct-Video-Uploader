@@ -146,6 +146,11 @@ export function useSocket(callbacks: SocketCallbacks = {}) {
       callbacksRef.current.onAssetChange?.();
     });
 
+    s.on("mux:ready", (data: { assetId?: string }) => {
+      addLog("ws", `Video ready: ${data.assetId?.slice(0, 8)}...`);
+      callbacksRef.current.onAssetChange?.();
+    });
+
     s.on("dashboard:asset-changed", () => {
       callbacksRef.current.onAssetChange?.();
     });
@@ -156,6 +161,7 @@ export function useSocket(callbacks: SocketCallbacks = {}) {
 
     s.on("form:confirmed", (data: { message?: string }) => {
       addLog("ws", `Form confirmed: ${data.message}`);
+      callbacksRef.current.onAssetChange?.();
     });
   }, [addLog]);
 
