@@ -26,9 +26,10 @@ const ALLOWED_VIDEO_MIMES = new Set([
 ]);
 
 function serializeAsset(asset) {
+    const playbackAvailable = canExposePlayback(asset);
     const clips = asset.clips.map(clip => {
         const serialized = serializeClip(clip);
-        if (!canExposePlayback(asset)) {
+        if (!playbackAvailable) {
             return { ...serialized, storageUrl: null, muxPlaybackId: null, streamUrl: null, thumbnailUrl: null };
         }
         return serialized;
@@ -42,7 +43,7 @@ function serializeAsset(asset) {
         mediaSyncError: _error,
         ...visible
     } = asset;
-    return { ...visible, clips };
+    return { ...visible, mediaPlaybackUnavailable: !playbackAvailable, clips };
 }
 
 export default async function assetRoutes(fastify) {

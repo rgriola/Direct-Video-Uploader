@@ -5,9 +5,10 @@ interface HeaderProps {
   userName?: string | null;
   userPhone?: string | null;
   userCompany?: string | null;
+  subtitle?: string;
 }
 
-export function Header({ onLogout, userName, userPhone, userCompany }: HeaderProps) {
+export function Header({ onLogout, userName, userPhone, userCompany, subtitle = "Server Dashboard · Live Data" }: HeaderProps) {
   return (
     <header className="flex items-center justify-between gap-2 mb-6 pb-5 border-b border-(--border-subtle) sm:mb-8 sm:pb-6 sm:gap-4">
       <div className="flex items-center gap-2 sm:gap-3 shrink-0">
@@ -16,7 +17,7 @@ export function Header({ onLogout, userName, userPhone, userCompany }: HeaderPro
         </div>
         <div>
           <h1 className="text-(length:--text-lg) sm:text-(length:--text-2xl) font-bold tracking-tight">Fixer</h1>
-          <p className="text-(length:--text-xs) text-(--muted-foreground) mt-0.5 hidden sm:block">Server Dashboard · Live Data</p>
+          <p className="text-(length:--text-xs) text-(--muted-foreground) mt-0.5 hidden sm:block">{subtitle}</p>
         </div>
       </div>
 

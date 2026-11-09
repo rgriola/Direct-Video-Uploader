@@ -1,17 +1,20 @@
 /* ─── API Types ─── */
 
-export interface User {
+export interface SessionUser {
   id: string;
   name: string;
   phoneNumber: string;
-  email?: string | null;
   team?: string | null;
   role?: string;
+  companyCode?: string | null;
+  companyName?: string | null;
+}
+
+export interface User extends SessionUser {
+  email?: string | null;
   status: string;
   pausedAt?: string | null;
   pausedById?: string | null;
-  companyCode?: string | null;
-  companyName?: string | null;
   assetCount?: number;
   createdAt?: string;
   lastLoginAt?: string | null;

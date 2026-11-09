@@ -2,7 +2,7 @@
 
 _Drafted: October 19, 2026 · Updated: November 8, 2026_
 _Owner: Rod_
-_Status: **In progress** — Step 1 verified; Steps 2.1 and 2.3 deployed; Steps 2.2 and 2.4 merged to `main`; the web app is reported deployed, while server and real-Mux rollout checks remain unconfirmed; Step 2.5 tests pass locally and await CI_
+_Status: **In progress** — Step 1 verified; Steps 2.1 and 2.3 deployed; Steps 2.2, 2.4, and 2.5 merged to `main`; Step 2.5 passed GitHub CI per the owner; Step 3.1's routing foundation is in progress. The earlier web app is reported deployed, while the matching server and real-Mux rollout checks remain unconfirmed._
 
 ```mermaid
 flowchart TD
@@ -41,7 +41,7 @@ flowchart TD
 | Team Admin | Manages **only their organization's** videos and members. Can promote and demote other Team Admins in that organization and pause members when moderation is implemented. |
 | Users | **Every user gets web access** once their account exists. |
 | Shared clip links | Signed-in members of the same organization may view each other's shared clips. Regular list views remain limited to the user's own records. |
-| Transcript writes | Owners may finish transcripts for `ACTIVE` and `PAUSED` videos; flagged and removed videos reject transcript writes. The Step 2.5 implementation is not yet merged or deployed. |
+| Transcript writes | Owners may finish transcripts for `ACTIVE` and `PAUSED` videos; flagged and removed videos reject transcript writes. Step 2.5 is merged; the matching server deployment remains unconfirmed. |
 | Permanent user deletion | **Super Admin only**, including deletion of associated data. |
 | iOS role | **Upload only.** All management (users, moderation, sharing, downloads) happens in the desktop web app. |
 | Original video | The native original file is **stored by us**, not just by Mux. Mux is for playback only. **Local folder on the home server for testing**, cloud object storage later. |
@@ -71,7 +71,7 @@ flowchart TD
 | ⚠️ Public uploads folder | The uploads route is unauthenticated. The merged code adds moderation/reference checks, but known active files remain reachable by URL without authentication | Replace it with authenticated or signed access **before** originals are stored (Step 4.1); confirm the running server version separately. |
 | Thumbnails | Webhook already writes `Clip.thumbnailUrl` (`image.mux.com/<id>/thumbnail.png?width=640`) | Thumbnails are frontend-only work. |
 | Mux settings | Previously issued uploads can request automatic public playback; uploads from the merged code omit the playback policy and retain `cors_origin: '*'` | Drain or cancel legacy uploads, verify Mux cleanup, and test with real Mux before relying on moderation. |
-| Admin web app | One `App.tsx`, no router. Active theme: `theme-a-editorial.css` (imported in `main.tsx`). Three alternates sit unused | See the Themes note in Step 3. |
+| Web app | Step 3.1's feature branch adds role-gated hash routes and an owner-videos view while preserving existing admin tools. Active theme: `theme-a-editorial.css`; three alternates sit unused | Finish the remaining Step 3.1 work and verify the feature is deployed with a matching server. See the Themes note below. |
 
 ---
 
@@ -399,9 +399,10 @@ files but remains unauthenticated for active files. Public URLs, already-playing
 and downloaded copies are not private or instantly revocable. See
 `HOME_SERVER_RUNBOOK.md` for the full rollout and recovery procedure.
 
-**Step 2.5 branch:** Owners can save transcripts on `ACTIVE` and `PAUSED` assets; both
+**Step 2.5:** Owners can save transcripts on `ACTIVE` and `PAUSED` assets; both
 transcript endpoints return 404 for `FLAGGED_FOR_REMOVAL` and `REMOVED` assets. This policy
-is implemented and tested locally on the Step 2.5 feature branch, not yet merged or deployed.
+passed GitHub CI and is merged to `main` per the owner; the matching server deployment is
+unconfirmed.
 
 ### 2.3 API Authorization & Team Scoping
 
@@ -578,7 +579,7 @@ server after such changes so existing connections must authenticate again.
   including HTTP-triggered events, team changes, and suspension against PostgreSQL.
 - [x] Moderation visibility tests cover active, paused, flagged, and removed assets across
   lists, details, clips, legacy uploads, Mux status, and transcript writes.
-- [ ] Run the complete Step 2.5 matrix in GitHub CI after publishing the feature branch.
+- [x] Run the complete Step 2.5 matrix in GitHub CI; the owner reports CI passed and the branch was merged.
 
 The full server coverage suite passed locally with 778 tests on the Step 2.5 branch.
 Mux is mocked in these tests; this is not a real-Mux rollout check. Run PostgreSQL-backed
@@ -593,9 +594,14 @@ tests against a migrated disposable `dvu_scope_test_*` database with matching
 
 ### 3.1 Routing & Layouts
 
-- [ ] Add a router (TanStack Router pairs with the existing TanStack Query)
-- [ ] Split `App.tsx` into `AuthProvider` + role route trees
-- [ ] Web login = the same phone + PIN + company code as iOS. Confirm that `USER` logins are accepted by the dashboard (today the dashboard expects admins)
+**Foundation status:** The feature branch adds role-gated routes and an owner-videos view.
+It preserves the existing admin dashboard and phone-and-PIN sign-in; company-code enforcement
+was intentionally deferred. These changes have not yet been merged or deployed.
+
+- [x] Add TanStack Router with hash-based deep links compatible with the existing static server.
+- [x] Split authentication and route-gated Super Admin, Team Admin, and User views.
+- [x] Accept `USER` sign-in and show their active and paused uploads from `/api/assets/mine`.
+- [ ] Require the same phone + PIN + company code as iOS after agreeing the rollout for existing unassigned accounts.
 
 | Layout | Contents |
 | --- | --- |
@@ -603,8 +609,15 @@ tests against a migrated disposable `dvu_scope_test_*` database with matching
 | **Team Admin** | Team stats, team members (add / promote / pause), team videos (pause / flag), share links |
 | **User** | "My Videos" grid, video detail (player, transcript, form data, download/share), profile & PIN |
 
-- [ ] Shared: header, login, 403/404, toasts, video detail page
+- [x] Shared header, login, 403/404 pages, and toasts.
+- [ ] Dedicated video detail page, richer player and transcript access, profile and PIN management, and original downloads. Available clips currently open in the existing clip viewer.
 - [ ] Moderation actions require a confirm dialog and an optional reason
+
+The foundation keeps existing admin tools for both admin roles rather than completing the
+target layouts above. The server remains the authorization boundary. Owner asset responses
+now include a playback-availability flag; deploy the matching server and dashboard together.
+Before rollout, verify that the Cloudflare Access policy permits the intended web users.
+The Step 2.2 migration, legacy-upload, and real-Mux checks remain open.
 
 **Themes:** the admin app has four theme files in `admin/src/`. Only one is active:
 

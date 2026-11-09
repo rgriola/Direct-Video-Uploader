@@ -38,7 +38,7 @@ async function api<T>(method: string, path: string, body?: unknown): Promise<T> 
 
 /* ─── Typed API calls ─── */
 
-import type { Stats, User, Asset, TriadStatus, Organization, MediaIssue, MediaSyncState } from "./types";
+import type { Stats, User, SessionUser, Asset, TriadStatus, Organization, MediaIssue, MediaSyncState } from "./types";
 
 export async function fetchHealth() {
   return api<{ status: string; service: string; version: string }>("GET", "/api/health");
@@ -46,7 +46,7 @@ export async function fetchHealth() {
 
 export async function login(phoneNumber: string, pin: string) {
   // Mark as admin login so server doesn't update lastLoginAt
-  return api<{ token: string; user: User }>("POST", "/api/auth/login", {
+  return api<{ token: string; user: SessionUser }>("POST", "/api/auth/login", {
     phoneNumber,
     pin,
     clientType: "admin",
@@ -68,7 +68,7 @@ export async function logoutClipSession() {
 }
 
 export async function fetchMe() {
-  return api<{ user: User }>("GET", "/api/auth/me");
+  return api<{ user: SessionUser | null }>("GET", "/api/auth/me");
 }
 
 export async function fetchStats() {
@@ -82,6 +82,10 @@ export async function fetchUsers() {
 export async function fetchAssets(moderation?: string) {
   const query = moderation ? `?moderation=${encodeURIComponent(moderation)}` : "";
   return api<{ assets: Asset[] }>("GET", `/api/admin/assets${query}`);
+}
+
+export async function fetchMyAssets() {
+  return api<{ assets: Asset[] }>("GET", "/api/assets/mine");
 }
 
 export async function fetchMessages() {

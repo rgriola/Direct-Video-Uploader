@@ -1,7 +1,7 @@
 /* ─── TanStack React Query hooks ─── */
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { fetchStats, fetchUsers, fetchAssets, fetchTriadStatus, fetchOrganizations } from "@/lib/api";
+import { fetchStats, fetchUsers, fetchAssets, fetchMyAssets, fetchTriadStatus, fetchOrganizations } from "@/lib/api";
 
 export function useStats(enabled = true) {
   return useQuery({
@@ -29,6 +29,18 @@ export function useAssets(enabled = true, moderation?: string) {
     queryKey: ["assets", moderation ?? "default"],
     queryFn: async () => {
       const data = await fetchAssets(moderation);
+      return data.assets;
+    },
+    refetchInterval: 15_000,
+    enabled,
+  });
+}
+
+export function useMyAssets(enabled = true) {
+  return useQuery({
+    queryKey: ["my-assets"],
+    queryFn: async () => {
+      const data = await fetchMyAssets();
       return data.assets;
     },
     refetchInterval: 15_000,
@@ -65,6 +77,7 @@ export function useRefreshDashboard() {
       case "upload:complete":
         void qc.invalidateQueries({ queryKey: ["stats"] });
         void qc.invalidateQueries({ queryKey: ["assets"] });
+        void qc.invalidateQueries({ queryKey: ["my-assets"] });
         break;
       case "user:connected":
       case "user:disconnected":
@@ -75,6 +88,7 @@ export function useRefreshDashboard() {
         void qc.invalidateQueries({ queryKey: ["stats"] });
         void qc.invalidateQueries({ queryKey: ["users"] });
         void qc.invalidateQueries({ queryKey: ["assets"] });
+        void qc.invalidateQueries({ queryKey: ["my-assets"] });
         void qc.invalidateQueries({ queryKey: ["organizations"] });
         void qc.invalidateQueries({ queryKey: ["triad-status"] });
     }

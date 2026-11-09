@@ -1,9 +1,9 @@
 import { useState, FormEvent } from "react";
 import { login, setToken } from "@/lib/api";
-import type { User } from "@/lib/types";
+import type { SessionUser } from "@/lib/types";
 
 interface LoginFormProps {
-  onSuccess: (user: User) => void;
+  onSuccess: (user: SessionUser) => void;
 }
 
 export function LoginForm({ onSuccess }: LoginFormProps) {
@@ -64,7 +64,7 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
           <div className="ml-auto text-right">
             <h1 className="text-(length:--text-2xl) font-bold tracking-tight">Fixer</h1>
             <p className="text-(length:--text-sm) text-(--muted-foreground) mt-1">
-              Admin Dashboard
+              Sign in to your account
             </p>
           </div>
         </div>
@@ -120,7 +120,7 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
           </div>
 
           {error && (
-            <p className="text-(length:--text-sm) text-(--accent-red) bg-(--accent-red-glow) border border-(--accent-red) rounded-(--radius-lg) px-3 py-2">
+            <p role="alert" className="text-(length:--text-sm) text-(--accent-red) bg-(--accent-red-glow) border border-(--accent-red) rounded-(--radius-lg) px-3 py-2">
               {error}
             </p>
           )}

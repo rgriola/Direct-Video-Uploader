@@ -221,6 +221,7 @@ describe('assets route deeper coverage', () => {
 
         expect(response.statusCode).toBe(200);
         expect(response.json().assets[0].moderation).toBe('PAUSED');
+        expect(response.json().assets[0].mediaPlaybackUnavailable).toBe(true);
         expect(response.json().assets[0].clips[0]).toMatchObject({
             muxPlaybackId: null,
             streamUrl: null,
@@ -253,12 +254,29 @@ describe('assets route deeper coverage', () => {
 
         const response = await app.inject({ method: 'GET', url: '/api/assets/mine' });
         const asset = response.json().assets[0];
+        expect(asset.mediaPlaybackUnavailable).toBe(true);
         expect(asset.clips[0]).toMatchObject({
             storageUrl: null, muxPlaybackId: null, streamUrl: null, thumbnailUrl: null,
         });
         expect(asset).not.toHaveProperty('mediaCreateOperationId');
         expect(asset).not.toHaveProperty('mediaCreateMuxAssetId');
         expect(asset).not.toHaveProperty('mediaSyncError');
+    });
+
+    it('marks active owner playback available when no revocation is pending', async () => {
+        prismaMock.asset.findMany.mockResolvedValue([{
+            id: 'asset-1',
+            moderation: 'ACTIVE',
+            mediaPlaybackReset: false,
+            mediaCreateOperationId: null,
+            clips: [],
+            formResponse: null,
+        }]);
+
+        const response = await app.inject({ method: 'GET', url: '/api/assets/mine' });
+
+        expect(response.statusCode).toBe(200);
+        expect(response.json().assets[0].mediaPlaybackUnavailable).toBe(false);
     });
 
     it('reuses existing waiting mux upload for idempotency', async () => {
