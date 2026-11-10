@@ -209,6 +209,7 @@ model UploadSession {
   storageKey        String              @unique @map("storage_key")
   expectedSizeBytes BigInt?             @map("expected_size_bytes")
   expectedSha256    String?             @map("expected_sha256") @db.VarChar(64)
+  storageReservationBytes BigInt?       @map("storage_reservation_bytes")
   status            UploadSessionStatus @default(OPEN)
   expiresAt         DateTime            @map("expires_at")
   completedAt       DateTime?           @map("completed_at")
@@ -225,6 +226,20 @@ model UploadSession {
   @@index([assetId, status])
   @@index([clipId, status])
   @@map("upload_sessions")
+}
+
+// A lease must outlive a deleted session until its writer is known to have stopped.
+model StorageWriteLease {
+  id              String   @id
+  uploadSessionId String   @map("upload_session_id")
+  storageIdentity String   @map("storage_identity")
+  sizeBytes       BigInt   @map("size_bytes")
+  host            String
+  pid             Int
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  @@index([uploadSessionId])
+  @@map("storage_write_leases")
 }
 
 model UploadPart {
