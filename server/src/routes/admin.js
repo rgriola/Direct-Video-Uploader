@@ -36,6 +36,17 @@ function scopedAssetFilter(user, moderationStates) {
 
 export default async function adminRoutes(fastify) {
 
+    fastify.get('/api/admin/monitoring', {
+        preHandler: [fastify.authenticate, fastify.requireRole(ROLES.SUPER_ADMIN)],
+    }, async (request, reply) => {
+        reply.header('Cache-Control', 'no-store');
+        if (!fastify.monitoring) {
+            request.log.error('Monitoring service is unavailable');
+            return reply.code(503).send({ error: 'Monitoring service is unavailable' });
+        }
+        return fastify.monitoring.snapshot();
+    });
+
     /**
      * GET /api/admin/status
      * Triad health — database, server, WebSocket, iOS clients.

@@ -36,6 +36,37 @@ function isProcessAlive(pid) {
   }
 }
 
+function isStaleLease(lease, { hostname, pid, processAlive }) {
+  return lease.host === hostname && (lease.pid === pid
+    ? localLeases.get(lease.id) !== "active"
+    : !processAlive(lease.pid));
+}
+
+export async function assertNoActiveUploadWrites(tx, session, {
+  hostname = os.hostname(),
+  pid = process.pid,
+  processAlive = isProcessAlive,
+} = {}) {
+  await lockStorageCapacity(tx);
+  const leases = await tx.storageWriteLease.findMany({ where: { uploadSessionId: session.id } });
+  if (!leases.length) return;
+  const identity = storageIdentityForKey(session.storageKey);
+  for (const lease of leases) {
+    if (!identity || lease.storageIdentity !== identity || lease.sizeBytes < 1n
+      || typeof lease.host !== "string" || !lease.host
+      || !Number.isSafeInteger(lease.pid) || lease.pid < 1) {
+      throw new StorageError("Upload write reservation requires manual recovery", { code: "STORAGE_UNAVAILABLE" });
+    }
+    if (!isStaleLease(lease, { hostname, pid, processAlive })) {
+      throw new StorageError("Upload writes are active or cannot be verified", { code: "SESSION_BUSY" });
+    }
+  }
+  for (const lease of leases) {
+    await tx.storageWriteLease.deleteMany({ where: { id: lease.id } });
+    if (lease.host === hostname && lease.pid === pid) localLeases.delete(lease.id);
+  }
+}
+
 function reservationFor(sizeBytes) {
   if (typeof sizeBytes !== "bigint" || sizeBytes < 1n
     || sizeBytes > (MAX_DATABASE_BIGINT - SESSION_OVERHEAD_BYTES) / 2n) {
@@ -89,9 +120,7 @@ export function createStorageCapacity({
     const staleLeaseIds = new Set();
     // Decide which writers are gone before measuring files, so a finishing write cannot be missed by both.
     for (const lease of leases) {
-      if (lease.host === hostname && (lease.pid === pid
-        ? localLeases.get(lease.id) !== "active"
-        : !processAlive(lease.pid))) {
+      if (isStaleLease(lease, { hostname, pid, processAlive })) {
         staleLeaseIds.add(lease.id);
       }
     }
@@ -199,7 +228,10 @@ export function createStorageCapacity({
             status: true, expectedSizeBytes: true, storageReservationBytes: true, storageKey: true, storageDriver: true,
           },
         });
-        if (!current || !["OPEN", "COMPLETING"].includes(current.status)
+        if (current?.status === "COMPLETING") {
+          throw new StorageError("Upload session is completing", { code: "SESSION_BUSY" });
+        }
+        if (!current || current.status !== "OPEN"
           || current.expectedSizeBytes == null || sizeBytes > current.expectedSizeBytes
           || current.storageReservationBytes == null
           || current.storageReservationBytes < reservationFor(current.expectedSizeBytes)) {

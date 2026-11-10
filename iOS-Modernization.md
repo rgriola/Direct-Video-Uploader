@@ -2,7 +2,7 @@
 
 _Drafted: October 19, 2026 · Updated: November 9, 2026_
 _Owner: Rod_
-_Status: **In progress** — Step 1 verified; Steps 2.1 through 2.5, the Step 3.1 routing foundation, Step 3.2 thumbnails, Step 4.1 local storage, and Step 4.2a–b upload-session foundations are merged to `main`. The owner reported deploying the earlier server and migrations and testing the existing Mux flow successfully. The server-only Step 4.2c Mux handoff is implemented on a feature branch and disabled by default; isolated real-Mux validation, client integration, and production storage safeguards remain open._
+_Status: **In progress** — Step 1 verified; Steps 2.1 through 2.5, the Step 3.1 routing foundation, Step 3.2 thumbnails, Step 4.1 local storage, and the Step 4.2a–d server foundations are merged to `main`. The owner reported deploying storage safety and testing the existing Mux flow successfully. Step 4.2e encrypted original-file backups, Step 4.2f dashboard monitoring, and Step 4.2g tracked-session cleanup are implemented on feature branches and are opt-in. Actual backup and restore validation, cleanup rollout validation, proactive alerts, isolated real-Mux handoff validation, and client integration remain open._
 
 ```mermaid
 flowchart TD
@@ -701,17 +701,21 @@ sequenceDiagram
 - [ ] Replace `Clip.storageUrl` (a public path) with `storageKey` + `storageDriver` + `sha256` + `sizeBytes`
 - [ ] **Replace the guarded but unauthenticated `/uploads/` route.** All original-file access must go through authenticated or signed routes
 - [ ] Stop deleting originals in the `mux:ready` webhook (`mux-webhooks.js:145`)
-- [ ] Finish original-upload expiry cleanup. The legacy orphan job excludes assets
-  with any original session, including originals in any Mux handoff state.
-- [ ] Add a restart/expiry sweep and an operator procedure for ambiguous or orphaned
-  local-driver lock files before enabling production original uploads. Current recovery
-  is on session access and only reclaims valid same-host locks whose owning PID is gone.
+- [x] Implement the separate opt-in tracked-session restart/expiry sweep and an
+  operator procedure for ambiguous or orphaned local-driver data (Step 4.2g).
+  The legacy orphan job still excludes assets with any original session.
+- [ ] Validate tracked cleanup and manual review of untracked directories and
+  ambiguous locks on the intended storage before enabling production originals.
 - [ ] Disk guardrails:
   - [x] Experimental capacity reservations and free-space checks before admission
     and writes, with explicit server-configured thresholds.
-  - [ ] Super Admin dashboard shows storage used.
+  - [x] Opt-in Super Admin dashboard shows original storage used and per-volume
+    thresholds, plus original and database backup job/freshness status.
   - [ ] Proactive alert below a threshold.
-- [ ] Backups: originals are **not** covered by the nightly `pg_dump`. Decide on a copy target (second drive, or the future cloud bucket)
+- [ ] Backups: originals are **not** covered by the nightly `pg_dump`. The selected
+  policy is hourly encrypted copies to a separate external drive and Backblaze B2,
+  retaining deleted originals until an operator removes them. Configure both targets
+  and verify recovery before enabling uploads; see Step 4.2e.
 - [ ] Future `s3` driver (Cloudflare R2 / S3 / GCS): implements the same interface using real presigned multipart URLs. Clients don't change
 
 ### 4.2a Upload-Session Persistence Foundation
@@ -743,7 +747,7 @@ sequenceDiagram
   expiry, storage-location failures, and moderation cleanup with an isolated PostgreSQL
   database. See [upload-session API](docs/UPLOAD_SESSION_API.md) for the contract.
 - [ ] Keep the feature **off on production and the shared home server** until backups,
-  proactive monitoring, an expiry/orphan sweep, and isolated real-Mux validation are complete.
+  proactive monitoring, cleanup validation, and isolated real-Mux validation are complete.
 - [ ] Add client integration.
 
 ### 4.2c Experimental Server-Only Mux Handoff
@@ -783,6 +787,46 @@ sequenceDiagram
   migration backfill in local PostgreSQL tests.
 - [ ] Verify CI, deployment, actual disk/mount behavior, monitoring, and the remaining
   original-storage rollout prerequisites before enabling either experimental flag.
+
+### 4.2e Original-File Backups
+
+- [x] Add an opt-in hourly workflow for encrypted external-drive and B2 copies,
+  without mirroring source deletions or replacing existing backup objects.
+- [x] Validate storage identities, mount boundaries, encryption configuration,
+  B2 lifecycle rules, and checksums; exercise encrypted local destinations in CI.
+- [ ] Provision the actual separate drive, B2 prefix, protected keys, and LaunchAgent.
+- [ ] Verify the real B2 and external-drive backups and perform recovery drills;
+  database and original-file snapshots are not automatically consistent.
+- [ ] Add independent failure/freshness alerts and complete the remaining rollout gates.
+
+### 4.2f Storage and Backup Dashboard Monitoring
+
+- [x] Add opt-in, Super Admin-only checks for source and backup volume capacity,
+  original-file backup verification, and local/offsite database backup jobs.
+- [x] Record independent job outcomes and detect missed, stale, interrupted at
+  the freshness limit, or partially failed backups. The guarded database offsite
+  wrapper refuses to run without a recent, recorded local archive and serializes
+  monitored database jobs.
+- [x] Provide a common check interface and subscriber hook for future monitored
+  services and notification providers.
+- [ ] Configure the real volumes, thresholds, monitoring state, and LaunchAgents;
+  verify failure/recovery and restore procedures on the home server.
+- [ ] Add independently delivered failure/freshness alerts. The dashboard alone
+  cannot notify an operator while it is closed or the server is down.
+
+### 4.2g Tracked Upload-Session Cleanup and Recovery
+
+- [x] Add an independently opt-in, bounded worker for expired tracked sessions
+  and interrupted completion, including when upload intake is disabled.
+- [x] Preserve originals and backups, defer live or unverified writes and locks,
+  release reservations only after staged cleanup, and report untracked directories
+  for manual review rather than deleting them.
+- [x] Exercise PostgreSQL/local-filesystem recovery, moderation serialization,
+  partial failures, capacity leases, bounded inventory, and Mux handoff settings.
+- [ ] Verify rollout, actual storage/mount behavior, operator log review, and
+  recovery on an isolated environment before enabling it on the home backend.
+- [ ] Add independent failure and freshness alerts; the worker currently logs
+  outcomes only and cannot report while the server is down.
 
 ### 4.2 Upload Protocol (Why Parts)
 
@@ -846,5 +890,6 @@ Until Step 4 ships, **new uploads keep no original**. They only exist in Mux, wh
 - [ ] Can regular USERs create share links for their own videos? (5)
 - [ ] When a user is paused, do their existing share links stop working? (5)
 - [ ] Theme: keep Editorial only, or Editorial + Midnight dark mode? (3.1)
-- [ ] Originals backup target while on the local driver (second drive vs early cloud bucket)? (4.1)
+- [x] Originals backup target: encrypted external drive **and** Backblaze B2, hourly,
+  with manual retention after source deletion. (4.1)
 - [ ] Which cloud storage later: Cloudflare R2 (no egress fees, same Cloudflare account) vs S3 vs GCS?

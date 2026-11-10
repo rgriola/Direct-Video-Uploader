@@ -38,7 +38,7 @@ async function api<T>(method: string, path: string, body?: unknown): Promise<T> 
 
 /* ─── Typed API calls ─── */
 
-import type { Stats, User, SessionUser, Asset, TriadStatus, Organization, MediaIssue, MediaSyncState } from "./types";
+import type { Stats, User, SessionUser, Asset, TriadStatus, Organization, MediaIssue, MediaSyncState, MonitoringSnapshot } from "./types";
 
 export async function fetchHealth() {
   return api<{ status: string; service: string; version: string }>("GET", "/api/health");
@@ -94,6 +94,10 @@ export async function fetchMessages() {
 
 export async function fetchTriadStatus() {
   return api<TriadStatus>("GET", "/api/admin/status");
+}
+
+export async function fetchMonitoring() {
+  return api<MonitoringSnapshot>("GET", "/api/admin/monitoring");
 }
 
 export async function cleanupAssets() {

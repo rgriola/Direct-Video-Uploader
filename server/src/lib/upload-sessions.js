@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
-import { lockStorageCapacity, releaseStorageReservation } from "./storage/capacity.js";
+import {
+  assertNoActiveUploadWrites, lockStorageCapacity, releaseStorageReservation,
+} from "./storage/capacity.js";
 import { StorageError, storageIdentityForKey } from "./storage/local-driver.js";
 
 const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
@@ -115,7 +117,7 @@ async function hashStream(stream) {
   return { sha256: hash.digest("hex"), sizeBytes: sizeBytes.toString() };
 }
 
-export function createUploadSessionService({
+function createUploadSessionOperations({
   db,
   storage,
   storageDriver = "local",
@@ -123,10 +125,13 @@ export function createUploadSessionService({
   now = () => new Date(),
   sessionTtlMs = SESSION_TTL_MS,
   onCompleted,
-} = {}) {
-  if (!db || !storage || typeof capacity?.reserve !== "function"
-    || typeof capacity?.withWritePermit !== "function") {
+} = {}, { recoveryOnly = false } = {}) {
+  if (!db || !storage || (!recoveryOnly && (typeof capacity?.reserve !== "function"
+    || typeof capacity?.withWritePermit !== "function"))) {
     throw new TypeError("Upload session service requires database, storage, and capacity safeguards");
+  }
+  if (recoveryOnly && typeof storage.assertUploadReferences !== "function") {
+    throw new TypeError("Upload session recovery requires storage reference validation");
   }
   if (!Number.isSafeInteger(sessionTtlMs) || sessionTtlMs < 1) {
     throw new TypeError("Upload session TTL must be a positive safe integer");
@@ -147,6 +152,7 @@ export function createUploadSessionService({
             assetId: true,
             storageUrl: true,
             storageKey: true,
+            storageDriver: true,
             sha256: true,
             fileSize: true,
             muxAssetId: true,
@@ -173,6 +179,7 @@ export function createUploadSessionService({
             assetId: true,
             storageUrl: true,
             storageKey: true,
+            storageDriver: true,
             sha256: true,
             fileSize: true,
             muxAssetId: true,
@@ -294,37 +301,58 @@ export function createUploadSessionService({
     }, { timeout: 60000 });
   }
 
-  async function recoverCompletingSession(session) {
-    const locked = await storage.withCompletionLock(session.id, async () => {
-      const current = await loadSession(session.id, session.ownerId);
-      if (current.status !== "COMPLETING") return;
-
-      await storage.assertStorageLocation(current.storageKey);
-      const stored = await storage.stat(current.storageKey);
-      if (stored) {
-        const result = await hashStream(await storage.getReadStream(current.storageKey));
-        if (result.sizeBytes !== stored.sizeBytes) {
-          throw new UploadSessionError("STORAGE_CHANGED", "Stored object changed while recovering completion");
-        }
-        validateCompletion(current, result);
-        if (await storage.hasUpload(current.id) && !canVerifyCompletion(current)) {
-          throw new UploadSessionError("STORAGE_UNAVAILABLE", "Staged upload data cannot be verified");
-        }
-        await storage.abortUpload(current.id);
-        await finalizeCompletion(current, { ...result, key: current.storageKey });
-        return;
+  async function assertRecoveryWritesStopped(session, expectedStatus) {
+    await db.$transaction(async tx => {
+      const current = await lockSession(tx, session.id);
+      assertOwnedSession(current, session.ownerId);
+      if (current.status !== expectedStatus) {
+        throw new UploadSessionError("SESSION_BUSY", "Upload session changed during recovery");
       }
+      await assertNoActiveUploadWrites(tx, current);
+    }, { timeout: 60000 });
+  }
 
-      await storage.recoverUpload(current.id);
-      await db.uploadSession.updateMany({
-        where: { id: current.id, ownerId: current.ownerId, status: "COMPLETING" },
-        data: { status: "OPEN" },
-      });
+  async function recoverCompletingSessionLocked(session, assertLocked, storageOptions) {
+    const current = await loadSession(session.id, session.ownerId);
+    if (current.status !== "COMPLETING") return;
+    await assertRecoveryWritesStopped(current, "COMPLETING");
+
+    await storage.assertStorageLocation(current.storageKey);
+    const stored = await storage.stat(current.storageKey);
+    if (stored) {
+      const result = await hashStream(await storage.getReadStream(current.storageKey));
+      if (result.sizeBytes !== stored.sizeBytes) {
+        throw new UploadSessionError("STORAGE_CHANGED", "Stored object changed while recovering completion");
+      }
+      validateCompletion(current, result);
+      if (await storage.hasUpload(current.id) && !canVerifyCompletion(current)) {
+        throw new UploadSessionError("STORAGE_UNAVAILABLE", "Staged upload data cannot be verified");
+      }
+      await assertLocked?.();
+      await storage.abortUpload(current.id, storageOptions);
+      await assertLocked?.();
+      await finalizeCompletion(current, { ...result, key: current.storageKey });
+      return;
+    }
+
+    await assertLocked?.();
+    await storage.recoverUpload(current.id, storageOptions);
+    await assertLocked?.();
+    await db.uploadSession.updateMany({
+      where: { id: current.id, ownerId: current.ownerId, status: "COMPLETING" },
+      data: { status: "OPEN" },
     });
+  }
+
+  async function recoverCompletingSession(session) {
+    const locked = await storage.withCompletionLock(
+      session.id,
+      () => recoverCompletingSessionLocked(session),
+    );
     return locked.acquired;
   }
 
-  async function expireSession(session) {
+  async function expireSession(session, { assertLocked, ...storageOptions } = {}) {
     await storage.assertStorageLocation(session.storageKey);
     const expired = await db.$transaction(async tx => {
       const current = await lockSession(tx, session.id);
@@ -336,13 +364,126 @@ export function createUploadSessionService({
       });
       return true;
     });
-    if (expired) await removeSessionFilesAndRelease(session.id);
+    if (expired) await removeSessionFilesAndRelease(session, { assertLocked, ...storageOptions });
     return expired;
   }
 
-  async function removeSessionFilesAndRelease(uploadSessionId) {
-    await storage.abortUpload(uploadSessionId);
-    await db.$transaction(tx => releaseStorageReservation(tx, uploadSessionId), { timeout: 60000 });
+  async function removeSessionFilesAndRelease(session, { assertLocked, ...storageOptions } = {}) {
+    await assertRecoveryWritesStopped(session, session.status === "OPEN" ? "EXPIRED" : session.status);
+    await assertLocked?.();
+    await storage.abortUpload(session.id, storageOptions);
+    await assertLocked?.();
+    await db.$transaction(tx => releaseStorageReservation(tx, session.id), { timeout: 60000 });
+  }
+
+  async function cleanupCompletedSession(session, assertLocked, storageOptions) {
+    await storage.assertStorageLocation(session.storageKey);
+    const stored = await storage.stat(session.storageKey);
+    if (!stored || (session.expectedSizeBytes != null
+      && BigInt(stored.sizeBytes) !== session.expectedSizeBytes)) {
+      throw new UploadSessionError("STORAGE_UNAVAILABLE", "Completed original is unavailable");
+    }
+    if (session.storageReservationBytes === 0n) return false;
+    if (await storage.hasUpload(session.id)) {
+      if (!canVerifyCompletion(session)) {
+        throw new UploadSessionError("STORAGE_UNAVAILABLE", "Staged upload data cannot be verified");
+      }
+      const result = await hashStream(await storage.getReadStream(session.storageKey));
+      if (result.sizeBytes !== stored.sizeBytes) {
+        throw new UploadSessionError("STORAGE_CHANGED", "Stored object changed while recovering completion");
+      }
+      validateCompletion(session, result);
+    }
+    await assertLocked?.();
+    await removeSessionFilesAndRelease(session, { assertLocked, ...storageOptions });
+    return true;
+  }
+
+  function needsRecovery(session) {
+    if (session.status === "OPEN") return session.expiresAt <= now();
+    if (session.status === "COMPLETING") return true;
+    return ["ABORTED", "EXPIRED", "COMPLETED"].includes(session.status)
+      && session.storageReservationBytes !== 0n;
+  }
+
+  function assertRecoveryReferences(session, assetId) {
+    const prefix = `originals/${session.ownerId}/${session.assetId}/${session.clipId}/`;
+    if (session.assetId !== assetId || session.asset.userId !== session.ownerId
+      || session.clip.id !== session.clipId || session.clip.assetId !== session.assetId
+      || session.storageDriver !== "local" || !session.storageKey.startsWith(prefix)) {
+      throw new UploadSessionError("STORAGE_UNAVAILABLE", "Upload session references require manual review");
+    }
+  }
+
+  async function recoverForSweep({ uploadSessionId, ownerId, assetId, assertLocked }) {
+    if (typeof assertLocked !== "function") {
+      throw new TypeError("Upload session recovery requires an asset lock");
+    }
+    const initial = await loadSession(uploadSessionId, ownerId);
+    if (!needsRecovery(initial)) return { status: "unchanged" };
+    assertRecoveryReferences(initial, assetId);
+    await assertLocked();
+    await storage.assertStorageLocation(initial.storageKey);
+
+    const storageOptions = { preserveUnattributedAssemblies: true };
+    const locked = await storage.withCompletionLock(uploadSessionId, async () => {
+      await assertLocked();
+      const current = await loadSession(uploadSessionId, ownerId);
+      if (!needsRecovery(current)) return { status: "unchanged" };
+      assertRecoveryReferences(current, assetId);
+      await storage.assertStorageLocation(current.storageKey);
+      await storage.assertUploadReferences(current.id, {
+        ownerId: current.ownerId,
+        assetId: current.assetId,
+        clipId: current.clipId,
+        storageKey: current.storageKey,
+      });
+      await assertLocked();
+
+      if (current.asset.moderation === "REMOVED") {
+        return { status: "deferred", reason: "Removed assets require moderation reconciliation" };
+      }
+      if (current.status === "COMPLETING") {
+        if (current.owner.status !== "ACTIVE" || current.asset.moderation !== "ACTIVE"
+          || !["UPLOADING", "PROCESSING"].includes(current.asset.status)) {
+          return { status: "deferred", reason: "Upload completion is not currently eligible for recovery" };
+        }
+        if ((current.clip.storageKey && (current.clip.storageKey !== current.storageKey
+          || current.clip.storageDriver !== current.storageDriver))
+          || current.clip.storageUrl || current.clip.muxAssetId || current.clip.muxUploadId) {
+          throw new UploadSessionError("STORAGE_UNAVAILABLE", "Upload completion references require manual review");
+        }
+        if (await storage.stat(current.storageKey) && !canVerifyCompletion(current)) {
+          throw new UploadSessionError("STORAGE_UNAVAILABLE", "Published original cannot be verified");
+        }
+        await recoverCompletingSessionLocked(current, assertLocked, storageOptions);
+        const recovered = await loadSession(uploadSessionId, ownerId);
+        if (recovered.status === "OPEN" && recovered.expiresAt <= now()) {
+          await assertLocked();
+          await expireSession(recovered, { assertLocked, ...storageOptions });
+          return { status: "expired" };
+        }
+        return { status: recovered.status === "COMPLETED" ? "completed" : "reopened" };
+      }
+      if (current.status === "COMPLETED") {
+        if (current.clip.storageKey !== current.storageKey
+          || current.clip.storageDriver !== current.storageDriver) {
+          throw new UploadSessionError("STORAGE_UNAVAILABLE", "Completed original references require manual review");
+        }
+        await cleanupCompletedSession(current, assertLocked, storageOptions);
+        return { status: "cleaned" };
+      }
+      if (current.clip.storageKey === current.storageKey || await storage.stat(current.storageKey)) {
+        throw new UploadSessionError("STORAGE_UNAVAILABLE", "Unexpected original requires manual review");
+      }
+      await assertLocked();
+      if (current.status === "OPEN") {
+        return { status: await expireSession(current, { assertLocked, ...storageOptions }) ? "expired" : "unchanged" };
+      }
+      await removeSessionFilesAndRelease(current, { assertLocked, ...storageOptions });
+      return { status: "cleaned" };
+    });
+    return locked.acquired ? locked.value : { status: "busy" };
   }
 
   async function create({ ownerId, assetId, clipId, expectedSizeBytes, expectedSha256, initializeClip = false }) {
@@ -510,7 +651,7 @@ export function createUploadSessionService({
       session = await loadSession(uploadSessionId, ownerId);
     } else if (session.status === "EXPIRED" || session.status === "ABORTED") {
       await storage.assertStorageLocation(session.storageKey);
-      await removeSessionFilesAndRelease(session.id);
+      await removeSessionFilesAndRelease(session);
     }
 
     assertVisibleSession(session);
@@ -523,24 +664,7 @@ export function createUploadSessionService({
       assertVisibleSession(session);
     }
     if (session.status === "COMPLETED") {
-      await storage.assertStorageLocation(session.storageKey);
-      const stored = await storage.stat(session.storageKey);
-      if (!stored || (session.expectedSizeBytes != null
-        && BigInt(stored.sizeBytes) !== session.expectedSizeBytes)) {
-        throw new UploadSessionError("STORAGE_UNAVAILABLE", "Completed original is unavailable");
-      }
-      if (session.storageReservationBytes !== 0n) {
-        if (await storage.hasUpload(session.id)) {
-          if (!canVerifyCompletion(session)) {
-            throw new UploadSessionError("STORAGE_UNAVAILABLE", "Staged upload data cannot be verified");
-          }
-          const result = await hashStream(await storage.getReadStream(session.storageKey));
-          if (result.sizeBytes !== stored.sizeBytes) {
-            throw new UploadSessionError("STORAGE_CHANGED", "Stored object changed while recovering completion");
-          }
-          validateCompletion(session, result);
-        }
-        await removeSessionFilesAndRelease(session.id);
+      if (await cleanupCompletedSession(session)) {
         session = await loadSession(uploadSessionId, ownerId);
         assertVisibleSession(session);
       }
@@ -695,7 +819,7 @@ export function createUploadSessionService({
       return current.status;
     });
     await storage.assertStorageLocation(session.storageKey);
-    await removeSessionFilesAndRelease(session.id);
+    await removeSessionFilesAndRelease({ ...session, status });
     return { id: session.id, status };
   }
 
@@ -705,5 +829,16 @@ export function createUploadSessionService({
     uploadPart,
     complete,
     abort,
+    recoverForSweep,
   };
+}
+
+export function createUploadSessionService(options) {
+  const { create, get, uploadPart, complete, abort } = createUploadSessionOperations(options);
+  return { create, get, uploadPart, complete, abort };
+}
+
+export function createUploadSessionRecovery(options) {
+  const { recoverForSweep } = createUploadSessionOperations(options, { recoveryOnly: true });
+  return { recoverForSweep };
 }

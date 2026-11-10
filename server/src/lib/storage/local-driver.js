@@ -5,6 +5,7 @@ import {
   lstat,
   mkdir,
   open,
+  opendir,
   readFile,
   readdir,
   realpath,
@@ -582,6 +583,53 @@ export function createLocalStorageDriver({ root = resolveLocalStorageRoot() } = 
     }
   }
 
+  async function assertTrackedUploadContents(uploadId, sessionPath) {
+    let hasParts = false;
+    let hasSessionLock = false;
+    for await (const entry of await opendir(sessionPath)) {
+      if (entry.name === "parts" && entry.isDirectory()) {
+        hasParts = true;
+      } else if (entry.name === ".busy.recovery") {
+        throw new StorageBusyError();
+      } else if (entry.name === SESSION_LOCK && entry.isFile()) {
+        hasSessionLock = true;
+      } else if (!["manifest.json", SESSION_LOCK].includes(entry.name) || !entry.isFile()) {
+        throw new StorageError("Unexpected upload session contents require manual review", {
+          code: "STORAGE_UNAVAILABLE",
+        });
+      }
+    }
+    if (hasSessionLock) await assertSessionUnlocked(sessionPath);
+    if (!hasParts) return;
+
+    const rootPath = await getRoot({ create: false });
+    const partsPath = await ensureDirectory(rootPath, [SESSION_DIRECTORY, uploadId, "parts"]);
+    const locks = [];
+    let count = 0;
+    for await (const entry of await opendir(partsPath)) {
+      count += 1;
+      if (count > MAX_PART_NUMBER * 3 || !entry.isFile()) {
+        throw new StorageError("Unexpected upload part contents require manual review", {
+          code: "STORAGE_UNAVAILABLE",
+        });
+      }
+      const part = /^(\d{5})$/.exec(entry.name);
+      const lock = /^\.part-(\d{5})(\.recovery)?$/.exec(entry.name);
+      const partial = /^\.partial-(\d+)-(\d{5})-(.+)$/.exec(entry.name);
+      const number = Number(part?.[1] || lock?.[1] || partial?.[2]);
+      if (!Number.isSafeInteger(number) || number < 1 || number > MAX_PART_NUMBER
+        || (partial && (!Number.isSafeInteger(Number(partial[1])) || Number(partial[1]) < 1
+          || !UUID_PATTERN.test(partial[3])))) {
+        throw new StorageError("Unexpected upload part contents require manual review", {
+          code: "STORAGE_UNAVAILABLE",
+        });
+      }
+      if (lock?.[2]) throw new StorageBusyError();
+      if (lock) locks.push(path.join(partsPath, entry.name));
+    }
+    for (const lockPath of locks) await clearStaleSessionLock(lockPath);
+  }
+
   async function getSession(uploadId) {
     const sessionPath = await getSessionDirectory(uploadId);
     if (!sessionPath) throw new StorageError("Upload session not found");
@@ -628,9 +676,9 @@ export function createLocalStorageDriver({ root = resolveLocalStorageRoot() } = 
   }
 
   return {
-    async getCapacitySnapshot() {
+    async getCapacitySnapshot({ create = true } = {}) {
       try {
-        const rootPath = await getRoot();
+        const rootPath = await getRoot({ create });
         const rootInfo = await lstat(rootPath, { bigint: true });
         if (!rootInfo.isDirectory() || rootInfo.isSymbolicLink()) {
           throw new StorageError("Local storage root is unavailable", { code: "STORAGE_UNAVAILABLE" });
@@ -698,6 +746,62 @@ export function createLocalStorageDriver({ root = resolveLocalStorageRoot() } = 
 
     async hasUpload(uploadId) {
       return Boolean(await getSessionDirectory(uploadId));
+    },
+
+    async assertUploadReferences(uploadId, { ownerId, assetId, clipId, storageKey }) {
+      const sessionPath = await getSessionDirectory(uploadId);
+      if (!sessionPath) return false;
+      const manifest = await readManifest(uploadId, sessionPath);
+      if (manifest.ownerId !== ownerId || manifest.assetId !== assetId
+        || manifest.clipId !== clipId || manifest.key !== storageKey) {
+        throw new StorageError("Upload manifest does not match its database record", {
+          code: "STORAGE_UNAVAILABLE",
+        });
+      }
+      await assertTrackedUploadContents(uploadId, sessionPath);
+      return true;
+    },
+
+    async openUploadInventory() {
+      const rootPath = await getRoot({ create: false });
+      const rootInfo = await lstat(rootPath, { bigint: true });
+      const identity = await readStorageIdentity(rootPath);
+      if (!rootInfo.isDirectory() || rootInfo.isSymbolicLink() || !identity) {
+        throw new StorageError("Original upload inventory requires a verified storage root", {
+          code: "STORAGE_UNAVAILABLE",
+        });
+      }
+      let uploadsPath;
+      try {
+        uploadsPath = await ensureDirectory(rootPath, [SESSION_DIRECTORY]);
+      } catch (error) {
+        if (error.code === "ENOENT") return null;
+        throw error;
+      }
+      const uploadsInfo = await lstat(uploadsPath, { bigint: true });
+      return {
+        directory: await opendir(uploadsPath),
+        identity,
+        device: rootInfo.dev,
+        inode: rootInfo.ino,
+        uploadsDevice: uploadsInfo.dev,
+        uploadsInode: uploadsInfo.ino,
+      };
+    },
+
+    async assertUploadInventory(inventory) {
+      const rootPath = await getRoot({ create: false });
+      const rootInfo = await lstat(rootPath, { bigint: true });
+      const uploadsPath = await ensureDirectory(rootPath, [SESSION_DIRECTORY]);
+      const uploadsInfo = await lstat(uploadsPath, { bigint: true });
+      if (!rootInfo.isDirectory() || rootInfo.isSymbolicLink()
+        || rootInfo.dev !== inventory.device || rootInfo.ino !== inventory.inode
+        || uploadsInfo.dev !== inventory.uploadsDevice || uploadsInfo.ino !== inventory.uploadsInode
+        || await readStorageIdentity(rootPath) !== inventory.identity) {
+        throw new StorageError("Original upload inventory storage root changed", {
+          code: "STORAGE_UNAVAILABLE",
+        });
+      }
     },
 
     async uploadPart(uploadId, partNumber, body, { expectedSizeBytes, commitPart } = {}) {
@@ -823,7 +927,7 @@ export function createLocalStorageDriver({ root = resolveLocalStorageRoot() } = 
       return (await listPartFiles(uploadId)).map(part => part.partNumber);
     },
 
-    async recoverUpload(uploadId) {
+    async recoverUpload(uploadId, { preserveUnattributedAssemblies = false } = {}) {
       const { sessionPath, manifest } = await getSession(uploadId);
       const release = await acquireSessionLock(sessionPath);
       try {
@@ -836,7 +940,9 @@ export function createLocalStorageDriver({ root = resolveLocalStorageRoot() } = 
         } catch (error) {
           if (error.code !== "ENOENT") throw error;
         }
-        if (destinationDirectory) await removeStalePartials(destinationDirectory);
+        if (destinationDirectory && !preserveUnattributedAssemblies) {
+          await removeStalePartials(destinationDirectory);
+        }
       } finally {
         await release();
       }
@@ -997,10 +1103,10 @@ export function createLocalStorageDriver({ root = resolveLocalStorageRoot() } = 
       }
     },
 
-    async abortUpload(uploadId) {
+    async abortUpload(uploadId, options) {
       const sessionPath = await getSessionDirectory(uploadId);
       if (!sessionPath) return false;
-      await this.recoverUpload(uploadId);
+      await this.recoverUpload(uploadId, options);
       const release = await acquireSessionLock(sessionPath);
       try {
         const partsPath = path.join(sessionPath, "parts");

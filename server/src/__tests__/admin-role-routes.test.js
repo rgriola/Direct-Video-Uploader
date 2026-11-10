@@ -46,7 +46,8 @@ beforeEach(async () => {
     }));
 
     app = Fastify({ logger: false });
-    app.decorate('authenticate', async (request) => {
+    app.decorate('authenticate', async (request, reply) => {
+        if (!actor) return reply.code(401).send({ error: 'Unauthorized' });
         request.user = { ...actor };
     });
     app.decorate('requireRole', requireRole);
@@ -55,11 +56,39 @@ beforeEach(async () => {
     app.decorate('userSockets', new Map());
     app.decorate('iosSockets', new Set());
     app.decorate('adminSockets', new Set());
+    app.decorate('monitoring', {
+        snapshot: () => ({ enabled: true, checkedAt: null, checks: [], stale: false }),
+    });
     await app.register(adminRoutes);
 });
 
 afterEach(async () => {
     await app.close();
+});
+
+describe('GET /api/admin/monitoring', () => {
+    it('restricts monitoring to super admins and disables caching', async () => {
+        actor = null;
+        expect((await app.inject({ method: 'GET', url: '/api/admin/monitoring' })).statusCode).toBe(401);
+        actor = TEAM_ADMIN;
+        expect((await app.inject({ method: 'GET', url: '/api/admin/monitoring' })).statusCode).toBe(403);
+        actor = { ...TEAM_ADMIN, role: 'USER' };
+        expect((await app.inject({ method: 'GET', url: '/api/admin/monitoring' })).statusCode).toBe(403);
+        actor = SUPER;
+        const response = await app.inject({ method: 'GET', url: '/api/admin/monitoring' });
+        expect(response.statusCode).toBe(200);
+        expect(response.headers['cache-control']).toBe('no-store');
+        expect(response.json()).toMatchObject({ enabled: true, checks: [] });
+    });
+
+    it('reports an unavailable monitoring service instead of claiming it is disabled', async () => {
+        actor = SUPER;
+        app.monitoring = null;
+        const response = await app.inject({ method: 'GET', url: '/api/admin/monitoring' });
+        expect(response.statusCode).toBe(503);
+        expect(response.headers['cache-control']).toBe('no-store');
+        expect(response.json()).toEqual({ error: 'Monitoring service is unavailable' });
+    });
 });
 
 describe('PATCH /api/admin/users/:id/role', () => {
