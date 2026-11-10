@@ -8,6 +8,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { requireRole } from '../lib/authorization.js';
+import { createMonitoringService } from '../lib/monitoring.js';
 import { hashPin } from '../lib/utils.js';
 import {
     acquireIntegrationDatabaseLock, INTEGRATION_SETUP_TIMEOUT_MS, waitForBlockedQuery,
@@ -259,6 +260,16 @@ integration('role and organization endpoint matrix', () => {
         app.decorate('iosSockets', new Set());
         app.decorate('adminSockets', new Set());
         app.decorate('socketAuthState', { revision: 0 });
+        const monitoring = createMonitoringService({
+            checks: [{
+                id: 'matrix-status',
+                label: 'Matrix status',
+                category: 'service',
+                collect: async () => ({ status: 'warning', message: 'matrix-only monitoring result' }),
+            }],
+        });
+        await monitoring.runOnce();
+        app.decorate('monitoring', monitoring);
         await registerApplicationRoutes(app);
         await app.register(localUploadRoutes, { root: uploadRoot });
         await app.ready();
@@ -359,6 +370,20 @@ integration('role and organization endpoint matrix', () => {
             },
         },
         { route: 'GET /api/admin/status', method: 'GET', url: '/api/admin/status', statuses: SUPER },
+        {
+            route: 'GET /api/admin/monitoring', method: 'GET', url: '/api/admin/monitoring', statuses: SUPER,
+            check: async response => {
+                if (response.statusCode === 200) {
+                    expect(response.headers['cache-control']).toBe('no-store');
+                    expect(response.json()).toMatchObject({
+                        enabled: true,
+                        checks: [{ id: 'matrix-status', status: 'warning', message: 'matrix-only monitoring result' }],
+                    });
+                } else {
+                    expect(response.body).not.toContain('matrix-only monitoring result');
+                }
+            },
+        },
         {
             route: 'GET /api/admin/stats', method: 'GET', url: '/api/admin/stats', statuses: ALL,
             check: async (response, actor) => {
