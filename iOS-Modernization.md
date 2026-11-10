@@ -2,7 +2,7 @@
 
 _Drafted: October 19, 2026 · Updated: November 9, 2026_
 _Owner: Rod_
-_Status: **In progress** — Step 1 verified; Steps 2.1 through 2.5, the Step 3.1 routing foundation, Step 3.2 thumbnails, Step 4.1 local storage, and Step 4.2a–b upload-session foundations are merged to `main`. The owner reported deploying the earlier server and migrations and testing the existing Mux flow successfully. The server-only Step 4.2c Mux handoff is implemented on a feature branch and disabled by default; isolated real-Mux validation, client integration, and production storage safeguards remain open._
+_Status: **In progress** — Step 1 verified; Steps 2.1 through 2.5, the Step 3.1 routing foundation, Step 3.2 thumbnails, Step 4.1 local storage, and the Step 4.2a–d server foundations are merged to `main`. The owner reported deploying storage safety and testing the existing Mux flow successfully. Step 4.2e encrypted original-file backups and Step 4.2f dashboard monitoring are implemented on feature branches and are opt-in. Actual backup and restore validation, proactive alerts, isolated real-Mux handoff validation, and client integration remain open._
 
 ```mermaid
 flowchart TD
@@ -709,7 +709,8 @@ sequenceDiagram
 - [ ] Disk guardrails:
   - [x] Experimental capacity reservations and free-space checks before admission
     and writes, with explicit server-configured thresholds.
-  - [ ] Super Admin dashboard shows storage used.
+  - [x] Opt-in Super Admin dashboard shows original storage used and per-volume
+    thresholds, plus original and database backup job/freshness status.
   - [ ] Proactive alert below a threshold.
 - [ ] Backups: originals are **not** covered by the nightly `pg_dump`. The selected
   policy is hourly encrypted copies to a separate external drive and Backblaze B2,
@@ -797,6 +798,21 @@ sequenceDiagram
 - [ ] Verify the real B2 and external-drive backups and perform recovery drills;
   database and original-file snapshots are not automatically consistent.
 - [ ] Add independent failure/freshness alerts and complete the remaining rollout gates.
+
+### 4.2f Storage and Backup Dashboard Monitoring
+
+- [x] Add opt-in, Super Admin-only checks for source and backup volume capacity,
+  original-file backup verification, and local/offsite database backup jobs.
+- [x] Record independent job outcomes and detect missed, stale, interrupted at
+  the freshness limit, or partially failed backups. The guarded database offsite
+  wrapper refuses to run without a recent, recorded local archive and serializes
+  monitored database jobs.
+- [x] Provide a common check interface and subscriber hook for future monitored
+  services and notification providers.
+- [ ] Configure the real volumes, thresholds, monitoring state, and LaunchAgents;
+  verify failure/recovery and restore procedures on the home server.
+- [ ] Add independently delivered failure/freshness alerts. The dashboard alone
+  cannot notify an operator while it is closed or the server is down.
 
 ### 4.2 Upload Protocol (Why Parts)
 

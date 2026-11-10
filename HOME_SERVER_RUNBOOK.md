@@ -302,13 +302,18 @@ restart Fastify using the commands above so the server and dashboard are updated
 
 ## Backup & restore
 
-**Manual database backup:**
+The two direct commands below are for installations **without** the optional
+monitoring wrappers. After installing those wrappers, use the monitored manual
+commands in the monitoring section instead; direct execution bypasses the
+shared database lock and does not update receipts.
+
+**Manual database backup (unmonitored):**
 ```bash
 ~/apps/direct-video-uploader/scripts/pg-backup.sh
 ```
 Output: `~/backups/directvideo_<timestamp>.sql.gz.gpg` (gzip + gpg symmetric AES256, passphrase at `~/.backup-passphrase`, 7-day local retention).
 
-**Manual offsite sync:**
+**Manual offsite sync (unmonitored):**
 ```bash
 ~/apps/direct-video-uploader/scripts/pg-backup-offsite-sync.sh
 ```
@@ -517,7 +522,8 @@ tail -n 40 "$HOME/Library/Logs/com.msfixer.original-backup.err.log"
 
 Check the timestamp and complete success messages for **each** run and both
 destinations; a start or a single verified destination is not success. There is
-no proactive failure or freshness alert yet. Investigate missing/stale runs,
+an optional Super Admin monitoring dashboard described below, but no proactive
+failure or freshness alert yet. Investigate missing/stale runs,
 locked Keychain, missing drives, B2 permissions/lifecycle, full destinations,
 and nonzero exits. For deeper diagnosis, run narrowly scoped rclone commands
 locally without debug logging or printing the config; protect any diagnostic
@@ -597,6 +603,206 @@ Reconcile Mux and upload state before enabling either experimental flag.
 
 - Uptime: UptimeRobot free tier, monitoring `https://ms-fixer.com/api/health` every 5 minutes (also safe to point at `https://dev.ms-fixer.com/api/health`, same backend).
 - Cloudflare Access protects the dashboard (site root) on both `ms-fixer.com` and `dev.ms-fixer.com` — bypassed for `/api/*`, `/socket.io/*`, `/uploads/*`, `/clips/*` on each.
+
+### Storage and backup dashboard monitoring (opt-in)
+
+This feature is **disabled by default** and does not install or start any backup
+job. It reports to the Super Admin dashboard only. It does **not** send Slack,
+email, or other external notifications, and cannot notify anyone while the
+dashboard is closed or the server is down. UptimeRobot's existing health check
+is separate and does not check storage or backups. Proactive storage/backup
+alerts remain a production rollout prerequisite; keep both experimental
+original-upload and Mux flags off.
+
+When enabled, Fastify checks every five minutes and the dashboard refreshes
+every 30 seconds. The panel reports:
+
+- Free space on the original source volume, original backup drive, and database
+  backup volume. Warning and critical thresholds are explicit byte counts; free
+  space **at or below** a threshold triggers that level. The source and external
+  original-backup identities and mount points must match the configured values.
+- Original-root bytes on disk and, if `UPLOAD_STORAGE_MAX_BYTES` is set, the
+  configured budget and a separately configured used-byte warning. These numbers
+  **exclude outstanding upload reservations and write leases** and are not an
+  admission-capacity calculation. The check walks original-storage filesystem
+  metadata each cycle; investigate timeouts or significant I/O on large trees.
+- Separate last-result/freshness checks for local and B2 originals, the nightly
+  local database dump, and the weekly database offsite sync. Originals are
+  reported successful only after the existing crypt checks finish. Database
+  status describes a completed job and recorded local archive, **not** a
+  verified SQL restore or an independent check of B2 contents. Retained-only
+  originals are not included in recurring crypt checks.
+
+Missing receipts show a warning; failed, stale, or overlong runs show critical.
+An unreadable receipt, missing/wrong mount, failed check, or timed-out check
+shows unknown rather than healthy. A previously completed backup can become
+stale while a long run is still in progress. The default freshness limits are
+three hours for each original destination, 36 hours for the local database,
+and nine days for the offsite database sync. Adjust these for real run times.
+The panel also warns if the monitoring cycle itself becomes stale. A job that
+cannot start or record a receipt may show missing, stale, or unknown rather
+than an immediate failure; continue checking LaunchAgent logs.
+
+#### Configuration and installation
+
+Perform this only after deploying the code **and** completing the separate
+original-backup setup above. No credentials should be pasted into chat. The
+Fastify process and all monitored jobs must run as the same macOS user.
+
+1. Create a private state directory on the home server's system disk, outside
+   the source and backup volumes. If it already exists, inspect its ownership
+   and permissions rather than replacing it:
+   ```bash
+   MONITOR_STATE="$HOME/.dvu-monitor"
+   mkdir -m 700 "$MONITOR_STATE"
+   ls -ld "$MONITOR_STATE"
+   ```
+   The directory must be owned by this user, mode `700`, and not a symlink.
+   The private receipts record timestamps and, for database backups, the
+   archive basename and file metadata; they contain neither passwords nor
+   backup contents. Losing or replacing them makes status unconfirmed until
+   monitored jobs run again.
+
+2. Privately edit the server's environment, using actual **absolute** paths
+   and the identities from the existing original-backup setup. Do not copy
+   placeholders, shell variables, or `~` literally into `.env`. Select free
+   space thresholds appropriate to each real volume; warning must be greater
+   than critical. Confirm the database volume with `df` and the mount/device
+   with `diskutil`; `/` is appropriate only if the database directory is on
+   the system volume. Directories below the chosen volumes must not contain
+   symlinks or nested mounts.
+   ```dotenv
+   STORAGE_LOCAL_ROOT="/Volumes/REPLACE_SOURCE/REPLACE_STORAGE_ROOT"
+   DVU_MONITORING_ENABLED="true"
+   DVU_MONITOR_STATE_DIR="/Users/REPLACE_USER/.dvu-monitor"
+   DVU_MONITOR_SOURCE_VOLUME="/Volumes/REPLACE_SOURCE"
+   DVU_MONITOR_SOURCE_ID="REPLACE_WITH_SOURCE_UUID"
+   DVU_MONITOR_SOURCE_WARNING_FREE_BYTES="REPLACE_WITH_BYTES"
+   DVU_MONITOR_SOURCE_CRITICAL_FREE_BYTES="REPLACE_WITH_BYTES"
+   DVU_MONITOR_BACKUP_VOLUME="/Volumes/REPLACE_BACKUP"
+   DVU_MONITOR_BACKUP_ID="REPLACE_WITH_BACKUP_VOLUME_UUID"
+   DVU_MONITOR_BACKUP_WARNING_FREE_BYTES="REPLACE_WITH_BYTES"
+   DVU_MONITOR_BACKUP_CRITICAL_FREE_BYTES="REPLACE_WITH_BYTES"
+   DVU_MONITOR_DATABASE_VOLUME="/"
+   DVU_MONITOR_DATABASE_DIR="/Users/REPLACE_USER/backups"
+   DVU_MONITOR_DATABASE_WARNING_FREE_BYTES="REPLACE_WITH_BYTES"
+   DVU_MONITOR_DATABASE_CRITICAL_FREE_BYTES="REPLACE_WITH_BYTES"
+   DVU_MONITOR_ORIGINAL_STALE_HOURS="3"
+   DVU_MONITOR_DATABASE_LOCAL_STALE_HOURS="36"
+   DVU_MONITOR_DATABASE_OFFSITE_STALE_HOURS="216"
+   ```
+   If `UPLOAD_STORAGE_MAX_BYTES` is set, also set
+   `DVU_MONITOR_SOURCE_WARNING_USED_BYTES` to a positive byte count below that
+   maximum. If `UPLOAD_STORAGE_MIN_FREE_BYTES` is set, the source critical
+   free-space threshold must be at least that minimum. Invalid monitoring
+   configuration appears as a critical dashboard check and is logged; it does
+   not enable upload sessions or prevent Fastify from starting. If the Fastify
+   plist already sets an environment variable, update it there too: inherited
+   environment values take precedence over the server's `.env`.
+
+3. Add `--monitor-state-dir "$MONITOR_STATE"` to the existing original-backup
+   `ARGS` array from the setup above. Run a foreground backup and confirm both
+   destinations complete successfully. To update an existing hourly LaunchAgent,
+   wait for any active run to finish, preserve its original plist for rollback,
+   generate a candidate outside `~/Library/LaunchAgents`, and inspect it:
+   ```bash
+   ARGS+=(--monitor-state-dir "$MONITOR_STATE")
+   python3 "$SCRIPT" "${ARGS[@]}"
+   CANDIDATE="$MONITOR_STATE/original-backup.candidate.plist"
+   (umask 077; set -o noclobber; python3 "$SCRIPT" "${ARGS[@]}" --print-launchd > "$CANDIDATE")
+   plutil -lint "$CANDIDATE"
+   ```
+   After reviewing the candidate, replace the original LaunchAgent plist and
+   reload it using the same controlled procedure as the original setup. Keep
+   its schedule and private logs. Manual original runs without the monitoring
+   argument do not update receipts.
+
+4. Update the existing nightly database and weekly offsite LaunchAgent plists
+   **after their current jobs finish**. Save private copies for rollback.
+   Preserve each plist's label, `StartCalendarInterval`, environment, log paths,
+   and other settings; replace only `ProgramArguments`. Use the absolute
+   Python 3 executable from `command -v python3` and replace all `REPLACE_USER`
+   and `REPLACE_PYTHON3` placeholders. Do not add a second `ProgramArguments`
+   key. If a plist also has a `Program` key, remove it or set it to the same
+   Python executable; leaving the old program there can bypass the wrapper.
+   For the nightly dump:
+   ```xml
+   <key>ProgramArguments</key>
+   <array>
+     <string>REPLACE_PYTHON3</string>
+     <string>/Users/REPLACE_USER/apps/direct-video-uploader/scripts/monitor_job.py</string>
+     <string>--state-dir</string><string>/Users/REPLACE_USER/.dvu-monitor</string>
+     <string>--check</string><string>database-local</string>
+     <string>--created-archive-dir</string><string>/Users/REPLACE_USER/backups</string>
+     <string>--archive-max-age-hours</string><string>36</string>
+     <string>--</string><string>/bin/bash</string>
+     <string>/Users/REPLACE_USER/apps/direct-video-uploader/scripts/pg-backup.sh</string>
+   </array>
+   ```
+   For the weekly offsite sync:
+   ```xml
+   <key>ProgramArguments</key>
+   <array>
+     <string>REPLACE_PYTHON3</string>
+     <string>/Users/REPLACE_USER/apps/direct-video-uploader/scripts/monitor_job.py</string>
+     <string>--state-dir</string><string>/Users/REPLACE_USER/.dvu-monitor</string>
+     <string>--check</string><string>database-offsite</string>
+     <string>--require-archive-dir</string><string>/Users/REPLACE_USER/backups</string>
+     <string>--archive-max-age-hours</string><string>36</string>
+     <string>--</string><string>/bin/bash</string>
+     <string>/Users/REPLACE_USER/apps/direct-video-uploader/scripts/pg-backup-offsite-sync.sh</string>
+   </array>
+   ```
+   The archive directory must match the one actually used by **both** scripts
+   and the dashboard; the wrapper refuses a symlink there. Keep
+   `--archive-max-age-hours` aligned with
+   `DVU_MONITOR_DATABASE_LOCAL_STALE_HOURS`. Validate both plists with
+   `plutil -lint`, then reload the existing LaunchAgents and inspect their
+   status and private logs. Do not create duplicate jobs.
+
+   **Intentional safety change:** monitored database jobs take a shared lock.
+   The offsite wrapper waits for another monitored database job and then
+   refuses to run `rclone sync` unless a recent successful local receipt
+   identifies an unchanged nonempty archive. Missing, stale, failed,
+   interrupted, or changed local backups block the sync. If the monitoring
+   directory or lock is unavailable, the local dump is still attempted but
+   its wrapper exits nonzero; the offsite sync is blocked. The offsite sync is
+   also blocked if its start receipt cannot be recorded. Run manual database
+   jobs through these same wrapper arguments. Direct runs bypass the lock and
+   receipts; do not modify the backup directory during an offsite sync.
+   The underlying `rclone sync` still mirrors local deletions when it runs;
+   this guard is not an immutable or independently verified remote backup.
+
+   For a manual run after installation, use the same private state and archive
+   paths and the same age limit as the plists. These commands create a real
+   dump and, in the second case, perform a real B2 sync:
+   ```bash
+   MONITOR_STATE="$HOME/.dvu-monitor"
+   MONITOR_SCRIPT="$HOME/apps/direct-video-uploader/scripts/monitor_job.py"
+   python3 "$MONITOR_SCRIPT" --state-dir "$MONITOR_STATE" --check database-local \
+     --created-archive-dir "$HOME/backups" --archive-max-age-hours 36 -- \
+     /bin/bash "$HOME/apps/direct-video-uploader/scripts/pg-backup.sh"
+   python3 "$MONITOR_SCRIPT" --state-dir "$MONITOR_STATE" --check database-offsite \
+     --require-archive-dir "$HOME/backups" --archive-max-age-hours 36 -- \
+     /bin/bash "$HOME/apps/direct-video-uploader/scripts/pg-backup-offsite-sync.sh"
+   ```
+   Adjust these example paths and `36` if the deployed configuration differs.
+
+5. Rebuild the dashboard and restart Fastify as described in **Rebuilding the
+   admin dashboard**, then sign in as Super Admin and inspect each check. Allow
+   one monitoring cycle and the next scheduled jobs, or deliberately run the
+   monitored jobs after reviewing their effects. Verify failure and recovery
+   with a safe isolated test setup; never simulate failure by deleting a real
+   backup or disconnecting an in-use volume. Check LaunchAgent exit status and
+   logs as well. A successful receipt does not replace periodic restore drills.
+
+For future integrations, server code can register additional checks using
+`fastify.monitoring.registerCheck({ id, label, category, collect })` and
+subscribe to periodic snapshots with `fastify.monitoring.subscribe(listener)`.
+Checks return a status (`ok`, `warning`, `critical`, or `unknown`) and a safe
+message; `category` is `storage`, `backup`, or `service`. Subscriber failures
+and check timeouts are logged. No notification provider, retry/deduplication
+policy, or external monitoring service is configured by these hooks.
 
 ## Rollback (see main plan doc for full detail)
 
