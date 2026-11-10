@@ -58,7 +58,7 @@ curl https://ms-fixer.com/api/health           # through tunnel, production doma
 curl https://dev.ms-fixer.com/api/health       # through tunnel, secondary domain (should bypass Cloudflare Access)
 ```
 
-`lsof -iTCP:5432 -sTCP:LISTEN` and `lsof -iTCP:3000 -sTCP:LISTEN` should both show `localhost` only, never `*`.
+`lsof -iTCP:5432 -sTCP:LISTEN` and `lsof -iTCP:3000 -sTCP:LISTEN` both should show `localhost` only, never `*`.
 
 ## Rebuilding the admin dashboard
 
