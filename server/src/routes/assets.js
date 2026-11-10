@@ -183,7 +183,7 @@ export default async function assetRoutes(fastify) {
                 }
 
                 if (staleClip && (staleClip.muxAssetId || staleClip.muxPlaybackId
-                    || staleClip.storageUrl || staleClip.streamUrl || staleClip.thumbnailUrl
+                    || staleClip.storageUrl || staleClip.storageKey || staleClip.streamUrl || staleClip.thumbnailUrl
                     || await prisma.muxAssetReference.findFirst({
                     where: { assetId: id, clipId: staleClip.id },
                     select: { muxAssetId: true },

@@ -109,13 +109,36 @@ This DB uses Prisma migrations (not `db push`). Workflow:
 ## Experimental original uploads and Mux handoff
 
 Keep `UPLOAD_SESSIONS_ENABLED` and `MUX_ORIGINAL_INGEST_ENABLED` **off** on this
-shared home backend; `dev.ms-fixer.com` is not isolated staging. Capacity and
-free-space safeguards, original backups, an expiry/orphan sweep, tunnel and
-proxy log verification, isolated real-Mux testing, and client integration remain
-open. Recovery for failed linked Mux assets and late webhooks after hard deletion
-also remains open. When deploying a server version containing the handoff, back
-up the database and apply its migration **before** starting the new code even if
-both flags remain off.
+shared home backend; `dev.ms-fixer.com` is not isolated staging. The server now
+has experimental capacity and free-space checks, but original backups,
+proactive storage alerts, an expiry/orphan sweep, tunnel and proxy log
+verification, isolated real-Mux testing, and client integration remain open.
+Recovery for failed linked Mux assets and late webhooks after hard deletion also
+remains open. Back up the database and apply all pending migrations **before**
+starting the new server code, even if both flags remain off.
+
+On an isolated test server only, upload sessions require explicit positive
+`UPLOAD_STORAGE_MAX_BYTES` and `UPLOAD_STORAGE_MIN_FREE_BYTES` values; there are
+no defaults. Choose them after measuring the intended storage root and volume.
+The first is a conservative budget for the root's files and reservations; the
+second is free space to retain on the entire filesystem. For example, replace
+the path below with the verified root:
+
+```bash
+df -k /path/to/originals
+du -sk /path/to/originals
+```
+
+`du` reports allocated blocks, whereas the guard counts apparent file lengths
+and reservations; these numbers are not interchangeable. One GiB is
+1,073,741,824 bytes. Provision an empty new root on the intended mount, or keep
+the existing root and its `.dvu-storage-id`; do not reset the marker or delete
+files/leases to bypass a safeguard. Use one host and the same root and limits
+for all upload-writing processes. Stop old processes before changing settings.
+A copied marker does not prove that the correct volume is mounted. See the
+[upload-session API guide](docs/UPLOAD_SESSION_API.md#capacity-and-free-space-policy)
+for accounting, recovery, and limitations; these checks do not replace backups
+or independent disk monitoring.
 
 Do not use `DEBUG=true`: the Mux SDK can log signed source URLs, and the server
 refuses that setting when original ingest is enabled or prior attempts exist.

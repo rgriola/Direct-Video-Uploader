@@ -3,11 +3,11 @@
 This server-only API stores a native original and can optionally hand it to Mux
 for playback. Upload sessions and the Mux handoff are **separately disabled by
 default**. Existing clients continue using direct-to-Mux uploads. Do not enable
-either feature on the home server or in production yet: free-space checks,
-capacity limits across sessions, backups, an automatic expiry/orphan sweep,
-proxy-log verification, isolated real-Mux validation, and client integration
-remain open. The dev and production hostnames currently share the home backend;
-the dev hostname is not an isolated test environment.
+either feature on the home server or in production yet: backups, proactive
+storage alerts, an automatic expiry/orphan sweep, proxy-log verification,
+isolated real-Mux validation, and client integration remain open. The dev and
+production hostnames currently share the home backend; the dev hostname is not
+an isolated test environment.
 
 ## Isolated development configuration
 
@@ -20,9 +20,78 @@ node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
 ```
 
 Configure `STORAGE_DRIVER=local` and an absolute `STORAGE_LOCAL_ROOT` outside
-the repository. The server refuses to start with an invalid flag, a missing or
-short signing secret, or the JWT secret reused as the upload signing secret.
-Production also requires an explicit absolute storage root.
+the repository. Provision an empty new root on the intended mounted volume, or
+preserve the verified `.dvu-storage-id` marker when using an existing root. An
+unmarked nonempty root requires investigation; the server will not initialize
+a new identity over it.
+
+Set both `UPLOAD_STORAGE_MAX_BYTES` and `UPLOAD_STORAGE_MIN_FREE_BYTES` to
+positive decimal byte counts appropriate for that root and volume. There are
+no defaults. The server refuses to enable upload sessions without both limits,
+with an unsupported storage driver, an invalid flag, a missing or short signing
+secret, or the JWT secret reused as the upload signing secret. Production also
+requires an explicit absolute storage root. One GiB is 1,073,741,824 bytes.
+
+### Capacity and free-space policy
+
+The storage budget covers all regular files under the original storage root,
+including retained originals, staged and orphaned files, and the marker. It
+uses apparent file lengths; hard-linked paths are counted separately, so it is
+conservative and is not the same measurement as physical disk blocks. Symlinks,
+special files, nested mounted filesystems, unverified roots, and measurement
+failures stop new writes rather than being ignored.
+
+Each unfinished session reserves twice its declared size plus 1 MiB for
+metadata. This covers staged parts, duplicate-part retries, and assembly.
+Each active part or assembly write also holds a durable reservation for its
+declared write size plus 64 KiB. Admission is serialized across server
+processes and requires both:
+
+- measured root bytes plus all unreleased session reservations, active write
+  reservations, and the new session reservation to be at most
+  `UPLOAD_STORAGE_MAX_BYTES`; and
+- filesystem space available to the server to be at least
+  `UPLOAD_STORAGE_MIN_FREE_BYTES` plus those outstanding and new reservations.
+
+Before each part or assembly write, the server rechecks the root budget and
+free space against all active write reservations and the proposed write.
+Already-written bytes may also be covered by reservations, so admission can
+stop conservatively before the folder is actually full. Retained originals and
+untracked files still count after a session reservation is released. Limits
+apply globally, not per user.
+
+An equivalent create retry does not allocate another session or require free
+space. Low capacity returns **507** for a new session or additional write;
+status checks and abort/cleanup remain available. Once space is restored,
+clients can retry and request new signed URLs if needed. A missing or
+unverifiable root, an unknown legacy reservation, or unavailable capacity
+measurement returns **503**. The server logs these failures, but it does not
+yet proactively alert while the system is idle.
+
+Reservations are released only after session files have been removed or
+completion and cleanup have been verified. A failed abort, expiry cleanup, or
+moderation cleanup keeps the reservation. Existing sessions are conservatively
+backfilled by the migration; a session without a known size blocks capacity
+admission until its data has been investigated and cleaned. An owner can retry
+abort or access a completed session to retry its cleanup; removed assets use
+moderation reconciliation. No automatic expiry/orphan sweep is provided.
+
+The free-space check is a snapshot, not an operating-system disk quota. Other
+processes, filesystem metadata, snapshots, quotas, or a changing mount can
+consume space after the check; in-flight writes are not stopped merely because
+another process consumes the reserve. Actual `ENOSPC`/`EDQUOT` write failures
+are logged and reported as 507. Monitor the volume independently, keep the root
+private, and do not modify it while uploads are running.
+
+All upload-writing processes must use this code, the same database, the same
+local root and limits, and the same host. Stop old processes before deploying or
+changing limits. A dead same-host writer's lease is reclaimed conservatively on
+a later capacity check; an unverified other-host or live-looking PID lease is
+retained for investigation. Do not delete leases or storage files merely to
+make capacity available. Verify the actual mount and backups independently;
+the marker alone cannot distinguish a copied volume. A stalled upload request
+can keep its write reservation until the request or server process ends; do not
+reclaim a lease while its writer may still be active.
 
 Treat each signed URL as a bearer credential. Use HTTPS, do not share or log
 it, and ensure the reverse proxy and tunnel also suppress query strings.
@@ -137,8 +206,9 @@ Interrupted streams do not publish partial parts.
 
 Invalid, expired, suspended-account, or moderated-asset signed PUTs return 403.
 An expired session is reported as 410 when an operation requires it to be
-open. A missing or mismatched storage location, or a missing completed file,
-is reported as 503 instead of claiming the original is available.
+open. A missing or mismatched storage location, an unknown reservation, or a
+missing completed file is reported as 503 instead of claiming the original is
+available. Insufficient capacity or free space is reported as 507.
 
 With the Mux handoff disabled, completion stores the original but does not make
 it playable, and the asset and clip remain `UPLOADING`. With the handoff

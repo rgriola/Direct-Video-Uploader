@@ -6,6 +6,7 @@ import { withAssetMediaLock } from './media-lock.js';
 import { LocalMediaError, localUploadPath, removeLocalUpload } from './local-media.js';
 import { createStorageDriver } from './storage/driver.js';
 import { StorageError } from './storage/local-driver.js';
+import { releaseStorageReservation } from './storage/capacity.js';
 import * as slack from './slack.js';
 import { notifyDashboardAssetChange } from '../ws/dashboard-notifications.js';
 import { userRoom } from '../ws/rooms.js';
@@ -378,7 +379,8 @@ export function createMediaReconciler({
                             if (clip.storageKey === session.storageKey && updated.count !== 1) {
                                 throw new Error('Original clip changed during cleanup');
                             }
-                        });
+                            await releaseStorageReservation(tx, session.id);
+                        }, { timeout: 60000 });
                     });
                     if (!locked.acquired) pending = true;
                 } catch (err) {

@@ -35,6 +35,10 @@ export async function registerApplicationRoutes(fastify) {
             storage: createStorageDriver({ provider: uploadConfig.storageDriver }),
             storageDriver: uploadConfig.storageDriver,
             signingSecret: uploadConfig.signingSecret,
+            capacityLimits: {
+                maxStorageBytes: uploadConfig.maxStorageBytes,
+                minFreeBytes: uploadConfig.minFreeBytes,
+            },
             ...(handoff ? { handoff } : {}),
         });
     }

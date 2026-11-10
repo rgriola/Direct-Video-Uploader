@@ -4,6 +4,7 @@ import { withAssetMediaLock } from '../lib/media-lock.js';
 import { signUploadPart, verifyUploadPart } from '../lib/upload-part-signing.js';
 import { assertAcceptingUploads, createUploadSessionService, UploadSessionError } from '../lib/upload-sessions.js';
 import { MAX_PART_SIZE_BYTES, StorageError } from '../lib/storage/local-driver.js';
+import { createStorageCapacity } from '../lib/storage/capacity.js';
 
 const MAX_UPLOAD_SIZE_BYTES = 500 * 1024 * 1024;
 const PART_URL_TTL_MS = 5 * 60 * 1000;
@@ -21,6 +22,8 @@ const ERROR_STATUS = {
     INCOMPLETE_UPLOAD: 409,
     INTEGRITY_MISMATCH: 422,
     STORAGE_UNAVAILABLE: 503,
+    STORAGE_CHANGED: 503,
+    STORAGE_CAPACITY_EXCEEDED: 507,
     PART_CONFLICT: 409,
     PART_SIZE_MISMATCH: 400,
     PART_TOO_LARGE: 413,
@@ -89,11 +92,19 @@ async function handleErrors(reply, work, { closeConnection = false } = {}) {
         return await work();
     } catch (error) {
         if ((error instanceof UploadSessionError || error instanceof StorageError) && ERROR_STATUS[error.code]) {
-            if (error.code === 'STORAGE_UNAVAILABLE') {
+            if (error.code === 'STORAGE_UNAVAILABLE' || error.code === 'STORAGE_CHANGED') {
                 reply.request.log.error({ err: { message: error.message } }, 'Original storage is unavailable');
+            }
+            if (error.code === 'STORAGE_CAPACITY_EXCEEDED') {
+                reply.request.log.warn({ code: error.code }, 'Original storage capacity is insufficient');
             }
             if (closeConnection) reply.header('Connection', 'close');
             return reply.status(ERROR_STATUS[error.code]).send({ error: error.message });
+        }
+        if (error?.code === 'ENOSPC' || error?.code === 'EDQUOT') {
+            reply.request.log.error({ code: error.code }, 'Original storage write failed for lack of space');
+            if (closeConnection) reply.header('Connection', 'close');
+            return reply.status(507).send({ error: 'Original storage has insufficient free space' });
         }
         throw error;
     }
@@ -104,6 +115,8 @@ export default async function uploadSessionRoutes(fastify, {
     storage,
     storageDriver = 'local',
     signingSecret,
+    capacity,
+    capacityLimits,
     now = () => new Date(),
     withLock = withAssetMediaLock,
     handoff,
@@ -111,8 +124,9 @@ export default async function uploadSessionRoutes(fastify, {
     if (!storage || typeof signingSecret !== 'string' || Buffer.byteLength(signingSecret) < 32) {
         throw new TypeError('Upload routes require a storage driver and signing secret');
     }
+    const storageCapacity = capacity ?? createStorageCapacity({ db, storage, ...capacityLimits });
     const sessions = createUploadSessionService({
-        db, storage, storageDriver, now, onCompleted: handoff?.onCompleted,
+        db, storage, storageDriver, capacity: storageCapacity, now, onCompleted: handoff?.onCompleted,
     });
 
     async function serializeForResponse(session) {

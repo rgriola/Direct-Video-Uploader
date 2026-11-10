@@ -8,6 +8,7 @@ import {
 } from "./helpers/database-lock.js";
 import { createLocalStorageDriver } from "../lib/storage/local-driver.js";
 import { createUploadSessionService, UploadSessionError } from "../lib/upload-sessions.js";
+import { unrestrictedTestCapacity } from "./helpers/storage-capacity.js";
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 if (process.env.CI && !databaseUrl) {
@@ -75,6 +76,7 @@ integration("upload sessions against PostgreSQL and local storage", () => {
     service = createUploadSessionService({
       db: prisma,
       storage,
+      capacity: unrestrictedTestCapacity,
       now: () => new Date(currentTime),
     });
   });
@@ -232,6 +234,7 @@ integration("upload sessions against PostgreSQL and local storage", () => {
     const expiredService = createUploadSessionService({
       db: prisma,
       storage,
+      capacity: unrestrictedTestCapacity,
       now: () => new Date(currentTime.getTime() + 25 * 60 * 60 * 1000),
     });
     const replacing = expiredService.create({ ownerId, assetId, clipId });
@@ -318,6 +321,7 @@ integration("upload sessions against PostgreSQL and local storage", () => {
     service = createUploadSessionService({
       db: prisma,
       storage,
+      capacity: unrestrictedTestCapacity,
       now: () => new Date(currentTime),
       sessionTtlMs: 1_000,
     });
