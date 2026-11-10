@@ -30,11 +30,15 @@ import { setupWebSocket } from './ws/handler.js';
 import { startMuxSync, stopMuxSync } from './jobs/mux-sync.js';
 import { startMuxOriginalIngest } from './jobs/mux-original-ingest.js';
 import { startUploadCleanup, stopUploadCleanup } from './jobs/upload-cleanup.js';
+import { startUploadSessionCleanup } from './jobs/upload-session-cleanup.js';
 import { CORS_ORIGINS, WS_CORS_ORIGINS } from './lib/config.js';
 import prisma from './lib/prisma.js';
 import { authenticate } from './lib/authentication.js';
 import { requireRole } from './lib/authorization.js';
 import { monitoringFromEnvironment } from './lib/monitoring.js';
+import { withAssetMediaLock } from './lib/media-lock.js';
+import { enqueueMuxOriginal } from './lib/mux-original-records.js';
+import { getUploadSessionCleanupConfig } from './lib/upload-session-cleanup-config.js';
 import { ROLES } from './lib/roles.js';
 import { SERVER_VERSION } from './lib/version.js';
 
@@ -369,6 +373,7 @@ fastify.decorate('io', io);
 const monitoring = monitoringFromEnvironment({ log: fastify.log });
 fastify.decorate('monitoring', monitoring);
 const muxOriginalConfig = await registerApplicationRoutes(fastify);
+const uploadSessionCleanupConfig = getUploadSessionCleanupConfig();
 
 // Health check
 fastify.get('/api/health', async () => ({
@@ -476,6 +481,7 @@ fastify.get('/api/metrics', {
 
 // ─── Start Server ────────────────────────────────────────
 let stopMuxOriginalIngest;
+let stopUploadSessionCleanup;
 const start = async () => {
     try {
         if (process.env.DEBUG === 'true'
@@ -506,6 +512,12 @@ const start = async () => {
         startMuxSync(fastify);
         stopMuxOriginalIngest = startMuxOriginalIngest(fastify, muxOriginalConfig);
         startUploadCleanup(fastify);
+        stopUploadSessionCleanup = startUploadSessionCleanup(fastify, {
+            config: uploadSessionCleanupConfig,
+            db: prisma,
+            withLock: withAssetMediaLock,
+            onCompleted: muxOriginalConfig.enabled ? enqueueMuxOriginal : undefined,
+        });
         monitoring.start();
     } catch (err) {
         fastify.log.error(err);
@@ -521,6 +533,7 @@ const shutdown = async (signal) => {
         stopMuxSync();          // Stop background jobs
         stopMuxOriginalIngest?.();
         stopUploadCleanup();
+        await stopUploadSessionCleanup?.();
         monitoring.stop();
         io.close();       // Close WebSocket connections
         await fastify.close(); // Stop accepting HTTP, finish in-flight requests
