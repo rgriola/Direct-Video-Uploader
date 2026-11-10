@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { mkdtemp, mkdir, rm, symlink, unlink, writeFile } from "node:fs/promises";
+import { link, mkdtemp, mkdir, rm, symlink, unlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { Readable } from "node:stream";
@@ -36,8 +36,10 @@ describe("StorageDriver registry", () => {
   it("creates registered drivers and rejects unknown providers", () => {
     const name = `test-${randomUUID()}`;
     const methods = Object.fromEntries([
+      "getCapacitySnapshot",
       "createUpload",
       "assertStorageLocation",
+      "hasUpload",
       "uploadPart",
       "listParts",
       "listPartNumbers",
@@ -66,6 +68,24 @@ describe("StorageDriver registry", () => {
 });
 
 describe("local storage driver", () => {
+  it("measures every file under the root conservatively and rejects symbolic links", async () => {
+    const root = await createTemporaryDirectory();
+    const driver = createLocalStorageDriver({ root });
+    await mkdir(path.join(root, "nested"));
+    await writeFile(path.join(root, "first"), "abc");
+    await writeFile(path.join(root, "nested", "second"), "12345");
+    await link(path.join(root, "first"), path.join(root, "nested", "hardlink"));
+
+    const snapshot = await driver.getCapacitySnapshot();
+    expect(snapshot.identity).toBeNull();
+    expect(snapshot.hasEntries).toBe(true);
+    expect(snapshot.usedBytes).toBe(11n);
+    expect(snapshot.availableBytes).toBeGreaterThan(0n);
+
+    await symlink(path.join(root, "first"), path.join(root, "link"));
+    await expect(driver.getCapacitySnapshot()).rejects.toMatchObject({ code: "STORAGE_UNAVAILABLE" });
+  });
+
   it("uses a development fallback but requires an explicit production root", () => {
     const expectedRoot = path.resolve(fileURLToPath(new URL("../../.local-storage", import.meta.url)));
     expect(resolveLocalStorageRoot({ root: "", production: false })).toBe(expectedRoot);
@@ -237,6 +257,9 @@ describe("local storage driver", () => {
 
     const next = await driver.createUpload({ ownerId: "owner", assetId: "asset", clipId: "clip" });
     await driver.uploadPart(next.uploadId, 1, Buffer.from("part"));
+    await expect(driver.completeUpload(next.uploadId, { expectedSizeBytes: 2 }))
+      .rejects.toMatchObject({ code: "INTEGRITY_MISMATCH" });
+    await expect(driver.stat(next.key)).resolves.toBeNull();
     await expect(driver.completeUpload(next.uploadId, { expectedSizeBytes: 99 }))
       .rejects.toThrow("size does not match");
     await expect(driver.stat(next.key)).resolves.toBeNull();

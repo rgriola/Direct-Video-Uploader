@@ -9,6 +9,7 @@ import {
   readdir,
   realpath,
   rm,
+  statfs,
   unlink,
 } from "node:fs/promises";
 import os from "node:os";
@@ -82,6 +83,11 @@ function parseStorageKey(key) {
     throw new StorageError("Storage key is invalid");
   }
   return segments;
+}
+
+export function storageIdentityForKey(key) {
+  const objectIds = parseStorageKey(key).at(-1).split(".");
+  return objectIds.length === 2 ? objectIds[0].toLowerCase() : null;
 }
 
 function assertWithinRoot(root, candidate) {
@@ -456,19 +462,67 @@ export function createLocalStorageDriver({ root = resolveLocalStorageRoot() } = 
   }
 
   async function assertStorageLocation(key, { required = true } = {}) {
-    const segments = parseStorageKey(key);
-    const objectIds = segments[4].split(".");
-    if (objectIds.length === 1) {
+    const expectedIdentity = storageIdentityForKey(key);
+    if (!expectedIdentity) {
       if (required) throw new StorageError("Original has no verified storage location", { code: "STORAGE_UNAVAILABLE" });
       return;
     }
     const rootPath = await getRoot({ create: false });
     const identity = await readStorageIdentity(rootPath);
-    if (!identity || identity !== objectIds[0].toLowerCase()) {
+    if (!identity || identity !== expectedIdentity) {
       throw new StorageError("Local storage location is unavailable or does not match the original", {
         code: "STORAGE_UNAVAILABLE",
       });
     }
+  }
+
+  async function measureFiles(rootPath, directory, device) {
+    let names;
+    try {
+      names = await readdir(directory);
+    } catch (error) {
+      if (directory !== rootPath && error.code === "ENOENT") return 0n;
+      throw error;
+    }
+    let sizeBytes = 0n;
+    for (const name of names) {
+      const candidate = path.join(directory, name);
+      let info;
+      try {
+        info = await lstat(candidate, { bigint: true });
+      } catch (error) {
+        if (error.code === "ENOENT") continue;
+        throw error;
+      }
+      if (info.dev !== device) {
+        throw new StorageError("Original storage contains another mounted filesystem", {
+          code: "STORAGE_UNAVAILABLE",
+        });
+      }
+      if (info.isSymbolicLink()) {
+        throw new StorageError("Storage capacity cannot be measured through symbolic links", {
+          code: "STORAGE_UNAVAILABLE",
+        });
+      }
+      if (info.isFile()) {
+        sizeBytes += info.size;
+      } else if (info.isDirectory()) {
+        let canonical;
+        try {
+          canonical = await realpath(candidate);
+        } catch (error) {
+          if (error.code === "ENOENT") continue;
+          throw error;
+        }
+        assertWithinRoot(rootPath, canonical);
+        sizeBytes += await measureFiles(rootPath, canonical, device);
+      } else {
+        throw new StorageError("Storage capacity contains an unsupported file type", {
+          code: "STORAGE_UNAVAILABLE",
+        });
+      }
+    }
+    return sizeBytes;
   }
 
   async function getSessionDirectory(uploadId, { create = false } = {}) {
@@ -574,6 +628,38 @@ export function createLocalStorageDriver({ root = resolveLocalStorageRoot() } = 
   }
 
   return {
+    async getCapacitySnapshot() {
+      try {
+        const rootPath = await getRoot();
+        const rootInfo = await lstat(rootPath, { bigint: true });
+        if (!rootInfo.isDirectory() || rootInfo.isSymbolicLink()) {
+          throw new StorageError("Local storage root is unavailable", { code: "STORAGE_UNAVAILABLE" });
+        }
+        const identity = await readStorageIdentity(rootPath);
+        const usedBytes = await measureFiles(rootPath, rootPath, rootInfo.dev);
+        const filesystem = await statfs(rootPath, { bigint: true });
+        const hasEntries = (await readdir(rootPath)).length > 0;
+        const currentRoot = await lstat(rootPath, { bigint: true });
+        if (!currentRoot.isDirectory() || currentRoot.isSymbolicLink()
+          || currentRoot.dev !== rootInfo.dev || currentRoot.ino !== rootInfo.ino
+          || await readStorageIdentity(rootPath) !== identity) {
+          throw new StorageError("Local storage location changed during capacity measurement", {
+            code: "STORAGE_UNAVAILABLE",
+          });
+        }
+        if (filesystem.bsize <= 0n || filesystem.bavail < 0n) {
+          throw new StorageError("Storage free space is invalid", { code: "STORAGE_UNAVAILABLE" });
+        }
+        return { identity, hasEntries, usedBytes, availableBytes: filesystem.bavail * filesystem.bsize };
+      } catch (error) {
+        if (error instanceof StorageError && error.code === "STORAGE_UNAVAILABLE") throw error;
+        throw new StorageError("Original storage capacity could not be verified", {
+          cause: error,
+          code: "STORAGE_UNAVAILABLE",
+        });
+      }
+    },
+
     async createUpload({ ownerId, assetId, clipId }) {
       assertIdentifier(ownerId, "Owner ID");
       assertIdentifier(assetId, "Asset ID");
@@ -608,6 +694,10 @@ export function createLocalStorageDriver({ root = resolveLocalStorageRoot() } = 
 
     async assertStorageLocation(key) {
       await assertStorageLocation(key);
+    },
+
+    async hasUpload(uploadId) {
+      return Boolean(await getSessionDirectory(uploadId));
     },
 
     async uploadPart(uploadId, partNumber, body, { expectedSizeBytes, commitPart } = {}) {
@@ -836,6 +926,12 @@ export function createLocalStorageDriver({ root = resolveLocalStorageRoot() } = 
         let outputClosed = false;
         const meter = new Transform({
           transform(chunk, _encoding, callback) {
+            if (expectedSize != null && sizeBytes + BigInt(chunk.length) > expectedSize) {
+              callback(new StorageError("Completed upload size does not match the expected size", {
+                code: "INTEGRITY_MISMATCH",
+              }));
+              return;
+            }
             hash.update(chunk);
             sizeBytes += BigInt(chunk.length);
             callback(null, chunk);
