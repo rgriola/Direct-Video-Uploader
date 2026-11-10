@@ -9,7 +9,9 @@ import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { requireRole } from '../lib/authorization.js';
 import { hashPin } from '../lib/utils.js';
-import { acquireIntegrationDatabaseLock, waitForBlockedQuery } from './helpers/database-lock.js';
+import {
+    acquireIntegrationDatabaseLock, INTEGRATION_SETUP_TIMEOUT_MS, waitForBlockedQuery,
+} from './helpers/database-lock.js';
 
 const mux = vi.hoisted(() => ({
     createDirectUpload: vi.fn(async ({ clipId }) => ({
@@ -260,7 +262,7 @@ integration('role and organization endpoint matrix', () => {
         await registerApplicationRoutes(app);
         await app.register(localUploadRoutes, { root: uploadRoot });
         await app.ready();
-    }, 30000);
+    }, INTEGRATION_SETUP_TIMEOUT_MS);
 
     afterAll(async () => {
         try {

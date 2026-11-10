@@ -3,7 +3,9 @@ import { mkdtemp, rm, unlink } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { acquireIntegrationDatabaseLock, waitForBlockedQuery } from "./helpers/database-lock.js";
+import {
+  acquireIntegrationDatabaseLock, INTEGRATION_SETUP_TIMEOUT_MS, waitForBlockedQuery,
+} from "./helpers/database-lock.js";
 import { createLocalStorageDriver } from "../lib/storage/local-driver.js";
 import { createUploadSessionService, UploadSessionError } from "../lib/upload-sessions.js";
 
@@ -48,7 +50,7 @@ integration("upload sessions against PostgreSQL and local storage", () => {
         pinHash: "integration-test",
       },
     });
-  });
+  }, INTEGRATION_SETUP_TIMEOUT_MS);
 
   beforeEach(async () => {
     assetId = randomUUID();

@@ -4,7 +4,7 @@ import { Server } from 'socket.io';
 import { io as createClient } from 'socket.io-client';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { requireRole } from '../lib/authorization.js';
-import { acquireIntegrationDatabaseLock } from './helpers/database-lock.js';
+import { acquireIntegrationDatabaseLock, INTEGRATION_SETUP_TIMEOUT_MS } from './helpers/database-lock.js';
 
 vi.mock('../lib/mux.js', () => ({ isMuxEnabled: false, MUX_ENV_KEY: '' }));
 vi.mock('../lib/slack.js', () => ({
@@ -162,7 +162,7 @@ integration('HTTP and Socket.IO authorization against PostgreSQL', () => {
         await app.register(moderationRoutes);
         await app.listen({ host: '127.0.0.1', port: 0 });
         url = `http://127.0.0.1:${app.server.address().port}`;
-    }, 30000);
+    }, INTEGRATION_SETUP_TIMEOUT_MS);
 
     afterEach(() => {
         for (const client of clients.splice(0)) client.disconnect();

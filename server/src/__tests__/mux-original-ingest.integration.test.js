@@ -8,7 +8,7 @@ import path from 'node:path';
 import { PassThrough, Readable } from 'node:stream';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createLocalStorageDriver } from '../lib/storage/local-driver.js';
-import { acquireIntegrationDatabaseLock } from './helpers/database-lock.js';
+import { acquireIntegrationDatabaseLock, INTEGRATION_SETUP_TIMEOUT_MS } from './helpers/database-lock.js';
 
 const muxApi = vi.hoisted(() => ({
     createMuxOriginalAsset: vi.fn(),
@@ -149,7 +149,7 @@ integration('Mux original handoff against PostgreSQL and HTTP', () => {
         await app.register(adminRoutes);
         await app.register(muxWebhookRoutes);
         address = await app.listen({ host: '127.0.0.1', port: 0 });
-    });
+    }, INTEGRATION_SETUP_TIMEOUT_MS);
 
     beforeEach(async () => {
         vi.clearAllMocks();
