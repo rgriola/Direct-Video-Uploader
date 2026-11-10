@@ -628,9 +628,9 @@ export function createLocalStorageDriver({ root = resolveLocalStorageRoot() } = 
   }
 
   return {
-    async getCapacitySnapshot() {
+    async getCapacitySnapshot({ create = true } = {}) {
       try {
-        const rootPath = await getRoot();
+        const rootPath = await getRoot({ create });
         const rootInfo = await lstat(rootPath, { bigint: true });
         if (!rootInfo.isDirectory() || rootInfo.isSymbolicLink()) {
           throw new StorageError("Local storage root is unavailable", { code: "STORAGE_UNAVAILABLE" });

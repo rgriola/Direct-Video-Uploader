@@ -68,6 +68,13 @@ describe("StorageDriver registry", () => {
 });
 
 describe("local storage driver", () => {
+  it("can inspect capacity without creating a missing root", async () => {
+    const root = path.join(await createTemporaryDirectory(), "missing");
+    const driver = createLocalStorageDriver({ root });
+    await expect(driver.getCapacitySnapshot({ create: false })).rejects.toMatchObject({ code: "STORAGE_UNAVAILABLE" });
+    await expect(driver.getCapacitySnapshot()).resolves.toMatchObject({ hasEntries: false });
+  });
+
   it("measures every file under the root conservatively and rejects symbolic links", async () => {
     const root = await createTemporaryDirectory();
     const driver = createLocalStorageDriver({ root });
