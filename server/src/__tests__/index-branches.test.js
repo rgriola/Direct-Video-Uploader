@@ -215,6 +215,7 @@ async function importIndexModule() {
 beforeEach(() => {
     process.env = { ...originalEnv };
     process.env.NODE_ENV = 'test';
+    process.env.DVU_MONITORING_ENABLED = 'false';
     process.env.PORT = '4460';
     process.env.HOST = '127.0.0.1';
     process.env.DATABASE_URL = 'postgresql://localhost:5432/directvideo';

@@ -137,6 +137,7 @@ async function importIndexModule() {
 beforeEach(() => {
     process.env = { ...originalEnv };
     process.env.NODE_ENV = 'test';
+    process.env.DVU_MONITORING_ENABLED = 'false';
     process.env.PORT = '4455';
     process.env.HOST = '127.0.0.1';
 
