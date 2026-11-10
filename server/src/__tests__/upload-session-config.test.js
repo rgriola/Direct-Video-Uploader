@@ -16,6 +16,10 @@ vi.mock('../lib/mux-original-enqueue.js', () => ({ requestMuxOriginalIngest: vi.
 vi.mock('../lib/storage/driver.js', () => ({ createStorageDriver: vi.fn(() => ({ provider: 'local' })) }));
 
 const originalEnv = { ...process.env };
+const capacitySettings = {
+    UPLOAD_STORAGE_MAX_BYTES: '10737418240',
+    UPLOAD_STORAGE_MIN_FREE_BYTES: '1073741824',
+};
 
 afterEach(() => {
     process.env = { ...originalEnv };
@@ -32,9 +36,26 @@ describe('upload session configuration', () => {
         expect(() => getUploadSessionConfig({
             UPLOAD_SESSIONS_ENABLED: 'true', UPLOAD_SESSION_SIGNING_SECRET: secret, JWT_SECRET: secret,
         })).toThrow(/differ from JWT_SECRET/);
-        expect(getUploadSessionConfig({
+        const enabled = {
             UPLOAD_SESSIONS_ENABLED: 'true', UPLOAD_SESSION_SIGNING_SECRET: secret, JWT_SECRET: 'other',
-        })).toEqual({ enabled: true, signingSecret: secret, storageDriver: 'local' });
+        };
+        expect(() => getUploadSessionConfig(enabled)).toThrow(/UPLOAD_STORAGE_MAX_BYTES/);
+        expect(() => getUploadSessionConfig({ ...enabled, UPLOAD_STORAGE_MAX_BYTES: '10' }))
+            .toThrow(/UPLOAD_STORAGE_MIN_FREE_BYTES/);
+        for (const value of ['0', '-1', '1.5', '9223372036854775808', 'invalid']) {
+            expect(() => getUploadSessionConfig({ ...enabled, ...capacitySettings, UPLOAD_STORAGE_MAX_BYTES: value }))
+                .toThrow(/UPLOAD_STORAGE_MAX_BYTES/);
+            expect(() => getUploadSessionConfig({ ...enabled, ...capacitySettings, UPLOAD_STORAGE_MIN_FREE_BYTES: value }))
+                .toThrow(/UPLOAD_STORAGE_MIN_FREE_BYTES/);
+        }
+        expect(() => getUploadSessionConfig({ ...enabled, ...capacitySettings, STORAGE_DRIVER: 's3' }))
+            .toThrow(/require the local storage driver/);
+        expect(getUploadSessionConfig({
+            ...enabled, ...capacitySettings,
+        })).toEqual({
+            enabled: true, signingSecret: secret, storageDriver: 'local',
+            maxStorageBytes: 10737418240n, minFreeBytes: 1073741824n,
+        });
     });
 
     it('does not register upload routes unless explicitly enabled', async () => {
@@ -48,10 +69,12 @@ describe('upload session configuration', () => {
         process.env.UPLOAD_SESSIONS_ENABLED = 'true';
         process.env.UPLOAD_SESSION_SIGNING_SECRET = 'x'.repeat(32);
         process.env.JWT_SECRET = 'other';
+        Object.assign(process.env, capacitySettings);
         await registerApplicationRoutes(fastify);
         expect(fastify.register).toHaveBeenCalledWith(uploadSessionRoutes, expect.objectContaining({
             signingSecret: 'x'.repeat(32),
             storageDriver: 'local',
+            capacityLimits: { maxStorageBytes: 10737418240n, minFreeBytes: 1073741824n },
         }));
     });
 
@@ -72,6 +95,7 @@ describe('upload session configuration', () => {
             MUX_TOKEN_SECRET: 'test-secret',
             MUX_WEBHOOK_SECRET: 'test-webhook',
             JWT_SECRET: 'test-jwt',
+            ...capacitySettings,
         });
         delete process.env.DEBUG;
         const config = await registerApplicationRoutes(fastify);

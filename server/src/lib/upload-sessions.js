@@ -1,4 +1,6 @@
 import { createHash } from "node:crypto";
+import { lockStorageCapacity, releaseStorageReservation } from "./storage/capacity.js";
+import { StorageError, storageIdentityForKey } from "./storage/local-driver.js";
 
 const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
 const MAX_DATABASE_BIGINT = 9_223_372_036_854_775_807n;
@@ -31,6 +33,28 @@ function normalizeSha256(value, label) {
     throw new UploadSessionError("INVALID_ARGUMENT", `${label} must contain 64 hexadecimal characters`);
   }
   return value.toLowerCase();
+}
+
+function validateCompletion(session, completion) {
+  const sizeBytes = normalizeSize(completion.sizeBytes, "Completed upload size");
+  const sha256 = normalizeSha256(completion.sha256, "Completed upload SHA-256");
+  if (session.expectedSizeBytes != null && sizeBytes !== session.expectedSizeBytes) {
+    throw new UploadSessionError("INTEGRITY_MISMATCH", "Completed upload size does not match the session");
+  }
+  if (session.expectedSha256 != null && sha256 !== session.expectedSha256) {
+    throw new UploadSessionError("INTEGRITY_MISMATCH", "Completed upload SHA-256 does not match the session");
+  }
+  if (session.clip?.storageKey === session.storageKey
+    && ((session.clip.sha256 != null && sha256 !== session.clip.sha256)
+      || (session.clip.fileSize != null && sizeBytes !== session.clip.fileSize))) {
+    throw new UploadSessionError("INTEGRITY_MISMATCH", "Completed upload does not match the stored clip");
+  }
+  return { sizeBytes, sha256 };
+}
+
+function canVerifyCompletion(session) {
+  return Boolean(session.expectedSha256
+    || (session.clip?.storageKey === session.storageKey && session.clip.sha256));
 }
 
 function assertPartNumber(partNumber) {
@@ -95,11 +119,15 @@ export function createUploadSessionService({
   db,
   storage,
   storageDriver = "local",
+  capacity,
   now = () => new Date(),
   sessionTtlMs = SESSION_TTL_MS,
   onCompleted,
 } = {}) {
-  if (!db || !storage) throw new TypeError("Upload session service requires database and storage drivers");
+  if (!db || !storage || typeof capacity?.reserve !== "function"
+    || typeof capacity?.withWritePermit !== "function") {
+    throw new TypeError("Upload session service requires database, storage, and capacity safeguards");
+  }
   if (!Number.isSafeInteger(sessionTtlMs) || sessionTtlMs < 1) {
     throw new TypeError("Upload session TTL must be a positive safe integer");
   }
@@ -119,6 +147,8 @@ export function createUploadSessionService({
             assetId: true,
             storageUrl: true,
             storageKey: true,
+            sha256: true,
+            fileSize: true,
             muxAssetId: true,
             muxUploadId: true,
           },
@@ -143,6 +173,8 @@ export function createUploadSessionService({
             assetId: true,
             storageUrl: true,
             storageKey: true,
+            sha256: true,
+            fileSize: true,
             muxAssetId: true,
             muxUploadId: true,
           },
@@ -200,14 +232,7 @@ export function createUploadSessionService({
   }
 
   async function finalizeCompletion(session, completion) {
-    const sizeBytes = normalizeSize(completion.sizeBytes, "Completed upload size");
-    const sha256 = normalizeSha256(completion.sha256, "Completed upload SHA-256");
-    if (session.expectedSizeBytes != null && sizeBytes !== session.expectedSizeBytes) {
-      throw new UploadSessionError("INTEGRITY_MISMATCH", "Completed upload size does not match the session");
-    }
-    if (session.expectedSha256 != null && sha256 !== session.expectedSha256) {
-      throw new UploadSessionError("INTEGRITY_MISMATCH", "Completed upload SHA-256 does not match the session");
-    }
+    const { sizeBytes, sha256 } = validateCompletion(session, completion);
 
     return db.$transaction(async tx => {
       await tx.$queryRaw`SELECT id FROM users WHERE id = ${session.ownerId} FOR UPDATE`;
@@ -242,9 +267,10 @@ export function createUploadSessionService({
       if (clipUpdate.count !== 1) {
         const clip = await tx.clip.findUnique({ where: { id: current.clipId } });
         if (clip?.storageKey === current.storageKey && clip.sha256 === sha256) {
+          await lockStorageCapacity(tx);
           const completed = await tx.uploadSession.update({
             where: { id: current.id },
-            data: { status: "COMPLETED", completedAt: current.completedAt || now() },
+            data: { status: "COMPLETED", completedAt: current.completedAt || now(), storageReservationBytes: 0n },
             include: { parts: { orderBy: { partNumber: "asc" } } },
           });
           if (onCompleted) await onCompleted(tx, current);
@@ -253,17 +279,19 @@ export function createUploadSessionService({
         throw new UploadSessionError("CLIP_CHANGED", "Clip is no longer available for original storage");
       }
 
+      await lockStorageCapacity(tx);
       const completed = await tx.uploadSession.update({
         where: { id: current.id },
         data: {
           status: "COMPLETED",
           completedAt: now(),
+          storageReservationBytes: 0n,
         },
         include: { parts: { orderBy: { partNumber: "asc" } } },
       });
       if (onCompleted) await onCompleted(tx, current);
       return completed;
-    });
+    }, { timeout: 60000 });
   }
 
   async function recoverCompletingSession(session) {
@@ -271,12 +299,18 @@ export function createUploadSessionService({
       const current = await loadSession(session.id, session.ownerId);
       if (current.status !== "COMPLETING") return;
 
+      await storage.assertStorageLocation(current.storageKey);
       const stored = await storage.stat(current.storageKey);
       if (stored) {
         const result = await hashStream(await storage.getReadStream(current.storageKey));
         if (result.sizeBytes !== stored.sizeBytes) {
           throw new UploadSessionError("STORAGE_CHANGED", "Stored object changed while recovering completion");
         }
+        validateCompletion(current, result);
+        if (await storage.hasUpload(current.id) && !canVerifyCompletion(current)) {
+          throw new UploadSessionError("STORAGE_UNAVAILABLE", "Staged upload data cannot be verified");
+        }
+        await storage.abortUpload(current.id);
         await finalizeCompletion(current, { ...result, key: current.storageKey });
         return;
       }
@@ -302,8 +336,13 @@ export function createUploadSessionService({
       });
       return true;
     });
-    if (expired) await storage.abortUpload(session.id);
+    if (expired) await removeSessionFilesAndRelease(session.id);
     return expired;
+  }
+
+  async function removeSessionFilesAndRelease(uploadSessionId) {
+    await storage.abortUpload(uploadSessionId);
+    await db.$transaction(tx => releaseStorageReservation(tx, uploadSessionId), { timeout: 60000 });
   }
 
   async function create({ ownerId, assetId, clipId, expectedSizeBytes, expectedSha256, initializeClip = false }) {
@@ -311,7 +350,7 @@ export function createUploadSessionService({
     const sha256 = normalizeSha256(expectedSha256, "Expected SHA-256");
     const createdAt = now();
     const expiresAt = new Date(createdAt.getTime() + sessionTtlMs);
-    const driverSession = await storage.createUpload({ ownerId, assetId, clipId });
+    let driverSession;
     let session;
 
     try {
@@ -404,8 +443,16 @@ export function createUploadSessionService({
               data: { status: "EXPIRED" },
             });
           }
+          await releaseStorageReservation(tx, existing.id);
         }
 
+        const reservation = await capacity.reserve(tx, sizeBytes);
+        driverSession = await storage.createUpload({ ownerId, assetId, clipId });
+        if (reservation.identity && storageIdentityForKey(driverSession.key) !== reservation.identity) {
+          throw new StorageError("Local storage location changed during upload creation", {
+            code: "STORAGE_UNAVAILABLE",
+          });
+        }
         return tx.uploadSession.create({
           data: {
             id: driverSession.uploadId,
@@ -416,35 +463,39 @@ export function createUploadSessionService({
             storageKey: driverSession.key,
             expectedSizeBytes: sizeBytes,
             expectedSha256: sha256,
+            storageReservationBytes: reservation.reservationBytes,
             expiresAt,
           },
           include: { parts: true },
         });
-      });
+      }, { timeout: 60000 });
     } catch (error) {
-      try {
-        await storage.abortUpload(driverSession.uploadId);
-      } catch (cleanupError) {
-        throw new AggregateError(
-          [error, cleanupError],
-          "Could not create or clean up the upload session",
-          { cause: error },
-        );
+      if (driverSession) {
+        try {
+          await db.$transaction(async tx => {
+            await lockStorageCapacity(tx);
+            const persisted = await tx.uploadSession.findUnique({
+              where: { id: driverSession.uploadId },
+              select: { storageKey: true },
+            });
+            if (persisted && persisted.storageKey !== driverSession.key) {
+              throw new StorageError("Upload session references changed during creation", {
+                code: "STORAGE_UNAVAILABLE",
+              });
+            }
+            if (!persisted) await storage.abortUpload(driverSession.uploadId);
+          }, { timeout: 60000 });
+        } catch (cleanupError) {
+          throw new AggregateError(
+            [error, cleanupError],
+            "Could not create or clean up the upload session",
+            { cause: error },
+          );
+        }
       }
       throw error;
     }
 
-    if (session.id !== driverSession.uploadId) {
-      try {
-        await storage.abortUpload(driverSession.uploadId);
-      } catch (cleanupError) {
-        throw new AggregateError(
-          [cleanupError],
-          "Could not clean up the duplicate upload session",
-          { cause: cleanupError },
-        );
-      }
-    }
     return session;
   }
 
@@ -459,7 +510,7 @@ export function createUploadSessionService({
       session = await loadSession(uploadSessionId, ownerId);
     } else if (session.status === "EXPIRED" || session.status === "ABORTED") {
       await storage.assertStorageLocation(session.storageKey);
-      await storage.abortUpload(session.id);
+      await removeSessionFilesAndRelease(session.id);
     }
 
     assertVisibleSession(session);
@@ -478,6 +529,21 @@ export function createUploadSessionService({
         && BigInt(stored.sizeBytes) !== session.expectedSizeBytes)) {
         throw new UploadSessionError("STORAGE_UNAVAILABLE", "Completed original is unavailable");
       }
+      if (session.storageReservationBytes !== 0n) {
+        if (await storage.hasUpload(session.id)) {
+          if (!canVerifyCompletion(session)) {
+            throw new UploadSessionError("STORAGE_UNAVAILABLE", "Staged upload data cannot be verified");
+          }
+          const result = await hashStream(await storage.getReadStream(session.storageKey));
+          if (result.sizeBytes !== stored.sizeBytes) {
+            throw new UploadSessionError("STORAGE_CHANGED", "Stored object changed while recovering completion");
+          }
+          validateCompletion(session, result);
+        }
+        await removeSessionFilesAndRelease(session.id);
+        session = await loadSession(uploadSessionId, ownerId);
+        assertVisibleSession(session);
+      }
     }
     return session;
   }
@@ -489,39 +555,41 @@ export function createUploadSessionService({
     assertAcceptingUploads(session);
     await storage.assertStorageLocation(session.storageKey);
     let committed = false;
-    const part = await storage.uploadPart(session.id, partNumber, body, {
-      expectedSizeBytes,
-      commitPart: async (result, publish) => {
-        await db.$transaction(async tx => {
-          await tx.$queryRaw`SELECT id FROM users WHERE id = ${ownerId} FOR UPDATE`;
-          await tx.$queryRaw`SELECT id FROM assets WHERE id = ${session.assetId} FOR UPDATE`;
-          const current = await lockSession(tx, session.id);
-          assertOwnedSession(current, ownerId);
-          assertOpen(current, now());
-          assertAcceptingUploads(current);
-          await publish();
-          await tx.uploadPart.upsert({
-            where: {
-              uploadSessionId_partNumber: {
+    const writeSize = normalizeSize(expectedSizeBytes, "Expected part size");
+    const part = await capacity.withWritePermit(session, writeSize, () =>
+      storage.uploadPart(session.id, partNumber, body, {
+        expectedSizeBytes,
+        commitPart: async (result, publish) => {
+          await db.$transaction(async tx => {
+            await tx.$queryRaw`SELECT id FROM users WHERE id = ${ownerId} FOR UPDATE`;
+            await tx.$queryRaw`SELECT id FROM assets WHERE id = ${session.assetId} FOR UPDATE`;
+            const current = await lockSession(tx, session.id);
+            assertOwnedSession(current, ownerId);
+            assertOpen(current, now());
+            assertAcceptingUploads(current);
+            await publish();
+            await tx.uploadPart.upsert({
+              where: {
+                uploadSessionId_partNumber: {
+                  uploadSessionId: session.id,
+                  partNumber,
+                },
+              },
+              create: {
                 uploadSessionId: session.id,
                 partNumber,
+                sizeBytes: BigInt(result.sizeBytes),
+                sha256: result.sha256,
               },
-            },
-            create: {
-              uploadSessionId: session.id,
-              partNumber,
-              sizeBytes: BigInt(result.sizeBytes),
-              sha256: result.sha256,
-            },
-            update: {
-              sizeBytes: BigInt(result.sizeBytes),
-              sha256: result.sha256,
-            },
+              update: {
+                sizeBytes: BigInt(result.sizeBytes),
+                sha256: result.sha256,
+              },
+            });
           });
-        });
-        committed = true;
-      },
-    });
+          committed = true;
+        },
+      }));
     if (!committed) {
       throw new Error("Storage driver did not commit the upload part");
     }
@@ -542,49 +610,51 @@ export function createUploadSessionService({
       assertOpen(session, now());
       assertAcceptingUploads(session);
 
-      await db.$transaction(async tx => {
-        await tx.$queryRaw`SELECT id FROM users WHERE id = ${ownerId} FOR UPDATE`;
-        const current = await lockSession(tx, session.id);
-        assertOwnedSession(current, ownerId);
-        assertOpen(current, now());
-        assertAcceptingUploads(current);
-        await tx.uploadSession.update({
-          where: { id: session.id },
-          data: { status: "COMPLETING" },
-        });
-      });
-
-      let completion;
-      try {
-        const parts = await storage.listParts(session.id);
-        if (parts.length === 0) {
-          throw new UploadSessionError("INCOMPLETE_UPLOAD", "Upload has no completed parts");
-        }
-        await syncParts(session, parts, "COMPLETING");
-        completion = await storage.completeUpload(session.id, {
-          expectedSha256: session.expectedSha256 || undefined,
-          expectedSizeBytes: session.expectedSizeBytes?.toString(),
-        });
-      } catch (error) {
-        let stored;
-        try {
-          stored = await storage.stat(session.storageKey);
-        } catch (recoveryError) {
-          throw new AggregateError(
-            [error, recoveryError],
-            "Could not determine whether the upload was published",
-            { cause: error },
-          );
-        }
-        if (!stored) {
-          await db.uploadSession.updateMany({
-            where: { id: session.id, ownerId, status: "COMPLETING" },
-            data: { status: "OPEN" },
+      return capacity.withWritePermit(session, session.expectedSizeBytes, async () => {
+        await db.$transaction(async tx => {
+          await tx.$queryRaw`SELECT id FROM users WHERE id = ${ownerId} FOR UPDATE`;
+          const current = await lockSession(tx, session.id);
+          assertOwnedSession(current, ownerId);
+          assertOpen(current, now());
+          assertAcceptingUploads(current);
+          await tx.uploadSession.update({
+            where: { id: session.id },
+            data: { status: "COMPLETING" },
           });
+        });
+
+        let completion;
+        try {
+          const parts = await storage.listParts(session.id);
+          if (parts.length === 0) {
+            throw new UploadSessionError("INCOMPLETE_UPLOAD", "Upload has no completed parts");
+          }
+          await syncParts(session, parts, "COMPLETING");
+          completion = await storage.completeUpload(session.id, {
+            expectedSha256: session.expectedSha256 || undefined,
+            expectedSizeBytes: session.expectedSizeBytes?.toString(),
+          });
+        } catch (error) {
+          let stored;
+          try {
+            stored = await storage.stat(session.storageKey);
+          } catch (recoveryError) {
+            throw new AggregateError(
+              [error, recoveryError],
+              "Could not determine whether the upload was published",
+              { cause: error },
+            );
+          }
+          if (!stored) {
+            await db.uploadSession.updateMany({
+              where: { id: session.id, ownerId, status: "COMPLETING" },
+              data: { status: "OPEN" },
+            });
+          }
+          throw error;
         }
-        throw error;
-      }
-      return finalizeCompletion(session, completion);
+        return finalizeCompletion(session, completion);
+      });
     });
     if (!locked.acquired) {
       throw new UploadSessionError("SESSION_BUSY", "Upload session is completing");
@@ -625,7 +695,7 @@ export function createUploadSessionService({
       return current.status;
     });
     await storage.assertStorageLocation(session.storageKey);
-    await storage.abortUpload(session.id);
+    await removeSessionFilesAndRelease(session.id);
     return { id: session.id, status };
   }
 

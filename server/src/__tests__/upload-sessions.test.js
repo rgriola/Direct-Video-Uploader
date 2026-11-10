@@ -5,6 +5,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { createLocalStorageDriver } from "../lib/storage/local-driver.js";
 import { createUploadSessionService } from "../lib/upload-sessions.js";
+import { unrestrictedTestCapacity } from "./helpers/storage-capacity.js";
 
 const temporaryDirectories = new Set();
 
@@ -135,6 +136,7 @@ describe("upload session service", () => {
     const service = createUploadSessionService({
       db: database.db,
       storage,
+      capacity: unrestrictedTestCapacity,
       now: () => new Date(currentTime.value),
     });
     return { ...database, storage, service, currentTime };

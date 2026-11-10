@@ -5,13 +5,14 @@ import csrfProtection from '@fastify/csrf-protection';
 import rateLimit from '@fastify/rate-limit';
 import { createHash, randomUUID } from 'node:crypto';
 import { request as httpRequest } from 'node:http';
-import { mkdtemp, readdir, rename, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { Readable } from 'node:stream';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createLocalStorageDriver, MAX_PART_SIZE_BYTES } from '../lib/storage/local-driver.js';
 import { acquireIntegrationDatabaseLock, INTEGRATION_SETUP_TIMEOUT_MS } from './helpers/database-lock.js';
+import { unrestrictedTestCapacity } from './helpers/storage-capacity.js';
 
 const muxApi = vi.hoisted(() => ({
     createDirectUpload: vi.fn(),
@@ -114,6 +115,7 @@ integration('upload session HTTP routes against PostgreSQL and local storage', (
         await app.register(moderationRoutes);
         await app.register(uploadSessionRoutes, {
             storage,
+            capacity: unrestrictedTestCapacity,
             signingSecret,
             now: () => new Date(currentTime),
         });
@@ -229,6 +231,8 @@ integration('upload session HTTP routes against PostgreSQL and local storage', (
         vi.stubEnv('STORAGE_DRIVER', 'local');
         vi.stubEnv('JWT_SECRET', 'integration-jwt-secret');
         vi.stubEnv('UPLOAD_SESSION_SIGNING_SECRET', signingSecret);
+        vi.stubEnv('UPLOAD_STORAGE_MAX_BYTES', '10737418240');
+        vi.stubEnv('UPLOAD_STORAGE_MIN_FREE_BYTES', '1048576');
         const content = Buffer.from('registered upload');
         const url = `/api/assets/${assetId}/upload-sessions`;
         const payload = { expectedSizeBytes: content.length, expectedSha256: sha256(content) };
@@ -503,7 +507,9 @@ integration('upload session HTTP routes against PostgreSQL and local storage', (
         const content = Buffer.from('abort while writing');
         const session = await createSession(content);
         const { createUploadSessionService } = await import('../lib/upload-sessions.js');
-        const service = createUploadSessionService({ db: prisma, storage, now: () => new Date(currentTime) });
+        const service = createUploadSessionService({
+            db: prisma, storage, capacity: unrestrictedTestCapacity, now: () => new Date(currentTime),
+        });
         let started;
         const reading = new Promise(resolve => { started = resolve; });
         const source = new Readable({
@@ -698,6 +704,9 @@ integration('upload session HTTP routes against PostgreSQL and local storage', (
     it('keeps removal pending while an in-flight part is writing and cleans it on retry', async () => {
         const content = Buffer.from('writing part');
         const session = await createSession(content);
+        await prisma.uploadSession.update({
+            where: { id: session.id }, data: { storageReservationBytes: 1234n },
+        });
         let started;
         const reading = new Promise(resolve => { started = resolve; });
         const source = new Readable({
@@ -718,9 +727,11 @@ integration('upload session HTTP routes against PostgreSQL and local storage', (
         });
         expect(removed.statusCode, removed.body).toBe(202);
         expect(removed.json().mediaSyncState).toBe('PENDING');
+        expect((await prisma.uploadSession.findUnique({ where: { id: session.id } })).storageReservationBytes).toBe(1234n);
         source.push(null);
         await writing;
         expect((await reconcileAssetMedia(app, assetId)).state).toBe('SYNCED');
+        expect((await prisma.uploadSession.findUnique({ where: { id: session.id } })).storageReservationBytes).toBe(0n);
         await expect(storage.listParts(session.id)).rejects.toThrow('Upload session not found');
     });
 
@@ -749,6 +760,9 @@ integration('upload session HTTP routes against PostgreSQL and local storage', (
         expect((await put(signed.url, content)).statusCode).toBe(200);
         expect((await requestAs(ownerId, 'POST', `/api/upload-sessions/${session.id}/complete`)).statusCode).toBe(200);
         const row = await prisma.uploadSession.findUnique({ where: { id: session.id } });
+        await prisma.uploadSession.update({
+            where: { id: session.id }, data: { storageReservationBytes: 1234n },
+        });
         await prisma.asset.update({
             where: { id: assetId },
             data: { moderation: 'REMOVED', mediaSyncRevision: { increment: 1 }, mediaSyncState: 'PENDING' },
@@ -761,9 +775,41 @@ integration('upload session HTTP routes against PostgreSQL and local storage', (
         });
         expect((await failing(app, assetId)).state).toBe('ERROR');
         expect(await storage.stat(row.storageKey)).not.toBeNull();
+        expect((await prisma.uploadSession.findUnique({ where: { id: session.id } })).storageReservationBytes).toBe(1234n);
         expect(await prisma.asset.findUnique({ where: { id: assetId } })).toMatchObject({ mediaSyncState: 'ERROR' });
         expect((await reconcileAssetMedia(app, assetId)).state).toBe('SYNCED');
+        expect((await prisma.uploadSession.findUnique({ where: { id: session.id } })).storageReservationBytes).toBe(0n);
         expect(await storage.stat(row.storageKey)).toBeNull();
+    });
+
+    it('reports changed storage as unavailable and preserves staged data for retry', async () => {
+        const content = Buffer.from('retained during verification');
+        const session = await createSession(content);
+        const signed = await sign(session.id);
+        expect((await put(signed.url, content)).statusCode).toBe(200);
+        const sessionPath = path.join(storageRoot, '.uploads', session.id);
+        const manifest = await readFile(path.join(sessionPath, 'manifest.json'));
+        expect((await requestAs(ownerId, 'POST', `/api/upload-sessions/${session.id}/complete`)).statusCode).toBe(200);
+        await prisma.uploadSession.update({
+            where: { id: session.id }, data: { storageReservationBytes: 1234n },
+        });
+        await mkdir(path.join(sessionPath, 'parts'), { recursive: true });
+        await writeFile(path.join(sessionPath, 'manifest.json'), manifest);
+        await writeFile(path.join(sessionPath, 'parts', '00001'), content);
+        const read = vi.spyOn(storage, 'getReadStream')
+            .mockResolvedValueOnce(Readable.from([Buffer.from('changed')]));
+        try {
+            const response = await requestAs(ownerId, 'GET', `/api/upload-sessions/${session.id}`);
+            expect(response.statusCode).toBe(503);
+            expect(response.json()).toEqual({ error: 'Stored object changed while recovering completion' });
+            expect(await storage.hasUpload(session.id)).toBe(true);
+            expect(await readFile(path.join(sessionPath, 'parts', '00001'))).toEqual(content);
+            expect((await prisma.uploadSession.findUnique({ where: { id: session.id } })).storageReservationBytes).toBe(1234n);
+        } finally {
+            read.mockRestore();
+        }
+        expect((await requestAs(ownerId, 'GET', `/api/upload-sessions/${session.id}`)).statusCode).toBe(200);
+        expect(await storage.hasUpload(session.id)).toBe(false);
     });
 
     it('does not report removal synced against a different storage root', async () => {
@@ -778,7 +824,9 @@ integration('upload session HTTP routes against PostgreSQL and local storage', (
             const wrongStorage = createLocalStorageDriver({ root: wrongRoot });
             await wrongStorage.createUpload({ ownerId, assetId, clipId: session.clipId });
             const { createUploadSessionService } = await import('../lib/upload-sessions.js');
-            const wrongService = createUploadSessionService({ db: prisma, storage: wrongStorage });
+            const wrongService = createUploadSessionService({
+                db: prisma, storage: wrongStorage, capacity: unrestrictedTestCapacity,
+            });
             await expect(wrongService.get({ ownerId, uploadSessionId: session.id }))
                 .rejects.toMatchObject({ code: 'STORAGE_UNAVAILABLE' });
             process.env.STORAGE_LOCAL_ROOT = wrongRoot;
@@ -817,6 +865,7 @@ integration('upload session HTTP routes against PostgreSQL and local storage', (
             const service = createUploadSessionService({
                 db: prisma,
                 storage: wrongStorage,
+                capacity: unrestrictedTestCapacity,
                 now: () => new Date(currentTime + 25 * 60 * 60 * 1000),
             });
             await expect(service.abort({ ownerId, uploadSessionId: session.id })).rejects.toThrow('does not match');
@@ -849,6 +898,25 @@ integration('upload session HTTP routes against PostgreSQL and local storage', (
             data: { moderation: 'REMOVED', mediaSyncRevision: { increment: 1 }, mediaSyncState: 'PENDING' },
         });
         expect((await reconcileAssetMedia(app, assetId)).state).toBe('ERROR');
+        expect(await storage.stat(row.storageKey)).not.toBeNull();
+    });
+
+    it('does not replace a retained original that has lost its session record', async () => {
+        const content = Buffer.from('keep untracked original');
+        const session = await createSession(content);
+        const signed = await sign(session.id);
+        expect((await put(signed.url, content)).statusCode).toBe(200);
+        expect((await requestAs(ownerId, 'POST', `/api/upload-sessions/${session.id}/complete`)).statusCode).toBe(200);
+        const row = await prisma.uploadSession.findUnique({ where: { id: session.id } });
+        await prisma.uploadSession.delete({ where: { id: session.id } });
+        await prisma.clip.update({ where: { id: session.clipId }, data: { status: 'PROCESSING' } });
+
+        const response = await requestAs(ownerId, 'POST', `/api/assets/${assetId}/mux-upload`, {});
+        expect(response.statusCode).toBe(409);
+        expect(muxApi.createDirectUpload).not.toHaveBeenCalled();
+        expect(await prisma.clip.findUnique({ where: { id: session.clipId } })).toMatchObject({
+            storageKey: row.storageKey,
+        });
         expect(await storage.stat(row.storageKey)).not.toBeNull();
     });
 });

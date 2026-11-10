@@ -9,6 +9,7 @@ import { PassThrough, Readable } from 'node:stream';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createLocalStorageDriver } from '../lib/storage/local-driver.js';
 import { acquireIntegrationDatabaseLock, INTEGRATION_SETUP_TIMEOUT_MS } from './helpers/database-lock.js';
+import { unrestrictedTestCapacity } from './helpers/storage-capacity.js';
 
 const muxApi = vi.hoisted(() => ({
     createMuxOriginalAsset: vi.fn(),
@@ -136,6 +137,7 @@ integration('Mux original handoff against PostgreSQL and HTTP', () => {
         await app.register(uploadSessionRoutes, {
             db: prisma,
             storage,
+            capacity: unrestrictedTestCapacity,
             signingSecret: uploadSecret,
             handoff: { onCompleted: enqueueMuxOriginal, request: requestMuxOriginalIngest },
         });
@@ -233,6 +235,7 @@ integration('Mux original handoff against PostgreSQL and HTTP', () => {
         const service = createUploadSessionService({
             db: prisma,
             storage,
+            capacity: unrestrictedTestCapacity,
             ...(autoQueue ? { onCompleted } : {}),
         });
         const session = await service.create({
@@ -311,7 +314,9 @@ integration('Mux original handoff against PostgreSQL and HTTP', () => {
         expect(await prisma.muxIngestJob.findUnique({ where: { uploadSessionId: fixture.session.id } })).toBeNull();
         expect((await prisma.clip.findUnique({ where: { id: fixture.session.clipId } })).storageKey).toBeNull();
 
-        const resumed = createUploadSessionService({ db: prisma, storage, onCompleted: enqueueMuxOriginal });
+        const resumed = createUploadSessionService({
+            db: prisma, storage, capacity: unrestrictedTestCapacity, onCompleted: enqueueMuxOriginal,
+        });
         expect((await resumed.get({ ownerId, uploadSessionId: fixture.session.id })).status).toBe('COMPLETED');
         expect(await prisma.muxIngestJob.findUnique({ where: { uploadSessionId: fixture.session.id } }))
             .toMatchObject({ status: 'QUEUED', attemptCount: 0 });
