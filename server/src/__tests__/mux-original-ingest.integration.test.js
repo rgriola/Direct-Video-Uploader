@@ -1,4 +1,5 @@
 import Fastify from 'fastify';
+import rateLimit from '@fastify/rate-limit';
 import { createHash, randomUUID } from 'node:crypto';
 import { request as httpRequest } from 'node:http';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -117,6 +118,7 @@ integration('Mux original handoff against PostgreSQL and HTTP', () => {
         storage = createLocalStorageDriver({ root: storageRoot });
         readStorage = storage;
         app = Fastify({ logger: false });
+        await app.register(rateLimit, { global: false });
         app.decorate('authenticate', async (request, reply) => {
             const id = request.headers.authorization?.replace(/^Bearer /, '');
             const user = id && await prisma.user.findUnique({ where: { id } });
@@ -390,6 +392,9 @@ integration('Mux original handoff against PostgreSQL and HTTP', () => {
             return { ok: true, muxAssetId: 'mux-source-1' };
         });
         await worker.runOnce(app);
+        expect(muxApi.createMuxOriginalAsset).toHaveBeenCalledOnce();
+        await expect(muxApi.createMuxOriginalAsset.mock.results[0].value)
+            .resolves.toEqual({ ok: true, muxAssetId: 'mux-source-1' });
         const job = await prisma.muxIngestJob.findUnique({
             where: { uploadSessionId: fixture.session.id }, include: { attempts: true },
         });
@@ -820,6 +825,7 @@ integration('Mux original handoff against PostgreSQL and HTTP', () => {
         await worker.runOnce(app);
         const { default: muxOriginalRoutes } = await import('../routes/mux-originals.js');
         const other = Fastify({ logger: false });
+        await other.register(rateLimit, { global: false });
         await other.register(muxOriginalRoutes, {
             db: prisma,
             signingSecret: readSecret,
