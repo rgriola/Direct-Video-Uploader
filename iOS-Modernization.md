@@ -2,7 +2,7 @@
 
 _Drafted: October 19, 2026 · Updated: November 9, 2026_
 _Owner: Rod_
-_Status: **In progress** — Step 1 verified; Steps 2.1 through 2.5, the Step 3.1 routing foundation, Step 3.2 thumbnails, Step 4.1 local storage, and the Step 4.2a–d server foundations are merged to `main`. The owner reported deploying storage safety and testing the existing Mux flow successfully. Step 4.2e encrypted original-file backups and Step 4.2f dashboard monitoring are implemented on feature branches and are opt-in. Actual backup and restore validation, proactive alerts, isolated real-Mux handoff validation, and client integration remain open._
+_Status: **In progress** — Step 1 verified; Steps 2.1 through 2.5, the Step 3.1 routing foundation, Step 3.2 thumbnails, Step 4.1 local storage, and the Step 4.2a–d server foundations are merged to `main`. The owner reported deploying storage safety and testing the existing Mux flow successfully. Step 4.2e encrypted original-file backups, Step 4.2f dashboard monitoring, and Step 4.2g tracked-session cleanup are implemented on feature branches and are opt-in. Actual backup and restore validation, cleanup rollout validation, proactive alerts, isolated real-Mux handoff validation, and client integration remain open._
 
 ```mermaid
 flowchart TD
@@ -701,11 +701,11 @@ sequenceDiagram
 - [ ] Replace `Clip.storageUrl` (a public path) with `storageKey` + `storageDriver` + `sha256` + `sizeBytes`
 - [ ] **Replace the guarded but unauthenticated `/uploads/` route.** All original-file access must go through authenticated or signed routes
 - [ ] Stop deleting originals in the `mux:ready` webhook (`mux-webhooks.js:145`)
-- [ ] Finish original-upload expiry cleanup. The legacy orphan job excludes assets
-  with any original session, including originals in any Mux handoff state.
-- [ ] Add a restart/expiry sweep and an operator procedure for ambiguous or orphaned
-  local-driver lock files before enabling production original uploads. Current recovery
-  is on session access and only reclaims valid same-host locks whose owning PID is gone.
+- [x] Implement the separate opt-in tracked-session restart/expiry sweep and an
+  operator procedure for ambiguous or orphaned local-driver data (Step 4.2g).
+  The legacy orphan job still excludes assets with any original session.
+- [ ] Validate tracked cleanup and manual review of untracked directories and
+  ambiguous locks on the intended storage before enabling production originals.
 - [ ] Disk guardrails:
   - [x] Experimental capacity reservations and free-space checks before admission
     and writes, with explicit server-configured thresholds.
@@ -747,7 +747,7 @@ sequenceDiagram
   expiry, storage-location failures, and moderation cleanup with an isolated PostgreSQL
   database. See [upload-session API](docs/UPLOAD_SESSION_API.md) for the contract.
 - [ ] Keep the feature **off on production and the shared home server** until backups,
-  proactive monitoring, an expiry/orphan sweep, and isolated real-Mux validation are complete.
+  proactive monitoring, cleanup validation, and isolated real-Mux validation are complete.
 - [ ] Add client integration.
 
 ### 4.2c Experimental Server-Only Mux Handoff
@@ -813,6 +813,20 @@ sequenceDiagram
   verify failure/recovery and restore procedures on the home server.
 - [ ] Add independently delivered failure/freshness alerts. The dashboard alone
   cannot notify an operator while it is closed or the server is down.
+
+### 4.2g Tracked Upload-Session Cleanup and Recovery
+
+- [x] Add an independently opt-in, bounded worker for expired tracked sessions
+  and interrupted completion, including when upload intake is disabled.
+- [x] Preserve originals and backups, defer live or unverified writes and locks,
+  release reservations only after staged cleanup, and report untracked directories
+  for manual review rather than deleting them.
+- [x] Exercise PostgreSQL/local-filesystem recovery, moderation serialization,
+  partial failures, capacity leases, bounded inventory, and Mux handoff settings.
+- [ ] Verify rollout, actual storage/mount behavior, operator log review, and
+  recovery on an isolated environment before enabling it on the home backend.
+- [ ] Add independent failure and freshness alerts; the worker currently logs
+  outcomes only and cannot report while the server is down.
 
 ### 4.2 Upload Protocol (Why Parts)
 

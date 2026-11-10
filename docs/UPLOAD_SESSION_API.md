@@ -1,13 +1,13 @@
 # Experimental Upload Session API
 
 This server-only API stores a native original and can optionally hand it to Mux
-for playback. Upload sessions and the Mux handoff are **separately disabled by
-default**. Existing clients continue using direct-to-Mux uploads. Do not enable
-either feature on the home server or in production yet: backups, proactive
-storage alerts, an automatic expiry/orphan sweep, proxy-log verification,
-isolated real-Mux validation, and client integration remain open. The dev and
-production hostnames currently share the home backend; the dev hostname is not
-an isolated test environment.
+for playback. Upload sessions, the Mux handoff, and tracked-session cleanup are
+**separately disabled by default**. Existing clients continue using
+direct-to-Mux uploads. Do not enable upload intake or Mux handoff on the home
+server or in production yet: verified backups, proactive storage alerts,
+cleanup validation, proxy-log verification, isolated real-Mux validation, and
+client integration remain open. The dev and production hostnames currently
+share the home backend; the dev hostname is not an isolated test environment.
 
 ## Isolated development configuration
 
@@ -63,10 +63,11 @@ apply globally, not per user.
 An equivalent create retry does not allocate another session or require free
 space. Low capacity returns **507** for a new session or additional write;
 status checks and abort/cleanup remain available. Once space is restored,
-clients can retry and request new signed URLs if needed. A missing or
-unverifiable root, an unknown legacy reservation, or unavailable capacity
-measurement returns **503**. The server logs these failures, but it does not
-yet proactively alert while the system is idle.
+clients can retry and request new signed URLs if needed. Cleanup may return
+**409** while a write is active or cannot be verified; retry after it stops.
+A missing or unverifiable root, an unknown legacy reservation, or unavailable
+capacity measurement returns **503**. The server logs these failures, but it
+does not yet proactively alert while the system is idle.
 
 Reservations are released only after session files have been removed or
 completion and cleanup have been verified. A failed abort, expiry cleanup, or
@@ -74,7 +75,8 @@ moderation cleanup keeps the reservation. Existing sessions are conservatively
 backfilled by the migration; a session without a known size blocks capacity
 admission until its data has been investigated and cleaned. An owner can retry
 abort or access a completed session to retry its cleanup; removed assets use
-moderation reconciliation. No automatic expiry/orphan sweep is provided.
+moderation reconciliation. The optional worker below can also recover eligible
+tracked sessions; untracked directories are reported, not automatically deleted.
 
 The free-space check is a snapshot, not an operating-system disk quota. Other
 processes, filesystem metadata, snapshots, quotas, or a changing mount can
@@ -92,6 +94,50 @@ make capacity available. Verify the actual mount and backups independently;
 the marker alone cannot distinguish a copied volume. A stalled upload request
 can keep its write reservation until the request or server process ends; do not
 reclaim a lease while its writer may still be active.
+
+### Optional tracked-session cleanup
+
+The worker is an independent opt-in; enabling upload sessions does not enable
+cleanup, and cleanup can run with upload intake and the Mux handoff disabled.
+On an isolated test server, after verifying the existing mount and storage
+identity, configure:
+
+```text
+UPLOAD_SESSION_CLEANUP_ENABLED=true
+STORAGE_DRIVER=local
+STORAGE_LOCAL_ROOT=/absolute/path/to/existing/originals-root
+```
+
+Cleanup requires an explicit absolute local root, even outside production, but
+does not require upload-signing secrets or capacity limits. A missing root or
+marker is reported as an error; the worker does not create one for inventory.
+The marker alone does not prove that the correct physical volume is mounted.
+See the [home-server runbook](../HOME_SERVER_RUNBOOK.md#opt-in-upload-session-cleanup)
+before enabling the worker or investigating its logs.
+
+The worker runs at startup and every five minutes without overlapping its own
+cycles. Each pass considers at most 50 database-tracked candidates and scans at
+most 100 entries in the upload inventory; a backlog can therefore take multiple
+passes. It expires due `OPEN` sessions, recovers interrupted `COMPLETING`
+sessions, and finishes cleanup of `ABORTED`, `EXPIRED`, or `COMPLETED` sessions
+with outstanding or unknown reservations. Expiry leaves the asset retryable;
+it does not mark the asset as failed.
+
+Live or unverified write leases and locks defer cleanup. The worker verifies
+database references, the storage identity and any staged manifest, checks
+published-original integrity before recovering completion, and releases a
+reservation only after staged cleanup succeeds. Removed assets use moderation
+reconciliation. It does not delete published originals or backups. Unexpected
+files in a tracked session, inconsistent metadata, or unverified originals are
+retained for investigation; unattributed assembly partials are also left alone.
+Untracked directories, unexpected inventory entries, and potentially abandoned
+locks are logged for manual review, not deleted. A persistent busy warning may
+indicate an ambiguous nested lock or lease and also requires investigation.
+
+If recovery finalizes an original while the Mux handoff is disabled, no Mux job
+is queued automatically later. Once handoff is enabled on an isolated server,
+the owner can explicitly request an eligible handoff using the endpoint below.
+The worker logs outcomes and errors but does not provide external alerts.
 
 Treat each signed URL as a bearer credential. Use HTTPS, do not share or log
 it, and ensure the reverse proxy and tunnel also suppress query strings.
@@ -222,8 +268,8 @@ enabled, completion atomically queues one ingest job; the clip moves to
 the existing media coordinator creates a public playback ID and sends the
 existing ready notification only after it verifies that the asset is active and
 ready. The native original is retained after Mux succeeds. The existing
-one-hour orphan job deliberately skips assets with any original session. There
-is no automatic sweep for abandoned sessions yet.
+one-hour orphan job deliberately skips assets with any original session.
+The separately opt-in tracked-session worker is described above.
 
 ### 4. Inspect or explicitly retry a Mux handoff
 

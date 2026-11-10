@@ -110,12 +110,14 @@ This DB uses Prisma migrations (not `db push`). Workflow:
 
 Keep `UPLOAD_SESSIONS_ENABLED` and `MUX_ORIGINAL_INGEST_ENABLED` **off** on this
 shared home backend; `dev.ms-fixer.com` is not isolated staging. The server now
-has experimental capacity and free-space checks, but original backups,
-proactive storage alerts, an expiry/orphan sweep, tunnel and proxy log
-verification, isolated real-Mux testing, and client integration remain open.
-Recovery for failed linked Mux assets and late webhooks after hard deletion also
-remains open. Back up the database and apply all pending migrations **before**
-starting the new server code, even if both flags remain off.
+has experimental capacity checks and an independently opt-in tracked-session
+cleanup worker, but verified original backups, cleanup validation, proactive
+storage alerts, tunnel and proxy log verification, isolated real-Mux testing,
+and client integration remain open. Untracked directories are reported for
+manual review, not automatically deleted. Recovery for failed linked Mux assets
+and late webhooks after hard deletion also remains open. Back up the database
+and apply all pending migrations **before** starting the new server code, even
+if both upload and Mux flags remain off.
 
 On an isolated test server only, upload sessions require explicit positive
 `UPLOAD_STORAGE_MAX_BYTES` and `UPLOAD_STORAGE_MIN_FREE_BYTES` values; there are
@@ -148,6 +150,63 @@ crashed read leases can block removal; the Super Admin investigation and
 audited recovery procedures are in [the upload-session API guide](docs/UPLOAD_SESSION_API.md#super-admin-recovery).
 Do not confirm an absent Mux asset or closed read without independently
 verifying it.
+
+## Opt-in upload-session cleanup
+
+`UPLOAD_SESSION_CLEANUP_ENABLED` defaults to `false` and is independent of
+upload intake and Mux handoff. Test it on an isolated server first; enabling it
+on the home server is a separate operational decision, not a prerequisite for
+deploying code with the flag off. It needs `STORAGE_DRIVER=local` and an
+explicit, absolute `STORAGE_LOCAL_ROOT`, including when intake is off. No
+upload signing secret or capacity limits are needed for cleanup alone.
+
+Before enabling it, verify the actual mounted source volume, the existing
+`.dvu-storage-id`, database backups, and recoverable original-file backups.
+The marker does not prove that a copied volume is the intended physical
+device. Do not create a replacement marker or empty directory to bypass a
+missing mount. Configure the flag and existing root in the Fastify LaunchAgent,
+then restart Fastify using the commands above. Keep upload intake and Mux
+handoff off on the shared home backend.
+
+The worker starts immediately and then every five minutes, processing at most
+50 tracked candidates and inspecting at most 100 upload-directory entries per
+pass. It can expire abandoned sessions and recover interrupted completion,
+including while intake is disabled. It preserves published originals and
+backups; untracked directories and unattributed assembly partials are not
+automatically deleted. Removed assets remain the moderation reconciler's
+responsibility. A recovered completion queues Mux only when handoff is enabled
+at recovery time; enabling handoff later requires the owner's explicit
+eligible retry in the [API guide](docs/UPLOAD_SESSION_API.md#4-inspect-or-explicitly-retry-a-mux-handoff).
+
+Review the Fastify logs for `Original upload recovery completed`, `Original
+upload cleanup deferred`, `Original upload cleanup failed`, `Upload session
+cleanup cycle failed`, and `requires manual review`. The worker also logs its
+start and stop. A busy warning may be transient; investigate if it persists.
+This is log-based visibility, not independent alerting, and a stopped server
+cannot report missed cleanup. The LaunchAgent's `StandardOutPath` and
+`StandardErrorPath`, if configured, identify the Fastify log files.
+
+For an unexpected directory, lock, lease, or failed cleanup:
+
+1. If further automatic work is unsafe, set the cleanup flag to `false` and
+   restart Fastify; its shutdown waits for the current cleanup cycle. Verify
+   whether any other server process or upload writer is still running.
+2. Privately verify the actual mount and marker, then correlate the logged
+   session ID with its `upload_sessions` row, asset, status, reservation, and
+   any `storage_write_leases`. Inspect the relevant `.uploads` entries and
+   lock ownership without changing them. For an unrecognized entry without a
+   session ID, inspect the inventory locally.
+3. Confirm that writers and lock owners have stopped, understand whether the
+   staged data belongs to a recoverable upload, and verify independent backups
+   before deciding on any manual action. Do not delete data, leases, or locks
+   merely to clear a warning or reclaim space. A failed operation may already
+   have removed staged files before a later database error; inspect both the
+   filesystem and database rather than assuming either outcome.
+
+The worker only reclaims locks and write leases it can verify as stale on the
+same host. Ambiguous recovery locks or other-host/live-looking leases remain
+for manual investigation. This procedure does not automate deletion of
+untracked upload directories.
 
 ## Super Admin bootstrap
 
