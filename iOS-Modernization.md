@@ -2,7 +2,7 @@
 
 _Drafted: October 19, 2026 · Updated: November 9, 2026_
 _Owner: Rod_
-_Status: **In progress** — Step 1 verified; Steps 2.1 through 2.5, the Step 3.1 routing foundation, Step 3.2 thumbnails, Step 4.1 local storage, and the Step 4.2a upload-session persistence foundation are merged to `main`. The owner reported deploying the latest server and migrations and testing Mux successfully. The Step 4.2b server-only upload routes are implemented on a feature branch and disabled by default; Mux handoff, client integration, and production storage safeguards remain open._
+_Status: **In progress** — Step 1 verified; Steps 2.1 through 2.5, the Step 3.1 routing foundation, Step 3.2 thumbnails, Step 4.1 local storage, and Step 4.2a–b upload-session foundations are merged to `main`. The owner reported deploying the earlier server and migrations and testing the existing Mux flow successfully. The server-only Step 4.2c Mux handoff is implemented on a feature branch and disabled by default; isolated real-Mux validation, client integration, and production storage safeguards remain open._
 
 ```mermaid
 flowchart TD
@@ -695,12 +695,13 @@ sequenceDiagram
     The marker alone does not distinguish an independently mounted copy of that root.
   - Upload parts are written to private temporary storage, limited to 50 MB each, and
     assembled atomically with computed size/SHA-256 and optional expected-value checks.
-- [ ] Add `signedReadUrl(key, ttl)` when the authenticated original-read flow is designed
+- [ ] Add a general-purpose `signedReadUrl(key, ttl)` for future original sharing; the
+  experimental Mux-only capability below is not a general download link.
 - [ ] Replace `Clip.storageUrl` (a public path) with `storageKey` + `storageDriver` + `sha256` + `sizeBytes`
 - [ ] **Replace the guarded but unauthenticated `/uploads/` route.** All original-file access must go through authenticated or signed routes
 - [ ] Stop deleting originals in the `mux:ready` webhook (`mux-webhooks.js:145`)
-- [ ] Finish original-upload expiry cleanup. The legacy orphan job now excludes assets
-  with any original session, including completed originals awaiting a future Mux handoff.
+- [ ] Finish original-upload expiry cleanup. The legacy orphan job excludes assets
+  with any original session, including originals in any Mux handoff state.
 - [ ] Add a restart/expiry sweep and an operator procedure for ambiguous or orphaned
   local-driver lock files before enabling production original uploads. Current recovery
   is on session access and only reclaims valid same-host locks whose owning PID is gone.
@@ -740,8 +741,31 @@ sequenceDiagram
   expiry, storage-location failures, and moderation cleanup with an isolated PostgreSQL
   database. See [upload-session API](docs/UPLOAD_SESSION_API.md) for the contract.
 - [ ] Keep the feature **off on production and the shared home server** until capacity
-  limits, backups, an expiry/orphan sweep, and the Mux handoff are designed and verified.
-- [ ] Add Mux ingest, clients, and an authenticated or signed original-read route.
+  limits, backups, an expiry/orphan sweep, and isolated real-Mux validation are complete.
+- [ ] Add client integration.
+
+### 4.2c Experimental Server-Only Mux Handoff
+
+- [x] Queue newly completed originals transactionally when the separate handoff flag is
+  enabled; leave previously completed originals untouched until an owner explicitly retries.
+- [x] Persist a unique operation and attempt before creating a Mux asset without a public
+  playback ID. The existing reconciliation coordinator publishes playback only when ready.
+- [x] Use a narrow, expiring signed `GET`/`HEAD` source capability with Range support,
+  active-account and moderation checks, and durable read leases.
+- [x] Bound retries for known pre-create failures and Mux rate-limit rejections. Preserve
+  uncertain creates, late references, and conflicting webhooks instead of blindly retrying.
+- [x] Provide audited Super Admin confirmation for verified absent Mux creates and
+  verified closed read leases. Removal remains pending/error until unresolved work and
+  readers are addressed.
+- [ ] Verify the actual Mux source fetch, webhook delivery, TTL, tunnel behavior, and
+  proxy logs on an **isolated** backend and non-production Mux environment. The home
+  server's dev hostname shares production and is not isolated.
+- [ ] Design and verify recovery for an already-linked Mux asset that fails processing
+  or outlives its source URL; the original is retained, but re-ingest is not yet supported.
+- [ ] Preserve correlation for contradictory late webhooks after an owner's hard deletion;
+  unmatched events currently return 503 and are logged, but cannot be retained locally.
+- [ ] Keep both flags off on the shared home server until that validation and the storage
+  and client rollout prerequisites are complete. See [the API guide](docs/UPLOAD_SESSION_API.md).
 
 ### 4.2 Upload Protocol (Why Parts)
 
@@ -752,12 +776,16 @@ sequenceDiagram
   3. Complete
 - [x] Experimental local driver: part URLs are HMAC-signed Fastify routes. S3/R2 driver later: real presigned URLs that bypass the tunnel entirely
 - [x] Experimental server resume: clients can ask which parts already arrived. Client integration for "Mode B" remains open.
-- [ ] After complete: server verifies size/checksum, then creates the Mux asset with `input: [{ url: signedReadUrl }]` (short TTL). Mux pulls the original through the tunnel. Downloads aren't subject to the 100 MB upload cap
+- [x] Experimental server handoff: after verifying size/checksum, create the Mux asset
+  with `inputs: [{ url: signedReadUrl }]`; real-Mux and tunnel validation remain open.
 
 ### 4.3 Clients
 
 - [ ] **iOS** (after Step 1): `VideoUploadService` uploads parts to our server instead of one PUT to Mux
-  - Each part is its own background `URLSession` upload task from a file slice, so it still survives app suspension
+  - Plan background `URLSession` tasks from file slices; survival and reattachment still require physical-device validation.
+  - The owner reported that closing the current app mid-upload caused a failure and that
+    manual retry succeeded. This does not demonstrate uninterrupted background transfer
+    or test the new store-first path.
   - Progress, transcription, form, and WebSocket flow stay the same
 - [ ] **Desktop web**: drag-and-drop, multi-file queue, same part protocol, context form on web, `source: 'web'` on the asset
 - [ ] Keep the old direct-to-Mux path behind a server flag until the new path is proven

@@ -8,6 +8,7 @@ import Mux from '@mux/mux-node';
 import prisma from '../lib/prisma.js';
 import { MUX_ENV_KEY } from '../lib/mux.js';
 import { queueAssetMediaSync, recordMuxAssetReference, reconcileAssetMedia } from '../lib/media-reconciliation.js';
+import { retainMuxOriginalAsset } from '../lib/mux-original-records.js';
 import { dbRetry } from '../lib/utils.js';
 import { teamScope } from '../lib/authorization.js';
 
@@ -19,8 +20,8 @@ function parsePassthrough(value, log) {
     try {
         const parsed = JSON.parse(value);
         if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed;
-    } catch (err) {
-        log.warn({ err: { message: err.message } }, 'Invalid Mux passthrough');
+    } catch {
+        log.warn('Invalid Mux passthrough');
         return null;
     }
     log.warn('Invalid Mux passthrough');
@@ -85,8 +86,8 @@ export default async function muxWebhookRoutes(fastify) {
                 ? (Buffer.isBuffer(request.rawBody) ? request.rawBody.toString('utf8') : String(request.rawBody))
                 : (typeof request.body === 'string' ? request.body : JSON.stringify(request.body));
             muxClient.webhooks.verifySignature(rawBody, { 'mux-signature': signature }, MUX_WEBHOOK_SECRET);
-        } catch (err) {
-            request.log.warn({ err: { message: err.message } }, 'Mux webhook signature verification failed');
+        } catch {
+            request.log.warn('Mux webhook signature verification failed');
             return reply.status(401).send({ error: 'Invalid signature' });
         }
 
@@ -101,6 +102,42 @@ export default async function muxWebhookRoutes(fastify) {
         const eventType = event?.type;
         const eventData = event?.data;
         request.log.info({ eventType }, 'Mux webhook received');
+
+        if (['video.asset.created', 'video.asset.ready', 'video.asset.errored'].includes(eventType)) {
+            const meta = parsePassthrough(eventData?.passthrough, request.log);
+            if (meta?.ingestOperationId !== undefined) {
+                if (typeof eventData?.id !== 'string' || !eventData.id
+                    || typeof meta.ingestOperationId !== 'string' || !meta.ingestOperationId
+                    || (meta.assetId !== undefined && typeof meta.assetId !== 'string')
+                    || (meta.clipId !== undefined && typeof meta.clipId !== 'string')) {
+                    return reply.status(400).send({ error: 'Invalid Mux original ingest event' });
+                }
+                const retained = await dbRetry(() => prisma.$transaction(tx => retainMuxOriginalAsset(tx, {
+                    operationId: meta.ingestOperationId,
+                    muxAssetId: eventData.id,
+                    expectedAssetId: meta.assetId,
+                    expectedClipId: meta.clipId,
+                })));
+                if (!retained.matched) {
+                    request.log.error(
+                        { operationId: meta.ingestOperationId, muxAssetId: eventData.id },
+                        'Mux original event has no matching ingest attempt',
+                    );
+                    return reply.status(503).send({ error: 'Could not retain Mux ingest reference' });
+                }
+                if (retained.conflict) {
+                    request.log.error(
+                        { operationId: meta.ingestOperationId, muxAssetId: eventData.id },
+                        'Mux original event requires manual reconciliation',
+                    );
+                }
+                if (eventType === 'video.asset.errored') {
+                    request.log.error({ muxAssetId: eventData.id }, 'Mux asset errored');
+                }
+                await reconcileAssetMedia(fastify, retained.assetId);
+                return { received: true };
+            }
+        }
 
         let owner = null;
         let muxAssetId = null;
@@ -124,7 +161,7 @@ export default async function muxWebhookRoutes(fastify) {
             muxAssetId = eventData.id;
             owner = await dbRetry(() => findMuxAssetOwner(muxAssetId, eventData.passthrough, request.log));
             if (eventType === 'video.asset.errored') {
-                request.log.error({ muxAssetId, errors: eventData.errors }, 'Mux asset errored');
+                request.log.error({ muxAssetId }, 'Mux asset errored');
             }
         } else {
             request.log.info({ eventType }, 'Mux webhook event unhandled');

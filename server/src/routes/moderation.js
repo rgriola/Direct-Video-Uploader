@@ -1,6 +1,8 @@
 import prisma from '../lib/prisma.js';
-import { recordMuxAssetReference, reconcileAssetMedia } from '../lib/media-reconciliation.js';
+import { queueAssetMediaSync, recordMuxAssetReference, reconcileAssetMedia } from '../lib/media-reconciliation.js';
 import { withAssetMediaLock } from '../lib/media-lock.js';
+import { originalReadLockKey } from '../lib/mux-original-read-lock-key.js';
+import { lockMuxOriginalRows } from '../lib/mux-original-records.js';
 import { teamScope } from '../lib/authorization.js';
 import { isSuperAdmin, ROLES } from '../lib/roles.js';
 import { invalidateUserSockets } from '../ws/rooms.js';
@@ -296,6 +298,131 @@ export default async function moderationRoutes(fastify) {
         });
     });
 
+    fastify.post('/api/admin/assets/:id/mux-ingest/confirm-absent', {
+        preHandler: [fastify.authenticate, fastify.requireRole(ROLES.SUPER_ADMIN)],
+    }, async (request, reply) => {
+        const { id } = request.params;
+        const { operationId, confirmed } = request.body || {};
+        const reason = parseReason(request.body?.reason, reply);
+        if (reply.sent) return;
+        if (typeof operationId !== 'string' || !operationId || confirmed !== true || !reason) {
+            return reply.status(400).send({ error: 'A Mux absence confirmation, operation ID, and reason are required' });
+        }
+        const initial = await prisma.muxIngestAttempt.findUnique({
+            where: { id: operationId },
+            include: { job: { include: { uploadSession: true } } },
+        });
+        if (!initial || initial.job.uploadSession.assetId !== id) {
+            return reply.status(404).send({ error: 'Mux ingest attempt not found' });
+        }
+
+        const locked = await withAssetMediaLock(id, async assertLocked => {
+            await assertLocked();
+            return prisma.$transaction(async tx => {
+                await lockMuxOriginalRows(tx, initial.job.uploadSession);
+                const attempt = await tx.muxIngestAttempt.findUnique({
+                    where: { id: operationId },
+                    include: { job: { include: { uploadSession: { include: { clip: true } } } } },
+                });
+                if (!attempt || attempt.job.uploadSession.assetId !== id
+                    || attempt.status !== 'UNKNOWN' || attempt.job.status !== 'UNKNOWN'
+                    || attempt.job.currentAttemptId !== operationId) return 'changed';
+                const key = originalReadLockKey(id);
+                const reads = await tx.$queryRaw`
+                    SELECT pg_try_advisory_xact_lock(hashtextextended(${key}, 0)) AS acquired
+                `;
+                if (!reads[0]?.acquired || await tx.muxOriginalReadLease.count({ where: { assetId: id } })) {
+                    return 'read-active';
+                }
+                if (attempt.muxAssetId || attempt.job.uploadSession.clip.muxAssetId
+                    || await tx.muxAssetReference.findFirst({ where: { assetId: id } })) return 'changed';
+
+                await tx.muxIngestAttempt.update({
+                    where: { id: operationId },
+                    data: { status: 'CONFIRMED_ABSENT', resolvedAt: new Date() },
+                });
+                await tx.muxIngestJob.update({
+                    where: { uploadSessionId: attempt.uploadSessionId },
+                    data: {
+                        status: 'FAILED',
+                        nextAttemptAt: null,
+                        lastError: 'Mux asset absence confirmed; the owner may request a retry',
+                    },
+                });
+                await queueAssetMediaSync(tx, id);
+                await tx.auditLog.create({
+                    data: {
+                        actorUserId: actorId(request.user),
+                        targetType: 'ASSET',
+                        targetId: id,
+                        action: 'MUX_INGEST_CONFIRMED_ABSENT',
+                        reason: `Operation ${operationId}: ${reason}`,
+                    },
+                });
+                return 'confirmed';
+            });
+        });
+        if (!locked.acquired) return reply.status(409).send({ error: 'Media reconciliation is still in progress' });
+        if (locked.value === 'read-active') {
+            return reply.status(409).send({ error: 'Original reads are still active or require recovery' });
+        }
+        if (locked.value !== 'confirmed') {
+            return reply.status(409).send({ error: 'Mux ingest attempt changed; refresh and try again' });
+        }
+        const sync = await reconcileAssetMedia(fastify, id);
+        return reply.status(sync.state === 'SYNCED' ? 200 : 202).send({
+            mediaSyncState: sync.state,
+            message: sync.message,
+        });
+    });
+
+    fastify.post('/api/admin/assets/:id/original-reads/confirm-closed', {
+        preHandler: [fastify.authenticate, fastify.requireRole(ROLES.SUPER_ADMIN)],
+    }, async (request, reply) => {
+        const { id } = request.params;
+        const { leaseId, confirmed } = request.body || {};
+        const reason = parseReason(request.body?.reason, reply);
+        if (reply.sent) return;
+        if (typeof leaseId !== 'string' || !leaseId || confirmed !== true || !reason) {
+            return reply.status(400).send({ error: 'A closed-read confirmation, lease ID, and reason are required' });
+        }
+
+        const locked = await withAssetMediaLock(id, async assertLocked => {
+            await assertLocked();
+            return prisma.$transaction(async tx => {
+                const rows = await tx.$queryRaw`SELECT id FROM assets WHERE id = ${id} FOR UPDATE`;
+                if (!rows.length) return 'missing';
+                const key = originalReadLockKey(id);
+                const reads = await tx.$queryRaw`
+                    SELECT pg_try_advisory_xact_lock(hashtextextended(${key}, 0)) AS acquired
+                `;
+                if (!reads[0]?.acquired) return 'read-active';
+                const removed = await tx.muxOriginalReadLease.deleteMany({ where: { id: leaseId, assetId: id } });
+                if (removed.count !== 1) return 'changed';
+                await queueAssetMediaSync(tx, id);
+                await tx.auditLog.create({
+                    data: {
+                        actorUserId: actorId(request.user),
+                        targetType: 'ASSET',
+                        targetId: id,
+                        action: 'ORIGINAL_READ_CONFIRMED_CLOSED',
+                        reason: `Lease ${leaseId}: ${reason}`,
+                    },
+                });
+                return 'confirmed';
+            });
+        });
+        if (!locked.acquired) return reply.status(409).send({ error: 'Media reconciliation is still in progress' });
+        if (locked.value === 'missing') return reply.status(404).send({ error: 'Asset not found' });
+        if (locked.value === 'read-active') return reply.status(409).send({ error: 'Original reads are still active' });
+        if (locked.value !== 'confirmed') return reply.status(409).send({ error: 'Original read lease changed' });
+        const sync = await reconcileAssetMedia(fastify, id);
+        return reply.status(sync.state === 'SYNCED' ? 200 : 202).send({
+            mediaSyncState: sync.state,
+            message: sync.message,
+        });
+    });
+
     fastify.get('/api/admin/media-issues', {
         preHandler: [fastify.authenticate, fastify.requireRole(ROLES.SUPER_ADMIN)],
     }, async () => {
@@ -306,6 +433,8 @@ export default async function moderationRoutes(fastify) {
                     { mediaCreateOperationId: { not: null } },
                     { moderation: 'ACTIVE', mediaPlaybackReset: true },
                     { moderation: { not: 'ACTIVE' }, mediaSyncState: 'PENDING' },
+                    { uploadSessions: { some: { muxIngestJob: { is: { status: { in: ['CREATING', 'UNKNOWN', 'CONFLICT', 'FAILED'] } } } } } },
+                    { originalReadLeases: { some: {} } },
                 ],
             },
             select: {
@@ -320,6 +449,27 @@ export default async function moderationRoutes(fastify) {
                 mediaCreateOperationId: true,
                 mediaCreateMuxAssetId: true,
                 mediaCreateStartedAt: true,
+                uploadSessions: {
+                    where: { muxIngestJob: { is: { status: { in: ['CREATING', 'UNKNOWN', 'CONFLICT', 'FAILED'] } } } },
+                    select: {
+                        id: true,
+                        muxIngestJob: {
+                            select: {
+                                status: true,
+                                currentAttemptId: true,
+                                attemptCount: true,
+                                lastError: true,
+                                attempts: {
+                                    where: { status: { in: ['CREATING', 'UNKNOWN', 'LINKED'] } },
+                                    select: { id: true, status: true, muxAssetId: true, createdAt: true },
+                                },
+                            },
+                        },
+                    },
+                },
+                originalReadLeases: {
+                    select: { id: true, attemptId: true, serverInstanceId: true, createdAt: true },
+                },
             },
             orderBy: [{ mediaSyncNextAt: 'asc' }, { id: 'asc' }],
             take: 101,

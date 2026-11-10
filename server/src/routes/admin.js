@@ -487,6 +487,14 @@ export default async function adminRoutes(fastify) {
                 `;
                 if (!locks[0]?.acquired) return { status: 'busy' };
             }
+            const unresolvedIngests = await tx.muxIngestAttempt.count({
+                where: {
+                    status: { in: ['CREATING', 'UNKNOWN'] },
+                    job: { uploadSession: { asset: { userId: id } } },
+                },
+            });
+            const originalReads = await tx.muxOriginalReadLease.count({ where: { asset: { userId: id } } });
+            if (unresolvedIngests || originalReads) return { status: 'needs-cleanup' };
 
             const clips = await tx.clip.count({ where: { asset: { userId: id } } });
             const chatDeleted = await tx.chatMessage.deleteMany({ where: { userId: id } });

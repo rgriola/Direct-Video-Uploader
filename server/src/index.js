@@ -28,6 +28,7 @@ import { registerApplicationRoutes } from './routes/index.js';
 import localUploadRoutes from './routes/local-uploads.js';
 import { setupWebSocket } from './ws/handler.js';
 import { startMuxSync, stopMuxSync } from './jobs/mux-sync.js';
+import { startMuxOriginalIngest } from './jobs/mux-original-ingest.js';
 import { startUploadCleanup, stopUploadCleanup } from './jobs/upload-cleanup.js';
 import { CORS_ORIGINS, WS_CORS_ORIGINS } from './lib/config.js';
 import prisma from './lib/prisma.js';
@@ -364,7 +365,7 @@ const io = new SocketIOServer(fastify.server, {
 fastify.decorate('io', io);
 
 // ─── Routes ──────────────────────────────────────────────
-await registerApplicationRoutes(fastify);
+const muxOriginalConfig = await registerApplicationRoutes(fastify);
 
 // Health check
 fastify.get('/api/health', async () => ({
@@ -471,8 +472,13 @@ fastify.get('/api/metrics', {
 });
 
 // ─── Start Server ────────────────────────────────────────
+let stopMuxOriginalIngest;
 const start = async () => {
     try {
+        if (process.env.DEBUG === 'true'
+            && (muxOriginalConfig.enabled || await prisma.muxIngestAttempt.count() > 0)) {
+            throw new Error('DEBUG=true exposes signed original URLs through the Mux SDK');
+        }
         // Set up WebSocket handlers
         setupWebSocket(io, fastify);
 
@@ -495,6 +501,7 @@ const start = async () => {
 
         // Start background jobs
         startMuxSync(fastify);
+        stopMuxOriginalIngest = startMuxOriginalIngest(fastify, muxOriginalConfig);
         startUploadCleanup(fastify);
     } catch (err) {
         fastify.log.error(err);
@@ -508,6 +515,7 @@ const shutdown = async (signal) => {
     console.log(`\n🛑 ${signal} received — shutting down gracefully...`);
     try {
         stopMuxSync();          // Stop background jobs
+        stopMuxOriginalIngest?.();
         stopUploadCleanup();
         io.close();       // Close WebSocket connections
         await fastify.close(); // Stop accepting HTTP, finish in-flight requests

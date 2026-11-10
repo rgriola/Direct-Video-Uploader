@@ -106,11 +106,26 @@ export default async function uploadSessionRoutes(fastify, {
     signingSecret,
     now = () => new Date(),
     withLock = withAssetMediaLock,
+    handoff,
 }) {
     if (!storage || typeof signingSecret !== 'string' || Buffer.byteLength(signingSecret) < 32) {
         throw new TypeError('Upload routes require a storage driver and signing secret');
     }
-    const sessions = createUploadSessionService({ db, storage, storageDriver, now });
+    const sessions = createUploadSessionService({
+        db, storage, storageDriver, now, onCompleted: handoff?.onCompleted,
+    });
+
+    async function serializeForResponse(session) {
+        const result = serializeSession(session);
+        if (handoff) {
+            const job = await db.muxIngestJob.findUnique({
+                where: { uploadSessionId: session.id },
+                select: { status: true, attemptCount: true, nextAttemptAt: true, lastError: true },
+            });
+            result.muxIngest = job;
+        }
+        return result;
+    }
 
     fastify.decorateRequest('uploadPartAuthorization', null);
     fastify.addContentTypeParser('application/octet-stream', (_request, payload, done) => done(null, payload));
@@ -164,7 +179,7 @@ export default async function uploadSessionRoutes(fastify, {
             throw new UploadSessionError('SESSION_BUSY', 'Asset media is being changed; retry the request');
         }
         return reply.status(locked.value.created ? 201 : 200).send({
-            uploadSession: serializeSession(locked.value.session),
+            uploadSession: await serializeForResponse(locked.value.session),
         });
     }));
 
@@ -176,7 +191,7 @@ export default async function uploadSessionRoutes(fastify, {
             uploadSessionId: request.params.sessionId,
         });
         assertVisibleSession(session, request.user.id);
-        return { uploadSession: serializeSession(session) };
+        return { uploadSession: await serializeForResponse(session) };
     }));
 
     fastify.post('/api/upload-sessions/:sessionId/parts/:partNumber/sign', {
@@ -281,8 +296,27 @@ export default async function uploadSessionRoutes(fastify, {
             uploadSessionId: request.params.sessionId,
         });
         assertVisibleSession(session, request.user.id);
-        return { uploadSession: serializeSession(session) };
+        return { uploadSession: await serializeForResponse(session) };
     }));
+
+    if (handoff) {
+        fastify.post('/api/upload-sessions/:sessionId/mux-ingest', {
+            preHandler: [fastify.authenticate],
+            config: { rateLimit: { max: 10, timeWindow: '1 minute' } },
+        }, async (request, reply) => handleErrors(reply, async () => {
+            const ownerId = request.user.id;
+            const session = await sessions.get({ ownerId, uploadSessionId: request.params.sessionId });
+            assertVisibleSession(session, ownerId);
+            const locked = await withLock(session.assetId, async assertLocked => {
+                await assertLocked();
+                return handoff.request(db, session, ownerId, now());
+            });
+            if (!locked.acquired) {
+                throw new UploadSessionError('SESSION_BUSY', 'Asset media is being changed; retry the request');
+            }
+            return reply.status(202).send({ uploadSession: await serializeForResponse(session) });
+        }));
+    }
 
     fastify.delete('/api/upload-sessions/:sessionId', {
         preHandler: [fastify.authenticate],

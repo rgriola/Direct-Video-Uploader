@@ -21,6 +21,10 @@ const MUX_TOKEN_SECRET = process.env.MUX_TOKEN_SECRET;
 export const MUX_ENV_KEY = process.env.MUX_ENV_KEY || '';
 const CONTROL_REQUEST_OPTIONS = { timeout: 15_000, maxRetries: 0 };
 
+function muxErrorSummary(error) {
+    return Number.isInteger(error?.status) ? `HTTP ${error.status}` : 'request failed';
+}
+
 /** Whether Mux is configured (has API credentials). */
 export const isMuxEnabled = !!(MUX_TOKEN_ID && MUX_TOKEN_SECRET);
 
@@ -69,6 +73,28 @@ export async function createDirectUpload(opts = {}) {
         uploadUrl: upload.url,
         muxUploadId: upload.id,
     };
+}
+
+export async function createMuxOriginalAsset({ sourceUrl, assetId, clipId, operationId }) {
+    if (!muxClient) {
+        return { ok: false, indeterminate: false, retryable: false, error: 'Mux asset creation is not configured' };
+    }
+    try {
+        const asset = await muxClient.video.assets.create({
+            inputs: [{ url: sourceUrl }],
+            passthrough: JSON.stringify({ assetId, clipId, ingestOperationId: operationId }),
+        }, CONTROL_REQUEST_OPTIONS);
+        if (typeof asset?.id !== 'string' || !asset.id) {
+            return { ok: false, indeterminate: true, retryable: false, error: 'Mux asset creation outcome is unknown' };
+        }
+        return { ok: true, muxAssetId: asset.id };
+    } catch (error) {
+        const status = error?.status;
+        if (status === 429) {
+            return { ok: false, indeterminate: false, retryable: true, error: 'Mux rate limited asset creation' };
+        }
+        return { ok: false, indeterminate: true, retryable: false, error: 'Mux asset creation outcome is unknown' };
+    }
 }
 
 /**
@@ -143,7 +169,7 @@ export async function getMuxAsset(muxAssetId) {
     try {
         return await muxClient.video.assets.retrieve(muxAssetId);
     } catch (err) {
-        console.error('🎬 Mux asset fetch error:', err.message);
+        console.error('🎬 Mux asset fetch error:', muxErrorSummary(err));
         return null;
     }
 }
@@ -182,7 +208,7 @@ export async function inspectMuxAsset(muxAssetId) {
         return { ok: true, asset };
     } catch (err) {
         if (err.status === 404) return { ok: true, asset: null };
-        console.error('🎬 Mux asset inspection error:', err.message);
+        console.error('🎬 Mux asset inspection error:', muxErrorSummary(err));
         return { ok: false, error: 'Mux asset inspection failed' };
     }
 }
@@ -243,7 +269,7 @@ export async function createMuxPublicPlayback(muxAssetId) {
         const status = err?.status;
         const rejected = Number.isInteger(status) && status >= 400 && status < 500
             && status !== 408 && status !== 429;
-        console.error('🎬 Mux playback creation error:', err.message);
+        console.error('🎬 Mux playback creation error:', muxErrorSummary(err));
         return {
             ok: false,
             indeterminate: !rejected,
@@ -265,7 +291,7 @@ export async function deleteMuxAsset(muxAssetId) {
     } catch (err) {
         // 404 = already gone, treat as success
         if (err.status === 404) return true;
-        console.error('🎬 Mux asset delete error:', err.message);
+        console.error('🎬 Mux asset delete error:', muxErrorSummary(err));
         return false;
     }
 }
@@ -293,7 +319,7 @@ export async function disableMuxPlayback(muxAssetId, assertLocked = async () => 
             await muxClient.video.assets.deletePlaybackId(muxAssetId, playbackId, CONTROL_REQUEST_OPTIONS);
         } catch (err) {
             if (err.status !== 404) {
-                console.error('🎬 Mux playback revocation error:', err.message);
+                console.error('🎬 Mux playback revocation error:', muxErrorSummary(err));
             }
         }
     }
@@ -321,7 +347,7 @@ export async function listMuxAssets() {
         const page = await muxClient.video.assets.list({ limit: 100 });
         return page.data || [];
     } catch (err) {
-        console.error('🎬 Mux list assets error:', err.message);
+        console.error('🎬 Mux list assets error:', muxErrorSummary(err));
         return null;
     }
 }
