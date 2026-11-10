@@ -14,8 +14,11 @@ import stat
 import subprocess
 import sys
 import tempfile
+import uuid
 from dataclasses import dataclass
 from typing import Optional
+
+import monitor_status
 
 
 UUID = re.compile(
@@ -676,8 +679,42 @@ def back_up_destination(rclone, destination, snapshot, manifest):
     log(f"{destination.label} backup verified: {len(snapshot.files)} published originals")
 
 
-def execute(options):
-    with backup_lock(), contextlib.ExitStack() as stack:
+class BackupMonitoring:
+    def __init__(self, state_dir):
+        self.state_dir = state_dir
+        self.pending = {}
+        self.failed = False
+
+    def record(self, check, event, run_id):
+        if self.state_dir is None:
+            return
+        try:
+            monitor_status.record(self.state_dir, check, event, run_id)
+        except (OSError, monitor_status.MonitoringError) as error:
+            self.failed = True
+            suffix = f" (errno {error.errno})" if isinstance(error, OSError) else ""
+            log(f"ERROR could not record backup monitoring status{suffix}")
+
+    def start(self):
+        if self.state_dir is None:
+            return
+        for check in ("original-local", "original-b2"):
+            run_id = str(uuid.uuid4())
+            self.pending[check] = run_id
+            self.record(check, "start", run_id)
+
+    def finish(self, check, event):
+        run_id = self.pending.pop(check, None)
+        if run_id is not None:
+            self.record(check, event, run_id)
+
+    def fail_unfinished(self):
+        for check in list(self.pending):
+            self.finish(check, "failure")
+
+
+def perform_backup(options, monitoring):
+    with contextlib.ExitStack() as stack:
         source_mount = stack.enter_context(contextlib.closing(open_mount(options.source_volume, "source volume")))
         snapshot = inventory_source(options.source_root, options.source_id, source_mount)
         if snapshot.legacy_count:
@@ -696,23 +733,41 @@ def execute(options):
             try:
                 with local_destination(configs, options, source_mount) as destination:
                     back_up_destination(rclone, destination, snapshot, manifest)
+                monitoring.finish("original-local", "success")
             except BackupError as error:
                 failures.append("local")
+                monitoring.finish("original-local", "failure")
                 log(f"ERROR local backup: {error}")
             except OSError as error:
                 failures.append("local")
+                monitoring.finish("original-local", "failure")
                 log(f"ERROR local backup: filesystem operation failed (errno {error.errno})")
             try:
                 destination = cloud_destination(configs, options)
                 back_up_destination(rclone, destination, snapshot, manifest)
+                monitoring.finish("original-b2", "success")
             except BackupError as error:
                 failures.append("B2")
+                monitoring.finish("original-b2", "failure")
                 log(f"ERROR B2 backup: {error}")
             except OSError as error:
                 failures.append("B2")
+                monitoring.finish("original-b2", "failure")
                 log(f"ERROR B2 backup: filesystem operation failed (errno {error.errno})")
             if failures:
                 raise BackupError("backup incomplete: " + ", ".join(failures))
+
+
+def execute(options):
+    with backup_lock():
+        monitoring = BackupMonitoring(options.monitor_state_dir)
+        monitoring.start()
+        try:
+            perform_backup(normalize_options(options), monitoring)
+        finally:
+            monitoring.fail_unfinished()
+        if monitoring.failed:
+            raise BackupError("backup completed but its monitoring status could not be recorded")
 
 
 def parser():
@@ -727,6 +782,7 @@ def parser():
     result.add_argument("--rclone-config", required=True, help="private encrypted rclone configuration")
     result.add_argument("--password-helper", required=True, help="executable that retrieves the config password")
     result.add_argument("--rclone", default="rclone", help="rclone executable")
+    result.add_argument("--monitor-state-dir", help="private monitoring state directory")
     result.add_argument("--print-launchd", action="store_true", help="print an hourly LaunchAgent plist")
     return result
 
@@ -734,6 +790,8 @@ def parser():
 def normalize_options(options):
     for name in ("source_volume", "source_root", "backup_volume", "rclone_config", "password_helper"):
         setattr(options, name, absolute_path(getattr(options, name), name.replace("_", " ")))
+    if options.monitor_state_dir is not None:
+        options.monitor_state_dir = absolute_path(options.monitor_state_dir, "monitoring state directory")
     options.source_id = valid_uuid(options.source_id, "source identity")
     options.backup_volume_id = valid_uuid(options.backup_volume_id, "backup volume identity")
     options.local_remote = valid_remote(options.local_remote, "local remote")
@@ -754,6 +812,8 @@ def launchd_plist(options):
         "local_remote", "b2_remote", "rclone_config", "password_helper", "rclone",
     ):
         arguments.extend(["--" + name.replace("_", "-"), getattr(options, name)])
+    if getattr(options, "monitor_state_dir", None) is not None:
+        arguments.extend(["--monitor-state-dir", options.monitor_state_dir])
     logs = os.path.join(os.path.expanduser("~"), "Library", "Logs")
     return plistlib.dumps({
         "Label": LAUNCHD_LABEL,
@@ -767,8 +827,8 @@ def launchd_plist(options):
 def main(argv=None):
     options = parser().parse_args(argv)
     try:
-        options = normalize_options(options)
         if options.print_launchd:
+            options = normalize_options(options)
             sys.stdout.buffer.write(launchd_plist(options))
             return 0
         log("starting originals backup")

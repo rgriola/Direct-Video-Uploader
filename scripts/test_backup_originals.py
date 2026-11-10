@@ -160,6 +160,10 @@ class ConfigurationTests(unittest.TestCase):
         self.assertEqual(plist["StartInterval"], 3600)
         self.assertIn(options.source_root, plist["ProgramArguments"])
         self.assertIn(options.password_helper, plist["ProgramArguments"])
+        options.monitor_state_dir = "/home/user/private-monitoring"
+        monitored = plistlib.loads(backup.launchd_plist(options))
+        self.assertIn("--monitor-state-dir", monitored["ProgramArguments"])
+        self.assertIn(options.monitor_state_dir, monitored["ProgramArguments"])
         self.assertNotIn(TEST_PASSWORD.encode(), xml)
 
     @unittest.skipUnless(shutil.which("rclone"), "rclone is required to generate a LaunchAgent")
@@ -379,13 +383,38 @@ class EncryptedBackupTests(unittest.TestCase):
         self.assertEqual(encrypted.read_bytes(), data)
 
     def test_local_volume_failure_still_attempts_b2(self):
+        monitor = self.base / "monitor"
+        monitor.mkdir(mode=0o700)
         (self.backup_volume / backup.VOLUME_MARKER).write_text(SOURCE_ID + "\n")
-        status, output = self.run_backup()
+        status, output = self.run_backup("--monitor-state-dir", str(monitor))
         self.assertEqual(status, 1, output)
         self.assertIn("backup volume marker does not match", output)
         self.assertIn("B2 backup verified", output)
         self.assertEqual(self.decrypted_original("cloudcrypt"), CONTENTS)
         self.assertEqual(list(self.local.iterdir()), [])
+        local = json.loads((monitor / "original-local.json").read_text())
+        cloud = json.loads((monitor / "original-b2.json").read_text())
+        self.assertEqual(local["lastOutcome"], "failure")
+        self.assertEqual(cloud["lastOutcome"], "success")
+
+    def test_invalid_configuration_records_both_original_backups_as_failed(self):
+        monitor = self.base / "monitor"
+        monitor.mkdir(mode=0o700)
+        status, output = self.run_backup(
+            "--monitor-state-dir", str(monitor), "--rclone", "/missing/dvu-rclone"
+        )
+        self.assertEqual(status, 1, output)
+        for check in ("original-local", "original-b2"):
+            self.assertEqual(json.loads((monitor / f"{check}.json").read_text())["lastOutcome"], "failure")
+
+    def test_monitoring_write_failure_does_not_prevent_backups(self):
+        status, output = self.run_backup("--monitor-state-dir", str(self.base / "missing-monitor"))
+        self.assertEqual(status, 1, output)
+        self.assertIn("could not record backup monitoring status", output)
+        self.assertIn("local backup verified", output)
+        self.assertIn("B2 backup verified", output)
+        self.assertEqual(self.decrypted_original("localcrypt"), CONTENTS)
+        self.assertEqual(self.decrypted_original("cloudcrypt"), CONTENTS)
 
     def test_local_crypt_path_cannot_contain_parent_traversal(self):
         unsafe = str(self.local / ".." / "encrypted-originals")
