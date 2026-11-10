@@ -30,10 +30,11 @@ const prismaMock = {
 
 const reconcileAssetMedia = vi.fn();
 const recordMuxAssetReference = vi.fn();
+const queueAssetMediaSync = vi.fn();
 const withAssetMediaLock = vi.fn();
 
 vi.mock('../lib/prisma.js', () => ({ default: prismaMock }));
-vi.mock('../lib/media-reconciliation.js', () => ({ reconcileAssetMedia, recordMuxAssetReference }));
+vi.mock('../lib/media-reconciliation.js', () => ({ reconcileAssetMedia, recordMuxAssetReference, queueAssetMediaSync }));
 vi.mock('../lib/media-lock.js', () => ({ withAssetMediaLock }));
 
 let moderationRoutes;

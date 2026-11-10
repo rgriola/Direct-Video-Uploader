@@ -2,7 +2,9 @@ import Fastify from 'fastify';
 import { readFile } from 'node:fs/promises';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { requireRole } from '../lib/authorization.js';
-import { acquireIntegrationDatabaseLock, waitForBlockedQuery } from './helpers/database-lock.js';
+import {
+    acquireIntegrationDatabaseLock, INTEGRATION_SETUP_TIMEOUT_MS, waitForBlockedQuery,
+} from './helpers/database-lock.js';
 
 const muxApi = vi.hoisted(() => ({
     createDirectUpload: vi.fn(),
@@ -88,7 +90,7 @@ integration('media routes against PostgreSQL', () => {
         await app.register(adminRoutes);
         await app.register(assetRoutes);
         await app.register(moderationRoutes);
-    });
+    }, INTEGRATION_SETUP_TIMEOUT_MS);
 
     beforeEach(async () => {
         await prisma.asset.deleteMany({ where: { userId } });

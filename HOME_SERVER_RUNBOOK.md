@@ -106,6 +106,26 @@ This DB uses Prisma migrations (not `db push`). Workflow:
    Once the cause is fixed (and the failed SQL didn't partially apply):
    `npx prisma migrate resolve --rolled-back <migration_name>`, then `migrate deploy` again.
 
+## Experimental original uploads and Mux handoff
+
+Keep `UPLOAD_SESSIONS_ENABLED` and `MUX_ORIGINAL_INGEST_ENABLED` **off** on this
+shared home backend; `dev.ms-fixer.com` is not isolated staging. Capacity and
+free-space safeguards, original backups, an expiry/orphan sweep, tunnel and
+proxy log verification, isolated real-Mux testing, and client integration remain
+open. Recovery for failed linked Mux assets and late webhooks after hard deletion
+also remains open. When deploying a server version containing the handoff, back
+up the database and apply its migration **before** starting the new code even if
+both flags remain off.
+
+Do not use `DEBUG=true`: the Mux SDK can log signed source URLs, and the server
+refuses that setting when original ingest is enabled or prior attempts exist.
+If the feature has ever been enabled, keep the original storage root and the
+new reconciliation code available when disabling it. Unresolved creates and
+crashed read leases can block removal; the Super Admin investigation and
+audited recovery procedures are in [the upload-session API guide](docs/UPLOAD_SESSION_API.md#super-admin-recovery).
+Do not confirm an absent Mux asset or closed read without independently
+verifying it.
+
 ## Super Admin bootstrap
 
 `SUPER_ADMIN` can't be granted through the API. Set `SUPER_ADMIN_PHONE` (the account's

@@ -1,17 +1,13 @@
-import { createHmac, timingSafeEqual } from 'node:crypto';
+import { signCapability, verifyCapability } from './signed-capabilities.js';
 
-function digest(secret, { ownerId, sessionId, partNumber, sizeBytes, expires }) {
-    return createHmac('sha256', secret)
-        .update(['upload-part-v1', ownerId, sessionId, partNumber, sizeBytes, expires].join('\n'))
-        .digest('hex');
+function claims({ ownerId, sessionId, partNumber, sizeBytes, expires }) {
+    return ['upload-part-v1', ownerId, sessionId, partNumber, sizeBytes, expires];
 }
 
-export function signUploadPart(secret, claims) {
-    return digest(secret, claims);
+export function signUploadPart(secret, values) {
+    return signCapability(secret, claims(values));
 }
 
-export function verifyUploadPart(secret, claims, signature) {
-    if (typeof signature !== 'string' || !/^[a-f0-9]{64}$/.test(signature)) return false;
-    const expected = Buffer.from(digest(secret, claims), 'hex');
-    return timingSafeEqual(expected, Buffer.from(signature, 'hex'));
+export function verifyUploadPart(secret, values, signature) {
+    return verifyCapability(secret, claims(values), signature);
 }

@@ -1,3 +1,6 @@
+// Integration suites serialize their fixtures and may wait for other suites.
+export const INTEGRATION_SETUP_TIMEOUT_MS = 60_000;
+
 export async function acquireIntegrationDatabaseLock(pool) {
     const client = await pool.connect();
     try {

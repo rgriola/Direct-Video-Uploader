@@ -12,6 +12,8 @@ import { userRoom } from '../ws/rooms.js';
 
 const RETRY_INTERVAL_MS = 2 * 60 * 1000;
 const UNKNOWN_CREATE = 'Mux playback creation outcome is unknown; Super Admin confirmation is required';
+const UNKNOWN_ORIGINAL = 'Mux original ingest outcome is unknown; Super Admin confirmation is required';
+const CONFLICTING_ORIGINAL = 'Mux original ingest references require manual reconciliation';
 
 export async function queueAssetMediaSync(db, assetId, { resetPlayback = false } = {}) {
     return db.asset.updateMany({
@@ -150,7 +152,9 @@ export function createMediaReconciler({
         if (ids.size === 0 && (clip.muxPlaybackId || clip.streamUrl || clip.thumbnailUrl)) {
             errors.push('Mux playback cannot be verified without its asset ID');
         }
-        if (ids.size > 1) errors.push('Multiple Mux assets belong to one clip');
+        if (ids.size > 1 && asset.moderation !== 'REMOVED') {
+            errors.push('Multiple Mux assets belong to one clip');
+        }
 
         for (const muxAssetId of ids) {
             await recordMuxAssetReference(db, { assetId: asset.id, clipId: clip.id, muxAssetId });
@@ -284,7 +288,12 @@ export function createMediaReconciler({
     async function runPass(fastify, assetId, assertLocked, context) {
         const asset = await db.asset.findUnique({
             where: { id: assetId },
-            include: { clips: true, muxAssetReferences: true, uploadSessions: true },
+            include: {
+                clips: true,
+                muxAssetReferences: true,
+                uploadSessions: { include: { muxIngestJob: { include: { attempts: true } } } },
+                _count: { select: { originalReadLeases: true } },
+            },
         });
         if (!asset) return { state: 'MISSING', message: 'Asset not found' };
         context.revision = asset.mediaSyncRevision;
@@ -314,8 +323,20 @@ export function createMediaReconciler({
         }
         const errors = inspections.flatMap(item => item.errors);
         let pending = inspections.some(item => item.pending);
-        const uncertain = Boolean(asset.mediaCreateOperationId);
-        if (uncertain) errors.push(UNKNOWN_CREATE);
+        const jobs = asset.uploadSessions.map(session => session.muxIngestJob).filter(Boolean);
+        const attempts = jobs.flatMap(job => job.attempts);
+        const creatingOriginal = attempts.some(attempt => attempt.status === 'CREATING');
+        const unknownOriginal = attempts.some(attempt => attempt.status === 'UNKNOWN');
+        const conflictingOriginal = asset.moderation === 'ACTIVE'
+            && jobs.some(job => job.status === 'CONFLICT');
+        const uncertain = Boolean(asset.mediaCreateOperationId)
+            || creatingOriginal || unknownOriginal || conflictingOriginal;
+        if (asset.mediaCreateOperationId) errors.push(UNKNOWN_CREATE);
+        if (unknownOriginal) errors.push(UNKNOWN_ORIGINAL);
+        if (conflictingOriginal) errors.push(CONFLICTING_ORIGINAL);
+        if (creatingOriginal) pending = true;
+        const readsPending = asset.moderation !== 'ACTIVE' && asset._count.originalReadLeases > 0;
+        if (readsPending) pending = true;
         const playbackIds = new Map();
 
         if (asset.moderation === 'REMOVED') {
@@ -326,6 +347,7 @@ export function createMediaReconciler({
                 errors.push('Original file has no upload session; manual recovery is required');
             }
             for (const session of asset.uploadSessions) {
+                if (readsPending) continue;
                 const clip = asset.clips.find(item => item.id === session.clipId);
                 const expectedPrefix = `originals/${session.ownerId}/${asset.id}/${session.clipId}/`;
                 if (!clip || session.ownerId !== asset.userId

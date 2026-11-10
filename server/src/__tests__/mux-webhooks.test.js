@@ -1,4 +1,5 @@
 import Fastify from 'fastify';
+import { Writable } from 'node:stream';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const prismaMock = {
@@ -33,11 +34,11 @@ vi.mock('@mux/mux-node', () => ({
 let app;
 let actor;
 
-async function buildApp(secret = 'mux-webhook-secret') {
+async function buildApp(secret = 'mux-webhook-secret', logger = false) {
     process.env.MUX_WEBHOOK_SECRET = secret;
     vi.resetModules();
     const { default: muxWebhookRoutes } = await import('../routes/mux-webhooks.js');
-    app = Fastify({ logger: false });
+    app = Fastify({ logger });
     app.decorate('authenticate', async (request, reply) => {
         if (!actor) return reply.status(401).send({ error: 'Unauthorized' });
         request.user = actor;
@@ -178,6 +179,25 @@ describe('Mux webhook verification and reconciliation', () => {
         const response = await webhook('video.asset.errored', { id: 'mux-1', errors: ['encode failed'] });
         expect(response.statusCode).toBe(200);
         expect(reconcileAssetMedia.mock.calls[0][1]).toBe('asset-1');
+    });
+
+    it('does not log signed source URLs from Mux error payloads or invalid passthrough', async () => {
+        const lines = [];
+        const stream = new Writable({
+            write(chunk, _encoding, done) { lines.push(chunk.toString()); done(); },
+        });
+        await buildApp('mux-webhook-secret', { stream });
+        prismaMock.clip.findFirst.mockResolvedValueOnce({ id: 'clip-1', assetId: 'asset-1' });
+        const response = await webhook('video.asset.errored', {
+            id: 'mux-1',
+            passthrough: 'invalid https://source.example/?signature=secret-passthrough',
+            errors: { messages: ['https://source.example/?signature=secret-error'] },
+        });
+        expect(response.statusCode).toBe(200);
+        const logs = lines.join('');
+        expect(logs).toContain('Mux asset errored');
+        expect(logs).not.toContain('secret-passthrough');
+        expect(logs).not.toContain('secret-error');
     });
 
     it('refuses conflicting Mux ownership and retries if the asset disappeared', async () => {

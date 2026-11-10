@@ -3,7 +3,7 @@ import cookie from '@fastify/cookie';
 import fastifyJwt from '@fastify/jwt';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { requireRole } from '../lib/authorization.js';
-import { acquireIntegrationDatabaseLock } from './helpers/database-lock.js';
+import { acquireIntegrationDatabaseLock, INTEGRATION_SETUP_TIMEOUT_MS } from './helpers/database-lock.js';
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 if (process.env.CI && !databaseUrl) {
@@ -137,7 +137,7 @@ integration('organization authorization against PostgreSQL', () => {
         await app.register(assetRoutes);
         await app.register(clipRoutes);
         await app.register(errorRoutes);
-    });
+    }, INTEGRATION_SETUP_TIMEOUT_MS);
 
     afterAll(async () => {
         if (app) await app.close();

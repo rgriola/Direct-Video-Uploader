@@ -9,7 +9,9 @@ import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { requireRole } from '../lib/authorization.js';
 import { hashPin } from '../lib/utils.js';
-import { acquireIntegrationDatabaseLock, waitForBlockedQuery } from './helpers/database-lock.js';
+import {
+    acquireIntegrationDatabaseLock, INTEGRATION_SETUP_TIMEOUT_MS, waitForBlockedQuery,
+} from './helpers/database-lock.js';
 
 const mux = vi.hoisted(() => ({
     createDirectUpload: vi.fn(async ({ clipId }) => ({
@@ -99,6 +101,7 @@ const ALL = [401, 200, 200, 200, 200, 200, 200, 200];
 const ADMINS = [401, 403, 403, 200, 200, 200, 200, 403];
 const SUPER = [401, 403, 403, 403, 403, 200, 200, 403];
 const SUPER_CONFLICT = [401, 403, 403, 403, 403, 409, 409, 403];
+const SUPER_NOT_FOUND = [401, 403, 403, 403, 403, 404, 404, 403];
 const SCOPED = [
     [401, 200, 404, 200, 404, 200, 200, 404],
     [401, 404, 200, 404, 200, 200, 200, 404],
@@ -259,7 +262,7 @@ integration('role and organization endpoint matrix', () => {
         await registerApplicationRoutes(app);
         await app.register(localUploadRoutes, { root: uploadRoot });
         await app.ready();
-    }, 30000);
+    }, INTEGRATION_SETUP_TIMEOUT_MS);
 
     afterAll(async () => {
         try {
@@ -493,6 +496,26 @@ integration('role and organization endpoint matrix', () => {
             check: async () => {
                 const asset = await prisma.asset.findUnique({ where: { id: teams[0].asset.id } });
                 expect(asset.mediaCreateOperationId).toBeNull();
+            },
+        },
+        {
+            route: 'POST /api/admin/assets/:id/mux-ingest/confirm-absent', method: 'POST',
+            url: `/api/admin/assets/${teams[0].asset.id}/mux-ingest/confirm-absent`,
+            statuses: SUPER_NOT_FOUND,
+            payload: () => ({ operationId: 'not-current', confirmed: true, reason: 'Matrix test' }),
+            check: async () => {
+                expect(await prisma.muxIngestAttempt.count({
+                    where: { job: { uploadSession: { assetId: teams[0].asset.id } } },
+                })).toBe(0);
+            },
+        },
+        {
+            route: 'POST /api/admin/assets/:id/original-reads/confirm-closed', method: 'POST',
+            url: `/api/admin/assets/${teams[0].asset.id}/original-reads/confirm-closed`,
+            statuses: SUPER_CONFLICT,
+            payload: () => ({ leaseId: 'not-current', confirmed: true, reason: 'Matrix test' }),
+            check: async () => {
+                expect(await prisma.muxOriginalReadLease.count({ where: { assetId: teams[0].asset.id } })).toBe(0);
             },
         },
         { route: 'GET /api/admin/media-issues', method: 'GET', url: '/api/admin/media-issues', statuses: SUPER },

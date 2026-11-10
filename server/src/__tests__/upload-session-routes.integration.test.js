@@ -11,7 +11,7 @@ import path from 'node:path';
 import { Readable } from 'node:stream';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createLocalStorageDriver, MAX_PART_SIZE_BYTES } from '../lib/storage/local-driver.js';
-import { acquireIntegrationDatabaseLock } from './helpers/database-lock.js';
+import { acquireIntegrationDatabaseLock, INTEGRATION_SETUP_TIMEOUT_MS } from './helpers/database-lock.js';
 
 const muxApi = vi.hoisted(() => ({
     createDirectUpload: vi.fn(),
@@ -119,7 +119,7 @@ integration('upload session HTTP routes against PostgreSQL and local storage', (
         });
         tokens = Object.fromEntries([ownerId, otherId, adminId].map(id => [id, app.jwt.sign({ id })]));
         address = await app.listen({ host: '127.0.0.1', port: 0 });
-    });
+    }, INTEGRATION_SETUP_TIMEOUT_MS);
 
     beforeEach(async () => {
         vi.clearAllMocks();

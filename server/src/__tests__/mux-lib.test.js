@@ -6,6 +6,7 @@ const muxApi = {
     uploadsCreate: vi.fn(),
     uploadsRetrieve: vi.fn(),
     uploadsCancel: vi.fn(),
+    assetsCreate: vi.fn(),
     assetsRetrieve: vi.fn(),
     assetsDelete: vi.fn(),
     playbackCreate: vi.fn(),
@@ -27,6 +28,7 @@ vi.mock('@mux/mux-node', () => ({
                     cancel: muxApi.uploadsCancel,
                 },
                 assets: {
+                    create: muxApi.assetsCreate,
                     retrieve: muxApi.assetsRetrieve,
                     delete: muxApi.assetsDelete,
                     createPlaybackId: muxApi.playbackCreate,
@@ -69,6 +71,7 @@ beforeEach(() => {
     muxApi.uploadsCreate.mockReset();
     muxApi.uploadsRetrieve.mockReset();
     muxApi.uploadsCancel.mockReset();
+    muxApi.assetsCreate.mockReset();
     muxApi.assetsRetrieve.mockReset();
     muxApi.assetsDelete.mockReset();
     muxApi.playbackCreate.mockReset();
@@ -136,6 +139,60 @@ describe('mux lib coverage', () => {
             }),
             { timeout: 15_000, maxRetries: 0 },
         );
+    });
+
+    it('creates a source-URL asset without automatically creating playback', async () => {
+        muxApi.assetsCreate.mockResolvedValueOnce({ id: 'mux-original' });
+        const mux = await importMuxModule({ tokenId: 'id', tokenSecret: 'secret' });
+        const result = await mux.createMuxOriginalAsset({
+            sourceUrl: 'https://origin.example.test/source?signature=test',
+            assetId: 'asset-1',
+            clipId: 'clip-1',
+            operationId: 'operation-1',
+        });
+        expect(result).toEqual({ ok: true, muxAssetId: 'mux-original' });
+        expect(muxApi.assetsCreate).toHaveBeenCalledWith({
+            inputs: [{ url: 'https://origin.example.test/source?signature=test' }],
+            passthrough: JSON.stringify({
+                assetId: 'asset-1', clipId: 'clip-1', ingestOperationId: 'operation-1',
+            }),
+        }, { timeout: 15_000, maxRetries: 0 });
+    });
+
+    it('distinguishes rejected creation from an unknown outcome without logging the source URL', async () => {
+        const mux = await importMuxModule({ tokenId: 'id', tokenSecret: 'secret' });
+        const input = {
+            sourceUrl: 'https://origin.example.test/source?signature=private',
+            assetId: 'asset-1', clipId: 'clip-1', operationId: 'operation-1',
+        };
+        muxApi.assetsCreate.mockRejectedValueOnce({ status: 429, message: input.sourceUrl });
+        expect(await mux.createMuxOriginalAsset(input)).toMatchObject({
+            ok: false, indeterminate: false, retryable: true,
+        });
+        muxApi.assetsCreate.mockRejectedValueOnce({ status: 400, message: input.sourceUrl });
+        expect(await mux.createMuxOriginalAsset(input)).toMatchObject({
+            ok: false, indeterminate: true, retryable: false,
+        });
+        for (const failure of [{ status: 408 }, { status: 500 }, new Error(input.sourceUrl)]) {
+            muxApi.assetsCreate.mockRejectedValueOnce(failure);
+            expect(await mux.createMuxOriginalAsset(input)).toMatchObject({
+                ok: false, indeterminate: true, retryable: false,
+            });
+        }
+        muxApi.assetsCreate.mockResolvedValueOnce({});
+        expect(await mux.createMuxOriginalAsset(input)).toMatchObject({ ok: false, indeterminate: true });
+        expect(console.error).not.toHaveBeenCalled();
+    });
+
+    it('does not log source capabilities embedded in Mux asset errors', async () => {
+        const mux = await importMuxModule({ tokenId: 'id', tokenSecret: 'secret' });
+        muxApi.assetsRetrieve.mockRejectedValueOnce({
+            status: 500, message: 'source https://origin.example.test/?signature=private-capability',
+        });
+        await expect(mux.inspectMuxAsset('mux-original')).resolves.toEqual({
+            ok: false, error: 'Mux asset inspection failed',
+        });
+        expect(JSON.stringify(vi.mocked(console.error).mock.calls)).not.toContain('private-capability');
     });
 
     it('ingests local video to mux and returns upload id', async () => {

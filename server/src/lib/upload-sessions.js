@@ -97,10 +97,14 @@ export function createUploadSessionService({
   storageDriver = "local",
   now = () => new Date(),
   sessionTtlMs = SESSION_TTL_MS,
+  onCompleted,
 } = {}) {
   if (!db || !storage) throw new TypeError("Upload session service requires database and storage drivers");
   if (!Number.isSafeInteger(sessionTtlMs) || sessionTtlMs < 1) {
     throw new TypeError("Upload session TTL must be a positive safe integer");
+  }
+  if (onCompleted !== undefined && typeof onCompleted !== "function") {
+    throw new TypeError("Upload completion callback must be a function");
   }
 
   async function loadSession(uploadSessionId, ownerId) {
@@ -238,16 +242,18 @@ export function createUploadSessionService({
       if (clipUpdate.count !== 1) {
         const clip = await tx.clip.findUnique({ where: { id: current.clipId } });
         if (clip?.storageKey === current.storageKey && clip.sha256 === sha256) {
-          return tx.uploadSession.update({
+          const completed = await tx.uploadSession.update({
             where: { id: current.id },
             data: { status: "COMPLETED", completedAt: current.completedAt || now() },
             include: { parts: { orderBy: { partNumber: "asc" } } },
           });
+          if (onCompleted) await onCompleted(tx, current);
+          return completed;
         }
         throw new UploadSessionError("CLIP_CHANGED", "Clip is no longer available for original storage");
       }
 
-      return tx.uploadSession.update({
+      const completed = await tx.uploadSession.update({
         where: { id: current.id },
         data: {
           status: "COMPLETED",
@@ -255,6 +261,8 @@ export function createUploadSessionService({
         },
         include: { parts: { orderBy: { partNumber: "asc" } } },
       });
+      if (onCompleted) await onCompleted(tx, current);
+      return completed;
     });
   }
 

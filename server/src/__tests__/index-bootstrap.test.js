@@ -15,6 +15,9 @@ const processHandlers = {};
 const setupWebSocketMock = vi.fn();
 const startMuxSyncMock = vi.fn();
 const stopMuxSyncMock = vi.fn();
+const startMuxOriginalIngestMock = vi.fn();
+const stopMuxOriginalIngestMock = vi.fn();
+const countMuxAttemptsMock = vi.fn();
 const startUploadCleanupMock = vi.fn();
 const stopUploadCleanupMock = vi.fn();
 
@@ -90,6 +93,10 @@ vi.mock('../jobs/mux-sync.js', () => ({
     stopMuxSync: stopMuxSyncMock,
 }));
 
+vi.mock('../jobs/mux-original-ingest.js', () => ({
+    startMuxOriginalIngest: startMuxOriginalIngestMock,
+}));
+
 vi.mock('../jobs/upload-cleanup.js', () => ({
     startUploadCleanup: startUploadCleanupMock,
     stopUploadCleanup: stopUploadCleanupMock,
@@ -110,6 +117,7 @@ vi.mock('../lib/prisma.js', () => ({
             }),
         },
         $queryRaw: vi.fn().mockResolvedValue([{ ok: 1 }]),
+        muxIngestAttempt: { count: countMuxAttemptsMock },
     },
 }));
 
@@ -136,6 +144,7 @@ beforeEach(() => {
     delete process.env.MUX_TOKEN_SECRET;
     delete process.env.MUX_ENV_KEY;
     delete process.env.MUX_WEBHOOK_SECRET;
+    delete process.env.DEBUG;
 
     fastifyState.instances = [];
     fastifyState.listenError = null;
@@ -145,6 +154,9 @@ beforeEach(() => {
     setupWebSocketMock.mockReset();
     startMuxSyncMock.mockReset();
     stopMuxSyncMock.mockReset();
+    stopMuxOriginalIngestMock.mockReset();
+    startMuxOriginalIngestMock.mockReset().mockReturnValue(stopMuxOriginalIngestMock);
+    countMuxAttemptsMock.mockReset().mockResolvedValue(0);
     startUploadCleanupMock.mockReset();
     stopUploadCleanupMock.mockReset();
 
@@ -175,6 +187,7 @@ describe('server index bootstrap coverage', () => {
         expect(fastify.listen).toHaveBeenCalledWith({ port: 4455, host: '127.0.0.1' });
         expect(setupWebSocketMock).toHaveBeenCalledWith(io, fastify);
         expect(startMuxSyncMock).toHaveBeenCalledWith(fastify);
+        expect(startMuxOriginalIngestMock).toHaveBeenCalledWith(fastify, { enabled: false });
         expect(startUploadCleanupMock).toHaveBeenCalledWith(fastify);
 
         expect(processOnSpy).toHaveBeenCalledWith('SIGTERM', expect.any(Function));
@@ -183,6 +196,7 @@ describe('server index bootstrap coverage', () => {
         await processHandlers.SIGTERM();
 
         expect(stopMuxSyncMock).toHaveBeenCalledTimes(1);
+        expect(stopMuxOriginalIngestMock).toHaveBeenCalledTimes(1);
         expect(stopUploadCleanupMock).toHaveBeenCalledTimes(1);
         expect(io.close).toHaveBeenCalledTimes(1);
         expect(fastify.close).toHaveBeenCalledTimes(1);
@@ -196,6 +210,18 @@ describe('server index bootstrap coverage', () => {
 
         const fastify = fastifyState.instances[0];
         expect(fastify.log.error).toHaveBeenCalledWith(expect.any(Error));
+        expect(processExitSpy).toHaveBeenCalledWith(1);
+    });
+
+    it('refuses SDK debug logging when old original ingest attempts exist', async () => {
+        process.env.DEBUG = 'true';
+        countMuxAttemptsMock.mockResolvedValue(1);
+        await importIndexModule();
+        const fastify = fastifyState.instances[0];
+        expect(fastify.listen).not.toHaveBeenCalled();
+        expect(fastify.log.error).toHaveBeenCalledWith(expect.objectContaining({
+            message: expect.stringContaining('signed original URLs'),
+        }));
         expect(processExitSpy).toHaveBeenCalledWith(1);
     });
 });

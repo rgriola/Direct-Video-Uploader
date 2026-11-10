@@ -10,6 +10,9 @@ vi.mock('../routes/clips.js', () => ({ default: vi.fn() }));
 vi.mock('../routes/errors.js', () => ({ default: vi.fn() }));
 vi.mock('../routes/mux-webhooks.js', () => ({ default: vi.fn() }));
 vi.mock('../routes/upload-sessions.js', () => ({ default: vi.fn() }));
+vi.mock('../routes/mux-originals.js', () => ({ default: vi.fn() }));
+vi.mock('../lib/mux-original-records.js', () => ({ enqueueMuxOriginal: vi.fn() }));
+vi.mock('../lib/mux-original-enqueue.js', () => ({ requestMuxOriginalIngest: vi.fn() }));
 vi.mock('../lib/storage/driver.js', () => ({ createStorageDriver: vi.fn(() => ({ provider: 'local' })) }));
 
 const originalEnv = { ...process.env };
@@ -49,6 +52,35 @@ describe('upload session configuration', () => {
         expect(fastify.register).toHaveBeenCalledWith(uploadSessionRoutes, expect.objectContaining({
             signingSecret: 'x'.repeat(32),
             storageDriver: 'local',
+        }));
+    });
+
+    it('registers signed original reads and the completion handoff only when enabled', async () => {
+        const { registerApplicationRoutes } = await import('../routes/index.js');
+        const { default: uploadSessionRoutes } = await import('../routes/upload-sessions.js');
+        const { default: muxOriginalRoutes } = await import('../routes/mux-originals.js');
+        const { enqueueMuxOriginal } = await import('../lib/mux-original-records.js');
+        const { requestMuxOriginalIngest } = await import('../lib/mux-original-enqueue.js');
+        const fastify = { register: vi.fn(async () => {}) };
+        Object.assign(process.env, {
+            UPLOAD_SESSIONS_ENABLED: 'true',
+            UPLOAD_SESSION_SIGNING_SECRET: 'u'.repeat(32),
+            MUX_ORIGINAL_INGEST_ENABLED: 'true',
+            MUX_ORIGINAL_READ_SIGNING_SECRET: 'r'.repeat(32),
+            MUX_ORIGINAL_READ_BASE_URL: 'https://origin.example.test',
+            MUX_TOKEN_ID: 'test-id',
+            MUX_TOKEN_SECRET: 'test-secret',
+            MUX_WEBHOOK_SECRET: 'test-webhook',
+            JWT_SECRET: 'test-jwt',
+        });
+        delete process.env.DEBUG;
+        const config = await registerApplicationRoutes(fastify);
+        expect(config.enabled).toBe(true);
+        expect(fastify.register).toHaveBeenCalledWith(muxOriginalRoutes, {
+            signingSecret: 'r'.repeat(32),
+        });
+        expect(fastify.register).toHaveBeenCalledWith(uploadSessionRoutes, expect.objectContaining({
+            handoff: { onCompleted: enqueueMuxOriginal, request: requestMuxOriginalIngest },
         }));
     });
 });

@@ -28,6 +28,8 @@ const prismaMock = {
 const setupWebSocketMock = vi.fn();
 const startMuxSyncMock = vi.fn();
 const stopMuxSyncMock = vi.fn();
+const startMuxOriginalIngestMock = vi.fn();
+const stopMuxOriginalIngestMock = vi.fn();
 const startUploadCleanupMock = vi.fn();
 const stopUploadCleanupMock = vi.fn();
 
@@ -141,6 +143,10 @@ vi.mock('../jobs/mux-sync.js', () => ({
     stopMuxSync: stopMuxSyncMock,
 }));
 
+vi.mock('../jobs/mux-original-ingest.js', () => ({
+    startMuxOriginalIngest: startMuxOriginalIngestMock,
+}));
+
 vi.mock('../jobs/upload-cleanup.js', () => ({
     startUploadCleanup: startUploadCleanupMock,
     stopUploadCleanup: stopUploadCleanupMock,
@@ -218,6 +224,7 @@ beforeEach(() => {
     delete process.env.MUX_TOKEN_SECRET;
     delete process.env.MUX_ENV_KEY;
     delete process.env.MUX_WEBHOOK_SECRET;
+    delete process.env.DEBUG;
 
     prismaMock.user.findUnique.mockReset();
     prismaMock.$queryRaw.mockReset();
@@ -240,6 +247,8 @@ beforeEach(() => {
     setupWebSocketMock.mockReset();
     startMuxSyncMock.mockReset();
     stopMuxSyncMock.mockReset();
+    stopMuxOriginalIngestMock.mockReset();
+    startMuxOriginalIngestMock.mockReset().mockReturnValue(stopMuxOriginalIngestMock);
     startUploadCleanupMock.mockReset();
     stopUploadCleanupMock.mockReset();
 

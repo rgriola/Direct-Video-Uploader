@@ -86,6 +86,7 @@ model Asset {
   clips        Clip[]
   uploadSessions UploadSession[]
   muxAssetReferences MuxAssetReference[]
+  originalReadLeases MuxOriginalReadLease[]
   formResponse FormResponse?
   messages     ChatMessage[]
 
@@ -218,6 +219,7 @@ model UploadSession {
   asset  Asset        @relation(fields: [assetId], references: [id], onDelete: Cascade)
   clip   Clip         @relation(fields: [clipId], references: [id], onDelete: Cascade)
   parts  UploadPart[]
+  muxIngestJob MuxIngestJob?
 
   @@index([ownerId, status, expiresAt])
   @@index([assetId, status])
@@ -237,6 +239,72 @@ model UploadPart {
   @@id([uploadSessionId, partNumber])
   @@index([uploadedAt])
   @@map("upload_parts")
+}
+
+enum MuxIngestJobStatus {
+  QUEUED
+  CREATING
+  LINKED
+  FAILED
+  UNKNOWN
+  CONFLICT
+}
+
+enum MuxIngestAttemptStatus {
+  CREATING
+  LINKED
+  REJECTED
+  UNKNOWN
+  CONFIRMED_ABSENT
+}
+
+model MuxIngestJob {
+  uploadSessionId String             @id @map("upload_session_id")
+  status          MuxIngestJobStatus @default(QUEUED)
+  attemptCount    Int                @default(0) @map("attempt_count")
+  retryCount      Int                @default(0) @map("retry_count")
+  currentAttemptId String?           @map("current_attempt_id")
+  nextAttemptAt   DateTime?          @default(now()) @map("next_attempt_at")
+  lastError       String?            @map("last_error")
+  createdAt       DateTime           @default(now()) @map("created_at")
+  updatedAt       DateTime           @updatedAt @map("updated_at")
+
+  uploadSession UploadSession       @relation(fields: [uploadSessionId], references: [id], onDelete: Cascade)
+  attempts      MuxIngestAttempt[]
+
+  @@index([status, nextAttemptAt])
+  @@map("mux_ingest_jobs")
+}
+
+model MuxIngestAttempt {
+  id              String                 @id
+  uploadSessionId String                 @map("upload_session_id")
+  status          MuxIngestAttemptStatus @default(CREATING)
+  readExpiresAt   DateTime               @map("read_expires_at")
+  muxAssetId      String?                @map("mux_asset_id")
+  createdAt       DateTime               @default(now()) @map("created_at")
+  resolvedAt      DateTime?              @map("resolved_at")
+
+  job MuxIngestJob @relation(fields: [uploadSessionId], references: [uploadSessionId], onDelete: Cascade)
+  readLeases MuxOriginalReadLease[]
+
+  @@index([uploadSessionId, status])
+  @@index([muxAssetId])
+  @@map("mux_ingest_attempts")
+}
+
+model MuxOriginalReadLease {
+  id               String   @id
+  assetId          String   @map("asset_id")
+  attemptId        String   @map("attempt_id")
+  serverInstanceId String   @map("server_instance_id")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  asset   Asset            @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  attempt MuxIngestAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+
+  @@index([assetId, createdAt])
+  @@map("mux_original_read_leases")
 }
 
 // ─── Form Responses ──────────────────────────────────────

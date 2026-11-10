@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { acquireIntegrationDatabaseLock } from './helpers/database-lock.js';
+import { acquireIntegrationDatabaseLock, INTEGRATION_SETUP_TIMEOUT_MS } from './helpers/database-lock.js';
 import { notifyDashboardAssetChange } from '../ws/dashboard-notifications.js';
 
 vi.mock('../ws/dashboard-notifications.js', () => ({
@@ -51,7 +51,7 @@ integration('media reconciliation against PostgreSQL', () => {
                 pinHash: 'integration-test',
             },
         });
-    });
+    }, INTEGRATION_SETUP_TIMEOUT_MS);
 
     beforeEach(async () => {
         vi.clearAllMocks();
