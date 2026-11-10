@@ -100,6 +100,11 @@ logging at proxies or other infrastructure. Signed-URL responses use
 `Cache-Control: no-store`. Rotating the signing secret invalidates outstanding
 URLs; an active owner can request new ones.
 
+An opt-in encrypted original-file backup workflow is documented in the
+[home-server runbook](../HOME_SERVER_RUNBOOK.md#original-file-backups). It is not
+enabled or provisioned automatically. Until both actual destinations and a
+restore drill are verified, the backup rollout prerequisite remains open.
+
 ### Optional Mux handoff
 
 On an isolated test backend only, after applying the database migration, set:

@@ -9,6 +9,27 @@ on:
       - staging
 
 jobs:
+  original-backup-tests:
+    name: Original Backup Tests
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install pinned rclone for backup tests
+        shell: bash
+        run: |
+          curl --fail --silent --show-error --location \
+            --output "$RUNNER_TEMP/rclone.zip" \
+            https://downloads.rclone.org/v1.75.1/rclone-v1.75.1-linux-amd64.zip
+          echo "982b5aa772841168f8e380f139e9e787b2a105403e32b94da8676a0e1c0a13ab  $RUNNER_TEMP/rclone.zip" \
+            | sha256sum --check
+          unzip -q "$RUNNER_TEMP/rclone.zip" -d "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/rclone-v1.75.1-linux-amd64" >> "$GITHUB_PATH"
+
+      - name: Test encrypted original backups
+        run: python3 -m unittest discover -s scripts -p 'test_backup_originals.py' -v
+
   ios-launchscreen-guard:
     name: iOS Launch Screen Guard
     runs-on: xcode-27

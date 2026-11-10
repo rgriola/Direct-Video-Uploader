@@ -302,7 +302,7 @@ restart Fastify using the commands above so the server and dashboard are updated
 
 ## Backup & restore
 
-**Manual backup:**
+**Manual database backup:**
 ```bash
 ~/apps/direct-video-uploader/scripts/pg-backup.sh
 ```
@@ -314,7 +314,7 @@ Output: `~/backups/directvideo_<timestamp>.sql.gz.gpg` (gzip + gpg symmetric AES
 ```
 Syncs `~/backups/*.sql.gz.gpg` to Backblaze B2 (`b2backup:ms-fixer-backups`, rclone remote configured at `~/.config/rclone/rclone.conf`).
 
-**Restore procedure (tested and verified working):**
+**Database restore procedure (tested and verified working):**
 ```bash
 createdb directvideo_scratch   # or a real recovery target
 gpg --batch --yes --passphrase-file ~/.backup-passphrase \
@@ -323,6 +323,275 @@ gpg --batch --yes --passphrase-file ~/.backup-passphrase \
   | psql -d directvideo_scratch -q
 ```
 Verify row counts against the live DB before treating the restore as authoritative, then `dropdb directvideo_scratch` if it was just a test.
+
+### Original-file backups
+
+The database backups above **do not contain video files**. The optional
+`scripts/backup_originals.py` workflow copies physically published originals
+and their `.dvu-storage-id` marker hourly to **both** a separate external drive
+and a Backblaze B2 prefix. Each destination is an rclone `crypt` remote with
+encrypted file contents, filenames, and directories. Upload parts and assembly
+`.partial-*` files are excluded. Publication can precede the database commit, so
+the copy can include an orphan that was never finalized in PostgreSQL.
+
+Nothing installs or starts this job automatically. Until both actual
+destinations and a restore drill are verified, original backups remain a
+rollout prerequisite; keep both experimental flags off.
+
+The job never syncs source deletions or replaces a different existing backup
+object. An operator must explicitly remove retained copies when appropriate.
+This intentionally retains content deleted through the app: account for
+privacy obligations, access controls, disk space, and B2 costs. If a backup is
+removed while its original still exists, the next run will copy it again.
+Backblaze may retain hidden historical object versions after a manual removal;
+permanent removal requires checking those versions separately.
+
+Each run verifies the configured source identity, actual mount points, a
+separate destination filesystem and destination-volume marker, crypt settings,
+and applicable B2 lifecycle rules. It refuses a nonempty destination without
+the expected source marker, overlapping runs, unknown entries or symlinks under
+`originals/`, symlinks or special files in the local backup tree, nested
+filesystems, and changed source files. A bad local drive does not prevent an
+independent B2 attempt, or vice versa; the overall run fails if either
+destination fails. `cryptcheck` must verify every current original against the
+encrypted object's underlying checksum. Deleted originals retained only in
+backup are **not** included in that recurring check.
+
+These are safeguards, not proof of two physical devices: separate APFS volumes
+can share one disk, and a copied marker does not prove a volume's physical
+identity. Verify the source and backup devices with `diskutil list` and
+`diskutil info` before setup; for APFS, use `diskutil apfs list` to trace each
+volume to its physical store. The backup drive must be external and physically
+separate. Do not disconnect, force-unmount, move, or modify the source or
+backup trees during a run. One host and one macOS user must own all runs and
+the dedicated backup namespaces; other processes must not write to them.
+
+#### One-time setup (manual; do not paste credentials into chat)
+
+1. Use rclone **1.75.1 or later** and Python 3 on the home server. Identify the
+   server's actual `STORAGE_LOCAL_ROOT`, its mounted volume, and a physically
+   separate external backup volume. Keep rclone current with security updates.
+   Set `RCLONE` to its actual executable:
+   ```bash
+   RCLONE="/opt/homebrew/bin/rclone"
+   "$RCLONE" version
+   ```
+   If the root is set directly in the Fastify plist, this prints only that path:
+   ```bash
+   /usr/libexec/PlistBuddy -c 'Print :EnvironmentVariables:STORAGE_LOCAL_ROOT' \
+     "$HOME/Library/LaunchAgents/com.msfixer.fastify.plist"
+   ```
+   Otherwise inspect the server's configuration privately. The root must
+   already have a valid `.dvu-storage-id`; do not invent or replace a marker
+   on a nonempty root.
+
+2. Set the following paths locally, replacing the example values with the
+   verified mounts and server root. Mounts and directories must already exist;
+   the local crypt directory must be a dedicated, existing directory below the
+   external backup volume.
+   ```bash
+   SOURCE_VOLUME="/Volumes/<source-volume>"
+   SOURCE_ROOT="/Volumes/<source-volume>/<server-storage-root>"
+   BACKUP_VOLUME="/Volumes/<separate-backup-volume>"
+   mkdir "$BACKUP_VOLUME/dvu-originals-encrypted"
+   ```
+   Only when deliberately preparing a verified **new, empty** source root
+   with all writers stopped and no existing marker, initialize its marker:
+   ```bash
+   (umask 077; set -o noclobber; uuidgen > "$SOURCE_ROOT/.dvu-storage-id")
+   ```
+   After confirming the external volume is the intended device, create its
+   marker **only if it has no existing marker**. The no-clobber setting makes
+   an existing marker an error; do not replace one to bypass a mismatch.
+   ```bash
+   (umask 077; set -o noclobber; uuidgen > "$BACKUP_VOLUME/.dvu-original-backup-volume-id")
+   SOURCE_ID="$(tr -d '[:space:]' < "$SOURCE_ROOT/.dvu-storage-id")"
+   BACKUP_ID="$(tr -d '[:space:]' < "$BACKUP_VOLUME/.dvu-original-backup-volume-id")"
+   ```
+
+3. Use a **separate** private rclone configuration so encrypting it does not
+   disrupt the existing database offsite job:
+   ```bash
+   mkdir -p "$HOME/.config/rclone"
+   CONF="$HOME/.config/rclone/original-backups.conf"
+   (umask 077; "$RCLONE" --config "$CONF" config)
+   ```
+   Create these remotes interactively:
+   - a native B2 remote with an application key restricted to the intended
+     bucket and the capabilities needed to list the bucket and lifecycle,
+     list/read files, and upload files;
+   - a local `crypt` remote named `dvu-original-local`, wrapping the absolute
+     path `$BACKUP_VOLUME/dvu-originals-encrypted`, without `.` or `..` path
+     components;
+   - a B2 `crypt` remote named `dvu-original-b2`, wrapping a dedicated prefix
+     such as `your-b2-remote:your-bucket/dvu-originals-encrypted`.
+
+   Bucket and prefix components must start with an ASCII letter or digit and
+   contain only ASCII letters, digits, hyphens, and underscores. This keeps
+   the configured prefix identical to its B2 object-name prefix for lifecycle
+   checks.
+   Select standard filename encryption, encrypted directory names, encrypted
+   file data, and strong crypt passwords and salts. Do not use a custom B2
+   endpoint, disable B2 checksums, or allow B2 lifecycle rules to hide objects
+   under this prefix automatically. The job checks the bucket's lifecycle
+   before each B2 run and fails if it cannot inspect it. Other B2 policies or
+   external processes can still change or remove objects; review them too.
+   Encrypt this dedicated rclone configuration using rclone's configuration
+   password menu, and make it private:
+   ```bash
+   chmod 600 "$CONF"
+   ```
+   Keep a protected, recoverable copy of the encrypted configuration, its
+   configuration password, and both crypt passwords and salts **away from the
+   server and backup drive**. Losing them makes the backups unrecoverable.
+   Never print `rclone config show` or `rclone config dump`: they can expose
+   credentials. Do not put passwords in command arguments, plists, or this repo.
+
+4. Save the rclone configuration password in the login Keychain. The `-w` at
+   the end prompts without placing the password in the command line:
+   ```bash
+   /usr/bin/security add-generic-password -a "$(id -un)" \
+     -s com.msfixer.original-backup-rclone -w
+   ```
+   Use the same configuration password chosen in rclone, not a crypt password.
+   Create a private helper that retrieves it without printing it to a terminal.
+   Stop if the helper already exists rather than overwriting it:
+   ```bash
+   mkdir -p "$HOME/.config/dvu"
+   HELPER="$HOME/.config/dvu/original-backup-password"
+   (umask 077; set -o noclobber; cat > "$HELPER" <<'EOF'
+   #!/bin/sh
+   exec /usr/bin/security find-generic-password -a "$(/usr/bin/id -un)" \
+     -s com.msfixer.original-backup-rclone -w
+   EOF
+   )
+   chmod 700 "$HELPER"
+   ```
+   The job strips inherited `RCLONE_*` overrides, copies the encrypted config
+   into a private temporary directory, and gets the password from this helper.
+   The Keychain must be unlocked and accessible to the logged-in LaunchAgent.
+
+5. From the deployed checkout, run one foreground backup and inspect its
+   result. The command contains identities and paths, not passwords:
+   ```bash
+   SCRIPT="$HOME/apps/direct-video-uploader/scripts/backup_originals.py"
+   ARGS=(
+     --source-volume "$SOURCE_VOLUME" --source-root "$SOURCE_ROOT" --source-id "$SOURCE_ID"
+     --backup-volume "$BACKUP_VOLUME" --backup-volume-id "$BACKUP_ID"
+     --local-remote dvu-original-local --b2-remote dvu-original-b2
+     --rclone-config "$CONF" --password-helper "$HELPER" --rclone "$RCLONE"
+   )
+   python3 "$SCRIPT" "${ARGS[@]}"
+   ```
+   Success requires `local backup verified`, `B2 backup verified`, and
+   `originals backup complete` for the same run. A nonzero exit is a failure;
+   don't enable the schedule until fixed. Error messages deliberately omit raw
+   rclone output because it can contain sensitive paths or credentials.
+
+6. Only after a successful manual run, create and load the hourly user
+   LaunchAgent. The generated plist has paths and UUIDs, not secrets. The log
+   files must be private:
+   ```bash
+   PLIST="$HOME/Library/LaunchAgents/com.msfixer.original-backup.plist"
+   mkdir -p "$HOME/Library/LaunchAgents" "$HOME/Library/Logs"
+   (umask 077; touch "$HOME/Library/Logs/com.msfixer.original-backup.out.log" \
+     "$HOME/Library/Logs/com.msfixer.original-backup.err.log")
+   chmod 600 "$HOME/Library/Logs/com.msfixer.original-backup.out.log" \
+     "$HOME/Library/Logs/com.msfixer.original-backup.err.log"
+   (umask 077; set -o noclobber; python3 "$SCRIPT" "${ARGS[@]}" --print-launchd > "$PLIST")
+   plutil -lint "$PLIST"
+   launchctl bootstrap "gui/$(id -u)" "$PLIST"
+   launchctl kickstart "gui/$(id -u)/com.msfixer.original-backup"
+   ```
+   To change settings, stop the agent with `launchctl bootout
+   "gui/$(id -u)/com.msfixer.original-backup"`, then regenerate the plist after
+   preserving or explicitly removing the old one.
+
+#### Monitoring, limitations, and recovery
+
+```bash
+launchctl print "gui/$(id -u)/com.msfixer.original-backup"
+tail -n 40 "$HOME/Library/Logs/com.msfixer.original-backup.out.log"
+tail -n 40 "$HOME/Library/Logs/com.msfixer.original-backup.err.log"
+```
+
+Check the timestamp and complete success messages for **each** run and both
+destinations; a start or a single verified destination is not success. There is
+no proactive failure or freshness alert yet. Investigate missing/stale runs,
+locked Keychain, missing drives, B2 permissions/lifecycle, full destinations,
+and nonzero exits. For deeper diagnosis, run narrowly scoped rclone commands
+locally without debug logging or printing the config; protect any diagnostic
+output. Never clear a marker or overwrite backup files to make a run pass.
+
+Full verification scans the local backup tree, rereads each current original
+once per destination, and makes B2 metadata/range requests. A large library
+can exceed an hour, consume bandwidth or incur charges; an overlapping
+invocation fails rather than overlap. Sleep, disconnection, slow transfers, and failures increase the
+recovery-point gap, so hourly scheduling is not an hourly recovery guarantee.
+New files appearing after inventory wait for the next run. Database dumps and
+file copies are independent, not a transactionally consistent point-in-time
+snapshot; retain and reconcile both during recovery. The private temporary
+directory contains an encrypted config snapshot and a plaintext list of
+storage keys, not video bytes; an abrupt termination can leave it behind in
+the system temporary directory. Protect and clean up those remnants deliberately.
+
+Periodically restore from **each** destination into a new, empty private
+scratch directory on a verified volume. The following example restores from
+the local crypt remote; use `dvu-original-b2:` to drill the offsite copy. Run
+from the same shell after setting `CONF`, `HELPER`, and `RCLONE` as above:
+```bash
+RESTORE_DIR="$HOME/recovery/originals-$(date +%Y%m%d-%H%M%S)"
+mkdir -p "$HOME/recovery"
+mkdir -m 700 "$RESTORE_DIR"
+env -i HOME="$HOME" PATH="/opt/homebrew/bin:/usr/bin:/bin" \
+  "$RCLONE" --config "$CONF" --ask-password=false \
+  --password-command "\"$HELPER\"" --crypt-strict-names \
+  --crypt-filename-encryption standard --crypt-directory-name-encryption=true \
+  --crypt-no-data-encryption=false --crypt-pass-bad-blocks=false \
+  copy "dvu-original-local:" "$RESTORE_DIR" --immutable
+```
+Check the exit status, marker, file counts, and representative restored bytes
+against an independently recorded source SHA-256 where available. Restoring
+also authenticates encrypted data blocks; periodically test retained files
+whose live originals were deleted. A successful current-source `cryptcheck`
+does not verify those retained-only files. Keep the scratch copy private and
+remove it deliberately after verification.
+
+To remove a retained original deliberately, first confirm that the live
+original is gone, identify its **exact** storage key, and stop the LaunchAgent
+after any running backup finishes. Never remove the storage marker, use a
+wildcard, or run `sync`/`purge` on either backup namespace. This helper uses
+the same isolated environment as the restore command:
+```bash
+rclone_originals() {
+  env -i HOME="$HOME" PATH="/opt/homebrew/bin:/usr/bin:/bin" \
+    "$RCLONE" --config "$CONF" --ask-password=false \
+    --password-command "\"$HELPER\"" --crypt-strict-names \
+    --crypt-filename-encryption standard --crypt-directory-name-encryption=true \
+    --crypt-no-data-encryption=false --crypt-pass-bad-blocks=false "$@"
+}
+KEY="originals/<exact-owner>/<exact-asset>/<exact-clip>/<exact-object>"
+rclone_originals deletefile "dvu-original-local:$KEY" --dry-run
+rclone_originals deletefile "dvu-original-b2:$KEY" --dry-run
+```
+Only after reviewing both dry runs and explicitly authorizing deletion, repeat
+those two exact `deletefile` commands **without** `--dry-run`. Confirm the
+results independently. The native B2 backend can hide a file rather than
+permanently delete its versions; inspect and remove any retained historical
+versions in Backblaze if permanent erasure is required. If the scheduled B2
+key lacks delete permission, use a separate authorized operator configuration
+with the same crypt settings and B2 prefix. `rclone_originals
+cryptdecode --reverse "dvu-original-b2:" "$KEY"` maps the plaintext key to its
+encrypted name relative to the configured B2 prefix for that investigation.
+Resume the LaunchAgent afterward.
+
+For actual recovery, restore the database separately to an isolated target,
+restore files into an empty verified storage root, and preserve the recovered
+`.dvu-storage-id`. Compare database storage keys, sizes and checksums with the
+restored originals; investigate missing, retained-deleted, orphaned, and
+legacy-unverified entries before switching the server. Do not merge an entire
+backup into an active root or assume deleted content should be resurrected.
+Reconcile Mux and upload state before enabling either experimental flag.
 
 ## Monitoring
 

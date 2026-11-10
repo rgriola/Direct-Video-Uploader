@@ -711,7 +711,10 @@ sequenceDiagram
     and writes, with explicit server-configured thresholds.
   - [ ] Super Admin dashboard shows storage used.
   - [ ] Proactive alert below a threshold.
-- [ ] Backups: originals are **not** covered by the nightly `pg_dump`. Decide on a copy target (second drive, or the future cloud bucket)
+- [ ] Backups: originals are **not** covered by the nightly `pg_dump`. The selected
+  policy is hourly encrypted copies to a separate external drive and Backblaze B2,
+  retaining deleted originals until an operator removes them. Configure both targets
+  and verify recovery before enabling uploads; see Step 4.2e.
 - [ ] Future `s3` driver (Cloudflare R2 / S3 / GCS): implements the same interface using real presigned multipart URLs. Clients don't change
 
 ### 4.2a Upload-Session Persistence Foundation
@@ -784,6 +787,17 @@ sequenceDiagram
 - [ ] Verify CI, deployment, actual disk/mount behavior, monitoring, and the remaining
   original-storage rollout prerequisites before enabling either experimental flag.
 
+### 4.2e Original-File Backups
+
+- [x] Add an opt-in hourly workflow for encrypted external-drive and B2 copies,
+  without mirroring source deletions or replacing existing backup objects.
+- [x] Validate storage identities, mount boundaries, encryption configuration,
+  B2 lifecycle rules, and checksums; exercise encrypted local destinations in CI.
+- [ ] Provision the actual separate drive, B2 prefix, protected keys, and LaunchAgent.
+- [ ] Verify the real B2 and external-drive backups and perform recovery drills;
+  database and original-file snapshots are not automatically consistent.
+- [ ] Add independent failure/freshness alerts and complete the remaining rollout gates.
+
 ### 4.2 Upload Protocol (Why Parts)
 
 - [ ] ⚠️ **The Cloudflare plan caps request bodies at 100 MB** (Free/Pro). A single PUT of a large video through `dev.ms-fixer.com` will fail. The upload protocol must send **parts under 100 MB** (e.g. 50 MB)
@@ -846,5 +860,6 @@ Until Step 4 ships, **new uploads keep no original**. They only exist in Mux, wh
 - [ ] Can regular USERs create share links for their own videos? (5)
 - [ ] When a user is paused, do their existing share links stop working? (5)
 - [ ] Theme: keep Editorial only, or Editorial + Midnight dark mode? (3.1)
-- [ ] Originals backup target while on the local driver (second drive vs early cloud bucket)? (4.1)
+- [x] Originals backup target: encrypted external drive **and** Backblaze B2, hourly,
+  with manual retention after source deletion. (4.1)
 - [ ] Which cloud storage later: Cloudflare R2 (no egress fees, same Cloudflare account) vs S3 vs GCS?
