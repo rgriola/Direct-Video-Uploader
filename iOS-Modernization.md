@@ -682,7 +682,8 @@ sequenceDiagram
 ### 4.1 StorageDriver Abstraction + Local Driver
 
 - [x] Server driver registry and local driver contract:
-  - `createUpload`, `assertStorageLocation`, `uploadPart`, `listParts`, `listPartNumbers`, `recoverUpload`, `withCompletionLock`, `completeUpload`, `abortUpload`
+  - `getCapacitySnapshot`, `createUpload`, `assertStorageLocation`, `hasUpload`, `uploadPart`,
+    `listParts`, `listPartNumbers`, `recoverUpload`, `withCompletionLock`, `completeUpload`, `abortUpload`
   - `getReadStream(range)`, `delete(key)`, `stat(key)`
   - Drivers must publish parts through the supplied `commitPart` callback, and
     `listPartNumbers` must list committed parts without reading their content.
@@ -706,9 +707,10 @@ sequenceDiagram
   local-driver lock files before enabling production original uploads. Current recovery
   is on session access and only reclaims valid same-host locks whose owning PID is gone.
 - [ ] Disk guardrails:
-  - Free-space check before accepting an upload
-  - Super Admin dashboard shows storage used
-  - Alert below a threshold
+  - [x] Experimental capacity reservations and free-space checks before admission
+    and writes, with explicit server-configured thresholds.
+  - [ ] Super Admin dashboard shows storage used.
+  - [ ] Proactive alert below a threshold.
 - [ ] Backups: originals are **not** covered by the nightly `pg_dump`. Decide on a copy target (second drive, or the future cloud bucket)
 - [ ] Future `s3` driver (Cloudflare R2 / S3 / GCS): implements the same interface using real presigned multipart URLs. Clients don't change
 
@@ -740,8 +742,8 @@ sequenceDiagram
 - [x] Exercise authentication, signed URLs, real HTTP streaming, concurrency, retries,
   expiry, storage-location failures, and moderation cleanup with an isolated PostgreSQL
   database. See [upload-session API](docs/UPLOAD_SESSION_API.md) for the contract.
-- [ ] Keep the feature **off on production and the shared home server** until capacity
-  limits, backups, an expiry/orphan sweep, and isolated real-Mux validation are complete.
+- [ ] Keep the feature **off on production and the shared home server** until backups,
+  proactive monitoring, an expiry/orphan sweep, and isolated real-Mux validation are complete.
 - [ ] Add client integration.
 
 ### 4.2c Experimental Server-Only Mux Handoff
@@ -766,6 +768,21 @@ sequenceDiagram
   unmatched events currently return 503 and are logged, but cannot be retained locally.
 - [ ] Keep both flags off on the shared home server until that validation and the storage
   and client rollout prerequisites are complete. See [the API guide](docs/UPLOAD_SESSION_API.md).
+
+### 4.2d Experimental Storage Safety
+
+- [x] Require explicit global root-budget and filesystem free-space settings before
+  enabling upload sessions. Ordinary direct-to-Mux uploads remain unchanged; an
+  untracked retained original cannot be replaced by that path.
+- [x] Reserve capacity across processes for in-progress sessions and concurrent writes;
+  count retained originals and other files in the root. Reject unsafe admissions and
+  writes without deleting originals.
+- [x] Preserve reservations through failed cleanup, recover interrupted completion,
+  and fail closed for unknown legacy sizes or mismatched/unverified roots.
+- [x] Cover exact thresholds, concurrent processes, retry and cleanup failures, and
+  migration backfill in local PostgreSQL tests.
+- [ ] Verify CI, deployment, actual disk/mount behavior, monitoring, and the remaining
+  original-storage rollout prerequisites before enabling either experimental flag.
 
 ### 4.2 Upload Protocol (Why Parts)
 
