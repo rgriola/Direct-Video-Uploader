@@ -45,9 +45,22 @@ function assertOwnedSession(session, ownerId) {
   }
 }
 
-function assertAcceptingUploads(session) {
+function assertVisibleSession(session) {
+  if (session.asset.userId !== session.ownerId
+    || !["ACTIVE", "PAUSED"].includes(session.asset.moderation)) {
+    throw new UploadSessionError("NOT_FOUND", "Upload session not found");
+  }
+  if (session.owner.status !== "ACTIVE") {
+    throw new UploadSessionError("ACCOUNT_SUSPENDED", "Account is suspended");
+  }
+}
+
+export function assertAcceptingUploads(session) {
   if (session.asset.userId !== session.ownerId) {
     throw new UploadSessionError("NOT_FOUND", "Upload session not found");
+  }
+  if (session.owner.status !== "ACTIVE") {
+    throw new UploadSessionError("ACCOUNT_SUSPENDED", "Account is suspended");
   }
   if (session.asset.moderation !== "ACTIVE"
     || !["UPLOADING", "PROCESSING"].includes(session.asset.status)) {
@@ -94,6 +107,7 @@ export function createUploadSessionService({
     const session = await db.uploadSession.findFirst({
       where: { id: uploadSessionId, ownerId },
       include: {
+        owner: { select: { status: true } },
         asset: { select: { userId: true, moderation: true, status: true } },
         clip: {
           select: {
@@ -117,6 +131,7 @@ export function createUploadSessionService({
     return tx.uploadSession.findUnique({
       where: { id: uploadSessionId },
       include: {
+        owner: { select: { status: true } },
         asset: { select: { userId: true, moderation: true, status: true } },
         clip: {
           select: {
@@ -132,11 +147,24 @@ export function createUploadSessionService({
     });
   }
 
-  async function syncParts(uploadSessionId, parts) {
+  async function syncParts(snapshot, parts, expectedStatus = snapshot.status) {
+    const uploadSessionId = snapshot.id;
+    const previousParts = new Map(snapshot.parts.map(part => [part.partNumber, part]));
     await db.$transaction(async tx => {
       const session = await lockSession(tx, uploadSessionId);
-      if (!session || !["OPEN", "COMPLETING"].includes(session.status)) return;
+      if (!session || session.status !== expectedStatus) return;
+      // Publication holds this row lock, so this inexpensive listing cannot miss a committed part.
+      const partNumbers = await storage.listPartNumbers(uploadSessionId);
+      const present = new Set(partNumbers);
+      const recorded = new Map((await tx.uploadPart.findMany({ where: { uploadSessionId } }))
+        .map(part => [part.partNumber, part]));
       for (const part of parts) {
+        if (!present.has(part.partNumber)) continue;
+        const previous = previousParts.get(part.partNumber);
+        const current = recorded.get(part.partNumber);
+        if (current && (!previous || current.sizeBytes !== previous.sizeBytes || current.sha256 !== previous.sha256)) {
+          continue;
+        }
         await tx.uploadPart.upsert({
           where: {
             uploadSessionId_partNumber: {
@@ -156,12 +184,12 @@ export function createUploadSessionService({
           },
         });
       }
-      await tx.uploadPart.deleteMany(parts.length === 0
+      await tx.uploadPart.deleteMany(partNumbers.length === 0
         ? { where: { uploadSessionId } }
         : {
           where: {
             uploadSessionId,
-            partNumber: { notIn: parts.map(part => part.partNumber) },
+            partNumber: { notIn: partNumbers },
           },
         });
     });
@@ -178,6 +206,7 @@ export function createUploadSessionService({
     }
 
     return db.$transaction(async tx => {
+      await tx.$queryRaw`SELECT id FROM users WHERE id = ${session.ownerId} FOR UPDATE`;
       await tx.$queryRaw`SELECT id FROM assets WHERE id = ${session.assetId} FOR UPDATE`;
       const current = await lockSession(tx, session.id);
       assertOwnedSession(current, session.ownerId);
@@ -254,6 +283,7 @@ export function createUploadSessionService({
   }
 
   async function expireSession(session) {
+    await storage.assertStorageLocation(session.storageKey);
     const expired = await db.$transaction(async tx => {
       const current = await lockSession(tx, session.id);
       if (!current || current.ownerId !== session.ownerId) return false;
@@ -268,7 +298,7 @@ export function createUploadSessionService({
     return expired;
   }
 
-  async function create({ ownerId, assetId, clipId, expectedSizeBytes, expectedSha256 }) {
+  async function create({ ownerId, assetId, clipId, expectedSizeBytes, expectedSha256, initializeClip = false }) {
     const sizeBytes = normalizeSize(expectedSizeBytes, "Expected upload size");
     const sha256 = normalizeSha256(expectedSha256, "Expected SHA-256");
     const createdAt = now();
@@ -278,15 +308,48 @@ export function createUploadSessionService({
 
     try {
       session = await db.$transaction(async tx => {
+        if (initializeClip) {
+          await tx.$queryRaw`SELECT id FROM users WHERE id = ${ownerId} FOR UPDATE`;
+        }
         await tx.$queryRaw`SELECT id FROM assets WHERE id = ${assetId} FOR UPDATE`;
         const asset = await tx.asset.findUnique({ where: { id: assetId } });
-        const clip = await tx.clip.findUnique({ where: { id: clipId } });
+        let clip = await tx.clip.findUnique({ where: { id: clipId } });
         if (!asset || asset.userId !== ownerId) {
           throw new UploadSessionError("NOT_FOUND", "Asset not found");
         }
         if (asset.moderation !== "ACTIVE"
           || !["UPLOADING", "PROCESSING"].includes(asset.status)) {
           throw new UploadSessionError("ASSET_NOT_ACTIVE", "Asset is not accepting uploads");
+        }
+        if (initializeClip) {
+          const owner = await tx.user.findUnique({ where: { id: ownerId }, select: { status: true } });
+          if (!owner || owner.status !== "ACTIVE") {
+            throw new UploadSessionError("ACCOUNT_SUSPENDED", "Account is suspended");
+          }
+          if (asset.status !== "UPLOADING") {
+            throw new UploadSessionError("CLIP_CHANGED", "Asset is already being processed");
+          }
+          const otherClip = await tx.clip.findFirst({
+            where: { assetId, id: { not: clipId } },
+            select: { id: true },
+          });
+          if (otherClip) {
+            throw new UploadSessionError("CLIP_CHANGED", "Asset already has a different upload");
+          }
+          if (!clip) {
+            clip = await tx.clip.create({
+              data: {
+                id: clipId,
+                assetId,
+                originalFileName: asset.originalFileName,
+                status: "UPLOADING",
+              },
+            });
+            await tx.asset.update({
+              where: { id: assetId },
+              data: { clipCount: { increment: 1 } },
+            });
+          }
         }
         if (!clip || clip.assetId !== assetId) {
           throw new UploadSessionError("NOT_FOUND", "Clip not found");
@@ -296,13 +359,22 @@ export function createUploadSessionService({
           throw new UploadSessionError("CLIP_CHANGED", "Clip is no longer available for original storage");
         }
 
-        const existing = await tx.uploadSession.findFirst({
+        const active = await tx.uploadSession.findFirst({
           where: {
             clipId,
             status: { in: ACTIVE_SESSION_STATUSES },
           },
         });
+        const previous = active || await tx.uploadSession.findFirst({
+          where: {
+            clipId,
+            status: { in: ["ABORTED", "EXPIRED"] },
+          },
+          orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        });
+        const existing = previous && await lockSession(tx, previous.id);
         if (existing
+          && ACTIVE_SESSION_STATUSES.includes(existing.status)
           && (existing.status === "COMPLETING" || existing.expiresAt > createdAt)) {
           if (existing.expectedSizeBytes === sizeBytes && existing.expectedSha256 === sha256) {
             return existing;
@@ -313,12 +385,17 @@ export function createUploadSessionService({
           throw new UploadSessionError("SESSION_EXISTS", "An upload session already exists for this clip");
         }
         if (existing) {
-          await storage.recoverUpload(existing.id);
+          if (!["OPEN", "ABORTED", "EXPIRED"].includes(existing.status)) {
+            throw new UploadSessionError("INVALID_STATE", "Upload session cannot be replaced");
+          }
+          await storage.assertStorageLocation(existing.storageKey);
           await storage.abortUpload(existing.id);
-          await tx.uploadSession.update({
-            where: { id: existing.id },
-            data: { status: "EXPIRED" },
-          });
+          if (existing.status === "OPEN") {
+            await tx.uploadSession.update({
+              where: { id: existing.id },
+              data: { status: "EXPIRED" },
+            });
+          }
         }
 
         return tx.uploadSession.create({
@@ -365,70 +442,100 @@ export function createUploadSessionService({
 
   async function get({ ownerId, uploadSessionId }) {
     let session = await loadSession(uploadSessionId, ownerId);
+    assertVisibleSession(session);
     if (session.status === "OPEN" && session.expiresAt <= now()) {
       await expireSession(session);
       session = await loadSession(uploadSessionId, ownerId);
-    } else if (session.status === "COMPLETING") {
+    } else if (session.status === "COMPLETING" && session.asset.moderation === "ACTIVE") {
       await recoverCompletingSession(session);
       session = await loadSession(uploadSessionId, ownerId);
     } else if (session.status === "EXPIRED" || session.status === "ABORTED") {
+      await storage.assertStorageLocation(session.storageKey);
       await storage.abortUpload(session.id);
     }
 
+    assertVisibleSession(session);
     if (session.status === "OPEN") {
-      assertAcceptingUploads(session);
+      await storage.assertStorageLocation(session.storageKey);
       await storage.recoverUpload(session.id);
       const parts = await storage.listParts(session.id);
-      await syncParts(session.id, parts);
-      return loadSession(uploadSessionId, ownerId);
+      await syncParts(session, parts);
+      session = await loadSession(uploadSessionId, ownerId);
+      assertVisibleSession(session);
+    }
+    if (session.status === "COMPLETED") {
+      await storage.assertStorageLocation(session.storageKey);
+      const stored = await storage.stat(session.storageKey);
+      if (!stored || (session.expectedSizeBytes != null
+        && BigInt(stored.sizeBytes) !== session.expectedSizeBytes)) {
+        throw new UploadSessionError("STORAGE_UNAVAILABLE", "Completed original is unavailable");
+      }
     }
     return session;
   }
 
-  async function uploadPart({ ownerId, uploadSessionId, partNumber, body }) {
+  async function uploadPart({ ownerId, uploadSessionId, partNumber, body, expectedSizeBytes }) {
     assertPartNumber(partNumber);
     const session = await loadSession(uploadSessionId, ownerId);
     assertOpen(session, now());
     assertAcceptingUploads(session);
-    const part = await storage.uploadPart(session.id, partNumber, body);
-
-    await db.$transaction(async tx => {
-      const current = await lockSession(tx, session.id);
-      assertOwnedSession(current, ownerId);
-      if (!["OPEN", "COMPLETED"].includes(current.status)) {
-        throw new UploadSessionError("INVALID_STATE", `Upload session is ${current.status.toLowerCase()}`);
-      }
-      assertAcceptingUploads(current);
-      await tx.uploadPart.upsert({
-        where: {
-          uploadSessionId_partNumber: {
-            uploadSessionId: session.id,
-            partNumber,
-          },
-        },
-        create: {
-          uploadSessionId: session.id,
-          partNumber,
-          sizeBytes: BigInt(part.sizeBytes),
-          sha256: part.sha256,
-        },
-        update: {
-          sizeBytes: BigInt(part.sizeBytes),
-          sha256: part.sha256,
-        },
-      });
+    await storage.assertStorageLocation(session.storageKey);
+    let committed = false;
+    const part = await storage.uploadPart(session.id, partNumber, body, {
+      expectedSizeBytes,
+      commitPart: async (result, publish) => {
+        await db.$transaction(async tx => {
+          await tx.$queryRaw`SELECT id FROM users WHERE id = ${ownerId} FOR UPDATE`;
+          await tx.$queryRaw`SELECT id FROM assets WHERE id = ${session.assetId} FOR UPDATE`;
+          const current = await lockSession(tx, session.id);
+          assertOwnedSession(current, ownerId);
+          assertOpen(current, now());
+          assertAcceptingUploads(current);
+          await publish();
+          await tx.uploadPart.upsert({
+            where: {
+              uploadSessionId_partNumber: {
+                uploadSessionId: session.id,
+                partNumber,
+              },
+            },
+            create: {
+              uploadSessionId: session.id,
+              partNumber,
+              sizeBytes: BigInt(result.sizeBytes),
+              sha256: result.sha256,
+            },
+            update: {
+              sizeBytes: BigInt(result.sizeBytes),
+              sha256: result.sha256,
+            },
+          });
+        });
+        committed = true;
+      },
     });
+    if (!committed) {
+      throw new Error("Storage driver did not commit the upload part");
+    }
     return part;
   }
 
   async function complete({ ownerId, uploadSessionId }) {
-    await loadSession(uploadSessionId, ownerId);
+    const initial = await loadSession(uploadSessionId, ownerId);
+    assertVisibleSession(initial);
+    if (initial.status === "COMPLETED") return get({ ownerId, uploadSessionId });
+    await storage.assertStorageLocation(initial.storageKey);
+    if (initial.status === "COMPLETING" && !await recoverCompletingSession(initial)) {
+      throw new UploadSessionError("SESSION_BUSY", "Upload session is completing");
+    }
     const locked = await storage.withCompletionLock(uploadSessionId, async () => {
       const session = await loadSession(uploadSessionId, ownerId);
+      if (session.status === "COMPLETED") return session;
       assertOpen(session, now());
       assertAcceptingUploads(session);
 
       await db.$transaction(async tx => {
+        await tx.$queryRaw`SELECT id FROM users WHERE id = ${ownerId} FOR UPDATE`;
         const current = await lockSession(tx, session.id);
         assertOwnedSession(current, ownerId);
         assertOpen(current, now());
@@ -442,7 +549,10 @@ export function createUploadSessionService({
       let completion;
       try {
         const parts = await storage.listParts(session.id);
-        await syncParts(session.id, parts);
+        if (parts.length === 0) {
+          throw new UploadSessionError("INCOMPLETE_UPLOAD", "Upload has no completed parts");
+        }
+        await syncParts(session, parts, "COMPLETING");
         completion = await storage.completeUpload(session.id, {
           expectedSha256: session.expectedSha256 || undefined,
           expectedSizeBytes: session.expectedSizeBytes?.toString(),
@@ -476,9 +586,11 @@ export function createUploadSessionService({
 
   async function abort({ ownerId, uploadSessionId }) {
     const session = await loadSession(uploadSessionId, ownerId);
+    assertVisibleSession(session);
     if (session.status === "COMPLETED") {
       throw new UploadSessionError("INVALID_STATE", "Completed originals cannot be aborted");
     }
+    await storage.assertStorageLocation(session.storageKey);
     if (session.status === "COMPLETING") {
       if (!await recoverCompletingSession(session)) {
         throw new UploadSessionError("SESSION_BUSY", "Upload session is completing");
@@ -489,7 +601,7 @@ export function createUploadSessionService({
       }
     }
 
-    await db.$transaction(async tx => {
+    const status = await db.$transaction(async tx => {
       const current = await lockSession(tx, session.id);
       assertOwnedSession(current, ownerId);
       if (current.status === "COMPLETED" || current.status === "COMPLETING") {
@@ -500,10 +612,13 @@ export function createUploadSessionService({
           where: { id: session.id },
           data: { status: "ABORTED" },
         });
+        return "ABORTED";
       }
+      return current.status;
     });
+    await storage.assertStorageLocation(session.storageKey);
     await storage.abortUpload(session.id);
-    return { id: session.id, status: "ABORTED" };
+    return { id: session.id, status };
   }
 
   return {

@@ -4,6 +4,8 @@ import prisma from './prisma.js';
 import * as mux from './mux.js';
 import { withAssetMediaLock } from './media-lock.js';
 import { LocalMediaError, localUploadPath, removeLocalUpload } from './local-media.js';
+import { createStorageDriver } from './storage/driver.js';
+import { StorageError } from './storage/local-driver.js';
 import * as slack from './slack.js';
 import { notifyDashboardAssetChange } from '../ws/dashboard-notifications.js';
 import { userRoom } from '../ws/rooms.js';
@@ -42,7 +44,14 @@ export async function recordMuxAssetReference(db, { assetId, clipId = null, muxA
     }
 }
 
-export function createMediaReconciler({ db, muxApi, withLock, fileSystem = fs, clock = () => new Date() }) {
+export function createMediaReconciler({
+    db,
+    muxApi,
+    withLock,
+    fileSystem = fs,
+    clock = () => new Date(),
+    storageFactory = createStorageDriver,
+}) {
     async function setResult(asset, state, message) {
         const nextAt = state === 'SYNCED' && asset.moderation === 'ACTIVE'
             ? null
@@ -275,7 +284,7 @@ export function createMediaReconciler({ db, muxApi, withLock, fileSystem = fs, c
     async function runPass(fastify, assetId, assertLocked, context) {
         const asset = await db.asset.findUnique({
             where: { id: assetId },
-            include: { clips: true, muxAssetReferences: true },
+            include: { clips: true, muxAssetReferences: true, uploadSessions: true },
         });
         if (!asset) return { state: 'MISSING', message: 'Asset not found' };
         context.revision = asset.mediaSyncRevision;
@@ -308,6 +317,61 @@ export function createMediaReconciler({ db, muxApi, withLock, fileSystem = fs, c
         const uncertain = Boolean(asset.mediaCreateOperationId);
         if (uncertain) errors.push(UNKNOWN_CREATE);
         const playbackIds = new Map();
+
+        if (asset.moderation === 'REMOVED') {
+            if (asset.clips.some(clip => clip.storageKey && !asset.uploadSessions.some(session =>
+                session.clipId === clip.id
+                && session.storageKey === clip.storageKey
+                && session.storageDriver === clip.storageDriver))) {
+                errors.push('Original file has no upload session; manual recovery is required');
+            }
+            for (const session of asset.uploadSessions) {
+                const clip = asset.clips.find(item => item.id === session.clipId);
+                const expectedPrefix = `originals/${session.ownerId}/${asset.id}/${session.clipId}/`;
+                if (!clip || session.ownerId !== asset.userId
+                    || (session.storageDriver === 'local' && !session.storageKey.startsWith(expectedPrefix))) {
+                    errors.push('Original upload references are inconsistent; manual recovery is required');
+                    continue;
+                }
+                try {
+                    const storage = storageFactory({ provider: session.storageDriver });
+                    await storage.assertStorageLocation(session.storageKey);
+                    const locked = await storage.withCompletionLock(session.id, async () => {
+                        await assertLocked();
+                        await storage.abortUpload(session.id);
+                        await storage.delete(session.storageKey);
+                        if (await storage.stat(session.storageKey)) {
+                            throw new Error('Original file deletion could not be verified');
+                        }
+                        await assertLocked();
+                        await db.$transaction(async tx => {
+                            await tx.uploadSession.updateMany({
+                                where: { id: session.id, assetId: asset.id, status: { in: ['OPEN', 'COMPLETING'] } },
+                                data: { status: 'ABORTED' },
+                            });
+                            const updated = await tx.clip.updateMany({
+                                where: { id: session.clipId, assetId: asset.id, storageKey: session.storageKey },
+                                data: { storageKey: null, storageDriver: null, sha256: null, fileSize: null },
+                            });
+                            if (clip.storageKey === session.storageKey && updated.count !== 1) {
+                                throw new Error('Original clip changed during cleanup');
+                            }
+                        });
+                    });
+                    if (!locked.acquired) pending = true;
+                } catch (err) {
+                    if (err instanceof StorageError && err.code === 'SESSION_BUSY') {
+                        pending = true;
+                    } else {
+                        fastify.log.error(
+                            { assetId: asset.id, uploadSessionId: session.id, err: { message: err.message } },
+                            'Could not remove original upload data',
+                        );
+                        errors.push('Original upload cleanup failed');
+                    }
+                }
+            }
+        }
 
         for (const item of inspections) {
             const { clip } = item;

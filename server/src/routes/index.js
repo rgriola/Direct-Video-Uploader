@@ -5,6 +5,9 @@ import moderationRoutes from './moderation.js';
 import clipRoutes from './clips.js';
 import errorRoutes from './errors.js';
 import muxWebhookRoutes from './mux-webhooks.js';
+import uploadSessionRoutes from './upload-sessions.js';
+import { getUploadSessionConfig } from '../lib/upload-session-config.js';
+import { createStorageDriver } from '../lib/storage/driver.js';
 
 export async function registerApplicationRoutes(fastify) {
     await fastify.register(authRoutes);
@@ -14,4 +17,12 @@ export async function registerApplicationRoutes(fastify) {
     await fastify.register(clipRoutes);
     await fastify.register(errorRoutes);
     await fastify.register(muxWebhookRoutes);
+    const uploadConfig = getUploadSessionConfig();
+    if (uploadConfig.enabled) {
+        await fastify.register(uploadSessionRoutes, {
+            storage: createStorageDriver({ provider: uploadConfig.storageDriver }),
+            storageDriver: uploadConfig.storageDriver,
+            signingSecret: uploadConfig.signingSecret,
+        });
+    }
 }

@@ -29,6 +29,7 @@ const fastifyCtorMock = vi.fn((opts) => {
         }),
         addHook: vi.fn(),
         setErrorHandler: vi.fn(),
+        setNotFoundHandler: vi.fn(),
         get: vi.fn(),
         listen: vi.fn(async () => {
             if (fastifyState.listenError) throw fastifyState.listenError;

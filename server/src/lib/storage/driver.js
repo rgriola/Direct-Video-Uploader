@@ -3,8 +3,10 @@ import { createLocalStorageDriver } from "./local-driver.js";
 const factories = new Map();
 const requiredMethods = [
   "createUpload",
+  "assertStorageLocation",
   "uploadPart",
   "listParts",
+  "listPartNumbers",
   "recoverUpload",
   "withCompletionLock",
   "completeUpload",

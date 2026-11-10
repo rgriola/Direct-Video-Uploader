@@ -37,8 +37,10 @@ describe("StorageDriver registry", () => {
     const name = `test-${randomUUID()}`;
     const methods = Object.fromEntries([
       "createUpload",
+      "assertStorageLocation",
       "uploadPart",
       "listParts",
+      "listPartNumbers",
       "recoverUpload",
       "withCompletionLock",
       "completeUpload",
@@ -82,6 +84,37 @@ describe("local storage driver", () => {
       .toThrow("STORAGE_LOCAL_ROOT must be an absolute path");
   });
 
+  it("binds new originals to one storage root and refuses missing or different roots", async () => {
+    const root = await createTemporaryDirectory();
+    const otherRoot = await createTemporaryDirectory();
+    const driver = createLocalStorageDriver({ root });
+    const other = createLocalStorageDriver({ root: otherRoot });
+    const { uploadId, key } = await driver.createUpload({ ownerId: "owner", assetId: "asset", clipId: "clip" });
+    const otherSession = await other.createUpload({ ownerId: "owner", assetId: "asset", clipId: "clip" });
+
+    await expect(driver.assertStorageLocation(key)).resolves.toBeUndefined();
+    await expect(other.assertStorageLocation(key)).rejects.toThrow("does not match");
+    await expect(other.stat(key)).rejects.toThrow("does not match");
+    const missingRoot = path.join(await createTemporaryDirectory(), "not-mounted");
+    const missing = createLocalStorageDriver({ root: missingRoot });
+    await expect(missing.assertStorageLocation(key)).rejects.toThrow("root is unavailable");
+    const legacyKey = `originals/owner/asset/clip/${randomUUID()}`;
+    await expect(driver.assertStorageLocation(legacyKey)).rejects.toThrow("no verified storage location");
+    await expect(driver.stat(legacyKey)).resolves.toBeNull();
+    await driver.abortUpload(uploadId);
+    await other.abortUpload(otherSession.uploadId);
+  });
+
+  it("initializes the same storage identity when processes start uploads concurrently", async () => {
+    const root = await createTemporaryDirectory();
+    const drivers = Array.from({ length: 5 }, () => createLocalStorageDriver({ root }));
+    const sessions = await Promise.all(drivers.map(driver =>
+      driver.createUpload({ ownerId: "owner", assetId: "asset", clipId: "clip" })));
+    const identities = sessions.map(session => session.key.split("/").at(-1).split(".")[0]);
+    expect(new Set(identities).size).toBe(1);
+    await Promise.all(sessions.map((session, index) => drivers[index].abortUpload(session.uploadId)));
+  });
+
   it("stores consecutive parts, verifies integrity, supports ranges, and deletes the object", async () => {
     const driver = createLocalStorageDriver({ root: await createTemporaryDirectory() });
     const { uploadId, key } = await driver.createUpload({
@@ -90,8 +123,10 @@ describe("local storage driver", () => {
       clipId: "clip-1",
     });
 
+    expect(await driver.listPartNumbers(uploadId)).toEqual([]);
     await driver.uploadPart(uploadId, 1, Buffer.from("native "));
     await driver.uploadPart(uploadId, 2, Buffer.from("original"));
+    expect(await driver.listPartNumbers(uploadId)).toEqual([1, 2]);
     const expectedSha256 = createHash("sha256").update("native original").digest("hex");
     expect(await driver.listParts(uploadId)).toEqual([
       {
@@ -151,6 +186,41 @@ describe("local storage driver", () => {
     await expect(driver.uploadPart(uploadId, 1, Buffer.from("same"))).resolves.toEqual(first);
     await expect(driver.uploadPart(uploadId, 1, Buffer.from("different")))
       .rejects.toThrow("already exists with different content");
+    await driver.abortUpload(uploadId);
+  });
+
+  it("enforces the signed part size without retaining a short or oversized part", async () => {
+    const driver = createLocalStorageDriver({ root: await createTemporaryDirectory() });
+    const { uploadId } = await driver.createUpload({ ownerId: "owner", assetId: "asset", clipId: "clip" });
+
+    await expect(driver.uploadPart(uploadId, 1, Buffer.from("ab"), { expectedSizeBytes: 3 }))
+      .rejects.toMatchObject({ code: "PART_SIZE_MISMATCH" });
+    await expect(driver.uploadPart(uploadId, 1, Buffer.from("abcd"), { expectedSizeBytes: 3 }))
+      .rejects.toMatchObject({ code: "PART_SIZE_MISMATCH" });
+    expect(await driver.listParts(uploadId)).toEqual([]);
+    await expect(driver.uploadPart(uploadId, 1, Buffer.from("abc"), { expectedSizeBytes: 3 }))
+      .resolves.toMatchObject({ sizeBytes: "3" });
+    await driver.abortUpload(uploadId);
+  });
+
+  it("serializes concurrent writes to the same part", async () => {
+    const driver = createLocalStorageDriver({ root: await createTemporaryDirectory() });
+    const { uploadId } = await driver.createUpload({ ownerId: "owner", assetId: "asset", clipId: "clip" });
+    let started;
+    const reading = new Promise(resolve => { started = resolve; });
+    const source = new Readable({
+      read() {
+        this._read = () => {};
+        this.push(Buffer.from("part"));
+        started();
+      },
+    });
+    const first = driver.uploadPart(uploadId, 1, source);
+    await reading;
+    await expect(driver.uploadPart(uploadId, 1, Buffer.from("part")))
+      .rejects.toMatchObject({ code: "SESSION_BUSY" });
+    source.push(null);
+    await expect(first).resolves.toMatchObject({ sizeBytes: "4" });
     await driver.abortUpload(uploadId);
   });
 

@@ -1,9 +1,9 @@
 import { createHash, randomUUID } from "node:crypto";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, unlink } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { acquireIntegrationDatabaseLock } from "./helpers/database-lock.js";
+import { acquireIntegrationDatabaseLock, waitForBlockedQuery } from "./helpers/database-lock.js";
 import { createLocalStorageDriver } from "../lib/storage/local-driver.js";
 import { createUploadSessionService, UploadSessionError } from "../lib/upload-sessions.js";
 
@@ -24,6 +24,7 @@ const integration = databaseUrl ? describe : describe.skip;
 
 integration("upload sessions against PostgreSQL and local storage", () => {
   let prisma;
+  let pool;
   let releaseDatabaseLock;
   let ownerId;
   let assetId;
@@ -36,7 +37,8 @@ integration("upload sessions against PostgreSQL and local storage", () => {
   beforeAll(async () => {
     const database = await import("../lib/prisma.js");
     prisma = database.default;
-    releaseDatabaseLock = await acquireIntegrationDatabaseLock(database.pool);
+    pool = database.pool;
+    releaseDatabaseLock = await acquireIntegrationDatabaseLock(pool);
     ownerId = randomUUID();
     await prisma.user.create({
       data: {
@@ -91,6 +93,33 @@ integration("upload sessions against PostgreSQL and local storage", () => {
     }
   });
 
+  function pauseResumeAfterSnapshot(uploadSessionId) {
+    let markSnapshot;
+    let continueResume;
+    const snapshotTaken = new Promise(resolve => { markSnapshot = resolve; });
+    const resumeGate = new Promise(resolve => { continueResume = resolve; });
+    const listParts = storage.listParts.bind(storage);
+    let reads = 0;
+    storage.listParts = async (...args) => {
+      const parts = await listParts(...args);
+      reads += 1;
+      if (reads === 2) {
+        markSnapshot();
+        await resumeGate;
+      }
+      return parts;
+    };
+    const resuming = service.get({ ownerId, uploadSessionId });
+    return {
+      resuming,
+      snapshotTaken,
+      release() {
+        storage.listParts = listParts;
+        continueResume();
+      },
+    };
+  }
+
   it("persists created sessions and synchronizes completed part metadata when resumed", async () => {
     const expectedSha256 = createHash("sha256").update("part one").digest("hex");
     const created = await service.create({
@@ -117,6 +146,105 @@ integration("upload sessions against PostgreSQL and local storage", () => {
       parts: [{ partNumber: 1, sizeBytes: 8n, sha256: expectedSha256 }],
     });
     expect(await prisma.uploadPart.count({ where: { uploadSessionId: created.id } })).toBe(1);
+  });
+
+  it.each(["new", "missing", "replaced"])(
+    "keeps %s part metadata when a concurrent resume uses an older storage snapshot",
+    async scenario => {
+      const session = await service.create({ ownerId, assetId, clipId });
+      const partPath = path.join(storageRoot, ".uploads", session.id, "parts", "00001");
+      if (scenario !== "new") {
+        await service.uploadPart({
+          ownerId, uploadSessionId: session.id, partNumber: 1, body: Buffer.from("original"),
+        });
+      }
+      if (scenario === "missing") await unlink(partPath);
+
+      const { resuming, snapshotTaken, release } = pauseResumeAfterSnapshot(session.id);
+      await snapshotTaken;
+      try {
+        if (scenario === "replaced") await unlink(partPath);
+        await service.uploadPart({
+          ownerId, uploadSessionId: session.id, partNumber: 1, body: Buffer.from("modified"),
+        });
+      } finally {
+        release();
+      }
+      const resumed = await resuming;
+      const expectedSha256 = createHash("sha256").update("modified").digest("hex");
+      expect(resumed.parts).toMatchObject([{ partNumber: 1, sizeBytes: 8n, sha256: expectedSha256 }]);
+      expect(await prisma.uploadPart.findUnique({
+        where: { uploadSessionId_partNumber: { uploadSessionId: session.id, partNumber: 1 } },
+      })).toMatchObject({ sizeBytes: 8n, sha256: expectedSha256 });
+    },
+  );
+
+  it.each([false, true])(
+    "rechecks the original when completion overtakes a resume (missing: %s)",
+    async missing => {
+      const content = Buffer.from("finished original");
+      const session = await service.create({
+        ownerId,
+        assetId,
+        clipId,
+        expectedSizeBytes: content.length,
+        expectedSha256: createHash("sha256").update(content).digest("hex"),
+      });
+      await service.uploadPart({ ownerId, uploadSessionId: session.id, partNumber: 1, body: content });
+      const { resuming, snapshotTaken, release } = pauseResumeAfterSnapshot(session.id);
+      const result = missing
+        ? expect(resuming).rejects.toMatchObject({ code: "STORAGE_UNAVAILABLE" })
+        : expect(resuming).resolves.toMatchObject({ status: "COMPLETED" });
+      await snapshotTaken;
+      try {
+        expect((await service.complete({ ownerId, uploadSessionId: session.id })).status).toBe("COMPLETED");
+        if (missing) await storage.delete(session.storageKey);
+      } finally {
+        release();
+      }
+      await result;
+    },
+  );
+
+  it("serializes expired-session cleanup with an in-progress resume", async () => {
+    const session = await service.create({ ownerId, assetId, clipId });
+    await service.uploadPart({
+      ownerId, uploadSessionId: session.id, partNumber: 1, body: Buffer.from("old part"),
+    });
+    const { resuming, snapshotTaken, release } = pauseResumeAfterSnapshot(session.id);
+    await snapshotTaken;
+
+    let markRemoved;
+    let continueReplacement;
+    const removed = new Promise(resolve => { markRemoved = resolve; });
+    const replacementGate = new Promise(resolve => { continueReplacement = resolve; });
+    const abortUpload = storage.abortUpload.bind(storage);
+    storage.abortUpload = async uploadId => {
+      const result = await abortUpload(uploadId);
+      if (uploadId === session.id) {
+        markRemoved();
+        await replacementGate;
+      }
+      return result;
+    };
+    const expiredService = createUploadSessionService({
+      db: prisma,
+      storage,
+      now: () => new Date(currentTime.getTime() + 25 * 60 * 60 * 1000),
+    });
+    const replacing = expiredService.create({ ownerId, assetId, clipId });
+    try {
+      await removed;
+      release();
+      await waitForBlockedQuery(pool, "SELECT id FROM upload_sessions");
+    } finally {
+      release();
+      continueReplacement();
+      await Promise.allSettled([resuming, replacing]);
+    }
+
+    expect((await resuming).status).toBe("EXPIRED");
+    expect((await replacing).id).not.toBe(session.id);
   });
 
   it("reuses an equivalent create retry without leaving a second storage session", async () => {

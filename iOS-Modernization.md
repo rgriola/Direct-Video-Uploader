@@ -2,7 +2,7 @@
 
 _Drafted: October 19, 2026 · Updated: November 9, 2026_
 _Owner: Rod_
-_Status: **In progress** — Step 1 verified; Steps 2.1 and 2.3 deployed; Steps 2.2, 2.4, 2.5, the Step 3.1 routing foundation, Step 3.2 thumbnails, and Step 4.1 local storage are merged to `main`. The owner reported CI and CodeQL passed for Steps 3.1 and 3.2. The Step 4.2a upload-session persistence foundation is implemented on a feature branch; public upload routes, client integration, and operational choices remain open. The matching server deployments and real-Mux rollout checks remain unconfirmed._
+_Status: **In progress** — Step 1 verified; Steps 2.1 through 2.5, the Step 3.1 routing foundation, Step 3.2 thumbnails, Step 4.1 local storage, and the Step 4.2a upload-session persistence foundation are merged to `main`. The owner reported deploying the latest server and migrations and testing Mux successfully. The Step 4.2b server-only upload routes are implemented on a feature branch and disabled by default; Mux handoff, client integration, and production storage safeguards remain open._
 
 ```mermaid
 flowchart TD
@@ -682,20 +682,25 @@ sequenceDiagram
 ### 4.1 StorageDriver Abstraction + Local Driver
 
 - [x] Server driver registry and local driver contract:
-  - `createUpload`, `uploadPart`, `listParts`, `recoverUpload`, `withCompletionLock`, `completeUpload`, `abortUpload`
+  - `createUpload`, `assertStorageLocation`, `uploadPart`, `listParts`, `listPartNumbers`, `recoverUpload`, `withCompletionLock`, `completeUpload`, `abortUpload`
   - `getReadStream(range)`, `delete(key)`, `stat(key)`
+  - Drivers must publish parts through the supplied `commitPart` callback, and
+    `listPartNumbers` must list committed parts without reading their content.
 - [x] `local` driver: root folder from env `STORAGE_LOCAL_ROOT`; development-only
   fallback is `server/.local-storage`, while production requires an explicit absolute path.
   - Recommend an **external SSD** path, not the Air's internal disk
-  - Layout: `originals/<ownerId>/<assetId>/<clipId>/<opaqueId>`; the original filename
-    and authorization policy belong in the database/service layer added with upload wiring.
+  - Layout: `originals/<ownerId>/<assetId>/<clipId>/<storageId>.<opaqueId>`. A
+    `.dvu-storage-id` marker binds new originals to the configured local root; legacy
+    keys without a storage ID require manual recovery before removal can be confirmed.
+    The marker alone does not distinguish an independently mounted copy of that root.
   - Upload parts are written to private temporary storage, limited to 50 MB each, and
     assembled atomically with computed size/SHA-256 and optional expected-value checks.
 - [ ] Add `signedReadUrl(key, ttl)` when the authenticated original-read flow is designed
 - [ ] Replace `Clip.storageUrl` (a public path) with `storageKey` + `storageDriver` + `sha256` + `sizeBytes`
 - [ ] **Replace the guarded but unauthenticated `/uploads/` route.** All original-file access must go through authenticated or signed routes
 - [ ] Stop deleting originals in the `mux:ready` webhook (`mux-webhooks.js:145`)
-- [ ] Update `upload-cleanup.js` so it only removes **incomplete** uploads
+- [ ] Finish original-upload expiry cleanup. The legacy orphan job now excludes assets
+  with any original session, including completed originals awaiting a future Mux handoff.
 - [ ] Add a restart/expiry sweep and an operator procedure for ambiguous or orphaned
   local-driver lock files before enabling production original uploads. Current recovery
   is on session access and only reclaims valid same-host locks whose owning PID is gone.
@@ -718,8 +723,25 @@ sequenceDiagram
 - [x] Apply the migration and pass the server coverage suite against an isolated
   PostgreSQL 18 test database.
 - [ ] Confirm server CI and CodeQL results on the PR.
-- [ ] Add authenticated upload-session routes and define the client-facing request/response
-  contract. The service is not wired to public routes yet.
+- [x] Add authenticated upload-session routes and a client-facing contract in the
+  experimental Step 4.2b slice below.
+
+### 4.2b Experimental Server Upload Routes
+
+- [x] Add owner-authenticated create, resume, sign, complete, and abort routes, plus
+  short-lived signed streaming PUTs. Routes are disabled unless explicitly enabled.
+- [x] Require a whole-file size and SHA-256, limit originals to 500 MiB and individual
+  parts to 50 MiB, and verify integrity before attaching an original to its clip.
+- [x] Keep the existing Mux upload path for ordinary assets; serialize competing paths
+  and reserve assets that have original sessions for the original-upload flow.
+- [x] Exclude original sessions from legacy orphan cleanup. Permanent removal verifies
+  and deletes the original and its parts, or reports pending/error instead of synced.
+- [x] Exercise authentication, signed URLs, real HTTP streaming, concurrency, retries,
+  expiry, storage-location failures, and moderation cleanup with an isolated PostgreSQL
+  database. See [upload-session API](docs/UPLOAD_SESSION_API.md) for the contract.
+- [ ] Keep the feature **off on production and the shared home server** until capacity
+  limits, backups, an expiry/orphan sweep, and the Mux handoff are designed and verified.
+- [ ] Add Mux ingest, clients, and an authenticated or signed original-read route.
 
 ### 4.2 Upload Protocol (Why Parts)
 
@@ -728,8 +750,8 @@ sequenceDiagram
   1. Create session
   2. PUT each part to a signed part URL
   3. Complete
-- [ ] Local driver: part URLs are HMAC-signed Fastify routes. S3/R2 driver later: real presigned URLs that bypass the tunnel entirely
-- [ ] Resumable: client can ask which parts already arrived and only send the missing ones (covers the "Mode B" goal in `IOS_UPLOAD_TRANSPORT_MODES_CHECKLIST.md`)
+- [x] Experimental local driver: part URLs are HMAC-signed Fastify routes. S3/R2 driver later: real presigned URLs that bypass the tunnel entirely
+- [x] Experimental server resume: clients can ask which parts already arrived. Client integration for "Mode B" remains open.
 - [ ] After complete: server verifies size/checksum, then creates the Mux asset with `input: [{ url: signedReadUrl }]` (short TTL). Mux pulls the original through the tunnel. Downloads aren't subject to the 100 MB upload cap
 
 ### 4.3 Clients
