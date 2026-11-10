@@ -27,8 +27,10 @@ jobs:
           unzip -q "$RUNNER_TEMP/rclone.zip" -d "$RUNNER_TEMP"
           echo "$RUNNER_TEMP/rclone-v1.75.1-linux-amd64" >> "$GITHUB_PATH"
 
-      - name: Test encrypted original backups
-        run: python3 -m unittest discover -s scripts -p 'test_backup_originals.py' -v
+      - name: Test encrypted backups and monitoring
+        run: |
+          python3 -m unittest discover -s scripts -p 'test_backup_originals.py' -v
+          python3 -m unittest discover -s scripts -p 'test_monitor_status.py' -v
 
   ios-launchscreen-guard:
     name: iOS Launch Screen Guard
