@@ -463,6 +463,7 @@ integration("storage capacity against PostgreSQL and local storage", () => {
     const transaction = prisma.$transaction.bind(prisma);
     const transactionSpy = vi.spyOn(prisma, "$transaction")
       .mockImplementationOnce((...args) => transaction(...args))
+      .mockImplementationOnce((...args) => transaction(...args))
       .mockRejectedValueOnce(new Error("reservation release failed"));
     try {
       await expect(uploadService.abort({ ownerId, uploadSessionId: session.id }))
