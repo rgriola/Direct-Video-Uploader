@@ -9,8 +9,9 @@ import {
   updateAssetModeration,
   updateUserStatus,
 } from "@/lib/api";
-import { useAssets, useOrganizations, useRefreshDashboard, useStats, useTriadStatus, useUsers } from "@/hooks/use-dashboard";
+import { useAssets, useOrganizations, useRefreshDashboard, useStats, useTriadStatus, useUsers, useMonitoring } from "@/hooks/use-dashboard";
 import { TriadStatusPanel } from "@/components/TriadStatus";
+import { MonitoringPanel } from "@/components/MonitoringPanel";
 import { StatsGrid } from "@/components/StatsGrid";
 import { QuickActions } from "@/components/QuickActions";
 import { UserList } from "@/components/UserList";
@@ -37,6 +38,7 @@ export function AdminDashboard() {
   const { data: users, isLoading: usersLoading } = useUsers(loggedIn);
   const { data: assets, isLoading: assetsLoading } = useAssets(loggedIn, assetModeration);
   const { data: triadStatus, isLoading: triadLoading } = useTriadStatus(loggedIn && isSuperAdmin);
+  const monitoring = useMonitoring(loggedIn && isSuperAdmin);
   const { data: organizations, isLoading: orgsLoading } = useOrganizations(loggedIn && canManageTeam);
   const refreshDashboard = useRefreshDashboard();
 
@@ -129,6 +131,9 @@ export function AdminDashboard() {
     <>
       {isSuperAdmin && (
         <TriadStatusPanel triad={triadStatus} isLoading={triadLoading} wsConnected={connected} iosClients={stats?.iosClients} />
+      )}
+      {isSuperAdmin && (
+        <MonitoringPanel snapshot={monitoring.data} isLoading={monitoring.isLoading} isError={monitoring.isError} />
       )}
 
       {userRole === "ADMIN" && !userCompanyCode && (

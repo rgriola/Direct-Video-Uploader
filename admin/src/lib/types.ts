@@ -112,6 +112,24 @@ export interface TriadStatus {
   totalWsConnections: number;
 }
 
+export interface MonitoringCheck {
+  id: string;
+  label: string;
+  category: "storage" | "backup" | "service";
+  status: "ok" | "warning" | "critical" | "unknown";
+  message: string;
+  metrics?: { freeBytes?: string; usedBytes?: string; limitBytes?: string };
+  lastSuccessAt?: string | null;
+  running?: boolean;
+}
+
+export interface MonitoringSnapshot {
+  enabled: boolean;
+  checkedAt: string | null;
+  stale: boolean;
+  checks: MonitoringCheck[];
+}
+
 export interface LogEntry {
   id: string;
   time: string;

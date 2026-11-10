@@ -144,6 +144,8 @@ async function respondToRequest(input: RequestInfo | URL, options?: RequestInit)
         connectedUsers: 0,
         totalWsConnections: 0,
       });
+    case "/api/admin/monitoring":
+      return jsonResponse({ enabled: false, checkedAt: null, checks: [], stale: false });
     case "/api/admin/organizations":
       return jsonResponse({ organizations: [] });
     case "/api/admin/errors":
@@ -255,14 +257,17 @@ describe("role-separated web application", () => {
     await screen.findByRole("heading", { name: heading });
     expect(testRouter.state.location.pathname).toBe(path);
     if (role === "SUPER_ADMIN") {
+      expect(screen.getByRole("heading", { name: "Storage & Backup Monitoring" })).toBeTruthy();
       expect(screen.getByRole("heading", { name: /Organizations/ })).toBeTruthy();
       expect(screen.getByRole("heading", { name: /Moderation Audit/ })).toBeTruthy();
       expect(screen.getByRole("heading", { name: "Error Log 0" })).toBeTruthy();
     } else if (role === "ADMIN") {
       expect(screen.getByRole("heading", { name: "Admin Tools" })).toBeTruthy();
       expect(screen.queryByRole("heading", { name: "Triad Status" })).toBeNull();
+      expect(screen.queryByRole("heading", { name: "Storage & Backup Monitoring" })).toBeNull();
       expect(screen.queryByRole("heading", { name: /Moderation Audit/ })).toBeNull();
       expect(requestPaths()).not.toContain("/api/admin/status");
+      expect(requestPaths()).not.toContain("/api/admin/monitoring");
       expect(requestPaths()).not.toContain("/api/admin/errors");
       expect(requestPaths()).not.toContain("/api/admin/media-issues");
     }

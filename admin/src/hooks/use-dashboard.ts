@@ -1,7 +1,7 @@
 /* ─── TanStack React Query hooks ─── */
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { fetchStats, fetchUsers, fetchAssets, fetchMyAssets, fetchTriadStatus, fetchOrganizations } from "@/lib/api";
+import { fetchStats, fetchUsers, fetchAssets, fetchMyAssets, fetchTriadStatus, fetchOrganizations, fetchMonitoring } from "@/lib/api";
 
 export function useStats(enabled = true) {
   return useQuery({
@@ -69,6 +69,15 @@ export function useTriadStatus(enabled = true) {
   });
 }
 
+export function useMonitoring(enabled = true) {
+  return useQuery({
+    queryKey: ["monitoring"],
+    queryFn: fetchMonitoring,
+    refetchInterval: 30_000,
+    enabled,
+  });
+}
+
 /** Invalidate specific dashboard queries based on event type, or all if unspecified */
 export function useRefreshDashboard() {
   const qc = useQueryClient();
@@ -91,6 +100,7 @@ export function useRefreshDashboard() {
         void qc.invalidateQueries({ queryKey: ["my-assets"] });
         void qc.invalidateQueries({ queryKey: ["organizations"] });
         void qc.invalidateQueries({ queryKey: ["triad-status"] });
+        void qc.invalidateQueries({ queryKey: ["monitoring"] });
     }
   };
 }
