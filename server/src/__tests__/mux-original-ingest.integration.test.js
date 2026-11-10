@@ -384,6 +384,11 @@ integration('Mux original handoff against PostgreSQL and HTTP', () => {
             expect(range.statusCode).toBe(206);
             expect(range.body).toBe(content.subarray(3, 8).toString());
             expect(range.headers.get('content-range')).toBe(`bytes 3-7/${content.length}`);
+            const headRange = await read(url, { method: 'HEAD', headers: { range: 'bytes=3-7' } });
+            expect(headRange.statusCode).toBe(206);
+            expect(headRange.headers.get('content-length')).toBe('5');
+            expect(headRange.headers.get('content-range')).toBe(`bytes 3-7/${content.length}`);
+            expect(headRange.rawPayload.length).toBe(0);
             const suffix = await read(url, { headers: { range: 'bytes=-4' } });
             expect(suffix.body).toBe(content.subarray(-4).toString());
             expect((await read(url, { headers: { range: 'bytes=999-' } })).statusCode).toBe(416);

@@ -188,11 +188,13 @@ not implemented: a Super Admin must investigate it in media issues, and this
 recovery workflow must be designed and tested before rollout.
 
 Mux reads through a separate signed `GET`/`HEAD` capability with single-range
-support, not the public `/uploads/` route. Each request checks the current
-operation, expiry, completed original metadata, owner status, and active
-moderation. Original reads close when the operation expires, authorization
-changes, coordination fails, or the server shuts down. Do not log or share
-these URLs, including in tunnel, reverse-proxy, or Mux debug logs.
+support, not the public `/uploads/` route. Both methods share a limit of 120
+requests per minute per IP; exceeding it returns 429 with `Retry-After`. Each
+request checks the current operation, expiry, completed original metadata,
+owner status, and active moderation. Original reads close when the operation
+expires, authorization changes, coordination fails, or the server shuts down.
+Do not log or share these URLs, including in tunnel, reverse-proxy, or Mux
+debug logs.
 
 ## Moderation and storage safety
 
