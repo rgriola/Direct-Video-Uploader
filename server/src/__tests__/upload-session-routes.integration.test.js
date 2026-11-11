@@ -436,6 +436,35 @@ integration('upload session HTTP routes against PostgreSQL and local storage', (
             .toMatchObject({ userId: teamAdminId, uploadMode: 'ORIGINAL' });
     });
 
+    it('records an optional upload source on new reservations and rejects conflicting retries', async () => {
+        const content = Buffer.from('web original');
+        const payload = {
+            clientRequestId: randomUUID(), fileName: 'web.mov', uploadSource: 'WEB',
+            expectedSizeBytes: content.length, expectedSha256: sha256(content),
+        };
+        for (const uploadSource of ['web', 'DESKTOP', 1]) {
+            expect((await requestAs(ownerId, 'POST', '/api/assets/original-uploads', {
+                ...payload, uploadSource,
+            })).statusCode).toBe(400);
+        }
+        const created = await requestAs(ownerId, 'POST', '/api/assets/original-uploads', payload);
+        expect(created.statusCode).toBe(201);
+        expect(created.json().asset.uploadSource).toBe('WEB');
+        const { uploadSource: _omitted, ...withoutSource } = payload;
+        expect((await requestAs(ownerId, 'POST', '/api/assets/original-uploads', withoutSource)).statusCode).toBe(200);
+        expect((await requestAs(ownerId, 'POST', '/api/assets/original-uploads', {
+            ...payload, uploadSource: 'IOS',
+        })).statusCode).toBe(409);
+        const detail = await requestAs(ownerId, 'GET', `/api/assets/${created.json().asset.id}`);
+        expect(detail.json().asset.uploadSource).toBe('WEB');
+
+        const legacy = await requestAs(ownerId, 'POST', '/api/assets/original-uploads', {
+            ...withoutSource, clientRequestId: randomUUID(),
+        });
+        expect(legacy.statusCode).toBe(201);
+        expect(legacy.json().asset.uploadSource).toBeNull();
+    });
+
     it('fences cancellation before reservation without creating an asset or affecting another owner', async () => {
         const payload = originalReservation(Buffer.from('cancel before reserve'));
         const cancelUrl = `/api/assets/original-uploads/${payload.clientRequestId}/cancel`;
