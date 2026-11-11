@@ -927,8 +927,17 @@ sequenceDiagram
     locally. The panel discloses retention and warns before leaving.
   - [x] Owners can add a missing context form (slug, type, description, priority)
     to their active videos from My Videos.
-  - [ ] Jobs are held in memory only: reloading or leaving My Videos stops uploads,
-    and a stopped reservation is not recovered across reloads (sessions expire).
+  - [x] Persist account- and origin-scoped recovery metadata in browser storage
+    before reserving; resume requires selecting a file and, for reserved uploads,
+    matching the original hash.
+    Once the browser lock is acquired, cancellation remains pending until fenced
+    and cleaned up; browser locks prevent the same job from running in multiple tabs.
+  - [ ] Leaving My Videos or reloading stops active transfers. Recovery requires
+    the same browser profile and access to the original file; clearing browser
+    data loses the recovery records. File names, sizes, and hashes remain in that
+    browser until the job finishes or is cancelled and are visible to others with
+    access to the profile. A queued file interrupted before hashing cannot be
+    content-verified until the user selects it again.
   - [ ] Validate in desktop browsers against an isolated backend with real files
     up to 500 MiB before enabling upload sessions on the shared backend.
 - [ ] Keep direct-to-Mux as the default until the new path and all rollout gates
