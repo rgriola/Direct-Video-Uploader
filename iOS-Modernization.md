@@ -1,6 +1,6 @@
 # Fixer Roadmap — iOS Modernization → Web App Expansion
 
-_Drafted: October 19, 2026 · Updated: November 10, 2026_
+_Drafted: October 19, 2026 · Updated: November 11, 2026_
 _Owner: Rod_
 _Status: **In progress** — Step 1 verified; Steps 2.1 through 2.5, the Step 3.1 routing foundation, Step 3.2 thumbnails, Step 4.1 local storage, and Steps 4.2a–g are merged to `main`. The owner reported deploying storage safety and testing the existing Mux flow successfully. Encrypted original-file backups, dashboard monitoring, and tracked-session cleanup remain opt-in; their actual deployment and validation are not established here. Step 4.3a iOS client work is in progress on a feature branch. Actual backup and restore validation, cleanup rollout validation, proactive alerts, isolated real-Mux handoff validation, and client rollout remain open._
 
@@ -862,6 +862,9 @@ sequenceDiagram
     and orphaned legacy Mux sessions from premature background-event acknowledgement,
     reconcile scheduled attempts against live tasks and server parts at startup, and
     provide a durable resolution for unidentified or late completion events.
+    Local callback ordering alone does not identify an OS wake. Recover or
+    quarantine staged inbox records after a crash instead of deleting potentially
+    complete events, and resolve attachment changes before trusting task inventory.
     This unreleased journal format includes a job-incarnation identifier; if any
     earlier experimental installation created older records or tasks, migrate and
     reconcile them before enabling recovery rather than deleting staged files.
