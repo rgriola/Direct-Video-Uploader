@@ -861,6 +861,61 @@ integration('upload session HTTP routes against PostgreSQL and local storage', (
         expect(response.json()).toEqual({ assetId: null, sessionIds: [], nextCursor: null });
     });
 
+    it('fails a cursor continuation if asset deletion wins the row lock', async () => {
+        const content = Buffer.from('paged deletion race');
+        const payload = originalReservation(content);
+        const reserved = await requestAs(ownerId, 'POST', '/api/assets/original-uploads', payload);
+        expect(reserved.statusCode, reserved.body).toBe(201);
+        const reservedAssetId = reserved.json().asset.id;
+        const session = await createSession(content, reservedAssetId);
+        await prisma.uploadSession.createMany({
+            data: Array.from({ length: 100 }, () => {
+                const id = randomUUID();
+                return {
+                    id, ownerId, assetId: reservedAssetId, clipId: session.clipId,
+                    status: 'ABORTED', storageKey: `historical-${id}`, expiresAt: new Date(),
+                };
+            }),
+        });
+        const cancel = await requestAs(
+            ownerId, 'POST', `/api/assets/original-uploads/${payload.clientRequestId}/cancel`);
+        expect(cancel.statusCode, cancel.body).toBe(503);
+        const url = `/api/assets/original-uploads/${payload.clientRequestId}/sessions`;
+        const firstPage = await requestAs(ownerId, 'GET', url);
+        expect(firstPage.statusCode, firstPage.body).toBe(200);
+        const cursor = firstPage.json().nextCursor;
+        expect(cursor).toBeTruthy();
+
+        let reportLocked;
+        let releaseDeletion;
+        const locked = new Promise(resolve => { reportLocked = resolve; });
+        const release = new Promise(resolve => { releaseDeletion = resolve; });
+        const deletion = prisma.$transaction(async tx => {
+            const [backend] = await tx.$queryRaw`SELECT pg_backend_pid() AS pid`;
+            await tx.asset.delete({ where: { id: reservedAssetId } });
+            reportLocked(backend.pid);
+            await release;
+        }, { timeout: 15_000 });
+        let continuation;
+        let response;
+        try {
+            const pid = await Promise.race([
+                locked,
+                deletion.then(() => { throw new Error('Asset deletion did not pause'); }),
+            ]);
+            continuation = requestAs(ownerId, 'GET', `${url}?after=${cursor}`);
+            await waitForBlockedBy(pid);
+        } finally {
+            releaseDeletion();
+            await deletion;
+            if (continuation) response = await continuation;
+        }
+        expect(response.statusCode, response.body).toBe(503);
+        for (const id of [reservedAssetId, session.id, cursor]) {
+            expect(response.body).not.toContain(id);
+        }
+    }, 15_000);
+
     it('serializes cancellation with concurrent reservation and session creation', async () => {
         const first = originalReservation(Buffer.from('concurrent reservation'));
         const [reservation, firstCancellation] = await Promise.all([
