@@ -50,7 +50,9 @@ export function MonitoringPanel({ snapshot, isLoading, isError }: MonitoringPane
         {snapshot?.enabled && (
           <>
             <p className="text-(length:--text-xs) text-(--muted-foreground) mb-3">
-              Dashboard only: no external alerts are sent when this page is closed or the server is down.
+              {snapshot.checks.some(check => check.id === "alert-delivery")
+                ? "Slack alerts are configured for problems while the server runs; none are sent if the server is down."
+                : "Dashboard only: no external alerts are sent when this page is closed or the server is down."}
             </p>
             {snapshot.stale && <p role="alert" className="border-l-4 border-(--accent-red) pl-3 mb-3">Monitoring results are stale.</p>}
             {!snapshot.checkedAt && <p>Waiting for the first monitoring check.</p>}
