@@ -79,11 +79,13 @@ nonisolated enum RedirectSafeTransport {
     @concurrent
     static func boundedData(
         for request: URLRequest, maximumBytes: Int,
+        onStart: (@Sendable () -> Void)? = nil,
         onResponse: (@Sendable () -> Void)? = nil,
-        onBody: (@Sendable () -> Void)? = nil
+        onBody: (@Sendable (Int) -> Void)? = nil
     ) async throws -> (Data, URLResponse) {
         guard maximumBytes >= 0 else { throw URLError(.badServerResponse) }
         try Task.checkCancellation()
+        onStart?()
         let (bytes, response) = try await boundedSession.bytes(for: request)
         let task = bytes.task
         return try await withTaskCancellationHandler {
@@ -97,7 +99,7 @@ nonisolated enum RedirectSafeTransport {
             for try await byte in bytes {
                 guard data.count < maximumBytes else { throw URLError(.dataLengthExceedsMaximum) }
                 data.append(byte)
-                if data.count == 1 { onBody?() }
+                if data.count == 1 || data.count == maximumBytes { onBody?(data.count) }
             }
             try Task.checkCancellation()
             completed = true

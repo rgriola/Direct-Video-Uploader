@@ -887,7 +887,9 @@ sequenceDiagram
     inbox, and verify locked-device persistence and unlock reconciliation.
     Bound control-plane response bytes before buffering, reject ambiguous JSON,
     surface quota and overflow errors without treating them as cleanup, and
-    verify production API pinning and key rotation.
+    verify production API pinning and key rotation. The original-upload control
+    session excludes shared HTTP credentials; the existing general bearer
+    transport still uses the shared credential store and needs separate review.
   - The owner reported that closing the current app mid-upload caused a failure and that
     manual retry succeeded. This does not demonstrate uninterrupted background transfer
     or test the new store-first path.

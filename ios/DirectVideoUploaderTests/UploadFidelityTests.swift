@@ -5702,8 +5702,10 @@ nonisolated private final class LoopbackRedirectServer: @unchecked Sendable {
     private let receivedBasicCredential = Mutex(false)
     private let redirectTarget = Mutex<String?>(nil)
     private let pendingUpload = Mutex<NWConnection?>(nil)
+    private let pendingExtraChunk = Mutex<NWConnection?>(nil)
     private let connections = Mutex(Connections())
     private let uploads = AsyncStream<Data>.makeStream()
+    private let boundedPrefixes = AsyncStream<String>.makeStream()
     private let stalledResponses = AsyncStream<String>.makeStream()
     private let responseCancellations = AsyncStream<String>.makeStream()
 
@@ -5720,6 +5722,10 @@ nonisolated private final class LoopbackRedirectServer: @unchecked Sendable {
 
     func redirect(to url: URL) {
         redirectTarget.withLock { $0 = url.absoluteString }
+    }
+
+    func resetBasicCredentialObservation() {
+        receivedBasicCredential.withLock { $0 = false }
     }
 
     func start() async throws -> URL {
@@ -5770,6 +5776,7 @@ nonisolated private final class LoopbackRedirectServer: @unchecked Sendable {
         }
         listener.cancel()
         uploads.continuation.finish()
+        boundedPrefixes.continuation.finish()
         stalledResponses.continuation.finish()
         responseCancellations.continuation.finish()
         let connection = pendingUpload.withLock { pending in
@@ -5778,6 +5785,7 @@ nonisolated private final class LoopbackRedirectServer: @unchecked Sendable {
             return connection
         }
         connection?.cancel()
+        pendingExtraChunk.withLock { $0 = nil }
         for connection in accepted { connection.cancel() }
     }
 
@@ -5820,6 +5828,21 @@ nonisolated private final class LoopbackRedirectServer: @unchecked Sendable {
 
     func waitForStalledResponse() async throws -> String {
         try await waitForEvent(stalledResponses.stream)
+    }
+
+    func waitForBoundedPrefix() async throws -> String {
+        try await waitForEvent(boundedPrefixes.stream)
+    }
+
+    func sendBoundedExtraByte() -> Bool {
+        let connection = pendingExtraChunk.withLock { pending in
+            let connection = pending
+            pending = nil
+            return connection
+        }
+        guard let connection else { return false }
+        connection.send(content: Data("1\r\na\r\n".utf8), completion: .contentProcessed { _ in })
+        return true
     }
 
     private func waitForEvent(_ stream: AsyncStream<String>) async throws -> String {
@@ -5879,7 +5902,8 @@ nonisolated private final class LoopbackRedirectServer: @unchecked Sendable {
             if error == nil, path == "bounded-stall-body" || path.hasPrefix("bounded-stall-after-headers") {
                 self?.stalledResponses.continuation.yield(path)
             } else if error == nil, path == "bounded-stream-oversize" {
-                connection.send(content: Data("1\r\na\r\n".utf8), completion: .contentProcessed { _ in })
+                self?.pendingExtraChunk.withLock { $0 = connection }
+                self?.boundedPrefixes.continuation.yield(path)
             }
         })
     }
@@ -6020,10 +6044,12 @@ struct RedirectTransportTests {
         let server = try LoopbackRedirectServer()
         defer { server.stop() }
         let baseURL = try await server.start()
+        let started = Mutex(false)
         let task = Task {
             try await RedirectSafeTransport.boundedData(
                 for: URLRequest(url: baseURL.appendingPathComponent("bounded-stall-headers")),
-                maximumBytes: 64 * 1024)
+                maximumBytes: 64 * 1024,
+                onStart: { started.withLock { $0 = true } })
         }
         task.cancel()
         do {
@@ -6033,6 +6059,7 @@ struct RedirectTransportTests {
         } catch {
             Issue.record("Unexpected pre-cancellation error: \(error)")
         }
+        #expect(!started.withLock { $0 })
         #expect(server.requestCount == 0)
     }
 
@@ -6049,20 +6076,42 @@ struct RedirectTransportTests {
         #expect((response as? HTTPURLResponse)?.statusCode == 200)
         #expect(body == Data(repeating: 0x61, count: limit))
 
-        for path in ["bounded-declared-oversize", "bounded-stream-oversize"] {
-            do {
-                var request = URLRequest(url: baseURL.appendingPathComponent(path))
-                request.timeoutInterval = 10
-                _ = try await RedirectSafeTransport.boundedData(
-                    for: request, maximumBytes: limit)
-                Issue.record("Oversized response should fail: \(path)")
-            } catch let error as URLError {
-                #expect(error.code == .dataLengthExceedsMaximum, "\(path)")
-            } catch {
-                Issue.record("Unexpected bounded response error for \(path): \(error)")
-            }
-            #expect(try await server.waitForResponseCancellation() == path)
+        let declaredPath = "bounded-declared-oversize"
+        var declaredRequest = URLRequest(url: baseURL.appendingPathComponent(declaredPath))
+        declaredRequest.timeoutInterval = 10
+        do {
+            _ = try await RedirectSafeTransport.boundedData(for: declaredRequest, maximumBytes: limit)
+            Issue.record("An oversized declared response should fail")
+        } catch let error as URLError {
+            #expect(error.code == .dataLengthExceedsMaximum)
+        } catch {
+            Issue.record("Unexpected bounded response error: \(error)")
         }
+        #expect(try await server.waitForResponseCancellation() == declaredPath)
+
+        let streamPath = "bounded-stream-oversize"
+        var streamRequest = URLRequest(url: baseURL.appendingPathComponent(streamPath))
+        streamRequest.timeoutInterval = 10
+        let consumed = AsyncStream<Int>.makeStream()
+        let streamTask = Task {
+            try await RedirectSafeTransport.boundedData(
+                for: streamRequest, maximumBytes: limit,
+                onBody: { _ = consumed.continuation.yield($0) })
+        }
+        defer { streamTask.cancel(); consumed.continuation.finish() }
+        #expect(try await server.waitForBoundedPrefix() == streamPath)
+        #expect(try await waitForSignal(consumed.stream, timeout: .seconds(5), phase: "first byte") == 1)
+        #expect(try await waitForSignal(consumed.stream, timeout: .seconds(5), phase: "limit") == limit)
+        #expect(server.sendBoundedExtraByte())
+        do {
+            _ = try await streamTask.value
+            Issue.record("A streamed response over the limit should fail")
+        } catch let error as URLError {
+            #expect(error.code == .dataLengthExceedsMaximum)
+        } catch {
+            Issue.record("Unexpected streamed response error: \(error)")
+        }
+        #expect(try await server.waitForResponseCancellation() == streamPath)
     }
 
     @Test(.timeLimit(.minutes(1)))
@@ -6085,7 +6134,7 @@ struct RedirectTransportTests {
                         receivedResponse.withLock { $0 = true }
                         _ = responseStarted.continuation.yield(())
                     },
-                    onBody: { _ = bodyStarted.continuation.yield(()) })
+                    onBody: { _ in _ = bodyStarted.continuation.yield(()) })
             }
             defer {
                 task.cancel()
@@ -6168,7 +6217,17 @@ struct RedirectTransportTests {
         defer { storage.remove(credential, for: space) }
         #expect(storage.defaultCredential(for: space)?.user == "synthetic-user")
 
-        var request = URLRequest(url: baseURL.appendingPathComponent("basic-challenge"))
+        let url = baseURL.appendingPathComponent("basic-challenge")
+        let controlSession = URLSession(configuration: RedirectSafeTransport.configuration())
+        defer { controlSession.invalidateAndCancel() }
+        var controlRequest = URLRequest(url: url)
+        controlRequest.setValue("Bearer synthetic", forHTTPHeaderField: "Authorization")
+        let (_, controlResponse) = try await controlSession.data(for: controlRequest)
+        #expect((controlResponse as? HTTPURLResponse)?.statusCode == 401)
+        #expect(server.didReceiveBasicCredential)
+        server.resetBasicCredentialObservation()
+
+        var request = URLRequest(url: url)
         request.setValue("Bearer synthetic", forHTTPHeaderField: "Authorization")
         let (_, response) = try await RedirectSafeTransport.boundedData(for: request, maximumBytes: 1_024)
         #expect((response as? HTTPURLResponse)?.statusCode == 401)
