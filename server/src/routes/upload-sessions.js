@@ -179,6 +179,35 @@ async function handleErrors(reply, work, { closeConnection = false } = {}) {
     }
 }
 
+async function lockCancellationIntent(tx, ownerId, clientRequestId) {
+    const users = await tx.$queryRaw`SELECT id, status FROM users WHERE id = ${ownerId} FOR UPDATE`;
+    if (!users.length || users[0].status !== 'ACTIVE') {
+        throw new UploadSessionError('ACCOUNT_SUSPENDED', 'Account is suspended');
+    }
+    const key = { userId: ownerId, clientRequestId };
+    const where = { userId_clientRequestId: key };
+    let intent = await tx.originalUploadIntent.findUnique({ where });
+    if (intent?.assetId) {
+        // Asset deletion clears the intent under the asset lock.
+        const assetId = intent.assetId;
+        await tx.$queryRaw`SELECT id FROM assets WHERE id = ${assetId} FOR UPDATE`;
+        intent = await tx.originalUploadIntent.findUnique({ where });
+        if (!intent || (intent.assetId && intent.assetId !== assetId)) {
+            throw new UploadSessionError('INTENT_INCONSISTENT', 'Original upload intent cannot be verified');
+        }
+    }
+    return { key, where, intent };
+}
+
+async function cancellationAssetVisibility(tx, assetId, ownerId) {
+    const asset = await tx.asset.findUnique({
+        where: { id: assetId },
+        select: { userId: true, moderation: true },
+    });
+    if (!asset || asset.userId !== ownerId) return 'inconsistent';
+    return ['ACTIVE', 'PAUSED'].includes(asset.moderation) ? 'visible' : 'hidden';
+}
+
 export default async function uploadSessionRoutes(fastify, {
     db = prisma,
     storage,
@@ -312,25 +341,12 @@ export default async function uploadSessionRoutes(fastify, {
             throw new UploadSessionError('INVALID_ARGUMENT', 'A client request UUID is required');
         }
         const ownerId = request.user.id;
-        const key = { userId: ownerId, clientRequestId: rawRequestId.toLowerCase() };
         const result = await db.$transaction(async tx => {
-            const users = await tx.$queryRaw`SELECT id, status FROM users WHERE id = ${ownerId} FOR UPDATE`;
-            if (!users.length || users[0].status !== 'ACTIVE') {
-                throw new UploadSessionError('ACCOUNT_SUSPENDED', 'Account is suspended');
-            }
+            const { key, where, intent: lockedIntent } = await lockCancellationIntent(
+                tx, ownerId, rawRequestId.toLowerCase());
+            let intent = lockedIntent;
             const [{ cancellationTime }] = await tx.$queryRaw`
                 SELECT clock_timestamp() AT TIME ZONE 'UTC' AS "cancellationTime"`;
-            const where = { userId_clientRequestId: key };
-            let intent = await tx.originalUploadIntent.findUnique({ where });
-            if (intent?.assetId) {
-                // Asset deletion clears the intent under the asset lock.
-                const assetId = intent.assetId;
-                await tx.$queryRaw`SELECT id FROM assets WHERE id = ${assetId} FOR UPDATE`;
-                intent = await tx.originalUploadIntent.findUnique({ where });
-                if (!intent || (intent.assetId && intent.assetId !== assetId)) {
-                    throw new UploadSessionError('INTENT_INCONSISTENT', 'Original upload intent cannot be verified');
-                }
-            }
             if (!intent) {
                 const recent = await tx.originalUploadIntent.findMany({
                     where: {
@@ -357,14 +373,8 @@ export default async function uploadSessionRoutes(fastify, {
                 intent = await tx.originalUploadIntent.update({ where, data: { cancelledAt: cancellationTime } });
             }
             if (!intent.assetId) return { assetId: null, sessionIds: [] };
-            const asset = await tx.asset.findUnique({
-                where: { id: intent.assetId },
-                select: { userId: true, moderation: true },
-            });
-            if (!asset || asset.userId !== ownerId) {
-                return { inconsistent: true };
-            }
-            if (!['ACTIVE', 'PAUSED'].includes(asset.moderation)) return { hidden: true };
+            const visibility = await cancellationAssetVisibility(tx, intent.assetId, ownerId);
+            if (visibility !== 'visible') return { [visibility]: true };
             const sessions = await tx.uploadSession.findMany({
                 where: { assetId: intent.assetId },
                 select: { id: true, ownerId: true },
@@ -372,7 +382,7 @@ export default async function uploadSessionRoutes(fastify, {
                 take: MAX_CANCELLATION_SESSIONS + 1,
             });
             if (sessions.length > MAX_CANCELLATION_SESSIONS) return { overflow: true };
-            if (sessions.some(session => session.ownerId !== ownerId)) {
+            if (sessions.some(session => session.ownerId !== ownerId || !SESSION_ID_PATTERN.test(session.id))) {
                 return { inconsistent: true };
             }
             return { assetId: intent.assetId, sessionIds: sessions.map(session => session.id) };
@@ -394,6 +404,51 @@ export default async function uploadSessionRoutes(fastify, {
                 error: 'Too many original upload sessions to reconcile',
             });
         }
+        return reply.send(result);
+    }));
+
+    fastify.get('/api/assets/original-uploads/:clientRequestId/sessions', {
+        preHandler: [fastify.authenticate],
+        config: { rateLimit: { max: 10, timeWindow: '1 minute' } },
+    }, async (request, reply) => handleErrors(reply, async () => {
+        const rawRequestId = request.params.clientRequestId;
+        const { after } = request.query;
+        if (typeof rawRequestId !== 'string' || !SESSION_ID_PATTERN.test(rawRequestId)
+            || Object.keys(request.query).some(key => key !== 'after')
+            || (after !== undefined && (typeof after !== 'string' || !SESSION_ID_PATTERN.test(after)))) {
+            throw new UploadSessionError('INVALID_ARGUMENT', 'A client request UUID and optional cursor UUID are required');
+        }
+        const ownerId = request.user.id;
+        const result = await db.$transaction(async tx => {
+            const { intent } = await lockCancellationIntent(tx, ownerId, rawRequestId.toLowerCase());
+            if (!intent?.cancelledAt) throw new UploadSessionError('NOT_FOUND', 'Cancelled upload intent not found');
+            if (!intent.assetId) {
+                if (after) {
+                    throw new UploadSessionError('INTENT_INCONSISTENT', 'Original upload intent cannot be verified');
+                }
+                return { assetId: null, sessionIds: [], nextCursor: null };
+            }
+            const visibility = await cancellationAssetVisibility(tx, intent.assetId, ownerId);
+            if (visibility === 'hidden') throw new UploadSessionError('NOT_FOUND', 'Asset not found');
+            if (visibility === 'inconsistent') {
+                throw new UploadSessionError('INTENT_INCONSISTENT', 'Original upload intent cannot be verified');
+            }
+            const sessions = await tx.uploadSession.findMany({
+                where: { assetId: intent.assetId, ...(after ? { id: { gt: after } } : {}) },
+                select: { id: true, ownerId: true },
+                orderBy: { id: 'asc' },
+                take: MAX_CANCELLATION_SESSIONS + 1,
+            });
+            if (sessions.some(session => session.ownerId !== ownerId || !SESSION_ID_PATTERN.test(session.id))) {
+                throw new UploadSessionError('INTENT_INCONSISTENT', 'Original upload intent cannot be verified');
+            }
+            const page = sessions.slice(0, MAX_CANCELLATION_SESSIONS);
+            return {
+                assetId: intent.assetId,
+                sessionIds: page.map(session => session.id),
+                nextCursor: sessions.length > MAX_CANCELLATION_SESSIONS ? page[page.length - 1].id : null,
+            };
+        }, { isolationLevel: 'ReadCommitted' });
         return reply.send(result);
     }));
 

@@ -241,9 +241,29 @@ quota but remain subject to the IP rate limit. Cancelled intents whose assets
 were later deleted also count in the window. Accepted fences do not expire;
 the quota limits admission rate, not lifetime storage. If more than 100
 sessions exist for an asset, the fence is recorded but the endpoint returns 503
-`INTENT_SESSION_LIMIT` without a partial list; operator reconciliation is
-required. Do not remove the fence, session records, or stored data merely to
-clear this error.
+`INTENT_SESSION_LIMIT` without a partial list. Do not remove the fence,
+session records, or stored data merely to clear this error.
+
+After recording the fence, enumerate longer histories with
+`GET /api/assets/original-uploads/:clientRequestId/sessions`. Each response
+contains `assetId`, up to 100 `sessionIds` ordered by ID, and `nextCursor`.
+Start without a cursor and pass each non-null `nextCursor` unchanged as the
+`after` query parameter until it is null. A failed page may be retried, but
+do not skip pages or count a repeated page as progress. Asset and session IDs
+are case-sensitive; only the client request UUID is normalized. The route
+requires the same active owner, an existing cancelled intent, and a visible
+asset, and is IP-rate-limited. Missing or uncancelled intents and hidden assets
+return 404 without identifiers; inconsistent session ownership or identifiers
+return an ID-free 503. If the asset disappears after a cursor has been issued,
+the next page also returns an ID-free 503. Each page is read-only and does not
+create, abort, or delete anything.
+
+An empty page or `assetId: null` does not prove that earlier sessions or
+storage were cleaned up: an asset can have been deleted, taking its session
+records with it. If the asset ID changes or disappears while paging, or a
+previously known asset or session cannot be reconciled, keep cancellation
+pending and request operator reconciliation. All returned and locally known
+session IDs still require individual reconciliation.
 
 Cancellation is serialized with reservation and session creation. After it
 commits, further creation requests for that intent return 410; a session that

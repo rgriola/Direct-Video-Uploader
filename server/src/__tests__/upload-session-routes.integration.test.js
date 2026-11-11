@@ -286,9 +286,16 @@ integration('upload session HTTP routes against PostgreSQL and local storage', (
                 method: 'POST', url: '/api/assets/original-uploads',
                 payload: { clientRequestId: randomUUID(), fileName: 'video.mp4' },
             })).statusCode).toBe(404);
+            const pageUrl = `/api/assets/original-uploads/${randomUUID()}/sessions`;
+            expect((await disabled.inject({ method: 'GET', url: pageUrl })).statusCode).toBe(404);
             const enabled = await buildServer(true);
             expect((await enabled.inject({ method: 'POST', url, payload })).statusCode).toBe(401);
+            expect((await enabled.inject({ method: 'GET', url: pageUrl })).statusCode).toBe(401);
             const headers = { authorization: ['Bearer', tokens[ownerId]].join(' ') };
+            for (let attempt = 0; attempt < 9; attempt += 1) {
+                expect((await enabled.inject({ method: 'GET', url: pageUrl, headers })).statusCode).toBe(404);
+            }
+            expect((await enabled.inject({ method: 'GET', url: pageUrl, headers })).statusCode).toBe(429);
             const intent = await enabled.inject({
                 method: 'POST',
                 url: '/api/assets/original-uploads',
@@ -587,7 +594,7 @@ integration('upload session HTTP routes against PostgreSQL and local storage', (
         }
     });
 
-    it('preserves the fence without revealing IDs for inconsistent session ownership', async () => {
+    it('preserves the fence without revealing inconsistent session IDs or ownership', async () => {
         const content = Buffer.from('inconsistent session ownership');
         const payload = originalReservation(content);
         const reserved = await requestAs(ownerId, 'POST', '/api/assets/original-uploads', payload);
@@ -613,6 +620,21 @@ integration('upload session HTTP routes against PostgreSQL and local storage', (
         });
         expect(intent.cancelledAt).toBeInstanceOf(Date);
         expect((await requestAs(ownerId, 'POST', '/api/assets/original-uploads', payload)).statusCode).toBe(410);
+
+        await prisma.uploadSession.delete({ where: { id: otherSessionId } });
+        const invalidId = `not-a-uuid-${randomUUID()}`;
+        await prisma.uploadSession.create({
+            data: {
+                id: invalidId, ownerId, assetId: reservedAssetId, clipId: session.clipId,
+                status: 'ABORTED', storageKey: `historical-${invalidId}`, expiresAt: new Date(),
+            },
+        });
+        const invalid = await requestAs(
+            ownerId, 'POST', `/api/assets/original-uploads/${payload.clientRequestId}/cancel`);
+        expect(invalid.statusCode, invalid.body).toBe(503);
+        for (const id of [reservedAssetId, session.id, invalidId]) {
+            expect(invalid.body).not.toContain(id);
+        }
     });
 
     it('bounds unreserved cancellation admission per owner without expiring accepted fences', async () => {
@@ -734,6 +756,111 @@ integration('upload session HTTP routes against PostgreSQL and local storage', (
         }
     });
 
+    it('pages only fenced, owner-visible sessions without creating or changing work', async () => {
+        const content = Buffer.from('paged cancellation history');
+        const payload = originalReservation(content);
+        const reserved = await requestAs(ownerId, 'POST', '/api/assets/original-uploads', payload);
+        expect(reserved.statusCode, reserved.body).toBe(201);
+        const reservedAssetId = reserved.json().asset.id;
+        const session = await createSession(content, reservedAssetId);
+        const historicalIds = Array.from({ length: 204 }, () => randomUUID());
+        await prisma.uploadSession.createMany({
+            data: historicalIds.map(id => ({
+                id, ownerId, assetId: reservedAssetId, clipId: session.clipId,
+                status: 'ABORTED', storageKey: `historical-${id}`, expiresAt: new Date(),
+            })),
+        });
+        const url = `/api/assets/original-uploads/${payload.clientRequestId}/sessions`;
+        const unfenced = await requestAs(ownerId, 'GET', url);
+        expect(unfenced.statusCode, unfenced.body).toBe(404);
+        expect(unfenced.body).not.toContain(reservedAssetId);
+        expect((await requestAs(null, 'GET', url)).statusCode).toBe(401);
+        const foreign = await requestAs(otherId, 'GET', url);
+        expect(foreign.statusCode).toBe(404);
+        expect(foreign.body).not.toContain(reservedAssetId);
+        expect(foreign.body).not.toContain(session.id);
+
+        const cancelled = await requestAs(
+            ownerId, 'POST', `/api/assets/original-uploads/${payload.clientRequestId}/cancel`);
+        expect(cancelled.statusCode, cancelled.body).toBe(503);
+        expect(cancelled.json()).toMatchObject({ code: 'INTENT_SESSION_LIMIT' });
+        const before = await prisma.uploadSession.findMany({
+            where: { assetId: reservedAssetId },
+            select: { id: true, ownerId: true, status: true, storageKey: true },
+            orderBy: { id: 'asc' },
+        });
+        const received = [];
+        const lengths = [];
+        let cursor;
+        do {
+            const response = await requestAs(ownerId, 'GET', cursor ? `${url}?after=${cursor}` : url);
+            expect(response.statusCode, response.body).toBe(200);
+            expect(response.headers['cache-control']).toBe('no-store');
+            const page = response.json();
+            expect(page.assetId).toBe(reservedAssetId);
+            expect(page.sessionIds.length).toBeLessThanOrEqual(100);
+            if (page.nextCursor) expect(page.nextCursor).toBe(page.sessionIds.at(-1));
+            lengths.push(page.sessionIds.length);
+            expect(lengths.length).toBeLessThanOrEqual(3);
+            received.push(...page.sessionIds);
+            cursor = page.nextCursor;
+        } while (cursor);
+        expect(lengths).toEqual([100, 100, 5]);
+        expect(received).toEqual([session.id, ...historicalIds].sort());
+        expect(await prisma.uploadSession.findMany({
+            where: { assetId: reservedAssetId },
+            select: { id: true, ownerId: true, status: true, storageKey: true },
+            orderBy: { id: 'asc' },
+        })).toEqual(before);
+        expect((await requestAs(otherId, 'GET', url)).statusCode).toBe(404);
+
+        const invalidId = `not-a-uuid-${randomUUID()}`;
+        await prisma.uploadSession.create({
+            data: {
+                id: invalidId, ownerId, assetId: reservedAssetId, clipId: session.clipId,
+                status: 'ABORTED', storageKey: `historical-${invalidId}`, expiresAt: new Date(),
+            },
+        });
+        const invalidSession = await requestAs(ownerId, 'GET', `${url}?after=${received.at(-1)}`);
+        expect(invalidSession.statusCode, invalidSession.body).toBe(503);
+        expect(invalidSession.body).not.toContain(invalidId);
+        await prisma.uploadSession.delete({ where: { id: invalidId } });
+
+        for (const query of ['?after=invalid', `?after=${randomUUID()}&after=${randomUUID()}`, '?extra=1']) {
+            expect((await requestAs(ownerId, 'GET', `${url}${query}`)).statusCode).toBe(400);
+        }
+        await prisma.asset.update({ where: { id: reservedAssetId }, data: { moderation: 'FLAGGED_FOR_REMOVAL' } });
+        const hidden = await requestAs(ownerId, 'GET', url);
+        expect(hidden.statusCode, hidden.body).toBe(404);
+        expect(hidden.body).not.toContain(reservedAssetId);
+        expect(hidden.body).not.toContain(session.id);
+        await prisma.asset.update({ where: { id: reservedAssetId }, data: { moderation: 'ACTIVE' } });
+
+        await prisma.uploadSession.update({ where: { id: received[0] }, data: { ownerId: otherId } });
+        const inconsistent = await requestAs(ownerId, 'GET', url);
+        expect(inconsistent.statusCode, inconsistent.body).toBe(503);
+        expect(inconsistent.body).not.toContain(reservedAssetId);
+        expect(inconsistent.body).not.toContain(received[0]);
+
+        await prisma.asset.delete({ where: { id: reservedAssetId } });
+        const disappeared = await requestAs(ownerId, 'GET', `${url}?after=${received[99]}`);
+        expect(disappeared.statusCode, disappeared.body).toBe(503);
+        expect(disappeared.body).not.toContain(reservedAssetId);
+        expect(disappeared.body).not.toContain(session.id);
+        const afterDeletion = await requestAs(ownerId, 'GET', url);
+        expect(afterDeletion.statusCode, afterDeletion.body).toBe(200);
+        expect(afterDeletion.json()).toEqual({ assetId: null, sessionIds: [], nextCursor: null });
+    });
+
+    it('enumerates a fenced intent without an asset as an empty page', async () => {
+        const id = randomUUID();
+        const cancel = await requestAs(ownerId, 'POST', `/api/assets/original-uploads/${id}/cancel`);
+        expect(cancel.statusCode, cancel.body).toBe(200);
+        const response = await requestAs(ownerId, 'GET', `/api/assets/original-uploads/${id}/sessions`);
+        expect(response.statusCode, response.body).toBe(200);
+        expect(response.json()).toEqual({ assetId: null, sessionIds: [], nextCursor: null });
+    });
+
     it('serializes cancellation with concurrent reservation and session creation', async () => {
         const first = originalReservation(Buffer.from('concurrent reservation'));
         const [reservation, firstCancellation] = await Promise.all([
@@ -791,23 +918,32 @@ integration('upload session HTTP routes against PostgreSQL and local storage', (
                 await release;
             }, { timeout: 15_000 });
             let cancellation;
+            let enumeration;
             try {
                 const pid = await Promise.race([
                     locked,
                     deletion.then(() => { throw new Error('Asset deletion did not pause'); }),
                 ]);
                 cancellation = requestAs(ownerId, 'POST', cancelUrl);
+                if (alreadyCancelled) {
+                    enumeration = requestAs(
+                        ownerId, 'GET', `/api/assets/original-uploads/${payload.clientRequestId}/sessions`);
+                }
                 await waitForBlockedBy(pid);
                 releaseDeletion();
                 const response = await cancellation;
                 expect(response.statusCode, response.body).toBe(alreadyCancelled ? 200 : 410);
                 if (alreadyCancelled) {
                     expect(response.json()).toEqual({ assetId: null, sessionIds: [] });
+                    const page = await enumeration;
+                    expect(page.statusCode, page.body).toBe(200);
+                    expect(page.json()).toEqual({ assetId: null, sessionIds: [], nextCursor: null });
                 }
             } finally {
                 releaseDeletion();
                 await deletion;
                 if (cancellation) await cancellation;
+                if (enumeration) await enumeration;
             }
         }
     }, 15_000);

@@ -872,10 +872,10 @@ sequenceDiagram
     not be treated as proof that a background task is terminal. The server-side
     cancellation fence returns the complete bounded session list on success;
     quota, overflow, and unavailable responses must leave cancellation pending.
-    Before rollout, provide bounded reconciliation for over-limit histories
-    and monitor retained fences; the rolling quota does not cap lifetime
-    storage. The iOS coordinator still needs to use the fence and abort or
-    reconcile those sessions.
+    A read-only, owner-scoped endpoint pages over-limit histories after fencing;
+    the iOS coordinator still needs to walk those pages and abort or reconcile
+    all returned and locally known sessions. Monitor retained fences before
+    rollout; the rolling quota does not cap lifetime storage.
   - Survival and reattachment require physical-device validation. iOS can delay
     background work until a short-lived URL expires and force-quitting cancels
     outstanding background tasks; reopening is required after a force-quit.
