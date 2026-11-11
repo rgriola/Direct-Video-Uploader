@@ -40,6 +40,7 @@ export async function cleanupOrphanedUploads(fastify, { fileSystem = fs } = {}) 
                 moderation: 'ACTIVE',
                 createdAt: { lt: cutoff },
                 uploadSessions: { none: {} },
+                NOT: { originalUploadIntent: { is: { cancelledAt: { not: null } } } },
                 ...eligibleMode,
             },
             select: { id: true },
@@ -64,6 +65,7 @@ export async function cleanupOrphanedUploads(fastify, { fileSystem = fs } = {}) 
                                 mediaCreateOperationId: null,
                                 createdAt: { lt: cutoff },
                                 uploadSessions: { none: {} },
+                                NOT: { originalUploadIntent: { is: { cancelledAt: { not: null } } } },
                                 ...eligibleMode,
                             },
                             include: {
@@ -86,7 +88,7 @@ export async function cleanupOrphanedUploads(fastify, { fileSystem = fs } = {}) 
 
                         await tx.asset.update({ where: { id: current.id }, data: { status: 'ERROR' } });
                         return current;
-                    }, { timeout: 30000 });
+                    }, { timeout: 30000, isolationLevel: 'ReadCommitted' });
                 });
                 if (!locked.acquired || !locked.value) continue;
                 asset = locked.value;

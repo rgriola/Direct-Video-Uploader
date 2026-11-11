@@ -1,4 +1,5 @@
 import Fastify from 'fastify';
+import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { requireRole } from '../lib/authorization.js';
@@ -446,6 +447,71 @@ integration('media routes against PostgreSQL', () => {
         expect(await prisma.asset.findUnique({ where: { id: assetId } }))
             .toMatchObject({ status: 'ERROR', uploadMode: 'ORIGINAL' });
     });
+
+    it('does not mark a cancelled original reservation as an orphan', async () => {
+        await createAsset({
+            status: 'UPLOADING',
+            uploadMode: 'ORIGINAL',
+            createdAt: new Date(Date.now() - 25 * 60 * 60 * 1000),
+        });
+        await prisma.originalUploadIntent.create({
+            data: { userId, clientRequestId: randomUUID(), assetId, cancelledAt: new Date() },
+        });
+        const { notifyDashboardAssetChange } = await import('../ws/dashboard-notifications.js');
+        vi.mocked(notifyDashboardAssetChange).mockClear();
+
+        await cleanupOrphanedUploads(app);
+
+        expect(await prisma.asset.findUnique({ where: { id: assetId } }))
+            .toMatchObject({ status: 'UPLOADING', uploadMode: 'ORIGINAL' });
+        expect(vi.mocked(notifyDashboardAssetChange).mock.calls.some(([, id]) => id === assetId)).toBe(false);
+    });
+
+    it('rechecks cancellation after waiting for the orphaned asset lock', async () => {
+        await createAsset({
+            status: 'UPLOADING',
+            uploadMode: 'ORIGINAL',
+            createdAt: new Date(Date.now() - 25 * 60 * 60 * 1000),
+        });
+        const clientRequestId = randomUUID();
+        const where = { userId_clientRequestId: { userId, clientRequestId } };
+        await prisma.originalUploadIntent.create({
+            data: { userId, clientRequestId, assetId },
+        });
+        const { notifyDashboardAssetChange } = await import('../ws/dashboard-notifications.js');
+        vi.mocked(notifyDashboardAssetChange).mockClear();
+
+        let reportLocked;
+        let releaseCancellation;
+        const locked = new Promise(resolve => { reportLocked = resolve; });
+        const release = new Promise(resolve => { releaseCancellation = resolve; });
+        const cancellation = prisma.$transaction(async tx => {
+            await tx.$queryRaw`SELECT id FROM users WHERE id = ${userId} FOR UPDATE`;
+            await tx.$queryRaw`SELECT id FROM assets WHERE id = ${assetId} FOR UPDATE`;
+            await tx.originalUploadIntent.update({ where, data: { cancelledAt: new Date() } });
+            reportLocked();
+            await release;
+        }, { timeout: 15_000 });
+        let cleanup;
+        try {
+            await Promise.race([
+                locked,
+                cancellation.then(() => { throw new Error('Cancellation did not pause'); }),
+            ]);
+            cleanup = cleanupOrphanedUploads(app);
+            await waitForBlockedQuery(pool, 'SELECT id FROM assets WHERE id =');
+            releaseCancellation();
+            await cleanup;
+        } finally {
+            releaseCancellation();
+            await cancellation;
+            if (cleanup) await cleanup;
+        }
+
+        expect(await prisma.asset.findUnique({ where: { id: assetId } }))
+            .toMatchObject({ status: 'UPLOADING', uploadMode: 'ORIGINAL' });
+        expect(vi.mocked(notifyDashboardAssetChange).mock.calls.some(([, id]) => id === assetId)).toBe(false);
+    }, 15_000);
 
     it('applies the 24-hour boundary consistently to automatic and administrative cleanup', async () => {
         const now = Date.now();
