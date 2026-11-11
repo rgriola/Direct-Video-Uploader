@@ -463,7 +463,8 @@ integration('upload session HTTP routes against PostgreSQL and local storage', (
             where: { userId_clientRequestId: { userId: ownerId, clientRequestId: payload.clientRequestId } },
         });
         expect(intent.assetId).toBeNull();
-        expect(Object.keys(intent).sort()).toEqual(['assetId', 'clientRequestId', 'createdAt', 'userId']);
+        expect(intent.cancelledAt).toBeNull();
+        expect(Object.keys(intent).sort()).toEqual(['assetId', 'cancelledAt', 'clientRequestId', 'createdAt', 'userId']);
     });
 
     it('removes the nonsecret upload tombstone when its owner is deleted', async () => {
