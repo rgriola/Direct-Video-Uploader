@@ -1,8 +1,8 @@
 # Fixer Roadmap — iOS Modernization → Web App Expansion
 
-_Drafted: October 19, 2026 · Updated: November 9, 2026_
+_Drafted: October 19, 2026 · Updated: November 10, 2026_
 _Owner: Rod_
-_Status: **In progress** — Step 1 verified; Steps 2.1 through 2.5, the Step 3.1 routing foundation, Step 3.2 thumbnails, Step 4.1 local storage, and the Step 4.2a–d server foundations are merged to `main`. The owner reported deploying storage safety and testing the existing Mux flow successfully. Step 4.2e encrypted original-file backups, Step 4.2f dashboard monitoring, and Step 4.2g tracked-session cleanup are implemented on feature branches and are opt-in. Actual backup and restore validation, cleanup rollout validation, proactive alerts, isolated real-Mux handoff validation, and client integration remain open._
+_Status: **In progress** — Step 1 verified; Steps 2.1 through 2.5, the Step 3.1 routing foundation, Step 3.2 thumbnails, Step 4.1 local storage, and Steps 4.2a–g are merged to `main`. The owner reported deploying storage safety and testing the existing Mux flow successfully. Encrypted original-file backups, dashboard monitoring, and tracked-session cleanup remain opt-in; their actual deployment and validation are not established here. Step 4.3a iOS client work is in progress on a feature branch. Actual backup and restore validation, cleanup rollout validation, proactive alerts, isolated real-Mux handoff validation, and client rollout remain open._
 
 ```mermaid
 flowchart TD
@@ -309,7 +309,8 @@ Compliant: system toolbars, tab bar, alerts and confirmation dialogs, the full-w
 
 **Order:** Phase A and the trim part of Phase B first, because they block core upload flows. Then Phase C, which affects the whole app (do it after the "upload only" UI redesign if that comes first). Then D and E.
 
-> **Later (not Step 1):** split `ChatViewModel.swift`, iOS UI redesign around "upload only", and remove `NSAllowsArbitraryLoads: true` now that the server is HTTPS via the tunnel.
+> **Later (not Step 1):** split `ChatViewModel.swift` and redesign the iOS UI around "upload only".
+> Step 4.3a removes the app-wide ATS exceptions; validate media and upload paths on a physical device.
 
 ---
 
@@ -504,14 +505,14 @@ callbacks finish; physical-device verification remains required.
 - A repeated live form request, such as one caused by re-upload, can reopen a form whose
   details were already submitted. Since the server currently upserts form data, submitting
   that form can overwrite the existing details. Verify completion before presenting it.
-- The background video PUT uses a separate session that can follow redirects and handle
-  cookies, and its destination is not yet validated. Establish an approved HTTPS upload
-  destination and a redirect-safe background-transfer strategy before client release.
-- WebSocket connections and queued frames are not fully bound to the original account,
-  server, and session generation. Keychain write/delete failures are also not reliably
-  surfaced; a restored token is not bound to its issuing server, and a legacy token
-  can be restored after logout. These require the planned transport and authentication
-  hardening.
+- The background video PUT validates the initial destination as HTTPS and app-wide ATS
+  exceptions are removed, but its separate session can still follow HTTPS redirects and
+  handle cookies. Validate the full Mux and proxy path
+  and establish a redirect-safe background-transfer strategy before client release.
+- In-progress authentication hardening binds restored sessions and WebSocket work to
+  their account, HTTPS server, and session generation. Existing unbound sessions require
+  a fresh sign-in. Keychain and durable sign-out failures are surfaced, but first-unlock,
+  crash-durability, and physical-device behavior still require validation.
 - The app has no app-owned privacy manifest in the workspace. Review required-reason API
   declarations and bundled SDK manifests with the App Review specialist before submission.
 - Temporary video cleanup depends on normal completion, and protected association staging
@@ -842,14 +843,46 @@ sequenceDiagram
 
 ### 4.3 Clients
 
-- [ ] **iOS** (after Step 1): `VideoUploadService` uploads parts to our server instead of one PUT to Mux
-  - Plan background `URLSession` tasks from file slices; survival and reattachment still require physical-device validation.
+- [ ] **iOS** (Step 4.3a, in progress): add an opt-in original-storage path using
+  bounded file-backed background `URLSession` parts. Preserve the existing
+  direct-to-Mux path as the default; the selected mode must not change for an
+  existing job.
+  - Persist a same-install, account- and server-scoped nonsecret journal and use
+    content-bound, owner-scoped server reservations for recovery. Reinstall and
+    cross-device recovery are out of scope.
+  - Keep protected staged originals for the same account after sign-out, and keep
+    expired or aborted uploads until the user retries or explicitly discards them.
+    Stop or park outstanding work at sign-out; do not delete completed local state
+    before dependent form, photo-linkage, and transcription work is resolved.
+  - Server safeguards and iOS staging, journal, and transport foundations are in
+    progress; the opt-in upload flow is not yet wired or available, and the
+    background transport cannot be instantiated. Before enabling it, protect live
+    and orphaned legacy Mux sessions from premature background-event acknowledgement,
+    reconcile scheduled attempts against live tasks and server parts at startup, and
+    provide a durable resolution for unidentified or late completion events.
+    This unreleased journal format includes a job-incarnation identifier; if any
+    earlier experimental installation created older records or tasks, migrate and
+    reconcile them before enabling recovery rather than deleting staged files.
+  - Finish scope-wide sign-out fencing, safe cancellation when credentials have
+    already changed, recovery of reservations or sessions created during a
+    cancellation race without creating new work, and terminal local cleanup that
+    cannot lose queued delegate events. Cancellation or an expired URL alone must
+    not be treated as proof that a background task is terminal.
+  - Survival and reattachment require physical-device validation. iOS can delay
+    background work until a short-lived URL expires and force-quitting cancels
+    outstanding background tasks; reopening is required after a force-quit.
   - The owner reported that closing the current app mid-upload caused a failure and that
     manual retry succeeded. This does not demonstrate uninterrupted background transfer
     or test the new store-first path.
-  - Progress, transcription, form, and WebSocket flow stay the same
+  - Preserve progress, transcription, form, and WebSocket workflows while
+    distinguishing upload-start events from verified storage and playable status.
+  - Disclose that existing metadata may include location, completed originals and
+    backups are retained, and cancelling cannot recall bytes already received.
+  - Test only against an isolated HTTPS backend with a verified no-redirect path
+    and signed-query suppression in all logs; do not enable the shared backend.
 - [ ] **Desktop web**: drag-and-drop, multi-file queue, same part protocol, context form on web, `source: 'web'` on the asset
-- [ ] Keep the old direct-to-Mux path behind a server flag until the new path is proven
+- [ ] Keep direct-to-Mux as the default until the new path and all rollout gates
+  are proven; upload-session and Mux-handoff flags remain independently opt-in.
 
 ---
 

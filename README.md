@@ -116,7 +116,17 @@ xcodegen generate --spec ios/project.yml
 # Open ios/DirectVideoUploader.xcodeproj in Xcode, build to device
 ```
 
-> **Tip:** For tethered device testing, update `ServerConfig.swift` with your Mac's LAN IP.
+The app requires an HTTPS server for sign-in and authenticated requests, including
+Debug builds. The local HTTP addresses above work for server and dashboard
+development but cannot be used to sign in from iOS. For local device testing,
+use a trusted HTTPS endpoint in front of the local server and enter its origin
+on the login screen or set `DVU_SERVER_URL` in the Xcode scheme.
+
+On the first launch after upgrading to origin-bound sessions, previously saved
+unbound tokens are removed and existing users must sign in again. If protected
+credentials are unavailable before the device's first unlock, unlock the
+device and retry. A sign-out warning requires another sign-out attempt until
+the app confirms that the saved session is removed.
 
 The unit tests host the app, which can restore a saved session and contact its configured server. Use a fresh, disposable simulator rather than one containing real credentials or data:
 
