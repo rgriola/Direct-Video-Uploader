@@ -161,7 +161,11 @@ describe("original upload client", () => {
       if (path.endsWith("/cancel")) return { assetId: ASSET_ID, sessionIds: [SESSION_ID] };
       if (path.endsWith("/sessions")) return { sessionIds: [SESSION_ID], nextCursor: SESSION_ID };
       if (path.endsWith(`/sessions?after=${SESSION_ID}`)) return { sessionIds: [second], nextCursor: null };
-      if (path === `/api/upload-sessions/${second}`) return new ApiError("Completed originals cannot be aborted", 409);
+      if (path === `/api/upload-sessions/${second}`) {
+        return method === "DELETE"
+          ? new ApiError("Completed originals cannot be aborted", 409)
+          : { uploadSession: { id: second, status: "COMPLETED" } };
+      }
       return { uploadSession: { id: SESSION_ID, status: "ABORTED" } };
     });
 
@@ -172,7 +176,39 @@ describe("original upload client", () => {
       `DELETE /api/upload-sessions/${SESSION_ID}`,
       `GET /api/assets/original-uploads/${REQUEST_ID}/sessions?after=${SESSION_ID}`,
       `DELETE /api/upload-sessions/${second}`,
+      `GET /api/upload-sessions/${second}`,
     ]);
     expect(calls[0].body).toBeUndefined();
+  });
+
+  it("retries busy session cleanup and continues past an oversized fence", async () => {
+    let deletes = 0;
+    const { transport } = fakeTransport((method, path) => {
+      if (path.endsWith("/cancel")) {
+        return new ApiError("Too many original upload sessions to reconcile", 503, null, "INTENT_SESSION_LIMIT");
+      }
+      if (path.endsWith("/sessions")) return { sessionIds: [SESSION_ID], nextCursor: null };
+      if (method === "DELETE" && (deletes += 1) === 1) return new ApiError("Upload session is completing", 409);
+      return { uploadSession: { id: SESSION_ID, status: method === "DELETE" ? "ABORTED" : "COMPLETING" } };
+    });
+
+    await expect(cancelOriginalUpload(REQUEST_ID, transport)).resolves.toEqual({ retainedSessions: 0 });
+    expect(deletes).toBe(2);
+    expect(transport.sleep).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not send a part once the upload is stopped during signing", async () => {
+    const file = makeFile("abcd");
+    const controller = new AbortController();
+    const routes = uploadRoutes(file);
+    const { transport, puts } = fakeTransport((method, path) => {
+      if (path.endsWith("/sign")) controller.abort();
+      return routes(method, path);
+    });
+
+    await expect(runOriginalUpload(
+      { clientRequestId: REQUEST_ID, file, sha256: "a".repeat(64) }, () => {}, controller.signal, transport,
+    )).rejects.toThrow("Upload stopped");
+    expect(puts).toHaveLength(0);
   });
 });

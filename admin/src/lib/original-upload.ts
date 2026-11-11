@@ -98,6 +98,7 @@ export async function hashFile(
 }
 
 export const xhrPutPart: PutPart = (url, body, onProgress, signal) => new Promise((resolve, reject) => {
+  if (signal.aborted) return reject(new UploadAbortedError());
   const xhr = new XMLHttpRequest();
   const onAbort = () => xhr.abort();
   const finish = (error?: Error) => {
@@ -125,6 +126,7 @@ export const xhrPutPart: PutPart = (url, body, onProgress, signal) => new Promis
 
 function abortableSleep(ms: number, signal: AbortSignal) {
   return new Promise<void>((resolve, reject) => {
+    if (signal.aborted) return reject(new UploadAbortedError());
     const timer = setTimeout(() => {
       signal.removeEventListener("abort", onAbort);
       resolve();
@@ -165,6 +167,7 @@ async function uploadPart(
       // A fresh signature per attempt: part URLs expire within minutes.
       const signed = await transport.request<SignedPart>(
         "POST", `/api/upload-sessions/${session.id}/parts/${partNumber}/sign`);
+      throwIfAborted(signal);
       await transport.putPart(signed.url, file.slice(start, start + signed.sizeBytes), onPartProgress, signal);
       return;
     } catch (error) {
@@ -230,6 +233,28 @@ export async function runOriginalUpload(
   }
 }
 
+async function abortSession(
+  transport: Pick<UploadTransport, "request" | "sleep">,
+  sessionId: string,
+): Promise<"aborted" | "retained"> {
+  const path = `/api/upload-sessions/${encodeURIComponent(sessionId)}`;
+  const never = new AbortController().signal;
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      await transport.request("DELETE", path);
+      return "aborted";
+    } catch (error) {
+      if (!(error instanceof ApiError) || error.status !== 409) throw error;
+    }
+    // 409 means either a completed original or cleanup that is still busy.
+    const { uploadSession } = await transport.request<{ uploadSession: { status: UploadSession["status"] } }>(
+      "GET", path);
+    if (uploadSession.status === "COMPLETED") return "retained";
+    if (attempt >= PART_ATTEMPTS) throw new Error("The server is still finishing this upload; try cancelling again.");
+    await transport.sleep(RETRY_BASE_DELAY_MS * 2 ** (attempt - 1), never);
+  }
+}
+
 /**
  * Fence the reservation server-side, then abort every session it owns. The
  * server rejects new sessions once the intent is cancelled, so paging after
@@ -237,10 +262,15 @@ export async function runOriginalUpload(
  */
 export async function cancelOriginalUpload(
   clientRequestId: string,
-  transport: Pick<UploadTransport, "request"> = browserTransport,
+  transport: Pick<UploadTransport, "request" | "sleep"> = browserTransport,
 ): Promise<CancellationResult> {
   const id = encodeURIComponent(clientRequestId);
-  await transport.request("POST", `/api/assets/original-uploads/${id}/cancel`);
+  try {
+    await transport.request("POST", `/api/assets/original-uploads/${id}/cancel`);
+  } catch (error) {
+    // The fence is recorded even when the session list is too long to return.
+    if (!(error instanceof ApiError) || error.code !== "INTENT_SESSION_LIMIT") throw error;
+  }
   let retainedSessions = 0;
   let cursor: string | null = null;
   do {
@@ -248,12 +278,7 @@ export async function cancelOriginalUpload(
     const page: SessionPage = await transport.request<SessionPage>(
       "GET", `/api/assets/original-uploads/${id}/sessions${query}`);
     for (const sessionId of page.sessionIds) {
-      try {
-        await transport.request("DELETE", `/api/upload-sessions/${encodeURIComponent(sessionId)}`);
-      } catch (error) {
-        if (!(error instanceof ApiError) || error.status !== 409) throw error;
-        retainedSessions += 1;
-      }
+      if (await abortSession(transport, sessionId) === "retained") retainedSessions += 1;
     }
     cursor = page.nextCursor;
   } while (cursor);
