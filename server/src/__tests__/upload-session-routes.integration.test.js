@@ -70,6 +70,7 @@ integration('upload session HTTP routes against PostgreSQL and local storage', (
     let reconcileAssetMedia;
     let createMediaReconciler;
     let withAssetMediaLock;
+    let uploadTransactionTimeZone;
     let assetId;
     let currentTime;
     let tokens;
@@ -115,10 +116,26 @@ integration('upload session HTTP routes against PostgreSQL and local storage', (
             of: () => ({ sockets: new Map() }),
             sockets: { sockets: new Map() },
         });
+        const uploadDb = new Proxy(prisma, {
+            get(target, property) {
+                if (property !== '$transaction') return Reflect.get(target, property, target);
+                return (work, options) => {
+                    if (!uploadTransactionTimeZone) return target.$transaction(work, options);
+                    const timeZone = uploadTransactionTimeZone;
+                    return target.$transaction(async tx => {
+                        const [{ configuredTimeZone }] = await tx.$queryRaw`
+                            SELECT set_config('TimeZone', ${timeZone}, true) AS "configuredTimeZone"`;
+                        expect(configuredTimeZone).toBe(timeZone);
+                        return work(tx);
+                    }, options);
+                };
+            },
+        });
         await app.register(assetRoutes);
         await app.register(adminRoutes);
         await app.register(moderationRoutes);
         await app.register(uploadSessionRoutes, {
+            db: uploadDb,
             storage,
             capacity: unrestrictedTestCapacity,
             signingSecret,
@@ -607,11 +624,14 @@ integration('upload session HTTP routes against PostgreSQL and local storage', (
             },
         });
         tokens[quotaOwner] = app.jwt.sign({ id: quotaOwner });
+        uploadTransactionTimeZone = 'Pacific/Kiritimati';
         try {
             const reservedPayload = originalReservation(Buffer.from('existing reservation'));
             const reserved = await requestAs(quotaOwner, 'POST', '/api/assets/original-uploads', reservedPayload);
             expect(reserved.statusCode, reserved.body).toBe(201);
-            const [{ now }] = await prisma.$queryRaw`SELECT clock_timestamp() AS now`;
+            const [{ epochMilliseconds }] = await prisma.$queryRaw`
+                SELECT floor(extract(epoch FROM clock_timestamp()) * 1000)::bigint AS "epochMilliseconds"`;
+            const now = new Date(Number(epochMilliseconds));
             const oldId = randomUUID();
             const recentIds = Array.from({ length: 99 }, () => randomUUID());
             await prisma.originalUploadIntent.createMany({
@@ -641,6 +661,13 @@ integration('upload session HTTP routes against PostgreSQL and local storage', (
             })).toBeNull();
 
             const acceptedId = concurrentIds[1 - rejectedIndex];
+            const acceptedIntent = await prisma.originalUploadIntent.findUnique({
+                where: { userId_clientRequestId: { userId: quotaOwner, clientRequestId: acceptedId } },
+            });
+            const [{ observedEpoch }] = await prisma.$queryRaw`
+                SELECT floor(extract(epoch FROM clock_timestamp()) * 1000)::bigint AS "observedEpoch"`;
+            expect(Math.abs(acceptedIntent.cancelledAt.getTime() - Number(observedEpoch))).toBeLessThan(5_000);
+            uploadTransactionTimeZone = 'America/Los_Angeles';
             expect((await requestAs(
                 quotaOwner, 'POST', `/api/assets/original-uploads/${acceptedId}/cancel`)).statusCode).toBe(200);
             expect((await requestAs(
@@ -663,6 +690,7 @@ integration('upload session HTTP routes against PostgreSQL and local storage', (
             const oldPayload = { ...originalReservation(Buffer.from('old fence')), clientRequestId: oldId };
             expect((await requestAs(quotaOwner, 'POST', '/api/assets/original-uploads', oldPayload)).statusCode).toBe(410);
         } finally {
+            uploadTransactionTimeZone = undefined;
             delete tokens[quotaOwner];
             await prisma.asset.deleteMany({ where: { userId: quotaOwner } });
             await prisma.user.delete({ where: { id: quotaOwner } });

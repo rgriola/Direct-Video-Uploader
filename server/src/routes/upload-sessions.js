@@ -318,7 +318,8 @@ export default async function uploadSessionRoutes(fastify, {
             if (!users.length || users[0].status !== 'ACTIVE') {
                 throw new UploadSessionError('ACCOUNT_SUSPENDED', 'Account is suspended');
             }
-            const [{ cancellationTime }] = await tx.$queryRaw`SELECT clock_timestamp() AS "cancellationTime"`;
+            const [{ cancellationTime }] = await tx.$queryRaw`
+                SELECT clock_timestamp() AT TIME ZONE 'UTC' AS "cancellationTime"`;
             const where = { userId_clientRequestId: key };
             let intent = await tx.originalUploadIntent.findUnique({ where });
             if (intent?.assetId) {
