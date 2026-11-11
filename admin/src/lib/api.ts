@@ -14,7 +14,14 @@ export function clearToken() {
   authToken = null;
 }
 
-async function api<T>(method: string, path: string, body?: unknown): Promise<T> {
+export class ApiError extends Error {
+  constructor(message: string, readonly status: number, readonly retryAfterSeconds: number | null = null) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
+export async function api<T>(method: string, path: string, body?: unknown): Promise<T> {
   const headers: Record<string, string> = {};
   if (authToken) headers["Authorization"] = `Bearer ${authToken}`;
 
@@ -31,7 +38,8 @@ async function api<T>(method: string, path: string, body?: unknown): Promise<T> 
       const body = await res.json() as { error?: string };
       if (body?.error) message = body.error;
     } catch { /* ignore parse failure */ }
-    throw new Error(message);
+    const retryAfter = Number(res.headers.get("Retry-After"));
+    throw new ApiError(message, res.status, Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : null);
   }
   return res.json() as Promise<T>;
 }
