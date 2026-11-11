@@ -913,6 +913,22 @@ sequenceDiagram
     with a verified no-redirect path and signed-query suppression in all logs;
     do not enable the shared backend.
 - [ ] **Desktop web**: drag-and-drop, multi-file queue, same part protocol, context form on web, `source: 'web'` on the asset
+  - [x] `GET /api/upload-capabilities` reports whether upload sessions are enabled;
+    My Videos shows the uploader only when `originalUploads` is true.
+  - [x] Reservations accept an optional `uploadSource` (`IOS`/`WEB`) stored on the
+    asset; the web client sends `WEB`. Apply `20261111150000_asset_upload_source`.
+  - [x] Drag-and-drop and multi-file queue uploading one file at a time: incremental
+    SHA-256 (`@noble/hashes`), sequential 50 MiB parts through fresh signed URLs,
+    bounded retries, resume from stored parts, and verified completion.
+  - [x] Cancel fences the reservation, pages and aborts its sessions, retries busy
+    cleanup, and reports an original that was already stored. Unsent files cancel
+    locally. The panel discloses retention and warns before leaving.
+  - [x] Owners can add a missing context form (slug, type, description, priority)
+    to their active videos from My Videos.
+  - [ ] Jobs are held in memory only: reloading or leaving My Videos stops uploads,
+    and a stopped reservation is not recovered across reloads (sessions expire).
+  - [ ] Validate in desktop browsers against an isolated backend with real files
+    up to 500 MiB before enabling upload sessions on the shared backend.
 - [ ] Keep direct-to-Mux as the default until the new path and all rollout gates
   are proven; upload-session and Mux-handoff flags remain independently opt-in.
 
