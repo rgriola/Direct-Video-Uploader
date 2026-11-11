@@ -766,10 +766,9 @@ export function createLocalStorageDriver({ root = resolveLocalStorageRoot() } = 
       const rootPath = await getRoot({ create: false });
       const rootInfo = await lstat(rootPath, { bigint: true });
       const identity = await readStorageIdentity(rootPath);
-      // A fresh root is only marked by its first upload, so it has nothing to inventory yet.
       if (!identity && rootInfo.isDirectory() && !rootInfo.isSymbolicLink()
         && (await readdir(rootPath)).length === 0) {
-        return null;
+        return { unmarkedRoot: true };
       }
       if (!rootInfo.isDirectory() || rootInfo.isSymbolicLink() || !identity) {
         throw new StorageError("Original upload inventory requires a verified storage root", {

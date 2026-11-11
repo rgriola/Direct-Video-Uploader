@@ -1,6 +1,7 @@
 import { createUploadSessionRecovery, UploadSessionError } from '../lib/upload-sessions.js';
 import { createStorageDriver } from '../lib/storage/driver.js';
 import { lockStorageCapacity } from '../lib/storage/capacity.js';
+import { StorageError } from '../lib/storage/local-driver.js';
 
 const CYCLE_INTERVAL_MS = 5 * 60 * 1000;
 const SESSION_BATCH_SIZE = 50;
@@ -30,7 +31,8 @@ export function createUploadSessionCleanupWorker({
     sessionBatchSize = SESSION_BATCH_SIZE,
     inventoryBatchSize = INVENTORY_BATCH_SIZE,
 }) {
-    if (!db || !storage || typeof storage.openUploadInventory !== 'function'
+    if (!db || !storage || typeof storage.getCapacitySnapshot !== 'function'
+        || typeof storage.openUploadInventory !== 'function'
         || typeof storage.assertUploadInventory !== 'function' || !log
         || typeof log.info !== 'function' || typeof log.warn !== 'function'
         || typeof log.error !== 'function' || typeof withLock !== 'function'
@@ -120,6 +122,36 @@ export function createUploadSessionCleanupWorker({
 
     async function reportInventory() {
         if (!inventory) inventory = await storage.openUploadInventory();
+        if (inventory?.unmarkedRoot) {
+            inventory = null;
+            // An empty unmarked root may be a missing volume, not a new installation.
+            await db.$transaction(async tx => {
+                await lockStorageCapacity(tx);
+                const root = await storage.getCapacitySnapshot({ create: false });
+                if (root.identity) return;
+                const activeSession = await tx.uploadSession.findFirst({
+                    where: {
+                        OR: [
+                            { storageReservationBytes: null },
+                            { storageReservationBytes: { gt: 0n } },
+                            { status: { in: ['OPEN', 'COMPLETING'] } },
+                        ],
+                    },
+                    select: { id: true },
+                });
+                const original = await tx.clip.findFirst({
+                    where: { storageKey: { not: null } },
+                    select: { id: true },
+                });
+                const lease = await tx.storageWriteLease.findFirst({ select: { id: true } });
+                if (root.hasEntries || activeSession || original || lease) {
+                    throw new StorageError('Original upload inventory requires a verified storage root', {
+                        code: 'STORAGE_UNAVAILABLE',
+                    });
+                }
+            }, { timeout: 60000, isolationLevel: 'ReadCommitted' });
+            return { inspected: 0, reported: 0 };
+        }
         if (!inventory) return { inspected: 0, reported: 0 };
 
         const entries = [];

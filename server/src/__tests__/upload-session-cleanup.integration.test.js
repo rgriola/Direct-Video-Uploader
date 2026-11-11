@@ -653,6 +653,67 @@ integration('upload session cleanup against PostgreSQL and local storage', () =>
         await expect(worker.runOnce()).rejects.toMatchObject({ message: 'Upload session cleanup cycle failed' });
     });
 
+    it.each(['active upload', 'retained original', 'write lease'])(
+        'refuses a fresh-looking unmarked root when there is a tracked %s',
+        async tracked => {
+            let session;
+            let content;
+            if (tracked === 'write lease') {
+                await prisma.storageWriteLease.create({
+                    data: {
+                        id: randomUUID(),
+                        uploadSessionId: randomUUID(),
+                        storageIdentity: randomUUID(),
+                        sizeBytes: 1n,
+                        host: 'another-host',
+                        pid: 1,
+                    },
+                });
+            } else {
+                ({ session, content } = await trackedUpload('tracked storage'));
+                if (tracked === 'retained original') {
+                    await service.complete({ ownerId, uploadSessionId: session.id });
+                }
+            }
+            const fresh = path.join(storageRoot, 'other-originals');
+            await mkdir(fresh);
+            const worker = createWorker({ storage: createLocalStorageDriver({ root: fresh }) });
+
+            await expect(worker.runOnce()).rejects.toMatchObject({
+                message: 'Upload session cleanup cycle failed',
+                errors: [expect.objectContaining({ code: 'STORAGE_UNAVAILABLE' })],
+            });
+            if (session) {
+                const existing = tracked === 'retained original'
+                    ? originalPath(session) : path.join(sessionPath(session), 'parts', '00001');
+                expect(await readFile(existing)).toEqual(content);
+            }
+        },
+    );
+
+    it('rechecks a root initialized while its inventory was opening', async () => {
+        const fresh = path.join(storageRoot, 'concurrent-originals');
+        await mkdir(fresh);
+        const freshStorage = createLocalStorageDriver({ root: fresh });
+        const openInventory = freshStorage.openUploadInventory.bind(freshStorage);
+        let untracked;
+        vi.spyOn(freshStorage, 'openUploadInventory').mockImplementationOnce(async () => {
+            const inventory = await openInventory();
+            untracked = await freshStorage.createUpload({
+                ownerId, assetId: randomUUID(), clipId: randomUUID(),
+            });
+            return inventory;
+        });
+        const worker = createWorker({ storage: freshStorage });
+
+        expect((await worker.runOnce()).inventory).toEqual({ inspected: 0, reported: 0 });
+        expect((await worker.runOnce()).inventory).toMatchObject({ inspected: 1, reported: 1 });
+        expect(log.warn).toHaveBeenCalledWith(
+            { uploadSessionId: untracked.uploadId, kind: 'directory' },
+            'Possible untracked original upload data requires manual review',
+        );
+    });
+
     it('defers completion while an asset is moderated and resumes once active', async () => {
         const { session, content } = await trackedUpload('moderated completion');
         await prisma.uploadSession.update({ where: { id: session.id }, data: { status: 'COMPLETING' } });
