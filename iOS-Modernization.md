@@ -876,9 +876,11 @@ sequenceDiagram
     and orphaned legacy Mux sessions from premature background-event acknowledgement,
     reconcile scheduled attempts against live tasks and server parts at startup, and
     provide a durable resolution for unidentified or late completion events.
-    Local callback ordering alone does not identify an OS wake. Recover or
-    quarantine staged inbox records after a crash instead of deleting potentially
-    complete events, and resolve attachment changes before trusting task inventory.
+    Local callback ordering alone does not identify an OS wake. Intact staged inbox
+    records now recover after a crash; ambiguous records remain in place and block
+    inbox progress. The event pump also blocks acknowledgement of its pending
+    persistence retries. A repair workflow and ancestor-path validation remain
+    necessary, and attachment changes must be resolved before trusting task inventory.
     This unreleased journal format includes a job-incarnation identifier; if any
     earlier experimental installation created older records or tasks, migrate and
     reconcile them before enabling recovery rather than deleting staged files.
