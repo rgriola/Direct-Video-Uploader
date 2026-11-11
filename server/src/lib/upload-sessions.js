@@ -4,7 +4,7 @@ import {
 } from "./storage/capacity.js";
 import { StorageError, storageIdentityForKey } from "./storage/local-driver.js";
 
-const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
+export const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
 const MAX_DATABASE_BIGINT = 9_223_372_036_854_775_807n;
 const ACTIVE_SESSION_STATUSES = ["OPEN", "COMPLETING"];
 
@@ -486,7 +486,9 @@ function createUploadSessionOperations({
     return locked.acquired ? locked.value : { status: "busy" };
   }
 
-  async function create({ ownerId, assetId, clipId, expectedSizeBytes, expectedSha256, initializeClip = false }) {
+  async function create({
+    ownerId, assetId, clipId, expectedSizeBytes, expectedSha256, initializeClip = false, metadata = null,
+  }) {
     const sizeBytes = normalizeSize(expectedSizeBytes, "Expected upload size");
     const sha256 = normalizeSha256(expectedSha256, "Expected SHA-256");
     const createdAt = now();
@@ -514,6 +516,9 @@ function createUploadSessionOperations({
           if (!owner || owner.status !== "ACTIVE") {
             throw new UploadSessionError("ACCOUNT_SUSPENDED", "Account is suspended");
           }
+          if (asset.uploadMode === "MUX") {
+            throw new UploadSessionError("CLIP_CHANGED", "Asset is reserved for a direct Mux upload");
+          }
           if (asset.status !== "UPLOADING") {
             throw new UploadSessionError("CLIP_CHANGED", "Asset is already being processed");
           }
@@ -531,12 +536,30 @@ function createUploadSessionOperations({
                 assetId,
                 originalFileName: asset.originalFileName,
                 status: "UPLOADING",
+                ...(metadata ? {
+                  gpsLat: metadata.gpsLat,
+                  gpsLon: metadata.gpsLon,
+                  gpsAltitude: metadata.gpsAltitude,
+                  capturedAt: metadata.capturedAt,
+                  deviceModel: metadata.deviceModel,
+                  osVersion: metadata.osVersion,
+                  codec: metadata.codec,
+                  resolution: metadata.resolution,
+                  orientation: metadata.orientation,
+                  duration: metadata.duration,
+                } : {}),
               },
             });
             await tx.asset.update({
               where: { id: assetId },
-              data: { clipCount: { increment: 1 } },
+              data: {
+                clipCount: { increment: 1 },
+                uploadMode: "ORIGINAL",
+                ...(metadata ? { totalDuration: metadata.duration } : {}),
+              },
             });
+          } else if (asset.uploadMode == null) {
+            await tx.asset.update({ where: { id: assetId }, data: { uploadMode: "ORIGINAL" } });
           }
         }
         if (!clip || clip.assetId !== assetId) {

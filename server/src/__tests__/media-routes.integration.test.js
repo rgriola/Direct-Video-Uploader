@@ -421,6 +421,66 @@ integration('media routes against PostgreSQL', () => {
         }
     });
 
+    it('protects a new original intent from automatic and administrative orphan cleanup for 24 hours', async () => {
+        await createAsset({
+            status: 'UPLOADING',
+            uploadMode: 'ORIGINAL',
+            createdAt: new Date(Date.now() - 2 * 60 * 60 * 1000),
+        });
+        await cleanupOrphanedUploads(app);
+        expect(await prisma.asset.findUnique({ where: { id: assetId } }))
+            .toMatchObject({ status: 'UPLOADING', uploadMode: 'ORIGINAL' });
+        const cleanup = await requestAs(adminId, 'POST', '/api/admin/cleanup-assets', {});
+        expect(cleanup.statusCode).toBe(200);
+        expect(cleanup.json().cleaned).toBe(0);
+        expect(await prisma.asset.findUnique({ where: { id: assetId } })).not.toBeNull();
+    });
+
+    it('allows stale original intents without sessions to be marked as errors after 24 hours', async () => {
+        await createAsset({
+            status: 'UPLOADING',
+            uploadMode: 'ORIGINAL',
+            createdAt: new Date(Date.now() - 25 * 60 * 60 * 1000),
+        });
+        await cleanupOrphanedUploads(app);
+        expect(await prisma.asset.findUnique({ where: { id: assetId } }))
+            .toMatchObject({ status: 'ERROR', uploadMode: 'ORIGINAL' });
+    });
+
+    it('applies the 24-hour boundary consistently to automatic and administrative cleanup', async () => {
+        const now = Date.now();
+        const clock = vi.spyOn(Date, 'now').mockReturnValue(now);
+        const cutoff = now - 24 * 60 * 60 * 1000;
+        try {
+            await prisma.asset.createMany({
+                data: [
+                    { id: `${assetId}-before`, userId, uploadMode: 'ORIGINAL', createdAt: new Date(cutoff + 1) },
+                    { id: `${assetId}-at`, userId, uploadMode: 'ORIGINAL', createdAt: new Date(cutoff) },
+                    { id: `${assetId}-after`, userId, uploadMode: 'ORIGINAL', createdAt: new Date(cutoff - 1) },
+                ],
+            });
+            await cleanupOrphanedUploads(app);
+            const statuses = Object.fromEntries((await prisma.asset.findMany({
+                where: { userId }, select: { id: true, status: true },
+            })).map(asset => [asset.id, asset.status]));
+            expect(statuses).toEqual({
+                [`${assetId}-before`]: 'UPLOADING',
+                [`${assetId}-at`]: 'UPLOADING',
+                [`${assetId}-after`]: 'ERROR',
+            });
+
+            await prisma.asset.create({
+                data: { id: `${assetId}-admin-after`, userId, uploadMode: 'ORIGINAL', createdAt: new Date(cutoff - 1) },
+            });
+            const cleanup = await requestAs(adminId, 'POST', '/api/admin/cleanup-assets', {});
+            expect(cleanup.statusCode).toBe(200);
+            expect(cleanup.json().assetIds).toEqual([`${assetId}-admin-after`]);
+            expect(await prisma.asset.count({ where: { id: { in: [`${assetId}-before`, `${assetId}-at`] } } })).toBe(2);
+        } finally {
+            clock.mockRestore();
+        }
+    });
+
     it('blocks Nuclear Reset while any asset and its references remain', async () => {
         await createAsset({ moderation: 'REMOVED', mediaSyncState: 'SYNCED' });
         await prisma.muxAssetReference.create({ data: { assetId, muxAssetId: 'media-routes-retained' } });
@@ -517,6 +577,57 @@ integration('media routes against PostgreSQL', () => {
             expect((await client.query('SELECT * FROM mux_asset_references')).rows).toEqual([
                 { mux_asset_id: 'mux-one', asset_id: 'paused', clip_id: 'clip-a' },
             ]);
+        } finally {
+            await client.query('ROLLBACK');
+            client.release();
+        }
+    });
+
+    it('backfills legacy upload modes without losing contradictory original evidence', async () => {
+        const sql = await readFile(new URL(
+            '../../prisma/migrations/20261110200000_original_upload_intents/migration.sql', import.meta.url,
+        ), 'utf8');
+        const client = await pool.connect();
+        try {
+            await client.query('BEGIN');
+            await client.query('CREATE TEMP TABLE users (id TEXT PRIMARY KEY)');
+            await client.query('CREATE TEMP TABLE assets (id TEXT PRIMARY KEY)');
+            await client.query('CREATE TEMP TABLE clips (asset_id TEXT NOT NULL, storage_key TEXT, mux_upload_id TEXT)');
+            await client.query('CREATE TEMP TABLE upload_sessions (asset_id TEXT NOT NULL)');
+            await client.query('SET LOCAL search_path TO pg_temp');
+            await client.query("INSERT INTO users VALUES ('owner')");
+            await client.query(`
+                INSERT INTO assets VALUES ('session'), ('stored'), ('mux'), ('conflict'), ('unknown')
+            `);
+            await client.query(`
+                INSERT INTO clips VALUES
+                ('stored', 'original-key', NULL),
+                ('mux', NULL, 'mux-id'),
+                ('conflict', 'conflicting-key', 'conflicting-mux-id')
+            `);
+            await client.query("INSERT INTO upload_sessions VALUES ('session')");
+            await client.query(sql);
+            expect((await client.query('SELECT id, upload_mode FROM assets ORDER BY id')).rows).toEqual([
+                { id: 'conflict', upload_mode: 'ORIGINAL' },
+                { id: 'mux', upload_mode: 'MUX' },
+                { id: 'session', upload_mode: 'ORIGINAL' },
+                { id: 'stored', upload_mode: 'ORIGINAL' },
+                { id: 'unknown', upload_mode: null },
+            ]);
+
+            await client.query('SAVEPOINT invalid_intent');
+            await expect(client.query(`
+                UPDATE assets SET original_intent_size_bytes = 0, original_intent_sha256 = repeat('a', 64)
+                WHERE id = 'stored'
+            `)).rejects.toThrow('assets_original_intent_integrity_check');
+            await client.query('ROLLBACK TO SAVEPOINT invalid_intent');
+            await client.query(`
+                INSERT INTO original_upload_intents (user_id, client_request_id, asset_id)
+                VALUES ('owner', 'b9162fc4-5c45-4f6e-9de8-1c0b181a75fd', 'stored')
+            `);
+            await client.query("DELETE FROM assets WHERE id = 'stored'");
+            expect((await client.query('SELECT asset_id FROM original_upload_intents')).rows)
+                .toEqual([{ asset_id: null }]);
         } finally {
             await client.query('ROLLBACK');
             client.release();
