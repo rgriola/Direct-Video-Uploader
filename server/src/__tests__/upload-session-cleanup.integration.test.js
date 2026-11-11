@@ -642,6 +642,17 @@ integration('upload session cleanup against PostgreSQL and local storage', () =>
         await expect(lstat(missing)).rejects.toMatchObject({ code: 'ENOENT' });
     });
 
+    it('treats a fresh unmarked storage root as empty but refuses an unmarked root with files', async () => {
+        const fresh = path.join(storageRoot, 'fresh-originals');
+        await mkdir(fresh);
+        const worker = createWorker({ storage: createLocalStorageDriver({ root: fresh }) });
+        await expect(worker.runOnce()).resolves.toBeTruthy();
+        await expect(lstat(path.join(fresh, '.dvu-storage-id'))).rejects.toMatchObject({ code: 'ENOENT' });
+
+        await writeFile(path.join(fresh, 'unexpected'), 'not ours');
+        await expect(worker.runOnce()).rejects.toMatchObject({ message: 'Upload session cleanup cycle failed' });
+    });
+
     it('defers completion while an asset is moderated and resumes once active', async () => {
         const { session, content } = await trackedUpload('moderated completion');
         await prisma.uploadSession.update({ where: { id: session.id }, data: { status: 'COMPLETING' } });
