@@ -322,6 +322,12 @@ integration('role and organization endpoint matrix', () => {
             },
         },
         {
+            route: 'GET /api/upload-capabilities', method: 'GET', url: '/api/upload-capabilities', statuses: ALL,
+            check: async response => {
+                if (response.statusCode === 200) expect(response.json()).toEqual({ originalUploads: false });
+            },
+        },
+        {
             route: 'POST /api/assets', method: 'POST', url: '/api/assets', statuses: ALL,
             payload: () => ({ fileName: 'matrix.mov' }),
             check: async (response, actor) => {

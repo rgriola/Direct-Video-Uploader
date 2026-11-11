@@ -6,6 +6,7 @@ import clipRoutes from './clips.js';
 import errorRoutes from './errors.js';
 import muxWebhookRoutes from './mux-webhooks.js';
 import uploadSessionRoutes from './upload-sessions.js';
+import uploadCapabilityRoutes from './upload-capabilities.js';
 import { getUploadSessionConfig } from '../lib/upload-session-config.js';
 import { getMuxOriginalConfig } from '../lib/mux-original-config.js';
 import { createStorageDriver } from '../lib/storage/driver.js';
@@ -20,6 +21,7 @@ export async function registerApplicationRoutes(fastify) {
     await fastify.register(muxWebhookRoutes);
     const uploadConfig = getUploadSessionConfig();
     const muxOriginalConfig = getMuxOriginalConfig();
+    await fastify.register(uploadCapabilityRoutes, { originalUploads: uploadConfig.enabled });
     if (uploadConfig.enabled) {
         let handoff;
         if (muxOriginalConfig.enabled) {
