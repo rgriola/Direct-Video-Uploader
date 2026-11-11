@@ -92,6 +92,10 @@ export async function fetchAssets(moderation?: string) {
   return api<{ assets: Asset[] }>("GET", `/api/admin/assets${query}`);
 }
 
+export async function fetchUploadCapabilities() {
+  return api<{ originalUploads: boolean }>("GET", "/api/upload-capabilities");
+}
+
 export async function fetchMyAssets() {
   return api<{ assets: Asset[] }>("GET", "/api/assets/mine");
 }

@@ -1,10 +1,12 @@
 import { useAuth } from "@/auth/AuthProvider";
-import { useMyAssets } from "@/hooks/use-dashboard";
+import { useMyAssets, useUploadCapabilities } from "@/hooks/use-dashboard";
 import { AssetList } from "@/components/AssetList";
+import { OriginalUploadPanel } from "@/components/OriginalUploadPanel";
 
 export function UserDashboard() {
   const { user } = useAuth();
   const { data: assets, isLoading, isError, error, refetch } = useMyAssets(!!user);
+  const { data: capabilities } = useUploadCapabilities(!!user);
 
   return (
     <section aria-labelledby="my-videos-title">
@@ -12,6 +14,7 @@ export function UserDashboard() {
       <p className="mb-6 text-(length:--text-sm) text-(--muted-foreground)">
         View your uploads and open available clips.
       </p>
+      {capabilities?.originalUploads && <OriginalUploadPanel />}
       {isError && (
         <div role="alert" className="mb-4 text-(--accent-red)">
           <p>Could not load your videos: {error instanceof Error ? error.message : "Unknown error"}</p>

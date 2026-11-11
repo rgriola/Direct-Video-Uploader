@@ -56,6 +56,8 @@ export interface OriginalUploadJob {
   file: File;
   sha256?: string;
   assetId?: string;
+  /** Once set, the server may hold a reservation that only cancellation can fence. */
+  reservationRequested?: boolean;
 }
 
 export interface CancellationResult {
@@ -190,6 +192,7 @@ export async function runOriginalUpload(
   onProgress({ phase: "reserving", loaded: 0, total });
   const expected = { expectedSizeBytes: String(total), expectedSha256: job.sha256 };
   if (!job.assetId) {
+    job.reservationRequested = true;
     const { asset } = await transport.request<{ asset: ReservedAsset }>("POST", "/api/assets/original-uploads", {
       clientRequestId: job.clientRequestId,
       fileName: file.name || null,

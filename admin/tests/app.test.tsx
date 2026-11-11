@@ -105,6 +105,7 @@ let currentUser: User;
 let token: string;
 let tokenSequence = 0;
 let myAssets: Asset[];
+let originalUploads: boolean;
 let adminAssets: Asset[];
 let requests: RequestRecord[];
 let loginResponse: () => Promise<Response>;
@@ -124,6 +125,8 @@ async function respondToRequest(input: RequestInfo | URL, options?: RequestInit)
       return meResponse();
     case "/api/assets/mine":
       return myAssetsResponse();
+    case "/api/upload-capabilities":
+      return jsonResponse({ originalUploads });
     case "/api/admin/stats":
       return jsonResponse({
         users: 0, activeUsers: 0, loggedInUsers: 0, onlineUsers: 0, assets: 0,
@@ -186,6 +189,7 @@ beforeEach(() => {
   currentUser = account("USER");
   token = `test-token-${++tokenSequence}`;
   myAssets = [];
+  originalUploads = false;
   adminAssets = [];
   requests = [];
   loginResponse = async () => jsonResponse({ token, user: currentUser });
@@ -233,6 +237,8 @@ describe("role-separated web application", () => {
     expect(requestPaths().filter((path) => path.startsWith("/api/admin/"))).toEqual([]);
     expect(screen.queryByRole("heading", { name: "Quick Actions" })).toBeNull();
     expect(screen.queryByText("MEDIA NEEDS ATTENTION")).toBeNull();
+    expect(requestPaths()).toContain("/api/upload-capabilities");
+    expect(screen.queryByRole("heading", { name: "Upload originals" })).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: /Ready story/ }));
     expect(screen.getByRole("link", { name: /Play Clip/ }).getAttribute("href")).toBe("/clips/10001");
@@ -243,6 +249,15 @@ describe("role-separated web application", () => {
     expect(screen.getByText("Playback is temporarily unavailable")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /Link pending/ }));
     expect(screen.getByText("Clip link is not available yet")).toBeTruthy();
+  });
+
+  it("offers original uploads only when the server enables them", async () => {
+    originalUploads = true;
+    renderApp();
+    await signIn();
+
+    expect(await screen.findByRole("heading", { name: "Upload originals" })).toBeTruthy();
+    expect(screen.getByLabelText(/Choose video files/)).toBeTruthy();
   });
 
   it.each([

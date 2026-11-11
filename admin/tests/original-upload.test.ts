@@ -115,6 +115,7 @@ describe("original upload client", () => {
     expect(phases.map(progress => progress.phase)).toEqual(
       expect.arrayContaining(["hashing", "reserving", "uploading", "verifying"]));
     expect(job.assetId).toBe(ASSET_ID);
+    expect(job.reservationRequested).toBe(true);
   });
 
   it("resumes by skipping parts the server already stored", async () => {
