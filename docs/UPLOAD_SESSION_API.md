@@ -14,7 +14,8 @@ Apply the `20261110200000_original_upload_intents` migration before deploying
 this server version, even when upload sessions remain disabled: existing asset
 routes also read the new upload-mode fields. Do not enable store-first clients
 until all server instances run the new code; older instances do not enforce the
-new pre-session reservation.
+new pre-session reservation. Also apply `20261111150000_asset_upload_source`,
+which adds the nullable asset `uploadSource` column read by asset routes.
 
 ## Isolated development configuration
 
@@ -193,6 +194,11 @@ clip. The server initializes its clip and reserves that asset for original
 uploads. Bodyless control requests must omit `Content-Type: application/json`;
 an empty JSON body is invalid.
 
+Clients should call `GET /api/upload-capabilities` (always registered, bearer
+JWT, `Cache-Control: no-store`) and offer store-first uploads only when it
+returns `{ "originalUploads": true }`. The flag reflects
+`UPLOAD_SESSIONS_ENABLED`; it does not report free space or Mux handoff state.
+
 ### 0. Reserve an original-upload asset
 
 `POST /api/assets/original-uploads` is registered only when upload sessions
@@ -205,11 +211,15 @@ the same values after a lost response:
   "clientRequestId": "b9162fc4-5c45-4f6e-9de8-1c0b181a75fd",
   "fileName": "native.mov",
   "expectedSizeBytes": "15",
-  "expectedSha256": "77ececd9176974f1a4c22a09919d4c7c0f70d35042f2380f8eb4147bb5c5e2d2"
+  "expectedSha256": "77ececd9176974f1a4c22a09919d4c7c0f70d35042f2380f8eb4147bb5c5e2d2",
+  "uploadSource": "WEB"
 }
 ```
 
-The optional file name is a string or `null`. A new reservation returns 201;
+The optional file name is a string or `null`. The optional `uploadSource` is
+`IOS` or `WEB` and is stored on the asset for support and reporting; it is not
+an authorization signal. A retry may omit it, but a retry that supplies a
+different source than the stored one returns 409. A new reservation returns 201;
 an equivalent retry returns 200 with the same `asset`, including its `id`,
 `mediasourceId`, `mediasourceUrl`, `originalFileName`, `status`, `clipCount`,
 `totalDuration`, and `uploadMode: "ORIGINAL"`. Request IDs are scoped to the
