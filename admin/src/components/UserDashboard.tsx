@@ -15,7 +15,7 @@ export function UserDashboard() {
       <p className="mb-6 text-(length:--text-sm) text-(--muted-foreground)">
         View your uploads and open available clips.
       </p>
-      {capabilities?.originalUploads && <OriginalUploadPanel />}
+      {capabilities?.originalUploads && user && <OriginalUploadPanel key={user.id} ownerId={user.id} />}
       {isError && (
         <div role="alert" className="mb-4 text-(--accent-red)">
           <p>Could not load your videos: {error instanceof Error ? error.message : "Unknown error"}</p>
