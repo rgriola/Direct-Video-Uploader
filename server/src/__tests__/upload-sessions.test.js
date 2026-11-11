@@ -55,6 +55,9 @@ function createDatabase({ moderation = "ACTIVE" } = {}) {
   const db = {
     $queryRaw: async () => [],
     $transaction: async callback => callback(db),
+    originalUploadIntent: {
+      findUnique: async () => null,
+    },
     storageWriteLease: {
       findMany: async () => [],
       deleteMany: async () => ({ count: 0 }),

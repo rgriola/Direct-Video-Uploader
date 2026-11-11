@@ -54,8 +54,17 @@ nonisolated enum RedirectSafeTransport {
         return configuration
     }
 
+    static func boundedConfiguration() -> URLSessionConfiguration {
+        let configuration = configuration()
+        configuration.urlCredentialStorage = nil
+        return configuration
+    }
+
     private static let session = URLSession(
         configuration: configuration(), delegate: RejectRedirectsDelegate(), delegateQueue: nil)
+
+    private static let boundedSession = URLSession(
+        configuration: boundedConfiguration(), delegate: RejectRedirectsDelegate(), delegateQueue: nil)
 
     static func webSocketSession() -> URLSession {
         URLSession(
@@ -65,6 +74,39 @@ nonisolated enum RedirectSafeTransport {
 
     static func data(for request: URLRequest) async throws -> (Data, URLResponse) {
         try await session.data(for: request)
+    }
+
+    @concurrent
+    static func boundedData(
+        for request: URLRequest, maximumBytes: Int,
+        onStart: (@Sendable () -> Void)? = nil,
+        onResponse: (@Sendable () -> Void)? = nil,
+        onBody: (@Sendable (Int) -> Void)? = nil
+    ) async throws -> (Data, URLResponse) {
+        guard maximumBytes >= 0 else { throw URLError(.badServerResponse) }
+        try Task.checkCancellation()
+        onStart?()
+        let (bytes, response) = try await boundedSession.bytes(for: request)
+        let task = bytes.task
+        return try await withTaskCancellationHandler {
+            var completed = false
+            defer { if !completed { task.cancel() } }
+            onResponse?()
+            guard response.expectedContentLength <= Int64(maximumBytes) else {
+                throw URLError(.dataLengthExceedsMaximum)
+            }
+            var data = Data()
+            for try await byte in bytes {
+                guard data.count < maximumBytes else { throw URLError(.dataLengthExceedsMaximum) }
+                data.append(byte)
+                if data.count == 1 || data.count == maximumBytes { onBody?(data.count) }
+            }
+            try Task.checkCancellation()
+            completed = true
+            return (data, response)
+        } onCancel: {
+            task.cancel()
+        }
     }
 }
 

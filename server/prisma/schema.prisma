@@ -122,10 +122,11 @@ enum AssetModeration {
 }
 
 model OriginalUploadIntent {
-  userId          String   @map("user_id")
-  clientRequestId String   @map("client_request_id") @db.Uuid
-  assetId         String?  @unique @map("asset_id")
-  createdAt       DateTime @default(now()) @map("created_at")
+  userId          String    @map("user_id")
+  clientRequestId String    @map("client_request_id") @db.Uuid
+  assetId         String?   @unique @map("asset_id")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  cancelledAt     DateTime? @map("cancelled_at")
 
   user  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
   asset Asset? @relation(fields: [assetId], references: [id], onDelete: SetNull)
@@ -247,6 +248,7 @@ model UploadSession {
 
   @@index([ownerId, status, expiresAt])
   @@index([assetId, status])
+  @@index([assetId, id])
   @@index([clipId, status])
   @@map("upload_sessions")
 }

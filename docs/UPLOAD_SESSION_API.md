@@ -190,7 +190,8 @@ an asset first, preferably with the idempotent original-upload route below. The
 existing `POST /api/assets` route remains available to legacy clients. A new
 original session requires an owned, active, `UPLOADING` asset with no other
 clip. The server initializes its clip and reserves that asset for original
-uploads.
+uploads. Bodyless control requests must omit `Content-Type: application/json`;
+an empty JSON body is invalid.
 
 ### 0. Reserve an original-upload asset
 
@@ -220,11 +221,72 @@ than recreating it; the size and digest are deleted with the asset, and its
 nonsecret UUID tombstone is removed when the owner is deleted. This protection
 survives the administrative non-media reset.
 
+To cancel without replaying either creation request, call
+`POST /api/assets/original-uploads/:clientRequestId/cancel` with the same
+owner's JWT, without a body or `Content-Type` header. A 200 response contains
+`assetId` (or `null`) and the complete `sessionIds` list (possibly empty, at
+most 100). The operation records a durable owner-scoped cancellation even if
+the reservation never arrived. Retrying it returns the existing asset and
+sessions without creating either. A previously removed, uncancelled intent
+still returns 410. If a linked asset is flagged or removed, the fence is
+recorded but the response is 404 without asset or session IDs. The route is also
+unavailable when upload intake is disabled, so a 404 never confirms that a
+fence was recorded or that cleanup completed.
+
+For an unknown request ID, at most 100 unreserved cancellation fences per
+owner are admitted in a rolling 24-hour window. A 429
+`INTENT_CANCELLATION_QUOTA` includes `Retry-After` in seconds and does not
+record a fence; park and retry. Existing intents and fence retries bypass this
+quota but remain subject to the IP rate limit. Cancelled intents whose assets
+were later deleted also count in the window. Accepted fences do not expire;
+the quota limits admission rate, not lifetime storage. If more than 100
+sessions exist for an asset, the fence is recorded but the endpoint returns 503
+`INTENT_SESSION_LIMIT` without a partial list. Do not remove the fence,
+session records, or stored data merely to clear this error.
+
+After recording the fence, enumerate longer histories with
+`GET /api/assets/original-uploads/:clientRequestId/sessions`. Each response
+contains `assetId`, up to 100 `sessionIds` ordered by ID, and `nextCursor`.
+Start without a cursor and pass each non-null `nextCursor` unchanged as the
+`after` query parameter until it is null. A failed page may be retried, but
+do not skip pages or count a repeated page as progress. Asset and session IDs
+are case-sensitive; only the client request UUID is normalized. The route
+requires the same active owner, an existing cancelled intent, and a visible
+asset, and is IP-rate-limited. Missing or uncancelled intents and hidden assets
+return 404 without identifiers; inconsistent session ownership or identifiers
+return an ID-free 503. If the asset disappears after a cursor has been issued,
+the next page also returns an ID-free 503. Each page is read-only and does not
+create, abort, or delete anything.
+
+An empty page or `assetId: null` does not prove that earlier sessions or
+storage were cleaned up: an asset can have been deleted, taking its session
+records with it. If the asset ID changes or disappears while paging, or a
+previously known asset or session cannot be reconciled, keep cancellation
+pending and request operator reconciliation. All returned and locally known
+session IDs still require individual reconciliation.
+
+Cancellation is serialized with reservation and session creation. After it
+commits, further creation requests for that intent return 410; a session that
+won the race is included in a successful `sessionIds` response. Deploy the
+migrations and cancellation-aware code to every server instance before clients
+rely on this guarantee; older instances ignore the fence. The fence does
+**not** abort sessions, stop in-flight transfers, revoke already issued part
+URLs, or delete stored originals. Stop local tasks and inspect and abort each
+unfinished session with the same owner's current credentials; retry cleanup if
+needed.
+An earlier creation response or notification may still arrive after the fence,
+so clients must reject stale results and reconcile the returned IDs. Inspecting
+or aborting a session already `COMPLETING` can recover and finalize its
+original, and may enqueue an enabled Mux handoff. Bytes already received cannot
+be recalled.
+
 Reservation prevents direct-to-Mux upload on that asset even before a session
 exists. An original reservation without a session is protected from the
 automatic orphan sweep and administrative empty-asset cleanup for 24 hours.
-After that, the sweep can mark it `ERROR`, and administrative cleanup can
-remove it. A client must report this state and start a fresh job with a new
+After that, the sweep can mark an uncancelled reservation `ERROR`, while
+cancelled intents are excluded from both the sweep and administrative
+empty-asset cleanup. That cleanup can still remove other eligible empty assets.
+A client must report an error or removal and start a fresh job with a new
 request ID instead of claiming the old reservation was resumed.
 
 `GET /api/assets/:id` and `GET /api/assets/mine` expose `uploadMode` as
@@ -353,7 +415,8 @@ outstanding background tasks until the user reopens it.
   to the clip. A successful retry returns the same completed session. Missing
   parts or an in-progress operation return 409; integrity mismatch returns 422.
 - `DELETE /api/upload-sessions/:sessionId` aborts an unfinished session.
-  Retrying is safe; an already expired session reports `EXPIRED`. If cleanup is
+  A successful HTTP 200 returns `{"uploadSession":{"id":"...","status":"ABORTED"}}`;
+  an already expired session reports `EXPIRED`. Retrying is safe. If cleanup is
   busy, retry until it succeeds. A completed original cannot be aborted (409).
 
 Invalid, expired, suspended-account, or moderated-asset signed PUTs return 403.

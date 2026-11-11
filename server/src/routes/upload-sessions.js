@@ -2,7 +2,9 @@ import { randomUUID } from 'node:crypto';
 import prisma from '../lib/prisma.js';
 import { withAssetMediaLock } from '../lib/media-lock.js';
 import { signUploadPart, verifyUploadPart } from '../lib/upload-part-signing.js';
-import { assertAcceptingUploads, createUploadSessionService, UploadSessionError } from '../lib/upload-sessions.js';
+import {
+    assertAcceptingUploads, assertOriginalIntentNotCancelled, createUploadSessionService, UploadSessionError,
+} from '../lib/upload-sessions.js';
 import { MAX_PART_SIZE_BYTES, StorageError } from '../lib/storage/local-driver.js';
 import { createStorageCapacity } from '../lib/storage/capacity.js';
 import { getAssetUploadMode, serializeCreatedAsset } from '../lib/asset-serialization.js';
@@ -16,6 +18,10 @@ const METADATA_FIELDS = [
     'gpsLat', 'gpsLon', 'gpsAltitude', 'capturedAt', 'deviceModel', 'osVersion',
     'codec', 'resolution', 'orientation', 'duration',
 ];
+const MAX_UNRESERVED_CANCELLATIONS = 100;
+const CANCELLATION_QUOTA_WINDOW_MS = 24 * 60 * 60 * 1000;
+const MAX_CANCELLATION_SESSIONS = 100;
+
 const ERROR_STATUS = {
     INVALID_ARGUMENT: 400,
     NOT_FOUND: 404,
@@ -35,6 +41,7 @@ const ERROR_STATUS = {
     PART_SIZE_MISMATCH: 400,
     PART_TOO_LARGE: 413,
     IDEMPOTENCY_CONFLICT: 409,
+    INTENT_CANCELLED: 410,
     INTENT_REMOVED: 410,
     INTENT_INCONSISTENT: 503,
 };
@@ -172,6 +179,35 @@ async function handleErrors(reply, work, { closeConnection = false } = {}) {
     }
 }
 
+async function lockCancellationIntent(tx, ownerId, clientRequestId) {
+    const users = await tx.$queryRaw`SELECT id, status FROM users WHERE id = ${ownerId} FOR UPDATE`;
+    if (!users.length || users[0].status !== 'ACTIVE') {
+        throw new UploadSessionError('ACCOUNT_SUSPENDED', 'Account is suspended');
+    }
+    const key = { userId: ownerId, clientRequestId };
+    const where = { userId_clientRequestId: key };
+    let intent = await tx.originalUploadIntent.findUnique({ where });
+    if (intent?.assetId) {
+        // Asset deletion clears the intent under the asset lock.
+        const assetId = intent.assetId;
+        await tx.$queryRaw`SELECT id FROM assets WHERE id = ${assetId} FOR UPDATE`;
+        intent = await tx.originalUploadIntent.findUnique({ where });
+        if (!intent || (intent.assetId && intent.assetId !== assetId)) {
+            throw new UploadSessionError('INTENT_INCONSISTENT', 'Original upload intent cannot be verified');
+        }
+    }
+    return { key, where, intent };
+}
+
+async function cancellationAssetVisibility(tx, assetId, ownerId) {
+    const asset = await tx.asset.findUnique({
+        where: { id: assetId },
+        select: { userId: true, moderation: true },
+    });
+    if (!asset || asset.userId !== ownerId) return 'inconsistent';
+    return ['ACTIVE', 'PAUSED'].includes(asset.moderation) ? 'visible' : 'hidden';
+}
+
 export default async function uploadSessionRoutes(fastify, {
     db = prisma,
     storage,
@@ -247,6 +283,9 @@ export default async function uploadSessionRoutes(fastify, {
                 where: { userId_clientRequestId: { userId: ownerId, clientRequestId } },
             });
             if (intent) {
+                if (intent.cancelledAt) {
+                    throw new UploadSessionError('INTENT_CANCELLED', 'Original upload was cancelled');
+                }
                 if (!intent.assetId) throw new UploadSessionError('INTENT_REMOVED', 'Original upload asset was removed');
                 await tx.$queryRaw`SELECT id FROM assets WHERE id = ${intent.assetId} FOR UPDATE`;
                 const asset = await tx.asset.findUnique({
@@ -288,9 +327,129 @@ export default async function uploadSessionRoutes(fastify, {
             });
             await tx.originalUploadIntent.create({ data: { userId: ownerId, clientRequestId, assetId: asset.id } });
             return { asset, created: true };
-        });
+        }, { isolationLevel: 'ReadCommitted' });
         if (result.created) await notifyDashboardAssetChange(fastify, result.asset.id);
         return reply.status(result.created ? 201 : 200).send({ asset: serializeCreatedAsset(result.asset) });
+    }));
+
+    fastify.post('/api/assets/original-uploads/:clientRequestId/cancel', {
+        preHandler: [fastify.authenticate],
+        config: { rateLimit: { max: 10, timeWindow: '1 minute' } },
+    }, async (request, reply) => handleErrors(reply, async () => {
+        const rawRequestId = request.params.clientRequestId;
+        if (typeof rawRequestId !== 'string' || !SESSION_ID_PATTERN.test(rawRequestId)) {
+            throw new UploadSessionError('INVALID_ARGUMENT', 'A client request UUID is required');
+        }
+        const ownerId = request.user.id;
+        const result = await db.$transaction(async tx => {
+            const { key, where, intent: lockedIntent } = await lockCancellationIntent(
+                tx, ownerId, rawRequestId.toLowerCase());
+            let intent = lockedIntent;
+            const [{ cancellationTime }] = await tx.$queryRaw`
+                SELECT clock_timestamp() AT TIME ZONE 'UTC' AS "cancellationTime"`;
+            if (!intent) {
+                const recent = await tx.originalUploadIntent.findMany({
+                    where: {
+                        userId: ownerId,
+                        assetId: null,
+                        cancelledAt: { gte: new Date(cancellationTime.getTime() - CANCELLATION_QUOTA_WINDOW_MS) },
+                    },
+                    select: { cancelledAt: true },
+                    orderBy: { cancelledAt: 'desc' },
+                    take: MAX_UNRESERVED_CANCELLATIONS,
+                });
+                if (recent.length === MAX_UNRESERVED_CANCELLATIONS) {
+                    const oldest = recent[recent.length - 1].cancelledAt;
+                    return {
+                        retryAfter: Math.max(1, Math.ceil(
+                            (oldest.getTime() + CANCELLATION_QUOTA_WINDOW_MS - cancellationTime.getTime()) / 1000)),
+                    };
+                }
+                intent = await tx.originalUploadIntent.create({ data: { ...key, cancelledAt: cancellationTime } });
+            } else if (!intent.cancelledAt) {
+                if (!intent.assetId) {
+                    throw new UploadSessionError('INTENT_REMOVED', 'Original upload asset was removed');
+                }
+                intent = await tx.originalUploadIntent.update({ where, data: { cancelledAt: cancellationTime } });
+            }
+            if (!intent.assetId) return { assetId: null, sessionIds: [] };
+            const visibility = await cancellationAssetVisibility(tx, intent.assetId, ownerId);
+            if (visibility !== 'visible') return { [visibility]: true };
+            const sessions = await tx.uploadSession.findMany({
+                where: { assetId: intent.assetId },
+                select: { id: true, ownerId: true },
+                orderBy: { id: 'asc' },
+                take: MAX_CANCELLATION_SESSIONS + 1,
+            });
+            if (sessions.length > MAX_CANCELLATION_SESSIONS) return { overflow: true };
+            if (sessions.some(session => session.ownerId !== ownerId || !SESSION_ID_PATTERN.test(session.id))) {
+                return { inconsistent: true };
+            }
+            return { assetId: intent.assetId, sessionIds: sessions.map(session => session.id) };
+        }, { isolationLevel: 'ReadCommitted' });
+        if (result.retryAfter) {
+            return reply.header('Retry-After', String(result.retryAfter)).status(429).send({
+                code: 'INTENT_CANCELLATION_QUOTA',
+                error: 'Too many recent unreserved cancellations; retry later',
+            });
+        }
+        if (result.hidden) throw new UploadSessionError('NOT_FOUND', 'Asset not found');
+        if (result.inconsistent) {
+            throw new UploadSessionError('INTENT_INCONSISTENT', 'Original upload intent cannot be verified');
+        }
+        if (result.overflow) {
+            request.log.error({ code: 'INTENT_SESSION_LIMIT' }, 'Too many original upload sessions to reconcile');
+            return reply.status(503).send({
+                code: 'INTENT_SESSION_LIMIT',
+                error: 'Too many original upload sessions to reconcile',
+            });
+        }
+        return reply.send(result);
+    }));
+
+    fastify.get('/api/assets/original-uploads/:clientRequestId/sessions', {
+        preHandler: [fastify.authenticate],
+        config: { rateLimit: { max: 10, timeWindow: '1 minute' } },
+    }, async (request, reply) => handleErrors(reply, async () => {
+        const rawRequestId = request.params.clientRequestId;
+        const { after } = request.query;
+        if (typeof rawRequestId !== 'string' || !SESSION_ID_PATTERN.test(rawRequestId)
+            || Object.keys(request.query).some(key => key !== 'after')
+            || (after !== undefined && (typeof after !== 'string' || !SESSION_ID_PATTERN.test(after)))) {
+            throw new UploadSessionError('INVALID_ARGUMENT', 'A client request UUID and optional cursor UUID are required');
+        }
+        const ownerId = request.user.id;
+        const result = await db.$transaction(async tx => {
+            const { intent } = await lockCancellationIntent(tx, ownerId, rawRequestId.toLowerCase());
+            if (!intent?.cancelledAt) throw new UploadSessionError('NOT_FOUND', 'Cancelled upload intent not found');
+            if (!intent.assetId) {
+                if (after) {
+                    throw new UploadSessionError('INTENT_INCONSISTENT', 'Original upload intent cannot be verified');
+                }
+                return { assetId: null, sessionIds: [], nextCursor: null };
+            }
+            const visibility = await cancellationAssetVisibility(tx, intent.assetId, ownerId);
+            if (visibility === 'hidden') throw new UploadSessionError('NOT_FOUND', 'Asset not found');
+            if (visibility === 'inconsistent') {
+                throw new UploadSessionError('INTENT_INCONSISTENT', 'Original upload intent cannot be verified');
+            }
+            const sessions = await tx.uploadSession.findMany({
+                where: { assetId: intent.assetId, ...(after ? { id: { gt: after } } : {}) },
+                select: { id: true, ownerId: true },
+                orderBy: { id: 'asc' },
+                take: MAX_CANCELLATION_SESSIONS + 1,
+            });
+            if (sessions.some(session => session.ownerId !== ownerId || !SESSION_ID_PATTERN.test(session.id))) {
+                throw new UploadSessionError('INTENT_INCONSISTENT', 'Original upload intent cannot be verified');
+            }
+            const page = sessions.slice(0, MAX_CANCELLATION_SESSIONS);
+            return {
+                assetId: intent.assetId,
+                sessionIds: page.map(session => session.id),
+                nextCursor: sessions.length > MAX_CANCELLATION_SESSIONS ? page[page.length - 1].id : null,
+            };
+        }, { isolationLevel: 'ReadCommitted' });
+        return reply.send(result);
     }));
 
     fastify.post('/api/assets/:id/upload-sessions', {
@@ -309,6 +468,7 @@ export default async function uploadSessionRoutes(fastify, {
             if (!asset || asset.userId !== ownerId) {
                 throw new UploadSessionError('NOT_FOUND', 'Asset not found');
             }
+            await assertOriginalIntentNotCancelled(db, ownerId, assetId);
             if (asset.moderation !== 'ACTIVE') {
                 throw new UploadSessionError('ASSET_NOT_ACTIVE', 'Asset is not accepting original uploads');
             }

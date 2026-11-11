@@ -70,6 +70,7 @@ integration('upload session HTTP routes against PostgreSQL and local storage', (
     let reconcileAssetMedia;
     let createMediaReconciler;
     let withAssetMediaLock;
+    let uploadTransactionTimeZone;
     let assetId;
     let currentTime;
     let tokens;
@@ -115,10 +116,26 @@ integration('upload session HTTP routes against PostgreSQL and local storage', (
             of: () => ({ sockets: new Map() }),
             sockets: { sockets: new Map() },
         });
+        const uploadDb = new Proxy(prisma, {
+            get(target, property) {
+                if (property !== '$transaction') return Reflect.get(target, property, target);
+                return (work, options) => {
+                    if (!uploadTransactionTimeZone) return target.$transaction(work, options);
+                    const timeZone = uploadTransactionTimeZone;
+                    return target.$transaction(async tx => {
+                        const [{ configuredTimeZone }] = await tx.$queryRaw`
+                            SELECT set_config('TimeZone', ${timeZone}, true) AS "configuredTimeZone"`;
+                        expect(configuredTimeZone).toBe(timeZone);
+                        return work(tx);
+                    }, options);
+                };
+            },
+        });
         await app.register(assetRoutes);
         await app.register(adminRoutes);
         await app.register(moderationRoutes);
         await app.register(uploadSessionRoutes, {
+            db: uploadDb,
             storage,
             capacity: unrestrictedTestCapacity,
             signingSecret,
@@ -187,6 +204,26 @@ integration('upload session HTTP routes against PostgreSQL and local storage', (
         return response.json().uploadSession;
     }
 
+    function originalReservation(content) {
+        return {
+            clientRequestId: randomUUID(),
+            fileName: 'native.mov',
+            expectedSizeBytes: content.length,
+            expectedSha256: sha256(content),
+        };
+    }
+
+    async function waitForBlockedBy(pid) {
+        await vi.waitFor(async () => {
+            const [result] = await prisma.$queryRaw`
+                SELECT EXISTS (
+                    SELECT 1 FROM pg_stat_activity
+                    WHERE ${pid} = ANY(pg_blocking_pids(pid))
+                ) AS blocked`;
+            expect(result.blocked).toBe(true);
+        }, { timeout: 5_000, interval: 10 });
+    }
+
     async function sign(sessionId, partNumber = 1, userId = ownerId) {
         const response = await requestAs(userId, 'POST', `/api/upload-sessions/${sessionId}/parts/${partNumber}/sign`);
         expect(response.statusCode, response.body).toBe(200);
@@ -249,9 +286,16 @@ integration('upload session HTTP routes against PostgreSQL and local storage', (
                 method: 'POST', url: '/api/assets/original-uploads',
                 payload: { clientRequestId: randomUUID(), fileName: 'video.mp4' },
             })).statusCode).toBe(404);
+            const pageUrl = `/api/assets/original-uploads/${randomUUID()}/sessions`;
+            expect((await disabled.inject({ method: 'GET', url: pageUrl })).statusCode).toBe(404);
             const enabled = await buildServer(true);
             expect((await enabled.inject({ method: 'POST', url, payload })).statusCode).toBe(401);
+            expect((await enabled.inject({ method: 'GET', url: pageUrl })).statusCode).toBe(401);
             const headers = { authorization: ['Bearer', tokens[ownerId]].join(' ') };
+            for (let attempt = 0; attempt < 9; attempt += 1) {
+                expect((await enabled.inject({ method: 'GET', url: pageUrl, headers })).statusCode).toBe(404);
+            }
+            expect((await enabled.inject({ method: 'GET', url: pageUrl, headers })).statusCode).toBe(429);
             const intent = await enabled.inject({
                 method: 'POST',
                 url: '/api/assets/original-uploads',
@@ -392,6 +436,622 @@ integration('upload session HTTP routes against PostgreSQL and local storage', (
             .toMatchObject({ userId: teamAdminId, uploadMode: 'ORIGINAL' });
     });
 
+    it('fences cancellation before reservation without creating an asset or affecting another owner', async () => {
+        const payload = originalReservation(Buffer.from('cancel before reserve'));
+        const cancelUrl = `/api/assets/original-uploads/${payload.clientRequestId}/cancel`;
+        const originalUrl = '/api/assets/original-uploads';
+        const assetsBefore = await prisma.asset.count({ where: { userId: ownerId } });
+
+        expect((await requestAs(null, 'POST', cancelUrl)).statusCode).toBe(401);
+        expect((await requestAs(ownerId, 'POST', '/api/assets/original-uploads/not-a-uuid/cancel')).statusCode).toBe(400);
+        const cancelled = await requestAs(ownerId, 'POST', cancelUrl);
+        expect(cancelled.statusCode, cancelled.body).toBe(200);
+        expect(cancelled.json()).toEqual({ assetId: null, sessionIds: [] });
+        const where = { userId_clientRequestId: { userId: ownerId, clientRequestId: payload.clientRequestId } };
+        const intent = await prisma.originalUploadIntent.findUnique({ where });
+        expect(intent.assetId).toBeNull();
+        expect(intent.cancelledAt).toBeInstanceOf(Date);
+
+        const retry = await requestAs(
+            ownerId, 'POST', `/api/assets/original-uploads/${payload.clientRequestId.toUpperCase()}/cancel`);
+        expect(retry.statusCode, retry.body).toBe(200);
+        expect(retry.json()).toEqual(cancelled.json());
+        expect((await prisma.originalUploadIntent.findUnique({ where })).cancelledAt).toEqual(intent.cancelledAt);
+        expect((await requestAs(ownerId, 'POST', originalUrl, payload)).statusCode).toBe(410);
+        expect(await prisma.asset.count({ where: { userId: ownerId } })).toBe(assetsBefore);
+
+        const otherOwner = await requestAs(otherId, 'POST', originalUrl, payload);
+        expect(otherOwner.statusCode, otherOwner.body).toBe(201);
+    });
+
+    it('accepts a bodyless cancellation over HTTP without an empty JSON content type', async () => {
+        const clientRequestId = randomUUID();
+        const response = await fetch(`${address}/api/assets/original-uploads/${clientRequestId}/cancel`, {
+            method: 'POST',
+            headers: { authorization: `Bearer ${tokens[ownerId]}` },
+        });
+        expect(response.status).toBe(200);
+        expect(await response.json()).toEqual({ assetId: null, sessionIds: [] });
+
+        const invalidId = randomUUID();
+        const invalid = await fetch(`${address}/api/assets/original-uploads/${invalidId}/cancel`, {
+            method: 'POST',
+            headers: { authorization: `Bearer ${tokens[ownerId]}`, 'content-type': 'application/json' },
+        });
+        expect(invalid.status).toBe(400);
+        expect(await prisma.originalUploadIntent.findUnique({
+            where: { userId_clientRequestId: { userId: ownerId, clientRequestId: invalidId } },
+        })).toBeNull();
+    });
+
+    it('fences a reserved asset before a session can be created', async () => {
+        const payload = originalReservation(Buffer.from('cancel before session'));
+        const reserved = await requestAs(ownerId, 'POST', '/api/assets/original-uploads', payload);
+        expect(reserved.statusCode, reserved.body).toBe(201);
+        const reservedAssetId = reserved.json().asset.id;
+        const cancelUrl = `/api/assets/original-uploads/${payload.clientRequestId}/cancel`;
+
+        const cancelled = await requestAs(ownerId, 'POST', cancelUrl);
+        expect(cancelled.statusCode, cancelled.body).toBe(200);
+        expect(cancelled.json()).toEqual({ assetId: reservedAssetId, sessionIds: [] });
+        const createUpload = vi.spyOn(storage, 'createUpload');
+        try {
+            const session = await requestAs(ownerId, 'POST', `/api/assets/${reservedAssetId}/upload-sessions`, payload);
+            expect(session.statusCode, session.body).toBe(410);
+            const { createUploadSessionService } = await import('../lib/upload-sessions.js');
+            const service = createUploadSessionService({
+                db: prisma, storage, capacity: unrestrictedTestCapacity, now: () => new Date(currentTime),
+            });
+            for (const initializeClip of [true, false]) {
+                await expect(service.create({
+                    ownerId, assetId: reservedAssetId, clipId: randomUUID(), initializeClip,
+                    expectedSizeBytes: payload.expectedSizeBytes, expectedSha256: payload.expectedSha256,
+                })).rejects.toMatchObject({ code: 'INTENT_CANCELLED' });
+            }
+            expect(createUpload).not.toHaveBeenCalled();
+            expect(await prisma.uploadSession.count({ where: { assetId: reservedAssetId } })).toBe(0);
+        } finally {
+            createUpload.mockRestore();
+        }
+        expect((await requestAs(ownerId, 'POST', '/api/assets/original-uploads', payload)).statusCode).toBe(410);
+    });
+
+    it('returns existing sessions for explicit cleanup without creating or aborting them', async () => {
+        const content = Buffer.from('cancel after session');
+        const payload = originalReservation(content);
+        const reserved = await requestAs(ownerId, 'POST', '/api/assets/original-uploads', payload);
+        expect(reserved.statusCode, reserved.body).toBe(201);
+        const reservedAssetId = reserved.json().asset.id;
+        const session = await createSession(content, reservedAssetId);
+        const cancelUrl = `/api/assets/original-uploads/${payload.clientRequestId}/cancel`;
+
+        const cancelled = await requestAs(ownerId, 'POST', cancelUrl);
+        expect(cancelled.statusCode, cancelled.body).toBe(200);
+        expect(cancelled.json()).toEqual({ assetId: reservedAssetId, sessionIds: [session.id] });
+        const retry = await requestAs(ownerId, 'POST', cancelUrl);
+        expect(retry.statusCode, retry.body).toBe(200);
+        expect(retry.json()).toEqual(cancelled.json());
+        const blocked = await requestAs(ownerId, 'POST', `/api/assets/${reservedAssetId}/upload-sessions`, payload);
+        expect(blocked.statusCode, blocked.body).toBe(410);
+        expect(await prisma.uploadSession.count({ where: { assetId: reservedAssetId } })).toBe(1);
+        const existing = await requestAs(ownerId, 'GET', `/api/upload-sessions/${session.id}`);
+        expect(existing.statusCode, existing.body).toBe(200);
+        expect(existing.json().uploadSession.status).toBe('OPEN');
+        const aborted = await requestAs(ownerId, 'DELETE', `/api/upload-sessions/${session.id}`);
+        expect(aborted.statusCode, aborted.body).toBe(200);
+    });
+
+    it('does not resume a completed session after its intent is cancelled', async () => {
+        const content = Buffer.from('completed before cancellation');
+        const payload = originalReservation(content);
+        const reserved = await requestAs(ownerId, 'POST', '/api/assets/original-uploads', payload);
+        expect(reserved.statusCode, reserved.body).toBe(201);
+        const reservedAssetId = reserved.json().asset.id;
+        const session = await createSession(content, reservedAssetId);
+        const signed = await sign(session.id);
+        const uploaded = await put(signed.url, content, { 'content-length': String(content.length) });
+        expect(uploaded.statusCode, uploaded.body).toBe(200);
+        const completed = await requestAs(ownerId, 'POST', `/api/upload-sessions/${session.id}/complete`);
+        expect(completed.statusCode, completed.body).toBe(200);
+
+        const cancelled = await requestAs(
+            ownerId, 'POST', `/api/assets/original-uploads/${payload.clientRequestId}/cancel`);
+        expect(cancelled.statusCode, cancelled.body).toBe(200);
+        expect(cancelled.json()).toEqual({ assetId: reservedAssetId, sessionIds: [session.id] });
+        const retry = await requestAs(ownerId, 'POST', `/api/assets/${reservedAssetId}/upload-sessions`, payload);
+        expect(retry.statusCode, retry.body).toBe(410);
+        const existing = await requestAs(ownerId, 'GET', `/api/upload-sessions/${session.id}`);
+        expect(existing.statusCode, existing.body).toBe(200);
+        expect(existing.json().uploadSession.status).toBe('COMPLETED');
+    });
+
+    it('fences hidden assets without revealing their asset or session IDs', async () => {
+        for (const moderation of ['FLAGGED_FOR_REMOVAL', 'REMOVED']) {
+            const content = Buffer.from('moderated original');
+            const payload = originalReservation(content);
+            const reserved = await requestAs(ownerId, 'POST', '/api/assets/original-uploads', payload);
+            expect(reserved.statusCode, reserved.body).toBe(201);
+            const reservedAssetId = reserved.json().asset.id;
+            const session = await createSession(content, reservedAssetId);
+            await prisma.asset.update({ where: { id: reservedAssetId }, data: { moderation } });
+            const cancelUrl = `/api/assets/original-uploads/${payload.clientRequestId}/cancel`;
+
+            const hidden = await requestAs(ownerId, 'POST', cancelUrl);
+            expect(hidden.statusCode, hidden.body).toBe(404);
+            expect(hidden.body).not.toContain(reservedAssetId);
+            expect(hidden.body).not.toContain(session.id);
+            const intent = await prisma.originalUploadIntent.findUnique({
+                where: { userId_clientRequestId: { userId: ownerId, clientRequestId: payload.clientRequestId } },
+            });
+            expect(intent.cancelledAt).toBeInstanceOf(Date);
+
+            await prisma.asset.update({ where: { id: reservedAssetId }, data: { moderation: 'ACTIVE' } });
+            const retry = await requestAs(ownerId, 'POST', cancelUrl);
+            expect(retry.statusCode, retry.body).toBe(200);
+            expect(retry.json()).toEqual({ assetId: reservedAssetId, sessionIds: [session.id] });
+            const aborted = await requestAs(ownerId, 'DELETE', `/api/upload-sessions/${session.id}`);
+            expect(aborted.statusCode, aborted.body).toBe(200);
+        }
+    });
+
+    it('preserves the fence without revealing inconsistent session IDs or ownership', async () => {
+        const content = Buffer.from('inconsistent session ownership');
+        const payload = originalReservation(content);
+        const reserved = await requestAs(ownerId, 'POST', '/api/assets/original-uploads', payload);
+        expect(reserved.statusCode, reserved.body).toBe(201);
+        const reservedAssetId = reserved.json().asset.id;
+        const session = await createSession(content, reservedAssetId);
+        const otherSessionId = randomUUID();
+        await prisma.uploadSession.create({
+            data: {
+                id: otherSessionId, ownerId: otherId, assetId: reservedAssetId, clipId: session.clipId,
+                status: 'ABORTED', storageKey: `historical-${otherSessionId}`, expiresAt: new Date(),
+            },
+        });
+
+        const cancelled = await requestAs(
+            ownerId, 'POST', `/api/assets/original-uploads/${payload.clientRequestId}/cancel`);
+        expect(cancelled.statusCode, cancelled.body).toBe(503);
+        for (const id of [reservedAssetId, session.id, otherSessionId]) {
+            expect(cancelled.body).not.toContain(id);
+        }
+        const intent = await prisma.originalUploadIntent.findUnique({
+            where: { userId_clientRequestId: { userId: ownerId, clientRequestId: payload.clientRequestId } },
+        });
+        expect(intent.cancelledAt).toBeInstanceOf(Date);
+        expect((await requestAs(ownerId, 'POST', '/api/assets/original-uploads', payload)).statusCode).toBe(410);
+
+        await prisma.uploadSession.delete({ where: { id: otherSessionId } });
+        const invalidId = `not-a-uuid-${randomUUID()}`;
+        await prisma.uploadSession.create({
+            data: {
+                id: invalidId, ownerId, assetId: reservedAssetId, clipId: session.clipId,
+                status: 'ABORTED', storageKey: `historical-${invalidId}`, expiresAt: new Date(),
+            },
+        });
+        const invalid = await requestAs(
+            ownerId, 'POST', `/api/assets/original-uploads/${payload.clientRequestId}/cancel`);
+        expect(invalid.statusCode, invalid.body).toBe(503);
+        for (const id of [reservedAssetId, session.id, invalidId]) {
+            expect(invalid.body).not.toContain(id);
+        }
+    });
+
+    it('bounds unreserved cancellation admission per owner without expiring accepted fences', async () => {
+        const quotaOwner = `upload-quota-${randomUUID()}`;
+        await prisma.user.create({
+            data: {
+                id: quotaOwner, name: 'Upload Quota Test', phoneNumber: `upload-quota-${randomUUID()}`,
+                pinHash: 'integration-test', role: 'USER',
+            },
+        });
+        tokens[quotaOwner] = app.jwt.sign({ id: quotaOwner });
+        uploadTransactionTimeZone = 'Pacific/Kiritimati';
+        try {
+            const reservedPayload = originalReservation(Buffer.from('existing reservation'));
+            const reserved = await requestAs(quotaOwner, 'POST', '/api/assets/original-uploads', reservedPayload);
+            expect(reserved.statusCode, reserved.body).toBe(201);
+            const [{ epochMilliseconds }] = await prisma.$queryRaw`
+                SELECT floor(extract(epoch FROM clock_timestamp()) * 1000)::bigint AS "epochMilliseconds"`;
+            const now = new Date(Number(epochMilliseconds));
+            const oldId = randomUUID();
+            const recentIds = Array.from({ length: 99 }, () => randomUUID());
+            await prisma.originalUploadIntent.createMany({
+                data: [
+                    ...recentIds.map(clientRequestId => ({
+                        userId: quotaOwner, clientRequestId,
+                        cancelledAt: new Date(now.getTime() - 24 * 60 * 60 * 1000 + 60_000),
+                    })),
+                    {
+                        userId: quotaOwner, clientRequestId: oldId,
+                        cancelledAt: new Date(now.getTime() - 25 * 60 * 60 * 1000),
+                    },
+                ],
+            });
+
+            const concurrentIds = [randomUUID(), randomUUID()];
+            const responses = await Promise.all(concurrentIds.map(id => requestAs(
+                quotaOwner, 'POST', `/api/assets/original-uploads/${id}/cancel`)));
+            expect(responses.map(response => response.statusCode).sort()).toEqual([200, 429]);
+            const rejectedIndex = responses.findIndex(response => response.statusCode === 429);
+            const rejected = responses[rejectedIndex];
+            expect(rejected.json()).toMatchObject({ code: 'INTENT_CANCELLATION_QUOTA' });
+            expect(Number(rejected.headers['retry-after'])).toBeGreaterThan(0);
+            expect(Number(rejected.headers['retry-after'])).toBeLessThanOrEqual(60);
+            expect(await prisma.originalUploadIntent.findUnique({
+                where: { userId_clientRequestId: { userId: quotaOwner, clientRequestId: concurrentIds[rejectedIndex] } },
+            })).toBeNull();
+
+            const acceptedId = concurrentIds[1 - rejectedIndex];
+            const acceptedIntent = await prisma.originalUploadIntent.findUnique({
+                where: { userId_clientRequestId: { userId: quotaOwner, clientRequestId: acceptedId } },
+            });
+            const [{ observedEpoch }] = await prisma.$queryRaw`
+                SELECT floor(extract(epoch FROM clock_timestamp()) * 1000)::bigint AS "observedEpoch"`;
+            expect(Math.abs(acceptedIntent.cancelledAt.getTime() - Number(observedEpoch))).toBeLessThan(5_000);
+            uploadTransactionTimeZone = 'America/Los_Angeles';
+            expect((await requestAs(
+                quotaOwner, 'POST', `/api/assets/original-uploads/${acceptedId}/cancel`)).statusCode).toBe(200);
+            expect((await requestAs(
+                quotaOwner, 'POST', `/api/assets/original-uploads/${oldId}/cancel`)).statusCode).toBe(200);
+            const existing = await requestAs(
+                quotaOwner, 'POST', `/api/assets/original-uploads/${reservedPayload.clientRequestId}/cancel`);
+            expect(existing.statusCode, existing.body).toBe(200);
+            expect(existing.json().assetId).toBe(reserved.json().asset.id);
+            const anotherOwner = await requestAs(
+                otherId, 'POST', `/api/assets/original-uploads/${randomUUID()}/cancel`);
+            expect(anotherOwner.statusCode, anotherOwner.body).toBe(200);
+
+            await prisma.originalUploadIntent.updateMany({
+                where: { userId: quotaOwner, clientRequestId: { in: recentIds } },
+                data: { cancelledAt: new Date(now.getTime() - 25 * 60 * 60 * 1000) },
+            });
+            const retry = await requestAs(
+                quotaOwner, 'POST', `/api/assets/original-uploads/${concurrentIds[rejectedIndex]}/cancel`);
+            expect(retry.statusCode, retry.body).toBe(200);
+            const oldPayload = { ...originalReservation(Buffer.from('old fence')), clientRequestId: oldId };
+            expect((await requestAs(quotaOwner, 'POST', '/api/assets/original-uploads', oldPayload)).statusCode).toBe(410);
+        } finally {
+            uploadTransactionTimeZone = undefined;
+            delete tokens[quotaOwner];
+            await prisma.asset.deleteMany({ where: { userId: quotaOwner } });
+            await prisma.user.delete({ where: { id: quotaOwner } });
+        }
+    });
+
+    it('returns the complete session list at the limit and commits a fence on overflow', async () => {
+        for (const count of [100, 101]) {
+            const content = Buffer.from(`historical sessions ${count}`);
+            const payload = originalReservation(content);
+            const reserved = await requestAs(ownerId, 'POST', '/api/assets/original-uploads', payload);
+            expect(reserved.statusCode, reserved.body).toBe(201);
+            const reservedAssetId = reserved.json().asset.id;
+            const session = await createSession(content, reservedAssetId);
+            const historicalIds = Array.from({ length: count - 1 }, () => randomUUID());
+            await prisma.uploadSession.createMany({
+                data: historicalIds.map(id => ({
+                    id, ownerId, assetId: reservedAssetId, clipId: session.clipId,
+                    status: 'ABORTED', storageKey: `historical-${id}`, expiresAt: new Date(),
+                })),
+            });
+            const cancelled = await requestAs(
+                ownerId, 'POST', `/api/assets/original-uploads/${payload.clientRequestId}/cancel`);
+            if (count === 100) {
+                expect(cancelled.statusCode, cancelled.body).toBe(200);
+                expect(cancelled.json()).toEqual({
+                    assetId: reservedAssetId, sessionIds: [session.id, ...historicalIds].sort(),
+                });
+            } else {
+                expect(cancelled.statusCode, cancelled.body).toBe(503);
+                expect(cancelled.json()).toMatchObject({ code: 'INTENT_SESSION_LIMIT' });
+                expect(cancelled.body).not.toContain(reservedAssetId);
+                expect(cancelled.body).not.toContain(session.id);
+            }
+            const intent = await prisma.originalUploadIntent.findUnique({
+                where: { userId_clientRequestId: { userId: ownerId, clientRequestId: payload.clientRequestId } },
+            });
+            expect(intent.cancelledAt).toBeInstanceOf(Date);
+            expect((await requestAs(ownerId, 'POST', '/api/assets/original-uploads', payload)).statusCode).toBe(410);
+            expect((await requestAs(ownerId, 'DELETE', `/api/upload-sessions/${session.id}`)).statusCode).toBe(200);
+        }
+    });
+
+    it('pages only fenced, owner-visible sessions without creating or changing work', async () => {
+        const content = Buffer.from('paged cancellation history');
+        const payload = originalReservation(content);
+        const reserved = await requestAs(ownerId, 'POST', '/api/assets/original-uploads', payload);
+        expect(reserved.statusCode, reserved.body).toBe(201);
+        const reservedAssetId = reserved.json().asset.id;
+        const session = await createSession(content, reservedAssetId);
+        const historicalIds = Array.from({ length: 204 }, () => randomUUID());
+        await prisma.uploadSession.createMany({
+            data: historicalIds.map(id => ({
+                id, ownerId, assetId: reservedAssetId, clipId: session.clipId,
+                status: 'ABORTED', storageKey: `historical-${id}`, expiresAt: new Date(),
+            })),
+        });
+        const url = `/api/assets/original-uploads/${payload.clientRequestId}/sessions`;
+        const unfenced = await requestAs(ownerId, 'GET', url);
+        expect(unfenced.statusCode, unfenced.body).toBe(404);
+        expect(unfenced.body).not.toContain(reservedAssetId);
+        expect((await requestAs(null, 'GET', url)).statusCode).toBe(401);
+        const foreign = await requestAs(otherId, 'GET', url);
+        expect(foreign.statusCode).toBe(404);
+        expect(foreign.body).not.toContain(reservedAssetId);
+        expect(foreign.body).not.toContain(session.id);
+
+        const cancelled = await requestAs(
+            ownerId, 'POST', `/api/assets/original-uploads/${payload.clientRequestId}/cancel`);
+        expect(cancelled.statusCode, cancelled.body).toBe(503);
+        expect(cancelled.json()).toMatchObject({ code: 'INTENT_SESSION_LIMIT' });
+        const before = await prisma.uploadSession.findMany({
+            where: { assetId: reservedAssetId },
+            select: { id: true, ownerId: true, status: true, storageKey: true },
+            orderBy: { id: 'asc' },
+        });
+        const received = [];
+        const lengths = [];
+        let cursor;
+        do {
+            const response = await requestAs(ownerId, 'GET', cursor ? `${url}?after=${cursor}` : url);
+            expect(response.statusCode, response.body).toBe(200);
+            expect(response.headers['cache-control']).toBe('no-store');
+            const page = response.json();
+            expect(page.assetId).toBe(reservedAssetId);
+            expect(page.sessionIds.length).toBeLessThanOrEqual(100);
+            if (page.nextCursor) expect(page.nextCursor).toBe(page.sessionIds.at(-1));
+            lengths.push(page.sessionIds.length);
+            expect(lengths.length).toBeLessThanOrEqual(3);
+            received.push(...page.sessionIds);
+            cursor = page.nextCursor;
+        } while (cursor);
+        expect(lengths).toEqual([100, 100, 5]);
+        expect(received).toEqual([session.id, ...historicalIds].sort());
+        expect(await prisma.uploadSession.findMany({
+            where: { assetId: reservedAssetId },
+            select: { id: true, ownerId: true, status: true, storageKey: true },
+            orderBy: { id: 'asc' },
+        })).toEqual(before);
+        expect((await requestAs(otherId, 'GET', url)).statusCode).toBe(404);
+
+        const invalidId = `not-a-uuid-${randomUUID()}`;
+        await prisma.uploadSession.create({
+            data: {
+                id: invalidId, ownerId, assetId: reservedAssetId, clipId: session.clipId,
+                status: 'ABORTED', storageKey: `historical-${invalidId}`, expiresAt: new Date(),
+            },
+        });
+        const invalidSession = await requestAs(ownerId, 'GET', `${url}?after=${received.at(-1)}`);
+        expect(invalidSession.statusCode, invalidSession.body).toBe(503);
+        expect(invalidSession.body).not.toContain(invalidId);
+        await prisma.uploadSession.delete({ where: { id: invalidId } });
+
+        for (const query of ['?after=invalid', `?after=${randomUUID()}&after=${randomUUID()}`, '?extra=1']) {
+            expect((await requestAs(ownerId, 'GET', `${url}${query}`)).statusCode).toBe(400);
+        }
+        await prisma.asset.update({ where: { id: reservedAssetId }, data: { moderation: 'FLAGGED_FOR_REMOVAL' } });
+        const hidden = await requestAs(ownerId, 'GET', url);
+        expect(hidden.statusCode, hidden.body).toBe(404);
+        expect(hidden.body).not.toContain(reservedAssetId);
+        expect(hidden.body).not.toContain(session.id);
+        await prisma.asset.update({ where: { id: reservedAssetId }, data: { moderation: 'ACTIVE' } });
+
+        await prisma.uploadSession.update({ where: { id: received[0] }, data: { ownerId: otherId } });
+        const inconsistent = await requestAs(ownerId, 'GET', url);
+        expect(inconsistent.statusCode, inconsistent.body).toBe(503);
+        expect(inconsistent.body).not.toContain(reservedAssetId);
+        expect(inconsistent.body).not.toContain(received[0]);
+
+        await prisma.asset.delete({ where: { id: reservedAssetId } });
+        const disappeared = await requestAs(ownerId, 'GET', `${url}?after=${received[99]}`);
+        expect(disappeared.statusCode, disappeared.body).toBe(503);
+        expect(disappeared.body).not.toContain(reservedAssetId);
+        expect(disappeared.body).not.toContain(session.id);
+        const afterDeletion = await requestAs(ownerId, 'GET', url);
+        expect(afterDeletion.statusCode, afterDeletion.body).toBe(200);
+        expect(afterDeletion.json()).toEqual({ assetId: null, sessionIds: [], nextCursor: null });
+    });
+
+    it('enumerates a fenced intent without an asset as an empty page', async () => {
+        const id = randomUUID();
+        const cancel = await requestAs(ownerId, 'POST', `/api/assets/original-uploads/${id}/cancel`);
+        expect(cancel.statusCode, cancel.body).toBe(200);
+        const response = await requestAs(ownerId, 'GET', `/api/assets/original-uploads/${id}/sessions`);
+        expect(response.statusCode, response.body).toBe(200);
+        expect(response.json()).toEqual({ assetId: null, sessionIds: [], nextCursor: null });
+    });
+
+    it('fails a cursor continuation if asset deletion wins the row lock', async () => {
+        const content = Buffer.from('paged deletion race');
+        const payload = originalReservation(content);
+        const reserved = await requestAs(ownerId, 'POST', '/api/assets/original-uploads', payload);
+        expect(reserved.statusCode, reserved.body).toBe(201);
+        const reservedAssetId = reserved.json().asset.id;
+        const session = await createSession(content, reservedAssetId);
+        await prisma.uploadSession.createMany({
+            data: Array.from({ length: 100 }, () => {
+                const id = randomUUID();
+                return {
+                    id, ownerId, assetId: reservedAssetId, clipId: session.clipId,
+                    status: 'ABORTED', storageKey: `historical-${id}`, expiresAt: new Date(),
+                };
+            }),
+        });
+        const cancel = await requestAs(
+            ownerId, 'POST', `/api/assets/original-uploads/${payload.clientRequestId}/cancel`);
+        expect(cancel.statusCode, cancel.body).toBe(503);
+        const url = `/api/assets/original-uploads/${payload.clientRequestId}/sessions`;
+        const firstPage = await requestAs(ownerId, 'GET', url);
+        expect(firstPage.statusCode, firstPage.body).toBe(200);
+        const cursor = firstPage.json().nextCursor;
+        expect(cursor).toBeTruthy();
+
+        let reportLocked;
+        let releaseDeletion;
+        const locked = new Promise(resolve => { reportLocked = resolve; });
+        const release = new Promise(resolve => { releaseDeletion = resolve; });
+        const deletion = prisma.$transaction(async tx => {
+            const [backend] = await tx.$queryRaw`SELECT pg_backend_pid() AS pid`;
+            await tx.asset.delete({ where: { id: reservedAssetId } });
+            reportLocked(backend.pid);
+            await release;
+        }, { timeout: 15_000 });
+        let continuation;
+        let response;
+        try {
+            const pid = await Promise.race([
+                locked,
+                deletion.then(() => { throw new Error('Asset deletion did not pause'); }),
+            ]);
+            continuation = requestAs(ownerId, 'GET', `${url}?after=${cursor}`);
+            await waitForBlockedBy(pid);
+        } finally {
+            releaseDeletion();
+            await deletion;
+            if (continuation) response = await continuation;
+        }
+        expect(response.statusCode, response.body).toBe(503);
+        for (const id of [reservedAssetId, session.id, cursor]) {
+            expect(response.body).not.toContain(id);
+        }
+    }, 15_000);
+
+    it('serializes cancellation with concurrent reservation and session creation', async () => {
+        const first = originalReservation(Buffer.from('concurrent reservation'));
+        const [reservation, firstCancellation] = await Promise.all([
+            requestAs(ownerId, 'POST', '/api/assets/original-uploads', first),
+            requestAs(ownerId, 'POST', `/api/assets/original-uploads/${first.clientRequestId}/cancel`),
+        ]);
+        expect([201, 410]).toContain(reservation.statusCode);
+        expect(firstCancellation.statusCode, firstCancellation.body).toBe(200);
+        expect(firstCancellation.json()).toEqual({
+            assetId: reservation.statusCode === 201 ? reservation.json().asset.id : null,
+            sessionIds: [],
+        });
+        expect((await requestAs(ownerId, 'POST', '/api/assets/original-uploads', first)).statusCode).toBe(410);
+
+        const second = originalReservation(Buffer.from('concurrent session'));
+        const reserved = await requestAs(ownerId, 'POST', '/api/assets/original-uploads', second);
+        expect(reserved.statusCode, reserved.body).toBe(201);
+        const reservedAssetId = reserved.json().asset.id;
+        const [session, secondCancellation] = await Promise.all([
+            requestAs(ownerId, 'POST', `/api/assets/${reservedAssetId}/upload-sessions`, second),
+            requestAs(ownerId, 'POST', `/api/assets/original-uploads/${second.clientRequestId}/cancel`),
+        ]);
+        expect([201, 410]).toContain(session.statusCode);
+        expect(secondCancellation.statusCode, secondCancellation.body).toBe(200);
+        const sessions = await prisma.uploadSession.findMany({
+            where: { assetId: reservedAssetId }, select: { id: true }, orderBy: { id: 'asc' },
+        });
+        expect(sessions).toHaveLength(session.statusCode === 201 ? 1 : 0);
+        expect(secondCancellation.json()).toEqual({
+            assetId: reservedAssetId, sessionIds: sessions.map(item => item.id),
+        });
+        const retry = await requestAs(ownerId, 'POST', `/api/assets/${reservedAssetId}/upload-sessions`, second);
+        expect(retry.statusCode, retry.body).toBe(410);
+    });
+
+    it('rechecks the intent after concurrent asset deletion', async () => {
+        for (const alreadyCancelled of [false, true]) {
+            const payload = originalReservation(Buffer.from('concurrent asset deletion'));
+            const reserved = await requestAs(ownerId, 'POST', '/api/assets/original-uploads', payload);
+            expect(reserved.statusCode, reserved.body).toBe(201);
+            const reservedAssetId = reserved.json().asset.id;
+            const cancelUrl = `/api/assets/original-uploads/${payload.clientRequestId}/cancel`;
+            if (alreadyCancelled) {
+                expect((await requestAs(ownerId, 'POST', cancelUrl)).statusCode).toBe(200);
+            }
+
+            let reportLocked;
+            let releaseDeletion;
+            const locked = new Promise(resolve => { reportLocked = resolve; });
+            const release = new Promise(resolve => { releaseDeletion = resolve; });
+            const deletion = prisma.$transaction(async tx => {
+                const [backend] = await tx.$queryRaw`SELECT pg_backend_pid() AS pid`;
+                await tx.asset.delete({ where: { id: reservedAssetId } });
+                reportLocked(backend.pid);
+                await release;
+            }, { timeout: 15_000 });
+            let cancellation;
+            let enumeration;
+            try {
+                const pid = await Promise.race([
+                    locked,
+                    deletion.then(() => { throw new Error('Asset deletion did not pause'); }),
+                ]);
+                cancellation = requestAs(ownerId, 'POST', cancelUrl);
+                if (alreadyCancelled) {
+                    enumeration = requestAs(
+                        ownerId, 'GET', `/api/assets/original-uploads/${payload.clientRequestId}/sessions`);
+                }
+                await waitForBlockedBy(pid);
+                releaseDeletion();
+                const response = await cancellation;
+                expect(response.statusCode, response.body).toBe(alreadyCancelled ? 200 : 410);
+                if (alreadyCancelled) {
+                    expect(response.json()).toEqual({ assetId: null, sessionIds: [] });
+                    const page = await enumeration;
+                    expect(page.statusCode, page.body).toBe(200);
+                    expect(page.json()).toEqual({ assetId: null, sessionIds: [], nextCursor: null });
+                }
+            } finally {
+                releaseDeletion();
+                await deletion;
+                if (cancellation) await cancellation;
+                if (enumeration) await enumeration;
+            }
+        }
+    }, 15_000);
+
+    it('rechecks cancellation if an intent appears while waiting for the asset lock', async () => {
+        const payload = originalReservation(Buffer.from('concurrent intent creation'));
+        const clipId = randomUUID();
+        await prisma.clip.create({ data: { id: clipId, assetId, status: 'UPLOADING' } });
+        const { createUploadSessionService } = await import('../lib/upload-sessions.js');
+        const service = createUploadSessionService({
+            db: prisma, storage, capacity: unrestrictedTestCapacity, now: () => new Date(currentTime),
+        });
+        let reportLocked;
+        let releaseIntent;
+        const locked = new Promise(resolve => { reportLocked = resolve; });
+        const release = new Promise(resolve => { releaseIntent = resolve; });
+        const intentCreation = prisma.$transaction(async tx => {
+            const [backend] = await tx.$queryRaw`SELECT pg_backend_pid() AS pid`;
+            await tx.$queryRaw`SELECT id FROM assets WHERE id = ${assetId} FOR UPDATE`;
+            reportLocked(backend.pid);
+            await release;
+            await tx.originalUploadIntent.create({
+                data: { userId: ownerId, clientRequestId: payload.clientRequestId, assetId, cancelledAt: new Date() },
+            });
+        }, { timeout: 15_000 });
+        const createUpload = vi.spyOn(storage, 'createUpload');
+        let attempt;
+        try {
+            const pid = await Promise.race([
+                locked,
+                intentCreation.then(() => { throw new Error('Intent creation did not pause'); }),
+            ]);
+            attempt = service.create({
+                ownerId, assetId, clipId, expectedSizeBytes: payload.expectedSizeBytes,
+                expectedSha256: payload.expectedSha256,
+            }).then(value => ({ value }), error => ({ error }));
+            await waitForBlockedBy(pid);
+            releaseIntent();
+            const result = await attempt;
+            expect(result.error).toMatchObject({ code: 'INTENT_CANCELLED' });
+            expect(result.value).toBeUndefined();
+            expect(createUpload).not.toHaveBeenCalled();
+        } finally {
+            releaseIntent();
+            try {
+                await intentCreation;
+                if (attempt) await attempt;
+            } finally {
+                createUpload.mockRestore();
+            }
+        }
+    }, 15_000);
+
     it('does not create an original intent for a suspended account', async () => {
         await prisma.user.update({ where: { id: ownerId }, data: { status: 'SUSPENDED' } });
         const clientRequestId = randomUUID();
@@ -459,11 +1119,15 @@ integration('upload session HTTP routes against PostgreSQL and local storage', (
 
         const retry = await requestAs(ownerId, 'POST', '/api/assets/original-uploads', payload);
         expect(retry.statusCode).toBe(410);
+        const cancellation = await requestAs(
+            ownerId, 'POST', `/api/assets/original-uploads/${payload.clientRequestId}/cancel`);
+        expect(cancellation.statusCode).toBe(410);
         const intent = await prisma.originalUploadIntent.findUnique({
             where: { userId_clientRequestId: { userId: ownerId, clientRequestId: payload.clientRequestId } },
         });
         expect(intent.assetId).toBeNull();
-        expect(Object.keys(intent).sort()).toEqual(['assetId', 'clientRequestId', 'createdAt', 'userId']);
+        expect(intent.cancelledAt).toBeNull();
+        expect(Object.keys(intent).sort()).toEqual(['assetId', 'cancelledAt', 'clientRequestId', 'createdAt', 'userId']);
     });
 
     it('removes the nonsecret upload tombstone when its owner is deleted', async () => {

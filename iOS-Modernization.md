@@ -1,6 +1,6 @@
 # Fixer Roadmap — iOS Modernization → Web App Expansion
 
-_Drafted: October 19, 2026 · Updated: November 10, 2026_
+_Drafted: October 19, 2026 · Updated: November 11, 2026_
 _Owner: Rod_
 _Status: **In progress** — Step 1 verified; Steps 2.1 through 2.5, the Step 3.1 routing foundation, Step 3.2 thumbnails, Step 4.1 local storage, and Steps 4.2a–g are merged to `main`. The owner reported deploying storage safety and testing the existing Mux flow successfully. Encrypted original-file backups, dashboard monitoring, and tracked-session cleanup remain opt-in; their actual deployment and validation are not established here. Step 4.3a iOS client work is in progress on a feature branch. Actual backup and restore validation, cleanup rollout validation, proactive alerts, isolated real-Mux handoff validation, and client rollout remain open._
 
@@ -704,7 +704,9 @@ sequenceDiagram
 - [ ] Stop deleting originals in the `mux:ready` webhook (`mux-webhooks.js:145`)
 - [x] Implement the separate opt-in tracked-session restart/expiry sweep and an
   operator procedure for ambiguous or orphaned local-driver data (Step 4.2g).
-  The legacy orphan job still excludes assets with any original session.
+  The legacy orphan job excludes assets with any original session or a
+  cancelled original-upload intent; administrative empty-asset cleanup also
+  excludes cancelled intents.
 - [ ] Validate tracked cleanup and manual review of untracked directories and
   ambiguous locks on the intended storage before enabling production originals.
 - [ ] Disk guardrails:
@@ -860,6 +862,9 @@ sequenceDiagram
     and orphaned legacy Mux sessions from premature background-event acknowledgement,
     reconcile scheduled attempts against live tasks and server parts at startup, and
     provide a durable resolution for unidentified or late completion events.
+    Local callback ordering alone does not identify an OS wake. Recover or
+    quarantine staged inbox records after a crash instead of deleting potentially
+    complete events, and resolve attachment changes before trusting task inventory.
     This unreleased journal format includes a job-incarnation identifier; if any
     earlier experimental installation created older records or tasks, migrate and
     reconcile them before enabling recovery rather than deleting staged files.
@@ -867,10 +872,24 @@ sequenceDiagram
     already changed, recovery of reservations or sessions created during a
     cancellation race without creating new work, and terminal local cleanup that
     cannot lose queued delegate events. Cancellation or an expired URL alone must
-    not be treated as proof that a background task is terminal.
+    not be treated as proof that a background task is terminal. The server-side
+    cancellation fence returns the complete bounded session list on success;
+    quota, overflow, and unavailable responses must leave cancellation pending.
+    A read-only, owner-scoped endpoint pages over-limit histories after fencing;
+    the iOS coordinator still needs to walk those pages and abort or reconcile
+    all returned and locally known sessions. Monitor retained fences before
+    rollout; the rolling quota does not cap lifetime storage.
   - Survival and reattachment require physical-device validation. iOS can delay
     background work until a short-lived URL expires and force-quitting cancels
     outstanding background tasks; reopening is required after a force-quit.
+  - Before real content, protect sensitive job journals and atomic copies with
+    complete file protection, separately review the minimized background-event
+    inbox, and verify locked-device persistence and unlock reconciliation.
+    Bound control-plane response bytes before buffering, reject ambiguous JSON,
+    surface quota and overflow errors without treating them as cleanup, and
+    verify production API pinning and key rotation. The original-upload control
+    session excludes shared HTTP credentials; the existing general bearer
+    transport still uses the shared credential store and needs separate review.
   - The owner reported that closing the current app mid-upload caused a failure and that
     manual retry succeeded. This does not demonstrate uninterrupted background transfer
     or test the new store-first path.
@@ -878,8 +897,9 @@ sequenceDiagram
     distinguishing upload-start events from verified storage and playable status.
   - Disclose that existing metadata may include location, completed originals and
     backups are retained, and cancelling cannot recall bytes already received.
-  - Test only against an isolated HTTPS backend with a verified no-redirect path
-    and signed-query suppression in all logs; do not enable the shared backend.
+  - Test only synthetic content and accounts against an isolated HTTPS backend
+    with a verified no-redirect path and signed-query suppression in all logs;
+    do not enable the shared backend.
 - [ ] **Desktop web**: drag-and-drop, multi-file queue, same part protocol, context form on web, `source: 'web'` on the asset
 - [ ] Keep direct-to-Mux as the default until the new path and all rollout gates
   are proven; upload-session and Mux-handoff flags remain independently opt-in.

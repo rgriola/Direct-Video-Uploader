@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createLocalStorageDriver } from "../lib/storage/local-driver.js";
 import {
-  createStorageCapacity, SESSION_OVERHEAD_BYTES, WRITE_OVERHEAD_BYTES,
+  createStorageCapacity, lockStorageCapacity, SESSION_OVERHEAD_BYTES, WRITE_OVERHEAD_BYTES,
 } from "../lib/storage/capacity.js";
 import { createUploadSessionService } from "../lib/upload-sessions.js";
 import uploadSessionRoutes from "../routes/upload-sessions.js";
@@ -227,6 +227,85 @@ integration("storage capacity against PostgreSQL and local storage", () => {
       .toMatchObject({ code: "STORAGE_CAPACITY_EXCEEDED" });
     expect(await prisma.uploadSession.count()).toBe(1);
   });
+
+  it("holds the owner before capacity and the session foreign-key insert", async () => {
+    const content = Buffer.from("owner-capacity");
+    const asset = await assetWithClip();
+    const realCapacity = capacity();
+    let release;
+    const gate = new Promise(resolve => { release = resolve; });
+    let creatorPid;
+    let createOutcome;
+    const gatedCapacity = {
+      ...realCapacity,
+      reserve: async (tx, bytes) => {
+        const reservation = await realCapacity.reserve(tx, bytes);
+        const [{ pid }] = await tx.$queryRaw`SELECT pg_backend_pid() AS pid`;
+        creatorPid = pid;
+        await gate;
+        return reservation;
+      },
+    };
+    const creating = createSession(service(gatedCapacity), content, asset).then(
+      value => (createOutcome = { value }),
+      error => (createOutcome = { error }),
+    );
+
+    let contenderPid;
+    let ownerAcquired = false;
+    let contenderOutcome;
+    let contender;
+    try {
+      await waitFor(() => {
+        if (createOutcome) {
+          throw createOutcome.error ?? new Error("Create finished before the gate");
+        }
+        return creatorPid != null;
+      });
+      contender = prisma.$transaction(async tx => {
+        await tx.$queryRaw`SELECT set_config('statement_timeout', '12s', true)`;
+        const [{ pid }] = await tx.$queryRaw`SELECT pg_backend_pid() AS pid`;
+        contenderPid = pid;
+        await tx.$queryRaw`
+          SELECT id FROM users WHERE id = ${ownerId}
+          FOR UPDATE /* owner-capacity-regression */
+        `;
+        ownerAcquired = true;
+        await lockStorageCapacity(tx);
+      }, { timeout: 15_000 }).then(
+        () => (contenderOutcome = {}),
+        error => (contenderOutcome = { error }),
+      );
+      await waitFor(async () => {
+        if (contenderOutcome?.error) throw contenderOutcome.error;
+        if (ownerAcquired) throw new Error("Owner lock was acquired too early");
+        if (contenderPid == null) return false;
+        const { rows } = await pool.query(`
+          SELECT EXISTS (
+            SELECT 1 FROM pg_stat_activity a
+            WHERE a.pid = $1
+              AND a.wait_event_type = 'Lock'
+              AND a.query LIKE '%owner-capacity-regression%'
+              AND $2::integer = ANY(pg_blocking_pids(a.pid))
+          ) AS blocked
+        `, [contenderPid, creatorPid]);
+        return rows[0].blocked;
+      });
+      release();
+      const [created, competing] = await Promise.all([creating, contender]);
+      if (created.error) throw created.error;
+      if (competing.error) throw competing.error;
+      expect(created.value.session).toMatchObject({
+        ownerId, assetId: asset.assetId, clipId: asset.clipId, status: "OPEN",
+      });
+      expect(await prisma.uploadSession.findUnique({ where: { id: created.value.session.id } }))
+        .toMatchObject({ ownerId, assetId: asset.assetId, clipId: asset.clipId });
+    } finally {
+      release();
+      if (contender) await contender;
+      await creating;
+    }
+  }, 30_000);
 
   it("serializes admissions across separate server processes", async () => {
     const text = "processes";
