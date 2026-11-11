@@ -6218,11 +6218,9 @@ struct RedirectTransportTests {
         #expect(storage.defaultCredential(for: space)?.user == "synthetic-user")
 
         let url = baseURL.appendingPathComponent("basic-challenge")
-        let controlSession = URLSession(configuration: RedirectSafeTransport.configuration())
-        defer { controlSession.invalidateAndCancel() }
         var controlRequest = URLRequest(url: url)
         controlRequest.setValue("Bearer synthetic", forHTTPHeaderField: "Authorization")
-        let (_, controlResponse) = try await controlSession.data(for: controlRequest)
+        let (_, controlResponse) = try await RedirectSafeTransport.data(for: controlRequest)
         #expect((controlResponse as? HTTPURLResponse)?.statusCode == 401)
         #expect(server.didReceiveBasicCredential)
         server.resetBasicCredentialObservation()
