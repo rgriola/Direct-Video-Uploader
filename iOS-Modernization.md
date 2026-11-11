@@ -704,7 +704,8 @@ sequenceDiagram
 - [ ] Stop deleting originals in the `mux:ready` webhook (`mux-webhooks.js:145`)
 - [x] Implement the separate opt-in tracked-session restart/expiry sweep and an
   operator procedure for ambiguous or orphaned local-driver data (Step 4.2g).
-  The legacy orphan job still excludes assets with any original session.
+  The legacy orphan job excludes assets with any original session or a
+  cancelled original-upload intent; administrative cleanup remains separate.
 - [ ] Validate tracked cleanup and manual review of untracked directories and
   ambiguous locks on the intended storage before enabling production originals.
 - [ ] Disk guardrails:
@@ -867,10 +868,22 @@ sequenceDiagram
     already changed, recovery of reservations or sessions created during a
     cancellation race without creating new work, and terminal local cleanup that
     cannot lose queued delegate events. Cancellation or an expired URL alone must
-    not be treated as proof that a background task is terminal.
+    not be treated as proof that a background task is terminal. The server-side
+    cancellation fence returns the complete bounded session list on success;
+    quota, overflow, and unavailable responses must leave cancellation pending.
+    Before rollout, provide bounded reconciliation for over-limit histories
+    and monitor retained fences; the rolling quota does not cap lifetime
+    storage. The iOS coordinator still needs to use the fence and abort or
+    reconcile those sessions.
   - Survival and reattachment require physical-device validation. iOS can delay
     background work until a short-lived URL expires and force-quitting cancels
     outstanding background tasks; reopening is required after a force-quit.
+  - Before real content, protect sensitive job journals and atomic copies with
+    complete file protection, separately review the minimized background-event
+    inbox, and verify locked-device persistence and unlock reconciliation.
+    Bound control-plane response bytes before buffering, reject ambiguous JSON,
+    surface quota and overflow errors without treating them as cleanup, and
+    verify production API pinning and key rotation.
   - The owner reported that closing the current app mid-upload caused a failure and that
     manual retry succeeded. This does not demonstrate uninterrupted background transfer
     or test the new store-first path.
@@ -878,8 +891,9 @@ sequenceDiagram
     distinguishing upload-start events from verified storage and playable status.
   - Disclose that existing metadata may include location, completed originals and
     backups are retained, and cancelling cannot recall bytes already received.
-  - Test only against an isolated HTTPS backend with a verified no-redirect path
-    and signed-query suppression in all logs; do not enable the shared backend.
+  - Test only synthetic content and accounts against an isolated HTTPS backend
+    with a verified no-redirect path and signed-query suppression in all logs;
+    do not enable the shared backend.
 - [ ] **Desktop web**: drag-and-drop, multi-file queue, same part protocol, context form on web, `source: 'web'` on the asset
 - [ ] Keep direct-to-Mux as the default until the new path and all rollout gates
   are proven; upload-session and Mux-handoff flags remain independently opt-in.
