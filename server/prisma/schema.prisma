@@ -132,7 +132,6 @@ model OriginalUploadIntent {
   asset Asset? @relation(fields: [assetId], references: [id], onDelete: SetNull)
 
   @@id([userId, clientRequestId])
-  @@index([userId, cancelledAt(sort: Desc), assetId])
   @@map("original_upload_intents")
 }
 
