@@ -3,6 +3,10 @@ import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import path from 'path';
 
+// Point the dev server at another local API, e.g. an isolated test server:
+// DVU_API_TARGET=http://127.0.0.1:3001 npm run dev
+const apiTarget = process.env.DVU_API_TARGET || 'http://localhost:3000';
+
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   resolve: {
@@ -24,9 +28,10 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      '/api': 'http://localhost:3000',
+      '/api': apiTarget,
+      '/clips': apiTarget,
       '/socket.io': {
-        target: 'http://localhost:3000',
+        target: apiTarget,
         ws: true,
       },
     },
