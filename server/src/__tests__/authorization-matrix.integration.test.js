@@ -271,7 +271,7 @@ integration('role and organization endpoint matrix', () => {
         await monitoring.runOnce();
         app.decorate('monitoring', monitoring);
         await registerApplicationRoutes(app);
-        await app.register(localUploadRoutes, { root: uploadRoot });
+        await app.register(localUploadRoutes, { root: uploadRoot, authenticate });
         await app.ready();
     }, INTEGRATION_SETUP_TIMEOUT_MS);
 
@@ -714,14 +714,15 @@ integration('role and organization endpoint matrix', () => {
         'POST /clips/logout',
         'POST /api/webhooks/mux',
         'GET /api/mux/env-key',
-        'GET /uploads/*',
     ];
+    const separatelyAuthorizedRoutes = ['GET /uploads/*'];
 
     it('requires every registered application route to appear in the matrix or public-route tests', () => {
         expect([...registeredRoutes].sort()).toEqual([
             ...scalarCases.map(spec => spec.route),
             ...teamCases.map(spec => spec.route),
             ...publicRoutes,
+            ...separatelyAuthorizedRoutes,
         ].sort());
     });
 
@@ -1024,11 +1025,21 @@ integration('role and organization endpoint matrix', () => {
                             }
                         }
 
-                        const local = await app.inject({ method: 'GET', url: `/uploads/${team.asset.fileName}` });
-                        expect(local.statusCode).toBe(moderation === 'ACTIVE' ? 200 : 404);
-                        if (moderation === 'ACTIVE') {
-                            expect(local.body).toBe(team.asset.id);
-                            expect(local.headers['cache-control']).toBe('no-store');
+                        const anonymousLocal = await app.inject({
+                            method: 'GET', url: `/uploads/${team.asset.fileName}`,
+                        });
+                        expect(anonymousLocal.statusCode).toBe(401);
+                        expect(anonymousLocal.body).not.toContain(team.asset.id);
+                        for (const actor of signedInActors) {
+                            const local = await request(actor, 'GET', `/uploads/${team.asset.fileName}`);
+                            const canReadLocal = moderation === 'ACTIVE' && SCOPED[teamIndex][actor.index] === 200;
+                            expect(local.statusCode).toBe(canReadLocal ? 200 : 404);
+                            if (canReadLocal) {
+                                expect(local.body).toBe(team.asset.id);
+                                expect(local.headers['cache-control']).toBe('no-store');
+                            } else {
+                                expect(local.body).not.toContain(team.asset.id);
+                            }
                         }
 
                         if (moderation !== 'ACTIVE') {
@@ -1113,8 +1124,10 @@ integration('role and organization endpoint matrix', () => {
                         expect(sharedPage.body).not.toContain(team.asset.playbackId);
                         expect(sharedPage.body).not.toContain(`/uploads/${team.asset.fileName}`);
                     }
-                    const local = await app.inject({ method: 'GET', url: `/uploads/${team.asset.fileName}` });
-                    expect(local.statusCode).toBe(404);
+                    for (const actor of signedInActors) {
+                        const local = await request(actor, 'GET', `/uploads/${team.asset.fileName}`);
+                        expect(local.statusCode).toBe(404);
+                    }
                 } finally {
                     await prisma.asset.update({
                         where: { id: team.asset.id },

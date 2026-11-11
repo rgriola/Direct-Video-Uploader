@@ -282,9 +282,10 @@ await fastify.register(fastifySwaggerUi, {
 import { mkdirSync } from 'fs';
 mkdirSync(path.resolve(process.cwd(), 'uploads'), { recursive: true });
 
-// Legacy local files remain shareable only while all associated assets are active.
+// Legacy local files require a bearer token in scope and are served only while every associated asset is active.
 await fastify.register(localUploadRoutes, {
     root: path.resolve(process.cwd(), 'uploads'),
+    authenticate,
 });
 
 // Serve dashboard from public/ (wildcard: false so dynamic routes like /clips/:slug aren't swallowed)
