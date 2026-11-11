@@ -16,6 +16,19 @@ export class UploadSessionError extends Error {
   }
 }
 
+export async function assertOriginalIntentNotCancelled(db, ownerId, assetId) {
+  const intent = await db.originalUploadIntent.findUnique({
+    where: { assetId },
+    select: { userId: true, cancelledAt: true },
+  });
+  if (intent && intent.userId !== ownerId) {
+    throw new UploadSessionError("INTENT_INCONSISTENT", "Original upload intent cannot be verified");
+  }
+  if (intent?.cancelledAt) {
+    throw new UploadSessionError("INTENT_CANCELLED", "Original upload was cancelled");
+  }
+}
+
 function normalizeSize(value, label) {
   if (value == null) return null;
   let size;
@@ -498,15 +511,15 @@ function createUploadSessionOperations({
 
     try {
       session = await db.$transaction(async tx => {
-        if (initializeClip) {
-          await tx.$queryRaw`SELECT id FROM users WHERE id = ${ownerId} FOR UPDATE`;
-        }
+        // Share-lock the owner first so creates coexist while cancellation can fence them.
+        await tx.$queryRaw`SELECT id FROM users WHERE id = ${ownerId} FOR SHARE`;
         await tx.$queryRaw`SELECT id FROM assets WHERE id = ${assetId} FOR UPDATE`;
         const asset = await tx.asset.findUnique({ where: { id: assetId } });
         let clip = await tx.clip.findUnique({ where: { id: clipId } });
         if (!asset || asset.userId !== ownerId) {
           throw new UploadSessionError("NOT_FOUND", "Asset not found");
         }
+        await assertOriginalIntentNotCancelled(tx, ownerId, assetId);
         if (asset.moderation !== "ACTIVE"
           || !["UPLOADING", "PROCESSING"].includes(asset.status)) {
           throw new UploadSessionError("ASSET_NOT_ACTIVE", "Asset is not accepting uploads");
@@ -632,7 +645,7 @@ function createUploadSessionOperations({
           },
           include: { parts: true },
         });
-      }, { timeout: 60000 });
+      }, { timeout: 60000, isolationLevel: "ReadCommitted" });
     } catch (error) {
       if (driverSession) {
         try {
