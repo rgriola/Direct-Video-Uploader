@@ -719,7 +719,10 @@ sequenceDiagram
     and writes, with explicit server-configured thresholds.
   - [x] Opt-in Super Admin dashboard shows original storage used and per-volume
     thresholds, plus original and database backup job/freshness status.
-  - [ ] Proactive alert below a threshold.
+  - [x] Opt-in Slack alert when a storage or backup check reaches a warning,
+    critical, or unknown state, with reminders and recovery notices.
+  - [ ] Configure and verify alert delivery on the home server, and add an
+    independent alert for a stopped server or host.
 - [ ] Backups: originals are **not** covered by the nightly `pg_dump`. The selected
   policy is hourly encrypted copies to a separate external drive and Backblaze B2,
   retaining deleted originals until an operator removes them. Configure both targets
@@ -805,7 +808,8 @@ sequenceDiagram
 - [ ] Provision the actual separate drive, B2 prefix, protected keys, and LaunchAgent.
 - [ ] Verify the real B2 and external-drive backups and perform recovery drills;
   database and original-file snapshots are not automatically consistent.
-- [ ] Add independent failure/freshness alerts and complete the remaining rollout gates.
+- [ ] Verify the opt-in Slack failure/freshness alerts (Step 4.2f), add an independent
+  server-down alert, and complete the remaining rollout gates.
 
 ### 4.2f Storage and Backup Dashboard Monitoring
 
@@ -819,8 +823,11 @@ sequenceDiagram
   services and notification providers.
 - [ ] Configure the real volumes, thresholds, monitoring state, and LaunchAgents;
   verify failure/recovery and restore procedures on the home server.
-- [ ] Add independently delivered failure/freshness alerts. The dashboard alone
-  cannot notify an operator while it is closed or the server is down.
+- [x] Add opt-in Slack alerts for warning, critical, and unknown checks with
+  bounded reminders, recovery notices, retried delivery, and a dashboard check
+  for delivery or configuration failures.
+- [ ] Configure and verify alert delivery, and add an independent alert for a
+  stopped server or host; in-process alerts cannot report either.
 
 ### 4.2g Tracked Upload-Session Cleanup and Recovery
 
