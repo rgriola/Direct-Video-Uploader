@@ -25,6 +25,7 @@ import { panelHeader, subTextPanelHeader } from "@/lib/types";
 import { Icon, type IconName } from "./Icon";
 import { AssetThumbnail } from "./AssetThumbnail";
 import { MediaSyncDetails } from "./MediaSyncDetails";
+import { AssetContextForm, type AssetContextValues } from "./AssetContextForm";
 
 // ─── Status Configuration ────────────────────────────────────────────
 //
@@ -69,6 +70,8 @@ interface AssetListProps {
     moderation: "ACTIVE" | "PAUSED" | "FLAGGED_FOR_REMOVAL" | "REMOVED",
     reason?: string,
   ) => Promise<void>;
+  /** Lets the owner add a missing context form; omit to keep the list read-only. */
+  onSubmitContext?: (assetId: string, values: AssetContextValues) => Promise<void>;
 }
 
 export function AssetList({
@@ -80,6 +83,7 @@ export function AssetList({
   moderationFilter,
   onModerationFilterChange,
   onModerate,
+  onSubmitContext,
 }: AssetListProps) {
   /* Accordion: only one row expanded at a time. Stores asset.id or null. */
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -123,6 +127,7 @@ export function AssetList({
               onToggle={() => setExpandedId(expandedId === asset.id ? null : asset.id)}
               viewerRole={viewerRole}
               onModerate={onModerate}
+              onSubmitContext={onSubmitContext}
             />
           ))
         )}
@@ -143,9 +148,10 @@ interface AssetRowProps {
   onToggle: () => void;
   viewerRole?: string | null;
   onModerate?: AssetListProps["onModerate"];
+  onSubmitContext?: AssetListProps["onSubmitContext"];
 }
 
-function AssetRow({ asset, isExpanded, onToggle, viewerRole, onModerate }: AssetRowProps) {
+function AssetRow({ asset, isExpanded, onToggle, viewerRole, onModerate, onSubmitContext }: AssetRowProps) {
   const clip = asset.clips?.[0];
   const missingForm = !asset.formResponse && asset.status === "READY";
 
@@ -289,6 +295,9 @@ function AssetRow({ asset, isExpanded, onToggle, viewerRole, onModerate }: Asset
 
           {/* Form response (slug, description, type, priority) */}
           {asset.formResponse && <FormSection form={asset.formResponse} />}
+          {!asset.formResponse && asset.moderation === "ACTIVE" && onSubmitContext && (
+            <AssetContextForm onSubmit={values => onSubmitContext(asset.id, values)} />
+          )}
 
           {/* Clip details (resolution, codec, orientation, file size, duration) */}
           {clip && <ClipSection clip={clip} />}

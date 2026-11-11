@@ -67,8 +67,8 @@ flowchart TD
 | Video moderation | Step 2.2 moderation and durable reconciliation are merged to `main`; the matching server deployment and real-Mux checks are unconfirmed | Verify migrations, legacy-upload draining, and real-Mux behavior before relying on pause or removal. |
 | Migrations | Existing baseline migrations were applied on the home server; the post-deployment status of the Step 2.2 moderation and reconciliation migrations is unconfirmed | Check migration status on the home server. Cloud Build and Render are no longer used; their legacy scripts still need safe migration workflows if reused. |
 | Original files | iOS uploads **straight to Mux** (direct-upload PUT). The original never reaches our server. Mux doesn't give back the byte-exact original | Keeping originals means changing the upload pipeline (Step 4). |
-| Legacy local path | `Clip.storageUrl` and an `uploads/` folder exist. The merged coordinator cleans legacy files after Mux readiness or permanent removal | Step 4 must retain and manage original files explicitly instead. |
-| ⚠️ Public uploads folder | The uploads route is unauthenticated. The merged code adds moderation/reference checks, but known active files remain reachable by URL without authentication | Replace it with authenticated or signed access **before** originals are stored (Step 4.1); confirm the running server version separately. |
+| Legacy local path | `Clip.storageUrl` and an `uploads/` folder exist; no current route writes to it. Legacy files are deleted only by permanent removal or the opt-in orphan job, not by Mux readiness | New originals use `storageKey` in the separate storage driver. |
+| Legacy uploads route | Step 4.1 requires a bearer token and an asset in the caller's team scope, in addition to the existing moderation, reference, and symlink checks. Shared clip pages and clients never fetch these URLs | Confirm the running server version after deployment. |
 | Thumbnails | The Mux reconciler writes `Clip.thumbnailUrl`; the Step 3.2 work exposes it in scoped lists and renders list-sized images only when playback is available. | Deploy the matching dashboard and server together; active Mux image URLs remain public. |
 | Mux settings | Previously issued uploads can request automatic public playback; uploads from the merged code omit the playback policy and retain `cors_origin: '*'` | Drain or cancel legacy uploads, verify Mux cleanup, and test with real Mux before relying on moderation. |
 | Web app | The merged Step 3.1 foundation adds role-gated hash routes and an owner-videos view while preserving existing admin tools. Active theme: `theme-a-editorial.css`; three alternates sit unused | Finish the remaining Step 3.1 work and verify the feature is deployed with a matching server. See the Themes note below. |
@@ -700,8 +700,13 @@ sequenceDiagram
 - [ ] Add a general-purpose `signedReadUrl(key, ttl)` for future original sharing; the
   experimental Mux-only capability below is not a general download link.
 - [ ] Replace `Clip.storageUrl` (a public path) with `storageKey` + `storageDriver` + `sha256` + `sizeBytes`
-- [ ] **Replace the guarded but unauthenticated `/uploads/` route.** All original-file access must go through authenticated or signed routes
-- [ ] Stop deleting originals in the `mux:ready` webhook (`mux-webhooks.js:145`)
+- [x] **Authenticate the legacy `/uploads/` route.** It now requires a bearer token and
+  an asset in the caller's team scope, plus the existing moderation and path checks.
+  New originals are never served from it; future original access must use
+  authenticated or signed routes (Step 5).
+- [x] Stop deleting originals in the `mux:ready` webhook. Webhooks no longer remove
+  files; legacy files are removed only for permanently removed assets or by the opt-in
+  orphan job, and original-session assets are excluded from that job.
 - [x] Implement the separate opt-in tracked-session restart/expiry sweep and an
   operator procedure for ambiguous or orphaned local-driver data (Step 4.2g).
   The legacy orphan job excludes assets with any original session or a
@@ -714,7 +719,10 @@ sequenceDiagram
     and writes, with explicit server-configured thresholds.
   - [x] Opt-in Super Admin dashboard shows original storage used and per-volume
     thresholds, plus original and database backup job/freshness status.
-  - [ ] Proactive alert below a threshold.
+  - [x] Opt-in Slack alert when a storage or backup check reaches a warning,
+    critical, or unknown state, with reminders and recovery notices.
+  - [ ] Configure and verify alert delivery on the home server, and add an
+    independent alert for a stopped server or host.
 - [ ] Backups: originals are **not** covered by the nightly `pg_dump`. The selected
   policy is hourly encrypted copies to a separate external drive and Backblaze B2,
   retaining deleted originals until an operator removes them. Configure both targets
@@ -800,7 +808,8 @@ sequenceDiagram
 - [ ] Provision the actual separate drive, B2 prefix, protected keys, and LaunchAgent.
 - [ ] Verify the real B2 and external-drive backups and perform recovery drills;
   database and original-file snapshots are not automatically consistent.
-- [ ] Add independent failure/freshness alerts and complete the remaining rollout gates.
+- [ ] Verify the opt-in Slack failure/freshness alerts (Step 4.2f), add an independent
+  server-down alert, and complete the remaining rollout gates.
 
 ### 4.2f Storage and Backup Dashboard Monitoring
 
@@ -814,8 +823,11 @@ sequenceDiagram
   services and notification providers.
 - [ ] Configure the real volumes, thresholds, monitoring state, and LaunchAgents;
   verify failure/recovery and restore procedures on the home server.
-- [ ] Add independently delivered failure/freshness alerts. The dashboard alone
-  cannot notify an operator while it is closed or the server is down.
+- [x] Add opt-in Slack alerts for warning, critical, and unknown checks with
+  bounded reminders, recovery notices, retried delivery, and a dashboard check
+  for delivery or configuration failures.
+- [ ] Configure and verify alert delivery, and add an independent alert for a
+  stopped server or host; in-process alerts cannot report either.
 
 ### 4.2g Tracked Upload-Session Cleanup and Recovery
 
@@ -901,6 +913,22 @@ sequenceDiagram
     with a verified no-redirect path and signed-query suppression in all logs;
     do not enable the shared backend.
 - [ ] **Desktop web**: drag-and-drop, multi-file queue, same part protocol, context form on web, `source: 'web'` on the asset
+  - [x] `GET /api/upload-capabilities` reports whether upload sessions are enabled;
+    My Videos shows the uploader only when `originalUploads` is true.
+  - [x] Reservations accept an optional `uploadSource` (`IOS`/`WEB`) stored on the
+    asset; the web client sends `WEB`. Apply `20261111150000_asset_upload_source`.
+  - [x] Drag-and-drop and multi-file queue uploading one file at a time: incremental
+    SHA-256 (`@noble/hashes`), sequential 50 MiB parts through fresh signed URLs,
+    bounded retries, resume from stored parts, and verified completion.
+  - [x] Cancel fences the reservation, pages and aborts its sessions, retries busy
+    cleanup, and reports an original that was already stored. Unsent files cancel
+    locally. The panel discloses retention and warns before leaving.
+  - [x] Owners can add a missing context form (slug, type, description, priority)
+    to their active videos from My Videos.
+  - [ ] Jobs are held in memory only: reloading or leaving My Videos stops uploads,
+    and a stopped reservation is not recovered across reloads (sessions expire).
+  - [ ] Validate in desktop browsers against an isolated backend with real files
+    up to 500 MiB before enabling upload sessions on the shared backend.
 - [ ] Keep direct-to-Mux as the default until the new path and all rollout gates
   are proven; upload-session and Mux-handoff flags remain independently opt-in.
 

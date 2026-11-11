@@ -21,6 +21,7 @@ const METADATA_FIELDS = [
 const MAX_UNRESERVED_CANCELLATIONS = 100;
 const CANCELLATION_QUOTA_WINDOW_MS = 24 * 60 * 60 * 1000;
 const MAX_CANCELLATION_SESSIONS = 100;
+const UPLOAD_SOURCES = new Set(['IOS', 'WEB']);
 
 const ERROR_STATUS = {
     INVALID_ARGUMENT: 400,
@@ -52,8 +53,17 @@ function validateOriginalAssetInput(body) {
         || (body.fileName != null && typeof body.fileName !== 'string')) {
         throw new UploadSessionError('INVALID_ARGUMENT', 'A client request UUID and optional file name are required');
     }
+    if (body.uploadSource != null && !UPLOAD_SOURCES.has(body.uploadSource)) {
+        throw new UploadSessionError('INVALID_ARGUMENT', 'uploadSource must be IOS or WEB');
+    }
     const { sizeBytes, sha256 } = validateCreateInput(body);
-    return { clientRequestId: body.clientRequestId.toLowerCase(), fileName: body.fileName || null, sizeBytes, sha256 };
+    return {
+        clientRequestId: body.clientRequestId.toLowerCase(),
+        fileName: body.fileName || null,
+        uploadSource: body.uploadSource ?? null,
+        sizeBytes,
+        sha256,
+    };
 }
 
 function validateMetadata(raw) {
@@ -272,7 +282,7 @@ export default async function uploadSessionRoutes(fastify, {
         preHandler: [fastify.authenticate],
         config: { rateLimit: { max: 10, timeWindow: '1 minute' } },
     }, async (request, reply) => handleErrors(reply, async () => {
-        const { clientRequestId, fileName, sizeBytes, sha256 } = validateOriginalAssetInput(request.body);
+        const { clientRequestId, fileName, uploadSource, sizeBytes, sha256 } = validateOriginalAssetInput(request.body);
         const ownerId = request.user.id;
         const result = await db.$transaction(async tx => {
             const users = await tx.$queryRaw`SELECT id, status FROM users WHERE id = ${ownerId} FOR UPDATE`;
@@ -306,7 +316,8 @@ export default async function uploadSessionRoutes(fastify, {
                     throw new UploadSessionError('INTENT_INCONSISTENT', 'Original upload intent cannot be verified');
                 }
                 if (asset.originalFileName !== fileName || asset.originalIntentSizeBytes !== Number(sizeBytes)
-                    || asset.originalIntentSha256 !== sha256) {
+                    || asset.originalIntentSha256 !== sha256
+                    || (uploadSource != null && asset.uploadSource !== uploadSource)) {
                     throw new UploadSessionError('IDEMPOTENCY_CONFLICT', 'Client request ID belongs to another upload');
                 }
                 return { asset, created: false };
@@ -321,6 +332,7 @@ export default async function uploadSessionRoutes(fastify, {
                     originalFileName: fileName,
                     status: 'UPLOADING',
                     uploadMode: 'ORIGINAL',
+                    uploadSource,
                     originalIntentSizeBytes: Number(sizeBytes),
                     originalIntentSha256: sha256,
                 },

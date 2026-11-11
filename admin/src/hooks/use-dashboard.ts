@@ -1,7 +1,7 @@
 /* ─── TanStack React Query hooks ─── */
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { fetchStats, fetchUsers, fetchAssets, fetchMyAssets, fetchTriadStatus, fetchOrganizations, fetchMonitoring } from "@/lib/api";
+import { fetchStats, fetchUsers, fetchAssets, fetchMyAssets, fetchTriadStatus, fetchOrganizations, fetchMonitoring, fetchUploadCapabilities } from "@/lib/api";
 
 export function useStats(enabled = true) {
   return useQuery({
@@ -44,6 +44,15 @@ export function useMyAssets(enabled = true) {
       return data.assets;
     },
     refetchInterval: 15_000,
+    enabled,
+  });
+}
+
+export function useUploadCapabilities(enabled = true) {
+  return useQuery({
+    queryKey: ["upload-capabilities"],
+    queryFn: fetchUploadCapabilities,
+    staleTime: 60_000,
     enabled,
   });
 }

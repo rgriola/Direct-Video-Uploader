@@ -13,6 +13,15 @@ describe("storage and backup monitoring panel", () => {
     rerender(<MonitoringPanel snapshot={{ ...disabled, enabled: true }} isLoading={false} isError={false} />);
     expect(screen.getByText(/no external alerts are sent/)).toBeTruthy();
     expect(screen.getByText("Waiting for the first monitoring check.")).toBeTruthy();
+    rerender(<MonitoringPanel snapshot={{
+      ...disabled, enabled: true, checkedAt: "2026-03-01T12:00:00.000Z",
+      checks: [{
+        id: "alert-delivery", label: "Monitoring alerts", category: "service", status: "ok",
+        message: "No monitoring alert has been required",
+      }],
+    }} isLoading={false} isError={false} />);
+    expect(screen.getByText(/Slack alerts are configured/)).toBeTruthy();
+    expect(screen.queryByText(/no external alerts are sent/)).toBeNull();
   });
 
   it("shows severities, capacity, running jobs, and stale or failed refreshes", () => {

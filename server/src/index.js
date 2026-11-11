@@ -36,6 +36,8 @@ import prisma from './lib/prisma.js';
 import { authenticate } from './lib/authentication.js';
 import { requireRole } from './lib/authorization.js';
 import { monitoringFromEnvironment } from './lib/monitoring.js';
+import { monitoringAlertsFromEnvironment } from './lib/monitoring-alerts.js';
+import * as slack from './lib/slack.js';
 import { withAssetMediaLock } from './lib/media-lock.js';
 import { enqueueMuxOriginal } from './lib/mux-original-records.js';
 import { getUploadSessionCleanupConfig } from './lib/upload-session-cleanup-config.js';
@@ -282,9 +284,10 @@ await fastify.register(fastifySwaggerUi, {
 import { mkdirSync } from 'fs';
 mkdirSync(path.resolve(process.cwd(), 'uploads'), { recursive: true });
 
-// Legacy local files remain shareable only while all associated assets are active.
+// Legacy local files require a bearer token in scope and are served only while every associated asset is active.
 await fastify.register(localUploadRoutes, {
     root: path.resolve(process.cwd(), 'uploads'),
+    authenticate,
 });
 
 // Serve dashboard from public/ (wildcard: false so dynamic routes like /clips/:slug aren't swallowed)
@@ -371,6 +374,7 @@ fastify.decorate('io', io);
 
 // ─── Routes ──────────────────────────────────────────────
 const monitoring = monitoringFromEnvironment({ log: fastify.log });
+monitoringAlertsFromEnvironment({ monitoring, slack, log: fastify.log });
 fastify.decorate('monitoring', monitoring);
 const muxOriginalConfig = await registerApplicationRoutes(fastify);
 const uploadSessionCleanupConfig = getUploadSessionCleanupConfig();

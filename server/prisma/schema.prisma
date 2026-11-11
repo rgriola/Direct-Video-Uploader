@@ -69,6 +69,7 @@ model Asset {
   totalDuration    Int         @default(0) @map("total_duration_seconds")
   status           AssetStatus @default(UPLOADING)
   uploadMode       AssetUploadMode? @map("upload_mode")
+  uploadSource     AssetUploadSource? @map("upload_source")
   originalIntentSizeBytes Int? @map("original_intent_size_bytes")
   originalIntentSha256 String? @map("original_intent_sha256") @db.VarChar(64)
   moderation       AssetModeration @default(ACTIVE)
@@ -112,6 +113,11 @@ enum AssetStatus {
 enum AssetUploadMode {
   MUX
   ORIGINAL
+}
+
+enum AssetUploadSource {
+  IOS
+  WEB
 }
 
 enum AssetModeration {

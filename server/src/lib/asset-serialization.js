@@ -20,5 +20,6 @@ export function serializeCreatedAsset(asset) {
         clipCount: asset.clipCount,
         totalDuration: asset.totalDuration,
         uploadMode: getAssetUploadMode(asset),
+        uploadSource: asset.uploadSource ?? null,
     };
 }

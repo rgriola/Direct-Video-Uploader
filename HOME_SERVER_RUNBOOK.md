@@ -581,8 +581,8 @@ tail -n 40 "$HOME/Library/Logs/com.msfixer.original-backup.err.log"
 
 Check the timestamp and complete success messages for **each** run and both
 destinations; a start or a single verified destination is not success. There is
-an optional Super Admin monitoring dashboard described below, but no proactive
-failure or freshness alert yet. Investigate missing/stale runs,
+an optional Super Admin monitoring dashboard and opt-in Slack alerts described
+below; neither can report while the server is down. Investigate missing/stale runs,
 locked Keychain, missing drives, B2 permissions/lifecycle, full destinations,
 and nonzero exits. For deeper diagnosis, run narrowly scoped rclone commands
 locally without debug logging or printing the config; protect any diagnostic
@@ -666,12 +666,12 @@ Reconcile Mux and upload state before enabling either experimental flag.
 ### Storage and backup dashboard monitoring (opt-in)
 
 This feature is **disabled by default** and does not install or start any backup
-job. It reports to the Super Admin dashboard only. It does **not** send Slack,
-email, or other external notifications, and cannot notify anyone while the
-dashboard is closed or the server is down. UptimeRobot's existing health check
-is separate and does not check storage or backups. Proactive storage/backup
-alerts remain a production rollout prerequisite; keep both experimental
-original-upload and Mux flags off.
+job. It reports to the Super Admin dashboard and, only if separately configured
+(step 6), posts Slack alerts while Fastify is running. It cannot notify anyone
+while the server or host is down. UptimeRobot's existing health check is
+separate and does not check storage or backups. Verified alert delivery and an
+independent server-down alert remain production rollout prerequisites; keep
+both experimental original-upload and Mux flags off.
 
 When enabled, Fastify checks every five minutes and the dashboard refreshes
 every 30 seconds. The panel reports:
@@ -855,13 +855,29 @@ Fastify process and all monitored jobs must run as the same macOS user.
    backup or disconnecting an in-use volume. Check LaunchAgent exit status and
    logs as well. A successful receipt does not replace periodic restore drills.
 
+6. Optional Slack alerts: invite the existing Fixer Slack bot (the one using
+   `SLACK_BOT_TOKEN`) to a private operations channel, then set:
+   ```dotenv
+   DVU_MONITOR_ALERT_SLACK_CHANNEL="REPLACE_CHANNEL_NAME"
+   DVU_MONITOR_ALERT_REPEAT_HOURS="6"
+   ```
+   Use the lowercase channel name without `#`. Fastify posts once when a check
+   becomes `warning`, `critical`, or `unknown`, again when its status changes or
+   after the repeat interval (1–168 hours, default 6), and once on recovery.
+   Alert state is in memory, so a restart re-sends unresolved problems. A failed
+   post is retried on the next cycle and shows **Monitoring alerts** as critical
+   on the dashboard; an invalid channel or missing token does the same. Messages
+   contain only check labels, statuses, and generic messages. Restart Fastify,
+   then verify delivery with a safe isolated test setup, not by filling or
+   unmounting a real volume.
+
 For future integrations, server code can register additional checks using
 `fastify.monitoring.registerCheck({ id, label, category, collect })` and
 subscribe to periodic snapshots with `fastify.monitoring.subscribe(listener)`.
 Checks return a status (`ok`, `warning`, `critical`, or `unknown`) and a safe
 message; `category` is `storage`, `backup`, or `service`. Subscriber failures
-and check timeouts are logged. No notification provider, retry/deduplication
-policy, or external monitoring service is configured by these hooks.
+and check timeouts are logged. The optional Slack alerts in step 6 use this
+subscriber hook; no external service monitors the server itself.
 
 ## Rollback (see main plan doc for full detail)
 

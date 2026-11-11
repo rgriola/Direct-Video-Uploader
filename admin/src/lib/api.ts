@@ -14,7 +14,19 @@ export function clearToken() {
   authToken = null;
 }
 
-async function api<T>(method: string, path: string, body?: unknown): Promise<T> {
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly retryAfterSeconds: number | null = null,
+    readonly code: string | null = null,
+  ) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
+export async function api<T>(method: string, path: string, body?: unknown): Promise<T> {
   const headers: Record<string, string> = {};
   if (authToken) headers["Authorization"] = `Bearer ${authToken}`;
 
@@ -27,11 +39,14 @@ async function api<T>(method: string, path: string, body?: unknown): Promise<T> 
   const res = await fetch(path, opts);
   if (!res.ok) {
     let message = `HTTP ${res.status}`;
+    let code: string | null = null;
     try {
-      const body = await res.json() as { error?: string };
+      const body = await res.json() as { error?: string; code?: string };
       if (body?.error) message = body.error;
+      if (typeof body?.code === "string") code = body.code;
     } catch { /* ignore parse failure */ }
-    throw new Error(message);
+    const retryAfter = Number(res.headers.get("Retry-After"));
+    throw new ApiError(message, res.status, Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : null, code);
   }
   return res.json() as Promise<T>;
 }
@@ -82,6 +97,17 @@ export async function fetchUsers() {
 export async function fetchAssets(moderation?: string) {
   const query = moderation ? `?moderation=${encodeURIComponent(moderation)}` : "";
   return api<{ assets: Asset[] }>("GET", `/api/admin/assets${query}`);
+}
+
+export async function fetchUploadCapabilities() {
+  return api<{ originalUploads: boolean }>("GET", "/api/upload-capabilities");
+}
+
+export async function submitAssetForm(
+  assetId: string,
+  form: { slug: string; type: string; description: string; priority: string },
+) {
+  return api<unknown>("POST", `/api/assets/${encodeURIComponent(assetId)}/form`, form);
 }
 
 export async function fetchMyAssets() {

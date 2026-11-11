@@ -4,11 +4,19 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const prismaMock = { clip: { findMany: vi.fn() } };
+const prismaMock = { clip: { findMany: vi.fn(), count: vi.fn() } };
 vi.mock('../lib/prisma.js', () => ({ default: prismaMock }));
 
 let app;
 let root;
+const user = { id: 'user-1', role: 'USER', companyCode: null };
+const authorized = { authorization: 'Bearer valid' };
+const authenticate = vi.fn(async (request, reply) => {
+    if (request.headers.authorization !== authorized.authorization) {
+        return reply.status(401).send({ error: 'Unauthorized' });
+    }
+    request.user = user;
+});
 const active = {
     asset: { moderation: 'ACTIVE', mediaPlaybackReset: false, mediaCreateOperationId: null },
 };
@@ -19,12 +27,14 @@ beforeAll(async () => {
     await symlink(path.join(root, 'video file.mp4'), path.join(root, 'alias.mp4'));
     app = Fastify({ logger: false });
     const { default: localUploadRoutes } = await import('../routes/local-uploads.js');
-    await app.register(localUploadRoutes, { root });
+    await app.register(localUploadRoutes, { root, authenticate });
 });
 
 beforeEach(() => {
     prismaMock.clip.findMany.mockReset();
     prismaMock.clip.findMany.mockResolvedValue([active]);
+    prismaMock.clip.count.mockReset();
+    prismaMock.clip.count.mockResolvedValue(1);
 });
 
 afterAll(async () => {
@@ -36,13 +46,42 @@ afterAll(async () => {
 
 describe('legacy local upload access', () => {
     it('serves a known active file without caching', async () => {
-        const response = await app.inject({ method: 'GET', url: '/uploads/video%20file.mp4' });
+        const response = await app.inject({ method: 'GET', url: '/uploads/video%20file.mp4', headers: authorized });
         expect(response.statusCode).toBe(200);
         expect(response.body).toBe('video-content');
         expect(response.headers['cache-control']).toBe('no-store');
         expect(prismaMock.clip.findMany).toHaveBeenCalledWith(expect.objectContaining({
             where: { storageUrl: '/uploads/video file.mp4' },
         }));
+        expect(prismaMock.clip.count).toHaveBeenCalledWith({
+            where: { storageUrl: '/uploads/video file.mp4', asset: { userId: user.id } },
+        });
+    });
+
+    it('requires authentication before checking paths or the database', async () => {
+        for (const url of ['/uploads/video%20file.mp4', '/uploads/missing.mp4']) {
+            const response = await app.inject({ method: 'GET', url });
+            expect(response.statusCode).toBe(401);
+            expect(response.body).not.toContain('video-content');
+        }
+        expect(prismaMock.clip.findMany).not.toHaveBeenCalled();
+    });
+
+    it('hides active files outside the caller scope', async () => {
+        prismaMock.clip.count.mockResolvedValueOnce(0);
+        const response = await app.inject({
+            method: 'GET', url: '/uploads/video%20file.mp4', headers: authorized,
+        });
+        expect(response.statusCode).toBe(404);
+        expect(response.body).not.toContain('video-content');
+    });
+
+    it('refuses registration without an authentication handler', async () => {
+        const { default: localUploadRoutes } = await import('../routes/local-uploads.js');
+        const unauthenticated = Fastify({ logger: false });
+        await expect(unauthenticated.register(localUploadRoutes, { root }).ready())
+            .rejects.toThrow('authentication handler');
+        await unauthenticated.close();
     });
 
     it.each([
@@ -53,27 +92,27 @@ describe('legacy local upload access', () => {
         ['unknown playback creation', { ...active.asset, mediaCreateOperationId: 'operation-1' }],
     ])('blocks %s media even when the file exists', async (_label, asset) => {
         prismaMock.clip.findMany.mockResolvedValueOnce([{ asset }]);
-        const response = await app.inject({ method: 'GET', url: '/uploads/video%20file.mp4' });
+        const response = await app.inject({ method: 'GET', url: '/uploads/video%20file.mp4', headers: authorized });
         expect(response.statusCode).toBe(404);
         expect(response.body).not.toContain('video-content');
     });
 
     it('blocks unreferenced files and a file shared with a moderated asset', async () => {
         prismaMock.clip.findMany.mockResolvedValueOnce([]);
-        expect((await app.inject({ method: 'GET', url: '/uploads/video%20file.mp4' })).statusCode).toBe(404);
+        expect((await app.inject({ method: 'GET', url: '/uploads/video%20file.mp4', headers: authorized })).statusCode).toBe(404);
         prismaMock.clip.findMany.mockResolvedValueOnce([active, { asset: { ...active.asset, moderation: 'PAUSED' } }]);
-        expect((await app.inject({ method: 'GET', url: '/uploads/video%20file.mp4' })).statusCode).toBe(404);
+        expect((await app.inject({ method: 'GET', url: '/uploads/video%20file.mp4', headers: authorized })).statusCode).toBe(404);
     });
 
     it('blocks symlink aliases and path traversal', async () => {
-        expect((await app.inject({ method: 'GET', url: '/uploads/alias.mp4' })).statusCode).toBe(404);
-        const traversal = await app.inject({ method: 'GET', url: '/uploads/%2e%2e/video%20file.mp4' });
+        expect((await app.inject({ method: 'GET', url: '/uploads/alias.mp4', headers: authorized })).statusCode).toBe(404);
+        const traversal = await app.inject({ method: 'GET', url: '/uploads/%2e%2e/video%20file.mp4', headers: authorized });
         expect([403, 404]).toContain(traversal.statusCode);
     });
 
     it('fails closed when the database is unavailable', async () => {
         prismaMock.clip.findMany.mockRejectedValueOnce(new Error('database unavailable'));
-        const response = await app.inject({ method: 'GET', url: '/uploads/video%20file.mp4' });
+        const response = await app.inject({ method: 'GET', url: '/uploads/video%20file.mp4', headers: authorized });
         expect(response.statusCode).toBe(500);
         expect(response.body).not.toContain('video-content');
     });
