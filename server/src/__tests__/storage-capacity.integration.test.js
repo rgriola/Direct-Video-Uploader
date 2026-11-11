@@ -108,6 +108,16 @@ integration("storage capacity against PostgreSQL and local storage", () => {
     });
   }
 
+  function routeApp() {
+    const server = Fastify({ logger: false });
+    server.decorate("authenticate", async request => { request.user = { id: ownerId }; });
+    server.decorate("io", {
+      to: () => ({ emit: vi.fn() }),
+      in: () => ({ fetchSockets: async () => [] }),
+    });
+    return server;
+  }
+
   async function assetWithClip() {
     const assetId = randomUUID();
     const clipId = randomUUID();
@@ -693,8 +703,7 @@ integration("storage capacity against PostgreSQL and local storage", () => {
   });
 
   it("reports retryable capacity failures over HTTP without blocking reads or aborts", async () => {
-    app = Fastify({ logger: false });
-    app.decorate("authenticate", async request => { request.user = { id: ownerId }; });
+    app = routeApp();
     await app.register(uploadSessionRoutes, {
       db: prisma,
       storage,
@@ -734,8 +743,7 @@ integration("storage capacity against PostgreSQL and local storage", () => {
   });
 
   it.each(["ENOSPC", "EDQUOT"])("returns 507 for %s while keeping status and abort available", async code => {
-    app = Fastify({ logger: false });
-    app.decorate("authenticate", async request => { request.user = { id: ownerId }; });
+    app = routeApp();
     await app.register(uploadSessionRoutes, {
       db: prisma,
       storage,
