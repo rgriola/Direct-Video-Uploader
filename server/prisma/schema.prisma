@@ -42,6 +42,7 @@ model User {
   assets       Asset[]
   messages     ChatMessage[]
   uploadSessions UploadSession[]
+  originalUploadIntents OriginalUploadIntent[]
 
   @@map("users")
 }
@@ -67,6 +68,9 @@ model Asset {
   clipCount        Int         @default(0) @map("clip_count")
   totalDuration    Int         @default(0) @map("total_duration_seconds")
   status           AssetStatus @default(UPLOADING)
+  uploadMode       AssetUploadMode? @map("upload_mode")
+  originalIntentSizeBytes Int? @map("original_intent_size_bytes")
+  originalIntentSha256 String? @map("original_intent_sha256") @db.VarChar(64)
   moderation       AssetModeration @default(ACTIVE)
   moderatedAt      DateTime?   @map("moderated_at")
   moderatedById    String?     @map("moderated_by_id")
@@ -85,6 +89,7 @@ model Asset {
   user         User          @relation(fields: [userId], references: [id])
   clips        Clip[]
   uploadSessions UploadSession[]
+  originalUploadIntent OriginalUploadIntent?
   muxAssetReferences MuxAssetReference[]
   originalReadLeases MuxOriginalReadLease[]
   formResponse FormResponse?
@@ -104,11 +109,29 @@ enum AssetStatus {
   ERROR
 }
 
+enum AssetUploadMode {
+  MUX
+  ORIGINAL
+}
+
 enum AssetModeration {
   ACTIVE
   PAUSED
   FLAGGED_FOR_REMOVAL
   REMOVED
+}
+
+model OriginalUploadIntent {
+  userId          String   @map("user_id")
+  clientRequestId String   @map("client_request_id") @db.Uuid
+  assetId         String?  @unique @map("asset_id")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  user  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  asset Asset? @relation(fields: [assetId], references: [id], onDelete: SetNull)
+
+  @@id([userId, clientRequestId])
+  @@map("original_upload_intents")
 }
 
 enum MediaSyncState {
