@@ -838,10 +838,12 @@ sequenceDiagram
   for manual review rather than deleting them.
 - [x] Exercise PostgreSQL/local-filesystem recovery, moderation serialization,
   partial failures, capacity leases, bounded inventory, and Mux handoff settings.
+- [x] Detect failed or stalled cleanup cycles through the opt-in dashboard and Slack
+  monitoring when both cleanup and monitoring are enabled.
 - [ ] Verify rollout, actual storage/mount behavior, operator log review, and
   recovery on an isolated environment before enabling it on the home backend.
-- [ ] Add independent failure and freshness alerts; the worker currently logs
-  outcomes only and cannot report while the server is down.
+- [ ] Configure and verify alert delivery and add an independent check for a stopped
+  server or host. Review deferred sessions and untracked directories separately.
 
 ### 4.2 Upload Protocol (Why Parts)
 
