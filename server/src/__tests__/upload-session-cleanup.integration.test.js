@@ -4,11 +4,14 @@ import os from 'node:os';
 import path from 'node:path';
 import { PassThrough } from 'node:stream';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createUploadSessionCleanupWorker, startUploadSessionCleanup } from '../jobs/upload-session-cleanup.js';
+import {
+    createUploadSessionCleanupWorker, scheduleUploadSessionCleanup, startUploadSessionCleanup,
+} from '../jobs/upload-session-cleanup.js';
 import { createLocalStorageDriver } from '../lib/storage/local-driver.js';
 import { createStorageCapacity, SESSION_OVERHEAD_BYTES } from '../lib/storage/capacity.js';
 import { getUploadSessionCleanupConfig } from '../lib/upload-session-cleanup-config.js';
 import { createUploadSessionService } from '../lib/upload-sessions.js';
+import { createMonitoringService } from '../lib/monitoring.js';
 import {
     acquireIntegrationDatabaseLock, INTEGRATION_SETUP_TIMEOUT_MS, waitForBlockedQuery,
 } from './helpers/database-lock.js';
@@ -633,6 +636,37 @@ integration('upload session cleanup against PostgreSQL and local storage', () =>
         expect((await prisma.uploadSession.findUnique({ where: { id: session.id } })).status).toBe('OPEN');
         await writeFile(identityPath, identity);
         expect((await worker.runOnce()).sessions.processed).toBe(1);
+    });
+
+    it('reports and clears a real cleanup failure through monitoring', async () => {
+        const { session, content } = await trackedUpload('monitored storage identity');
+        const identityPath = path.join(storageRoot, '.dvu-storage-id');
+        const identity = await readFile(identityPath, 'utf8');
+        await writeFile(identityPath, `${randomUUID()}\n`);
+        await expireAtCurrentTime(session);
+        const monitoring = createMonitoringService();
+        const stop = scheduleUploadSessionCleanup({
+            worker: createWorker(), log, monitoring, intervalMs: 200,
+        });
+        try {
+            await waitFor(() => log.error.mock.calls.some(
+                ([, message]) => message === 'Original upload cleanup failed; recovery is required',
+            ));
+            await monitoring.runOnce();
+            expect(monitoring.snapshot().checks[0]).toMatchObject({
+                id: 'original-upload-cleanup', status: 'critical',
+            });
+            expect(await readFile(path.join(sessionPath(session), 'parts', '00001'))).toEqual(content);
+
+            await writeFile(identityPath, identity);
+            await waitFor(async () => {
+                await monitoring.runOnce();
+                return monitoring.snapshot().checks[0]?.status === 'ok';
+            });
+            expect((await prisma.uploadSession.findUnique({ where: { id: session.id } })).status).toBe('EXPIRED');
+        } finally {
+            await stop();
+        }
     });
 
     it('does not create a missing storage root during inventory', async () => {
