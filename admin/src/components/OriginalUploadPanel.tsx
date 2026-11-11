@@ -61,6 +61,11 @@ export function OriginalUploadPanel() {
   const controllers = useRef(new Map<string, AbortController>());
   const runs = useRef(new Map<string, Promise<void>>());
   const started = useRef(new Set<string>());
+  const itemNames = useRef(new Map<string, HTMLParagraphElement>());
+  const fileInput = useRef<HTMLInputElement>(null);
+
+  // Action buttons disappear as an item changes state; keep keyboard focus on the item.
+  const focusItem = (key: string) => itemNames.current.get(key)?.focus();
 
   const update = useCallback((key: string, change: Partial<UploadItem>, onlyFrom?: ReadonlySet<ItemStatus>) => {
     setItems(current => current.map(item => item.key === key && (!onlyFrom || onlyFrom.has(item.status))
@@ -136,6 +141,7 @@ export function OriginalUploadPanel() {
   async function cancel(item: UploadItem) {
     const job = jobs.current.get(item.key);
     update(item.key, { status: "cancelling", message: undefined });
+    focusItem(item.key);
     controllers.current.get(item.key)?.abort();
     await runs.current.get(item.key);
     if (!job?.reservationRequested) {
@@ -158,12 +164,15 @@ export function OriginalUploadPanel() {
   function retry(item: UploadItem) {
     started.current.delete(item.key);
     update(item.key, { status: "queued", message: undefined });
+    focusItem(item.key);
   }
 
   function remove(item: UploadItem) {
     jobs.current.delete(item.key);
     started.current.delete(item.key);
+    itemNames.current.delete(item.key);
     setItems(current => current.filter(entry => entry.key !== item.key));
+    fileInput.current?.focus();
   }
 
   function onDrop(event: DragEvent) {
@@ -192,6 +201,7 @@ export function OriginalUploadPanel() {
         <label className="cursor-pointer text-(length:--text-sm)">
           <span className="font-semibold underline">Choose video files</span> or drop them here
           <input
+            ref={fileInput}
             type="file"
             accept="video/*"
             multiple
@@ -215,7 +225,15 @@ export function OriginalUploadPanel() {
             return (
               <li key={item.key} className="border-b border-(--border-subtle) pb-3 last:border-b-0">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <p className="min-w-0 truncate text-(length:--text-sm) font-semibold">{item.name}</p>
+                  <p
+                    ref={element => {
+                      if (element) itemNames.current.set(item.key, element);
+                    }}
+                    tabIndex={-1}
+                    className="min-w-0 truncate text-(length:--text-sm) font-semibold"
+                  >
+                    {item.name}
+                  </p>
                   <div className="flex gap-2">
                     {item.status === "failed" && (
                       <button type="button" className={buttonClass} onClick={() => retry(item)} aria-label={`Retry ${item.name}`}>

@@ -93,6 +93,7 @@ describe("original upload panel", () => {
     expect(screen.queryByRole("button", { name: "Remove clip.mp4" })).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "Retry clip.mp4" }));
+    expect(document.activeElement?.textContent).toBe("clip.mp4");
     await waitFor(() => expect(runs).toHaveLength(2));
     expect(runs[1].job).toBe(runs[0].job);
   });
@@ -119,7 +120,10 @@ describe("original upload panel", () => {
     fireEvent.click(screen.getByRole("button", { name: "Cancel second.mp4" }));
 
     expect(await screen.findByText("Nothing was sent to the server.")).toBeTruthy();
+    expect(document.activeElement?.textContent).toBe("second.mp4");
     expect(upload.cancel).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Remove second.mp4" }));
+    expect(document.activeElement).toBe(screen.getByLabelText(/Choose video files/));
     await act(async () => runs[0].resolve());
     expect(runs).toHaveLength(1);
   });
