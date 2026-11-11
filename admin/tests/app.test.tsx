@@ -159,6 +159,11 @@ async function respondToRequest(input: RequestInfo | URL, options?: RequestInit)
       return jsonResponse({ issues: [], hasMore: false });
     case "/clips/logout":
       return new Response(null, { status: 204 });
+    case "/api/assets/10005/form":
+      myAssets = myAssets.map(asset => asset.id === "10005"
+        ? { ...asset, formResponse: { id: "form-10005", slug: "City council" } }
+        : asset);
+      return jsonResponse({ formResponse: { id: "form-10005" } });
     default:
       throw new Error(`Unexpected request: ${input}`);
   }
@@ -249,6 +254,29 @@ describe("role-separated web application", () => {
     expect(screen.getByText("Playback is temporarily unavailable")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /Link pending/ }));
     expect(screen.getByText("Clip link is not available yet")).toBeTruthy();
+  });
+
+  it("lets an owner add a missing context form", async () => {
+    myAssets = [video("10005", "", { status: "PROCESSING", formResponse: null })];
+    renderApp();
+    await signIn();
+
+    fireEvent.click(await screen.findByRole("button", { name: /10005/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Save context" }));
+    expect(screen.getByText("Slug is required.")).toBeTruthy();
+    expect(requestPaths()).not.toContain("/api/assets/10005/form");
+
+    fireEvent.change(screen.getByLabelText("Slug"), { target: { value: "City council!" } });
+    fireEvent.change(screen.getByLabelText("Description"), { target: { value: "Budget vote" } });
+    fireEvent.click(screen.getByLabelText("High"));
+    fireEvent.click(screen.getByRole("button", { name: "Save context" }));
+
+    expect(await screen.findByText("City council")).toBeTruthy();
+    const formRequest = requests.find(({ path }) => path === "/api/assets/10005/form");
+    expect(JSON.parse(String(formRequest?.options?.body))).toEqual({
+      slug: "City council", type: "Raw", description: "Budget vote", priority: "High",
+    });
+    expect(screen.queryByRole("form", { name: "Context form" })).toBeNull();
   });
 
   it("offers original uploads only when the server enables them", async () => {

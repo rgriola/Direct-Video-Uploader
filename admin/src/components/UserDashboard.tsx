@@ -2,6 +2,7 @@ import { useAuth } from "@/auth/AuthProvider";
 import { useMyAssets, useUploadCapabilities } from "@/hooks/use-dashboard";
 import { AssetList } from "@/components/AssetList";
 import { OriginalUploadPanel } from "@/components/OriginalUploadPanel";
+import { submitAssetForm } from "@/lib/api";
 
 export function UserDashboard() {
   const { user } = useAuth();
@@ -28,6 +29,10 @@ export function UserDashboard() {
           viewerRole="USER"
           title="Your videos"
           emptyText="Your uploaded videos will appear here."
+          onSubmitContext={async (assetId, values) => {
+            await submitAssetForm(assetId, values);
+            await refetch();
+          }}
         />
       )}
     </section>

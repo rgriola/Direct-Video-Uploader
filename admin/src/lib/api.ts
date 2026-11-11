@@ -96,6 +96,13 @@ export async function fetchUploadCapabilities() {
   return api<{ originalUploads: boolean }>("GET", "/api/upload-capabilities");
 }
 
+export async function submitAssetForm(
+  assetId: string,
+  form: { slug: string; type: string; description: string; priority: string },
+) {
+  return api<unknown>("POST", `/api/assets/${encodeURIComponent(assetId)}/form`, form);
+}
+
 export async function fetchMyAssets() {
   return api<{ assets: Asset[] }>("GET", "/api/assets/mine");
 }
