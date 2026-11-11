@@ -17,13 +17,29 @@ nonisolated struct Asset: Codable, Identifiable, Sendable, Equatable {
     let userId: String?
     let updatedAt: String?
     var moderation: AssetModeration? = nil
+    var uploadMode: AssetUploadMode? = nil
 
     var isModerated: Bool {
         guard let moderation else { return false }
         return moderation != .active
     }
 
+    nonisolated enum AssetUploadMode: String, Codable, Sendable, Equatable {
+        case original = "ORIGINAL"
+        case mux = "MUX"
+        case unknown = "UNKNOWN"
+
+        init(from decoder: Decoder) throws {
+            let value = try decoder.singleValueContainer().decode(String.self)
+            self = Self(rawValue: value) ?? .unknown
+        }
+    }
+
     var permitsMediaActions: Bool { !isModerated }
+
+    var permitsDirectMuxRetry: Bool {
+        permitsMediaActions && uploadMode == .mux
+    }
 
     func needsUploadRecovery(at date: Date) -> Bool {
         guard permitsMediaActions else { return false }
@@ -113,6 +129,12 @@ nonisolated struct Clip: Codable, Identifiable, Sendable, Equatable {
 
 nonisolated struct CreateAssetRequest: Codable, Sendable {
     let fileName: String
+    let uploadMode: Asset.AssetUploadMode
+
+    init(fileName: String) {
+        self.fileName = fileName
+        self.uploadMode = .mux
+    }
 }
 
 nonisolated struct CreateAssetResponse: Codable, Sendable {

@@ -611,7 +611,7 @@ struct PendingFormRecovery {
         for scope: PendingFormScope,
         assetId: String? = nil,
         isCurrent: @MainActor () -> Bool,
-        requestForAsset: @MainActor (String) -> URLRequest
+        requestForAsset: @MainActor (String) throws -> URLRequest
     ) async throws -> Outcome {
         var skippedRecords: Set<UUID> = []
         var firstFailure: (any Error)?
@@ -622,7 +622,8 @@ struct PendingFormRecovery {
                 return .none
             }
             do {
-                let (data, response) = try await fetch(requestForAsset(record.form.assetId))
+                let request = try requestForAsset(record.form.assetId)
+                let (data, response) = try await fetch(request)
                 guard isCurrent() else { return .sessionChanged }
                 guard let currentRecord = try store.recoverable(record) else { continue }
                 guard let http = response as? HTTPURLResponse else {
@@ -750,6 +751,16 @@ struct PendingFormSubmission {
     }
 }
 
+@MainActor
+protocol VideoUploadTransfer {
+    func upload(
+        request: URLRequest, fileURL: URL, isCurrent: @MainActor () -> Bool,
+        validateBeforeTransfer: (@MainActor () throws -> Void)?,
+        onProgress: @escaping @MainActor (Double) -> Void,
+        onStart: @MainActor () -> Void
+    ) async throws -> (Data, URLResponse)
+}
+
 /// Handles multipart video file uploads with progress tracking.
 @MainActor
 @Observable
@@ -762,13 +773,16 @@ final class VideoUploadService: NSObject {
     private(set) var backgroundTransferStartCount = 0
 
     private let createTransport: @Sendable (URLRequest) async throws -> (Data, URLResponse)
+    private let transfer: (any VideoUploadTransfer)?
 
     init(
         createTransport: @escaping @Sendable (URLRequest) async throws -> (Data, URLResponse) = {
             try await RedirectSafeTransport.data(for: $0)
-        }
+        },
+        transfer: (any VideoUploadTransfer)? = nil
     ) {
         self.createTransport = createTransport
+        self.transfer = transfer
         super.init()
     }
     
@@ -792,9 +806,12 @@ final class VideoUploadService: NSObject {
         Log.debug("📤 [Mux] Requesting direct upload URL for asset: \(assetId)", logger: Log.upload)
         
         // Step 1: Ask server for a Mux direct upload URL (fast — just metadata)
-        guard let muxURL = URL(
-            string: "\(serverURL.absoluteString)/api/assets/\(assetId)/mux-upload"
-        ) else { throw UploadError.invalidResponse }
+        guard let identity = AuthServerIdentity.canonical(serverURL),
+              let muxURL = AuthServerIdentity.endpoint(
+                "/api/assets/\(assetId)/mux-upload", on: serverURL),
+              AuthServerIdentity.contains(muxURL, server: identity) else {
+            throw UploadError.sessionChanged
+        }
         var createRequest = URLRequest(url: muxURL)
         createRequest.httpMethod = "POST"
         createRequest.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
@@ -843,6 +860,12 @@ final class VideoUploadService: NSObject {
         guard let json = try JSONSerialization.jsonObject(with: createData) as? [String: Any],
               let uploadUrlString = json["uploadUrl"] as? String,
               let uploadUrl = URL(string: uploadUrlString),
+              let uploadComponents = URLComponents(url: uploadUrl, resolvingAgainstBaseURL: false),
+              uploadComponents.scheme?.lowercased() == "https",
+              let uploadHost = uploadComponents.host, !uploadHost.isEmpty,
+              uploadComponents.user == nil, uploadComponents.password == nil,
+              uploadComponents.fragment == nil,
+              uploadComponents.port.map({ (1...65535).contains($0) }) ?? true,
               let clipId = json["clipId"] as? String else {
             throw UploadError.invalidResponse
         }
@@ -856,9 +879,18 @@ final class VideoUploadService: NSObject {
             putRequest.setValue("\(fileSize)", forHTTPHeaderField: "Content-Length")
         }
         
-        let (_, putResponse) = try await uploadWithProgress(
-            request: putRequest, fileURL: fileURL, isCurrent: isCurrent,
-            validateBeforeTransfer: validateBeforeTransfer)
+        let putResponse: URLResponse
+        if let transfer {
+            (_, putResponse) = try await transfer.upload(
+                request: putRequest, fileURL: fileURL, isCurrent: isCurrent,
+                validateBeforeTransfer: validateBeforeTransfer,
+                onProgress: { [weak self] in self?.uploadProgress = $0 },
+                onStart: { self.backgroundTransferStartCount += 1 })
+        } else {
+            (_, putResponse) = try await uploadWithProgress(
+                request: putRequest, fileURL: fileURL, isCurrent: isCurrent,
+                validateBeforeTransfer: validateBeforeTransfer)
+        }
         try Task.checkCancellation()
         guard isCurrent() else { throw UploadError.sessionChanged }
         
@@ -962,7 +994,7 @@ nonisolated final class TaskCancellationBridge: Sendable {
 
 /// URLSession calls the delegate on its own serial queue; the response buffer is still
 /// behind a `Mutex` so the class is checked `Sendable`.
-private nonisolated final class UploadDelegate: NSObject, URLSessionTaskDelegate, URLSessionDataDelegate, Sendable {
+nonisolated final class UploadDelegate: NSObject, URLSessionTaskDelegate, URLSessionDataDelegate, Sendable {
     let onProgress: @Sendable (Double) -> Void
     let onComplete: @Sendable (Data?, URLResponse?, (any Error)?) -> Void
     
@@ -1008,6 +1040,7 @@ nonisolated struct MuxUploadResponse {
 
 nonisolated enum UploadError: LocalizedError {
     case invalidResponse
+    case unverifiedMode
     case serverError(Int, String)
     case fileNotFound
     case sessionChanged
@@ -1015,6 +1048,7 @@ nonisolated enum UploadError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .invalidResponse: return "Invalid server response"
+        case .unverifiedMode: return "The server couldn't verify the upload type."
         case .serverError(let code, let msg): return "Upload failed (HTTP \(code)): \(msg)"
         case .fileNotFound: return "Video file not found"
         case .sessionChanged: return "Your session changed. Sign in again before uploading."

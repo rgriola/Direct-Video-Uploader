@@ -215,6 +215,7 @@ final class ChatViewModel {
     private let pendingFormRecovery: PendingFormRecovery
     private let pendingFormSubmission: PendingFormSubmission
     private let httpTransport: @Sendable (URLRequest) async throws -> (Data, URLResponse)
+    private let videoTransfer: (any VideoUploadTransfer)?
     private let thumbnailGenerator: @Sendable (URL) async -> UIImage?
     private let photoAssociationStore: ScopedPHAssetIdentifierStore
     private let requestPhotoAddAccess: @Sendable () async -> Bool
@@ -284,6 +285,7 @@ final class ChatViewModel {
         httpTransport: @escaping @Sendable (URLRequest) async throws -> (Data, URLResponse) = {
             try await RedirectSafeTransport.data(for: $0)
         },
+        videoTransfer: (any VideoUploadTransfer)? = nil,
         thumbnailGenerator: @escaping @Sendable (URL) async -> UIImage? = {
             await StagedVideo.generateThumbnail(from: $0)
         },
@@ -312,6 +314,7 @@ final class ChatViewModel {
         self.pendingFormRecovery = PendingFormRecovery(store: pendingFormStore, fetch: httpTransport)
         self.pendingFormSubmission = PendingFormSubmission(store: pendingFormStore, transport: httpTransport)
         self.httpTransport = httpTransport
+        self.videoTransfer = videoTransfer
         self.thumbnailGenerator = thumbnailGenerator
         self.photoAssociationStore = photoAssociationStore
         self.requestPhotoAddAccess = requestPhotoAddAccess
@@ -334,6 +337,10 @@ final class ChatViewModel {
               auth.sessionGeneration == sessionGeneration,
               auth.token == sessionToken,
               ServerConfig.baseURL == sessionServerURL,
+              let serverIdentity = AuthServerIdentity.canonical(sessionServerURL),
+              auth.isCurrent(AuthenticatedSessionSnapshot(
+                  generation: sessionGeneration, token: sessionToken,
+                  userId: sessionScope.userId, server: serverIdentity)),
               let currentScope = PendingFormScope(userId: currentUser.id, serverURL: ServerConfig.baseURL)
         else { return false }
         return currentScope == sessionScope
@@ -1047,8 +1054,8 @@ final class ChatViewModel {
         guard let assetId = currentAssetId ?? archive.assetId else { return }
 
         let recoveryRevision = formPresentation.uploadRecoveryRevision(for: assetId)
-        let request = auth.authenticatedRequest(for: ServerConfig.assetURL(assetId))
         do {
+            let request = try auth.authenticatedRequest(for: ServerConfig.assetURL(assetId))
             let (data, response) = try await httpTransport(request)
             guard sessionIsCurrent,
                   pendingAssetCreation == nil,
@@ -1155,7 +1162,6 @@ final class ChatViewModel {
         details: [String: String]? = nil
     ) async {
         guard sessionIsCurrent else { return }
-        var request = auth.authenticatedRequest(for: ServerConfig.errorsURL, method: "POST")
         var body: [String: Any] = [
             "source": "ios",
             "category": category,
@@ -1165,6 +1171,7 @@ final class ChatViewModel {
         if let assetId { body["assetId"] = assetId }
         if let details { body["details"] = details }
         do {
+            var request = try auth.authenticatedRequest(for: ServerConfig.errorsURL, method: "POST")
             request.httpBody = try JSONSerialization.data(withJSONObject: body)
             let (_, response) = try await httpTransport(request)
             guard let http = response as? HTTPURLResponse else {
@@ -1260,9 +1267,7 @@ final class ChatViewModel {
         guard sessionIsCurrent, !Task.isCancelled else { return nil }
         let fileName = staged.fileName
         let fileURL = staged.tempFileURL
-        var request = auth.authenticatedRequest(for: ServerConfig.assetsURL, method: "POST")
         let body = CreateAssetRequest(fileName: fileName)
-        request.httpBody = try? JSONEncoder().encode(body)
 
         // Get actual file size before notifying server
         let fileSize: Int64 = {
@@ -1271,6 +1276,8 @@ final class ChatViewModel {
         }()
 
         do {
+            var request = try auth.authenticatedRequest(for: ServerConfig.assetsURL, method: "POST")
+            request.httpBody = try JSONEncoder().encode(body)
             let asset = try await withRetry(attempts: 3) { attempt in
                 guard self.sessionIsCurrent, !Task.isCancelled else { throw CancellationError() }
                 let (data, httpResponse) = try await self.httpTransport(request)
@@ -1289,6 +1296,7 @@ final class ChatViewModel {
             }
 
             guard sessionIsCurrent, !Task.isCancelled else { return nil }
+            guard asset.uploadMode == .mux else { throw UploadError.unverifiedMode }
             formPresentation.markUploadStarted(stageID: staged.id)
             let stageID = staged.id.uuidString
             messages.removeAll {
@@ -1338,6 +1346,12 @@ final class ChatViewModel {
                 return nil
             }
             let errorDesc = Log.describe(error)
+            if case UploadError.unverifiedMode = error,
+               activeUploadID == uploadID, stagedVideo?.id == staged.id {
+                appendErrorBubble(
+                    "The server couldn't confirm this upload's type. Update the server before retrying.",
+                    code: "IOS_UPLOAD_MODE_UNAVAILABLE")
+            }
             if activeUploadID != uploadID || stagedVideo?.id != staged.id
                 || isSelectingVideo || isProcessingVideo {
                 appendPreviousUploadFailure(
@@ -1364,7 +1378,7 @@ final class ChatViewModel {
         assetId: String, fileURL: URL, fileName: String, metadata: VideoMetadata, uploadID: UUID
     ) async -> MuxUploadResponse? {
         guard sessionIsCurrent, let token = sessionToken, !Task.isCancelled else { return nil }
-        let uploader = VideoUploadService(createTransport: httpTransport)
+        let uploader = VideoUploadService(createTransport: httpTransport, transfer: videoTransfer)
         if activeUploadID == uploadID {
             isUploading = true
             uploadProgress = 0
@@ -1439,10 +1453,9 @@ final class ChatViewModel {
             Log.error("⚠️ [Transcribe] Session changed before transcript save", logger: Log.transcription)
             return false
         }
-        let request = auth.authenticatedRequest(
-            for: ServerConfig.transcriptURL(assetId, clipId: clipId), method: "PATCH")
-
         do {
+            let request = try auth.authenticatedRequest(
+                for: ServerConfig.transcriptURL(assetId, clipId: clipId), method: "PATCH")
             try await TranscriptDelivery.send(
                 result, clipId: clipId, request: request, transport: httpTransport)
             guard sessionIsCurrent, !Task.isCancelled else { return false }
@@ -1820,7 +1833,10 @@ final class ChatViewModel {
 
     /// Cancel an in-progress upload.
     func cancelUpload() {
-        if let activeUploadID { uploadTasks[activeUploadID]?.cancel() }
+        if let activeUploadID {
+            uploadTasks[activeUploadID]?.cancel()
+            self.activeUploadID = nil
+        }
         isUploading = false
         uploadProgress = 0
         if let assetId = currentAssetId {
@@ -2084,9 +2100,8 @@ final class ChatViewModel {
         let pendingRecord = activePendingRecord.flatMap {
             $0.scope == scope && $0.form.assetId == assetId ? $0 : nil
         }
-        let request = auth.authenticatedRequest(for: ServerConfig.formURL(assetId), method: "POST")
-
         do {
+            let request = try auth.authenticatedRequest(for: ServerConfig.formURL(assetId), method: "POST")
             let outcome = try await pendingFormSubmission.submit(
                 formData: formData, request: request, pendingRecord: pendingRecord,
                 scope: scope, assetId: assetId,
@@ -2166,7 +2181,7 @@ final class ChatViewModel {
         messages.removeAll()
         // Tear down any existing connection/reconnect loop before connecting with fresh token
         ws.disconnect()
-        ws.connect(token: token)
+        ws.connect(token: token, isCurrent: { [weak self] in self?.sessionIsCurrent == true })
     }
 
     func disconnectWebSocket() {
@@ -2178,8 +2193,8 @@ final class ChatViewModel {
     func fetchAssetDetail(assetId: String) async {
         guard sessionIsCurrent, currentAssetId == assetId else { return }
         let recoveryRevision = formPresentation.uploadRecoveryRevision(for: assetId)
-        let request = auth.authenticatedRequest(for: ServerConfig.assetURL(assetId))
         do {
+            let request = try auth.authenticatedRequest(for: ServerConfig.assetURL(assetId))
             let (data, urlResponse) = try await httpTransport(request)
             guard sessionIsCurrent, currentAssetId == assetId,
                   pendingAssetCreation == nil,
@@ -2292,7 +2307,7 @@ final class ChatViewModel {
                 for: scope, assetId: key.assetId,
                 isCurrent: isCurrent,
                 requestForAsset: {
-                    self.auth.authenticatedRequest(for: ServerConfig.assetURL($0))
+                    try self.auth.authenticatedRequest(for: ServerConfig.assetURL($0))
                 })
             guard isCurrent() else { return }
             if case .ready(let record, let skippedFailures) = result {

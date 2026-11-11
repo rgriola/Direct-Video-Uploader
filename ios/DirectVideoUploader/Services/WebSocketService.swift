@@ -2,6 +2,45 @@
 import Foundation
 import Network
 import Observation
+
+@MainActor
+final class WebSocketRetryCoordinator {
+    private(set) var generation = UUID()
+    private var task: Task<Void, Never>?
+    private let sleep: @Sendable (Duration) async throws -> Void
+
+    init(sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }) {
+        self.sleep = sleep
+    }
+
+    func invalidate() {
+        generation = UUID()
+        task?.cancel()
+        task = nil
+    }
+
+    @discardableResult
+    func schedule(after delay: TimeInterval, action: @escaping @MainActor () -> Void) -> Task<Void, Never> {
+        task?.cancel()
+        let generation = generation
+        let sleep = sleep
+        let next = Task { [weak self] in
+            do {
+                try await sleep(.seconds(delay))
+            } catch is CancellationError {
+                return
+            } catch {
+                Log.error("WebSocket retry delay failed: \(Log.describe(error))", logger: Log.network)
+                return
+            }
+            guard !Task.isCancelled, let self, self.generation == generation else { return }
+            self.task = nil
+            action()
+        }
+        task = next
+        return next
+    }
+}
 import UIKit
 
 /// WebSocket service using native URLSessionWebSocketTask.
@@ -59,6 +98,7 @@ final class WebSocketService {
     // Network path monitor — recovers after max retries exhausted (1.3)
     private var pathMonitor: NWPathMonitor?
     private var monitorQueue: DispatchQueue?
+    private var monitorID: UUID?
 
     // Ping watchdog — detects zombie connections when server pings stop (C1)
     // Server sends Engine.IO pings every 20s with 25s timeout. If we don't
@@ -70,33 +110,44 @@ final class WebSocketService {
     private var connectTask: Task<Void, Never>?
     private let serverURLProvider: @MainActor () -> URL
     private let handshakeTransport: @Sendable (URLRequest) async throws -> (Data, URLResponse)
+    private var currentSession: (@MainActor () -> Bool)?
+    private let retryCoordinator: WebSocketRetryCoordinator
 
     init(
         serverURL: @escaping @MainActor () -> URL = { ServerConfig.wsURL },
         handshakeTransport: @escaping @Sendable (URLRequest) async throws -> (Data, URLResponse) = {
             try await RedirectSafeTransport.data(for: $0)
-        }
+        },
+        retryCoordinator: WebSocketRetryCoordinator = WebSocketRetryCoordinator()
     ) {
         self.serverURLProvider = serverURL
         self.handshakeTransport = handshakeTransport
+        self.retryCoordinator = retryCoordinator
     }
 
     // MARK: - Connect
 
     @discardableResult
-    func connect(token: String) -> Task<Void, Never>? {
+    func connect(
+        token: String, isCurrent: (@MainActor () -> Bool)? = nil
+    ) -> Task<Void, Never>? {
         guard state == .disconnected, !isReconnecting else {
             Log.debug("🔌 [WS] Already \(state)\(isReconnecting ? " (reconnecting)" : ""), skipping connect", logger: Log.network)
             return nil
         }
 
         let serverURL = serverURLProvider()
-        guard tokenServerURL == nil || tokenServerURL == serverURL else {
+        if let isCurrent { currentSession = isCurrent }
+        guard AuthServerIdentity.canonical(serverURL) != nil,
+              currentSession?() ?? true,
+              tokenServerURL == nil || tokenServerURL == serverURL else {
             Log.error("⚠️ [WS] Server changed during the authenticated session", logger: Log.network)
             disconnect()
             onConnectionLost?()
             return nil
         }
+        retryCoordinator.invalidate()
+        let connectionGeneration = retryCoordinator.generation
         self.token = token
         tokenServerURL = serverURL
         state = .connecting
@@ -106,37 +157,53 @@ final class WebSocketService {
 
         // Step 1: Socket.IO handshake via HTTP polling to get session ID
         let task = Task { @MainActor in
-            do {
-                try await performHandshake(token: token, serverURL: serverURL)
-            } catch {
-                guard !Task.isCancelled else { return }
-                guard self.token == token, serverURLProvider() == serverURL else {
+            defer {
+                if Task.isCancelled, retryCoordinator.generation == connectionGeneration {
                     disconnect()
-                    onConnectionLost?()
-                    return
                 }
-                Log.error("❌ [WS] Handshake failed: \(Log.describe(error))", logger: Log.network)
-                state = .disconnected
-                // Attempt reconnect on handshake failure too
-                reconnectAttempt += 1
-                guard reconnectAttempt <= maxReconnectAttempts else {
+            }
+            await withTaskCancellationHandler {
+                do {
+                    try await performHandshake(
+                        token: token, serverURL: serverURL, generation: connectionGeneration)
+                } catch {
+                    guard !Task.isCancelled else { return }
+                    guard retryCoordinator.generation == connectionGeneration else { return }
+                    guard self.token == token, serverURLProvider() == serverURL,
+                          self.currentSession?() ?? true else {
+                        disconnect()
+                        onConnectionLost?()
+                        return
+                    }
+                    Log.error("❌ [WS] Handshake failed: \(Log.describe(error))", logger: Log.network)
+                    state = .disconnected
+                    reconnectAttempt += 1
+                    guard reconnectAttempt <= maxReconnectAttempts else {
+                        isReconnecting = false
+                        startNetworkMonitor()
+                        onConnectionLost?()
+                        return
+                    }
+                    let delay = min(3.0 * pow(2.0, Double(reconnectAttempt - 1)), 60.0)
+                    Log.debug("🔄 [WS] Reconnect attempt \(reconnectAttempt)/\(maxReconnectAttempts) in \(delay)s", logger: Log.network)
+                    onReconnecting?(reconnectAttempt, maxReconnectAttempts)
+                    try? await Task.sleep(for: .seconds(delay))
+                    guard !Task.isCancelled else { return }
+                    guard retryCoordinator.generation == connectionGeneration else { return }
+                    guard self.token == token, serverURLProvider() == serverURL,
+                          self.currentSession?() ?? true else {
+                        disconnect()
+                        onConnectionLost?()
+                        return
+                    }
                     isReconnecting = false
-                    startNetworkMonitor()  // Watch for network return (1.3)
-                    onConnectionLost?()
-                    return
+                    connect(token: token)
                 }
-                let delay = min(3.0 * pow(2.0, Double(reconnectAttempt - 1)), 60.0)
-                Log.debug("🔄 [WS] Reconnect attempt \(reconnectAttempt)/\(maxReconnectAttempts) in \(delay)s", logger: Log.network)
-                onReconnecting?(reconnectAttempt, maxReconnectAttempts)
-                try? await Task.sleep(for: .seconds(delay))
-                guard !Task.isCancelled else { return }
-                guard self.token == token, serverURLProvider() == serverURL else {
-                    disconnect()
-                    onConnectionLost?()
-                    return
+            } onCancel: { [weak self] in
+                Task { @MainActor [weak self] in
+                    guard let self, self.retryCoordinator.generation == connectionGeneration else { return }
+                    self.disconnect()
                 }
-                isReconnecting = false
-                connect(token: token)
             }
         }
         connectTask = task
@@ -145,15 +212,18 @@ final class WebSocketService {
 
     // MARK: - Socket.IO Handshake
 
-    private func performHandshake(token: String, serverURL: URL) async throws {
-        guard let pollingURL = Self.socketURL(baseURL: serverURL, isWebSocket: false) else {
+    private func performHandshake(token: String, serverURL: URL, generation: UUID) async throws {
+        guard retryCoordinator.generation == generation, currentSession?() ?? true,
+              let pollingURL = Self.socketURL(baseURL: serverURL, isWebSocket: false) else {
             throw WebSocketError.handshakeFailed
         }
         var request = URLRequest(url: pollingURL)
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
 
         let (data, response) = try await handshakeTransport(request)
-        guard !Task.isCancelled, self.token == token, serverURLProvider() == serverURL else {
+        guard !Task.isCancelled, retryCoordinator.generation == generation,
+              self.token == token, serverURLProvider() == serverURL,
+              currentSession?() ?? true else {
             throw CancellationError()
         }
         guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
@@ -179,12 +249,15 @@ final class WebSocketService {
         self.sid = sid
 
         // Step 2: Upgrade to WebSocket
-        try upgradeToWebSocket(sid: sid, token: token, serverURL: serverURL)
+        try upgradeToWebSocket(
+            sid: sid, token: token, serverURL: serverURL, generation: generation)
     }
 
     // MARK: - WebSocket Upgrade
 
-    private func upgradeToWebSocket(sid: String, token: String, serverURL: URL) throws {
+    private func upgradeToWebSocket(
+        sid: String, token: String, serverURL: URL, generation: UUID
+    ) throws {
         guard let socketURL = Self.socketURL(
             baseURL: serverURL, isWebSocket: true, sid: sid) else {
             throw WebSocketError.handshakeFailed
@@ -204,7 +277,7 @@ final class WebSocketService {
         sendRaw("2probe", on: socket)
 
         // Listen for messages
-        listenForMessages(on: socket)
+        listenForMessages(on: socket, generation: generation)
     }
 
     static func socketURL(baseURL: URL, isWebSocket: Bool, sid: String? = nil) -> URL? {
@@ -227,27 +300,33 @@ final class WebSocketService {
 
     // MARK: - Listen
 
-    private func listenForMessages(on socket: URLSessionWebSocketTask) {
+    private func listenForMessages(on socket: URLSessionWebSocketTask, generation: UUID) {
         socket.receive { [weak self] result in
             Task { @MainActor [weak self] in
                 guard let self else { return }
-                // Ignore callbacks from stale sockets that were already replaced.
-                guard self.webSocket === socket else { return }
+                guard self.webSocket === socket,
+                      self.retryCoordinator.generation == generation else { return }
+                guard self.sessionIsCurrent else {
+                    self.disconnect()
+                    return
+                }
 
                 switch result {
                 case .success(let message):
                     switch message {
                     case .string(let text):
-                        self.handleEngineIOMessage(text)
+                        self.receiveEngineIOMessage(text, generation: generation)
                     case .data(let data):
                         if let text = String(data: data, encoding: .utf8) {
-                            self.handleEngineIOMessage(text)
+                            self.receiveEngineIOMessage(text, generation: generation)
                         }
                     @unknown default:
                         break
                     }
                     // Continue listening
-                    self.listenForMessages(on: socket)
+                    if self.webSocket === socket, self.retryCoordinator.generation == generation {
+                        self.listenForMessages(on: socket, generation: generation)
+                    }
 
                 case .failure(let error):
                     Log.error("❌ [WS] Receive error: \(Log.describe(error))", logger: Log.network)
@@ -265,18 +344,28 @@ final class WebSocketService {
                     let delay = min(3.0 * pow(2.0, Double(self.reconnectAttempt - 1)), 60.0)
                     Log.debug("🔄 [WS] Reconnect attempt \(self.reconnectAttempt)/\(self.maxReconnectAttempts) in \(delay)s", logger: Log.network)
                     self.onReconnecting?(self.reconnectAttempt, self.maxReconnectAttempts)
-                    try? await Task.sleep(for: .seconds(delay))
-                    guard self.webSocket == nil else { return }
-                    if let token = self.token {
-                        self.isReconnecting = false
-                        self.connect(token: token)
-                    }
+                    guard let token = self.token else { return }
+                    self.scheduleRetry(token: token, delay: delay)
                 }
             }
         }
     }
 
     // MARK: - Engine.IO Message Handling
+
+    private var sessionIsCurrent: Bool {
+        guard let tokenServerURL, serverURLProvider() == tokenServerURL else { return false }
+        return currentSession?() ?? true
+    }
+
+    func receiveEngineIOMessage(_ raw: String, generation: UUID) {
+        guard retryCoordinator.generation == generation else { return }
+        guard sessionIsCurrent else {
+            disconnect()
+            return
+        }
+        handleEngineIOMessage(raw)
+    }
 
     private func handleEngineIOMessage(_ raw: String) {
         guard !raw.isEmpty else { return }
@@ -470,6 +559,11 @@ final class WebSocketService {
     // MARK: - Raw Send
 
     private func sendRaw(_ text: String, on socket: URLSessionWebSocketTask? = nil) {
+        guard currentSession?() ?? true else {
+            Log.error("⚠️ [WS] Session changed before sending", logger: Log.network)
+            disconnect()
+            return
+        }
         guard let targetSocket = socket ?? webSocket else { return }
 
         targetSocket.send(.string(text)) { [weak self] error in
@@ -492,19 +586,30 @@ final class WebSocketService {
                     }
                     self.onReconnecting?(self.reconnectAttempt, self.maxReconnectAttempts)
                     let delay = min(3.0 * pow(2.0, Double(self.reconnectAttempt - 1)), 60.0)
-                    try? await Task.sleep(for: .seconds(delay))
-                    if let token = self.token {
-                        self.connect(token: token)
-                    }
+                    guard let token = self.token else { return }
+                    self.scheduleRetry(token: token, delay: delay)
                 }
             }
+        }
+    }
+
+    private func scheduleRetry(token: String, delay: TimeInterval) {
+        guard let serverURL = tokenServerURL else { return }
+        retryCoordinator.schedule(after: delay) { [weak self] in
+            guard let self, self.token == token, self.tokenServerURL == serverURL,
+                  self.serverURLProvider() == serverURL, self.currentSession?() ?? true,
+                  self.state == .disconnected, self.webSocket == nil else { return }
+            self.isReconnecting = false
+            self.connect(token: token)
         }
     }
 
     // MARK: - Foreground / Background (A1)
 
     /// Called when app returns to foreground — reset retries and reconnect immediately.
-    func reconnectFromForeground(token: String) {
+    func reconnectFromForeground(
+        token: String, isCurrent: (@MainActor () -> Bool)? = nil
+    ) {
         connectTask?.cancel()
         connectTask = nil
         reconnectAttempt = 0
@@ -513,11 +618,16 @@ final class WebSocketService {
         if state != .disconnected {
             cleanupConnection()
         }
-        connect(token: token)
+        connect(token: token, isCurrent: isCurrent)
     }
 
     /// Called when app enters background — graceful close without preventing reconnect.
     func backgroundDisconnect() {
+        retryCoordinator.invalidate()
+        connectTask?.cancel()
+        connectTask = nil
+        isReconnecting = false
+        stopNetworkMonitor()
         cleanupConnection()
     }
 
@@ -525,15 +635,20 @@ final class WebSocketService {
 
     /// Start watching for network restoration after max retries exhausted.
     private func startNetworkMonitor() {
-        guard pathMonitor == nil else { return }
+        guard pathMonitor == nil, let token else { return }
         let monitor = NWPathMonitor()
+        let monitorID = UUID()
+        let generation = retryCoordinator.generation
         let queue = DispatchQueue(label: "ws.network.monitor")
         monitorQueue = queue
         pathMonitor = monitor
+        self.monitorID = monitorID
 
         monitor.pathUpdateHandler = { [weak self] path in
             Task { @MainActor [weak self] in
-                guard let self, path.status == .satisfied, let token = self.token else { return }
+                guard let self, path.status == .satisfied,
+                      self.monitorID == monitorID, self.retryCoordinator.generation == generation,
+                      self.token == token, self.currentSession?() ?? true else { return }
                 Log.debug("🌐 [WS] Network restored — attempting reconnect", logger: Log.network)
                 self.reconnectAttempt = 0
                 self.isReconnecting = false
@@ -546,6 +661,7 @@ final class WebSocketService {
     }
 
     private func stopNetworkMonitor() {
+        monitorID = nil
         pathMonitor?.cancel()
         pathMonitor = nil
         monitorQueue = nil
@@ -596,6 +712,7 @@ final class WebSocketService {
     // MARK: - Disconnect
 
     func disconnect() {
+        retryCoordinator.invalidate()
         connectTask?.cancel()
         connectTask = nil
         reconnectAttempt = maxReconnectAttempts + 1  // Prevent auto-reconnect
@@ -606,6 +723,7 @@ final class WebSocketService {
         pendingQueue.removeAll()
         token = nil
         tokenServerURL = nil
+        currentSession = nil
         reconnectAttempt = 0
     }
 }

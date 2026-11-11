@@ -170,6 +170,7 @@ struct ArchiveRowView: View {
     @AccessibilityFocusState private var rowIsFocused: Bool
     @AccessibilityFocusState private var reuploadProgressIsFocused: Bool
     @AccessibilityFocusState private var reuploadActionIsFocused: Bool
+    @AccessibilityFocusState private var reuploadModeWarningIsFocused: Bool
     @AccessibilityFocusState private var repairActionIsFocused: Bool
     @AccessibilityFocusState private var addDetailsIsFocused: Bool
     @AccessibilityFocusState private var slackActionIsFocused: Bool
@@ -518,16 +519,32 @@ struct ArchiveRowView: View {
                             .foregroundStyle(Theme.secondaryText)
                             .fixedSize(horizontal: false, vertical: true)
                         case .failed:
-                            archiveButton(
-                                icon: "arrow.clockwise.circle.fill",
-                                label: "Re-upload (pick video)",
-                                color: Theme.errorText
-                            ) {
-                                beginReupload()
-                            }
-                            .accessibilityFocused($reuploadActionIsFocused)
-                            .task(id: restoreModalFocus) {
-                                focusReuploadActionIfRequested()
+                            if asset.permitsDirectMuxRetry {
+                                archiveButton(
+                                    icon: "arrow.clockwise.circle.fill",
+                                    label: "Re-upload (pick video)",
+                                    color: Theme.errorText
+                                ) {
+                                    beginReupload()
+                                }
+                                .accessibilityFocused($reuploadActionIsFocused)
+                                .task(id: restoreModalFocus) {
+                                    focusReuploadActionIfRequested()
+                                }
+                            } else {
+                                Label(reuploadModeWarning, systemImage: "exclamationmark.triangle.fill")
+                                    .font(.footnote.weight(.semibold))
+                                    .foregroundStyle(Theme.warningText)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                    .accessibilityFocused($reuploadModeWarningIsFocused)
+                                    .task(id: restoreModalFocus) {
+                                        guard restoreModalFocus == .reupload
+                                                || restoreModalFocus == .reuploadProgress
+                                                || (restoreModalFocus == .repairPhotos
+                                                    && !photoAssociationDamaged) else { return }
+                                        reuploadModeWarningIsFocused = true
+                                        onModalFocusRestored()
+                                    }
                             }
                         case .reuploading:
                             HStack(spacing: 12) {
@@ -705,6 +722,12 @@ struct ArchiveRowView: View {
         .onChange(of: assetSession?.scope) { _, _ in refreshPhotoAssociation() }
         .onChange(of: assetSession?.generation) { _, _ in refreshPhotoAssociation() }
         .onChange(of: assetSession?.serverURL) { _, _ in refreshPhotoAssociation() }
+        .onChange(of: asset.uploadMode) { previous, current in
+            if previous == .mux, current != .mux, isArchiveActive, !asset.isModerated,
+               isExpanded, reuploadActionIsFocused || reuploadProgressIsFocused {
+                onReuploadAnnouncement(reuploadModeWarning)
+            }
+        }
         .onChange(of: mediaTasks.associationRevision) { _, _ in
             let wasDamaged = photoAssociationDamaged
             refreshPhotoAssociation()
@@ -756,10 +779,11 @@ struct ArchiveRowView: View {
     }
 
     private func restoreModalFocusIfNeeded(_ target: ArchiveModalFocusTarget) {
-        if (target == .reupload && rowStatus == .failed)
+        if ((target == .reupload || target == .reuploadProgress)
+                && rowStatus == .failed && !asset.isModerated)
             || (target == .reuploadProgress && rowStatus == .reuploading)
-            || (target == .reuploadProgress && rowStatus == .failed)
-            || (target == .repairPhotos && (photoAssociationDamaged || rowStatus == .failed))
+            || (target == .repairPhotos && !asset.isModerated
+                && (photoAssociationDamaged || rowStatus == .failed))
             || (target == .slack && (rowStatus == .ready || rowStatus == .needsDetails)) {
             isExpanded = true
         } else {
@@ -818,6 +842,13 @@ struct ArchiveRowView: View {
 
     // MARK: - Re-upload
 
+    private var reuploadModeWarning: String {
+        if asset.uploadMode == .original {
+            return "This video uses original storage. Original-upload recovery isn't available in this version; it can't be retried as a Mux upload."
+        }
+        return "The upload type couldn't be verified. Refresh Archive or update the server before retrying."
+    }
+
     private func refreshPhotoAssociation() {
         photoAssociationDamaged = false
         guard let session = assetSession, session.isCurrent(auth) else { return }
@@ -838,6 +869,10 @@ struct ArchiveRowView: View {
         guard asset.permitsMediaActions else {
             onReuploadAnnouncement(
                 "This video is paused. Playback, sharing, and re-upload are unavailable.")
+            return
+        }
+        guard asset.permitsDirectMuxRetry else {
+            failReupload(reuploadModeWarning)
             return
         }
         guard !isReuploadingVideo, !hasActiveArchiveUpload, !hasActiveChatUpload else {
@@ -1274,9 +1309,8 @@ struct ArchiveDetailsSheet: View {
             recoveryReadFailed = true
             Log.error("⚠️ [Archive] Could not read saved recovery state: \(Log.describe(error))", logger: Log.media)
         }
-        let request = auth.authenticatedRequest(for: url, method: "POST")
-
         do {
+            let request = try auth.authenticatedRequest(for: url, method: "POST")
             let outcome = try await PendingFormSubmission(store: .shared).submit(
                 formData: formData, request: request, pendingRecord: pendingRecord,
                 scope: scope, assetId: asset.id, isCurrent: isCurrent)

@@ -1,5 +1,6 @@
 // May 10, 2026 - 1:51pm - GitHub Copilot (GPT-5.3-Codex)
 import SwiftUI
+import UIKit
 
 /// Login screen — phone number + PIN, matching the dark aesthetic.
 struct LoginView: View {
@@ -11,10 +12,12 @@ struct LoginView: View {
     @State private var showServerEditor = false
     @State private var serverURLDraft = ""
     @State private var isStartingLogin = false
+    @State private var loginTask: Task<Void, Never>?
     @FocusState private var focusedField: Field?
+    @AccessibilityFocusState private var errorFocused: Bool
 
     enum Field { case companyCode, phone, pin, serverURL }
-    private var isLoggingIn: Bool { isStartingLogin || auth.isLoading }
+    private var isLoggingIn: Bool { isStartingLogin || auth.isLoading || auth.isRestoringSession }
 
     var body: some View {
         ZStack {
@@ -22,194 +25,243 @@ struct LoginView: View {
             Theme.loginGradient
                 .ignoresSafeArea()
 
-            VStack(spacing: 0) {
-                Spacer()
+            GeometryReader { geometry in
+                ScrollView {
+                    VStack(spacing: 0) {
+                        Spacer()
 
-                // Logo & branding
-                VStack(spacing: Theme.space12) {
-                    Image("FixerLogo")
-                        .resizable()
-                        .scaledToFit()
-                        .frame(width: 200, height: 200)
+                        // Logo & branding
+                        VStack(spacing: Theme.space12) {
+                            Image("FixerLogo")
+                                .resizable()
+                                .scaledToFit()
+                                .frame(width: 200, height: 200)
 
-                    Text("Send. Confirm. Done.")
-                        .font(Theme.font13Medium)
-                        .foregroundStyle(Theme.primaryText)
-                }
-                .padding(.bottom, Theme.space24)
-
-                // Server URL indicator — tap to edit (above form so keyboard doesn't cover it)
-                serverURLIndicator
-                    .padding(.bottom, Theme.space24)
-                    .disabled(isLoggingIn)
-
-                // Form
-                VStack(spacing: Theme.space16) {
-                    // Company Code
-                    VStack(alignment: .leading, spacing: Theme.space4) {
-                        Text("COMPANY CODE")
-                            .font(Theme.font11Semibold)
-                            .foregroundStyle(Theme.secondaryText)
-                            .tracking(0.8)
-
-                        HStack {
-                            Image(systemName: "building.2.fill")
-                                .foregroundStyle(Theme.secondaryText)
-                                .font(Theme.icon13)
-
-                            TextField("ABC or ABCD", text: $companyCode)
-                                .textContentType(.organizationName)
-                                .autocorrectionDisabled()
-                                .textInputAutocapitalization(.never)
-                                .focused($focusedField, equals: .companyCode)
+                            Text("Send. Confirm. Done.")
+                                .font(Theme.font13Medium)
                                 .foregroundStyle(Theme.primaryText)
-                                .font(Theme.font16Medium)
-                                .onChange(of: companyCode) { _, new in
-                                    let letters = new.filter { $0.isLetter }
-                                    if letters != new || new.count > 4 {
-                                        companyCode = String(letters.prefix(4))
+                        }
+                        .padding(.bottom, Theme.space24)
+
+                        // Server URL indicator — tap to edit (above form so keyboard doesn't cover it)
+                        serverURLIndicator
+                            .padding(.bottom, Theme.space24)
+                            .disabled(isLoggingIn)
+
+                        // Form
+                        VStack(spacing: Theme.space16) {
+                            // Company Code
+                            VStack(alignment: .leading, spacing: Theme.space4) {
+                                Text("COMPANY CODE")
+                                    .font(Theme.font11Semibold)
+                                    .foregroundStyle(Theme.secondaryText)
+                                    .tracking(0.8)
+
+                                HStack {
+                                    Image(systemName: "building.2.fill")
+                                        .foregroundStyle(Theme.secondaryText)
+                                        .font(Theme.icon13)
+
+                                    TextField("ABC or ABCD", text: $companyCode)
+                                        .textContentType(.organizationName)
+                                        .autocorrectionDisabled()
+                                        .textInputAutocapitalization(.never)
+                                        .focused($focusedField, equals: .companyCode)
+                                        .foregroundStyle(Theme.primaryText)
+                                        .font(Theme.font16Medium)
+                                        .onChange(of: companyCode) { _, new in
+                                            let letters = new.filter { $0.isLetter }
+                                            if letters != new || new.count > 4 {
+                                                companyCode = String(letters.prefix(4))
+                                            }
+                                        }
+                                }
+                                .padding(.horizontal, Theme.space16)
+                                .padding(.vertical, 14)
+                                .background(Theme.glassOverlay)
+                                .clipShape(RoundedRectangle(cornerRadius: Theme.radiusMd))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: Theme.radiusMd)
+                                        .stroke(
+                                            focusedField == .companyCode ? Theme.blue : Theme.glassBorder,
+                                            lineWidth: 1)
+                                )
+                            }
+
+                            // Phone number
+                            VStack(alignment: .leading, spacing: Theme.space4) {
+                                Text("PHONE NUMBER")
+                                    .font(Theme.font11Semibold)
+                                    .foregroundStyle(Theme.secondaryText)
+                                    .tracking(0.8)
+
+                                HStack {
+                                    Image(systemName: "phone.fill")
+                                        .foregroundStyle(Theme.secondaryText)
+                                        .font(Theme.icon13)
+
+                                    TextField("5055034455", text: $phoneNumber)
+                                        .keyboardType(.numberPad)
+                                        .textContentType(.telephoneNumber)
+                                        .focused($focusedField, equals: .phone)
+                                        .foregroundStyle(Theme.primaryText)
+                                        .font(Theme.font16Medium)
+                                        .onChange(of: phoneNumber) { _, new in
+                                            let digits = new.filter { $0.isNumber }
+                                            if digits != new || new.count > 10 {
+                                                phoneNumber = String(digits.prefix(10))
+                                            }
+                                        }
+                                }
+                                .padding(.horizontal, Theme.space16)
+                                .padding(.vertical, 14)
+                                .background(Theme.glassOverlay)
+                                .clipShape(RoundedRectangle(cornerRadius: Theme.radiusMd))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: Theme.radiusMd)
+                                        .stroke(
+                                            focusedField == .phone ? Theme.blue : Theme.glassBorder,
+                                            lineWidth: 1)
+                                )
+                            }
+
+                            // PIN
+                            VStack(alignment: .leading, spacing: Theme.space4) {
+                                Text("PIN")
+                                    .font(Theme.font11Semibold)
+                                    .foregroundStyle(Theme.secondaryText)
+                                    .tracking(0.8)
+
+                                HStack {
+                                    Image(systemName: "lock.fill")
+                                        .foregroundStyle(Theme.secondaryText)
+                                        .font(Theme.icon13)
+
+                                    SecureField("1234", text: $pin)
+                                        .keyboardType(.numberPad)
+                                        .focused($focusedField, equals: .pin)
+                                        .foregroundStyle(Theme.primaryText)
+                                        .font(Theme.font16Medium)
+                                        .onChange(of: pin) { _, new in
+                                            let digits = new.filter { $0.isNumber }
+                                            if digits != new || new.count > 8 {
+                                                pin = String(digits.prefix(8))
+                                            }
+                                        }
+                                }
+                                .padding(.horizontal, Theme.space16)
+                                .padding(.vertical, 14)
+                                .background(Theme.glassOverlay)
+                                .clipShape(RoundedRectangle(cornerRadius: Theme.radiusMd))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: Theme.radiusMd)
+                                        .stroke(
+                                            focusedField == .pin ? Theme.blue : Theme.glassBorder,
+                                            lineWidth: 1)
+                                )
+                            }
+                        }
+                        .padding(.horizontal, Theme.space32)
+                        .disabled(isLoggingIn)
+
+                        // Error message
+                        if let error = auth.errorMessage {
+                            Text(error)
+                                .font(Theme.font13Regular)
+                                .foregroundStyle(Theme.red)
+                                .padding(.top, Theme.space12)
+                                .accessibilityFocused($errorFocused)
+                        }
+                        if auth.canRetrySavedSession {
+                            Button {
+                                let previousError = auth.errorMessage
+                                Task {
+                                    await auth.restoreSavedSession()
+                                    if let error = auth.errorMessage, error == previousError {
+                                        UIAccessibility.post(notification: .announcement, argument: error)
                                     }
                                 }
+                            } label: {
+                                Text("Retry saved session").tapTarget()
+                            }
+                            .disabled(auth.isRestoringSession || isLoggingIn)
+                            .padding(.top, Theme.space12)
                         }
-                        .padding(.horizontal, Theme.space16)
-                        .padding(.vertical, 14)
-                        .background(Theme.glassOverlay)
-                        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusMd))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: Theme.radiusMd)
-                                .stroke(
-                                    focusedField == .companyCode ? Theme.blue : Theme.glassBorder,
-                                    lineWidth: 1)
-                        )
-                    }
-
-                    // Phone number
-                    VStack(alignment: .leading, spacing: Theme.space4) {
-                        Text("PHONE NUMBER")
-                            .font(Theme.font11Semibold)
-                            .foregroundStyle(Theme.secondaryText)
-                            .tracking(0.8)
-
-                        HStack {
-                            Image(systemName: "phone.fill")
-                                .foregroundStyle(Theme.secondaryText)
-                                .font(Theme.icon13)
-
-                            TextField("5055034455", text: $phoneNumber)
-                                .keyboardType(.numberPad)
-                                .textContentType(.telephoneNumber)
-                                .focused($focusedField, equals: .phone)
-                                .foregroundStyle(Theme.primaryText)
-                                .font(Theme.font16Medium)
-                                .onChange(of: phoneNumber) { _, new in
-                                    let digits = new.filter { $0.isNumber }
-                                    if digits != new || new.count > 10 {
-                                        phoneNumber = String(digits.prefix(10))
-                                    }
+                        if auth.signOutRequiresRetry {
+                            Button {
+                                let previousError = auth.errorMessage
+                                auth.logout()
+                                if let error = auth.errorMessage, error == previousError {
+                                    UIAccessibility.post(notification: .announcement, argument: error)
+                                } else if auth.errorMessage == nil {
+                                    UIAccessibility.post(
+                                        notification: .announcement, argument: "Secure sign-out complete.")
                                 }
+                            } label: {
+                                Text("Retry secure sign-out").tapTarget()
+                            }
+                            .padding(.top, Theme.space12)
                         }
-                        .padding(.horizontal, Theme.space16)
-                        .padding(.vertical, 14)
-                        .background(Theme.glassOverlay)
-                        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusMd))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: Theme.radiusMd)
-                                .stroke(
-                                    focusedField == .phone ? Theme.blue : Theme.glassBorder,
-                                    lineWidth: 1)
-                        )
-                    }
 
-                    // PIN
-                    VStack(alignment: .leading, spacing: Theme.space4) {
-                        Text("PIN")
-                            .font(Theme.font11Semibold)
-                            .foregroundStyle(Theme.secondaryText)
-                            .tracking(0.8)
-
-                        HStack {
-                            Image(systemName: "lock.fill")
-                                .foregroundStyle(Theme.secondaryText)
-                                .font(Theme.icon13)
-
-                            SecureField("1234", text: $pin)
-                                .keyboardType(.numberPad)
-                                .focused($focusedField, equals: .pin)
-                                .foregroundStyle(Theme.primaryText)
-                                .font(Theme.font16Medium)
-                                .onChange(of: pin) { _, new in
-                                    let digits = new.filter { $0.isNumber }
-                                    if digits != new || new.count > 8 {
-                                        pin = String(digits.prefix(8))
-                                    }
+                        // Login button
+                        Button {
+                            startLogin()
+                        } label: {
+                            HStack {
+                                if isLoggingIn {
+                                    ProgressView()
+                                        .tint(Theme.white)
+                                        .scaleEffect(0.8)
+                                        .accessibilityLabel(
+                                            auth.isRestoringSession ? "Checking saved session" : "Signing in")
+                                } else {
+                                    Text("Sign In")
+                                        .font(Theme.font16Semibold)
                                 }
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, Theme.space16)
+                            .background(Theme.buttonGradient)
+                            .foregroundStyle(Theme.white)
+                            .clipShape(RoundedRectangle(cornerRadius: Theme.radiusLg))
                         }
-                        .padding(.horizontal, Theme.space16)
-                        .padding(.vertical, 14)
-                        .background(Theme.glassOverlay)
-                        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusMd))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: Theme.radiusMd)
-                                .stroke(
-                                    focusedField == .pin ? Theme.blue : Theme.glassBorder,
-                                    lineWidth: 1)
+                        .disabled(
+                            isLoggingIn || auth.signOutRequiresRetry || showServerEditor
+                                || companyCode.isEmpty || phoneNumber.isEmpty || pin.isEmpty
                         )
-                    }
-                }
-                .padding(.horizontal, Theme.space32)
-                .disabled(isLoggingIn)
+                        .opacity(
+                            showServerEditor || companyCode.isEmpty || phoneNumber.isEmpty || pin.isEmpty
+                                ? 0.5 : 1
+                        )
+                        .padding(.horizontal, Theme.space32)
+                        .padding(.top, 28)
 
-                // Error message
-                if let error = auth.errorMessage {
-                    Text(error)
-                        .font(Theme.font13Regular)
-                        .foregroundStyle(Theme.red)
-                        .padding(.top, Theme.space12)
-                }
+                        Spacer()
 
-                // Login button
-                Button {
-                    startLogin()
-                } label: {
-                    HStack {
-                        if isLoggingIn {
-                            ProgressView()
-                                .tint(Theme.white)
-                                .scaleEffect(0.8)
-                        } else {
-                            Text("Sign In")
-                                .font(Theme.font16Semibold)
+                        // Demo hint
+                        VStack(spacing: Theme.space4) {
+                            Text("Built With Love")
+                                .font(Theme.font11Semibold)
+                                .foregroundStyle(Theme.secondaryText)
+                            Text("")
+                                .font(Theme.mono11Medium)
+                                .foregroundStyle(Theme.secondaryText)
                         }
+                        .padding(.bottom, Theme.space32)
                     }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, Theme.space16)
-                    .background(Theme.buttonGradient)
-                    .foregroundStyle(Theme.white)
-                    .clipShape(RoundedRectangle(cornerRadius: Theme.radiusLg))
+                    .frame(maxWidth: .infinity, minHeight: geometry.size.height)
                 }
-                .disabled(
-                    isLoggingIn || showServerEditor
-                        || companyCode.isEmpty || phoneNumber.isEmpty || pin.isEmpty
-                )
-                .opacity(
-                    showServerEditor || companyCode.isEmpty || phoneNumber.isEmpty || pin.isEmpty
-                        ? 0.5 : 1)
-                .padding(.horizontal, Theme.space32)
-                .padding(.top, 28)
-
-                Spacer()
-
-                // Demo hint
-                VStack(spacing: Theme.space4) {
-                    Text("Built With Love")
-                        .font(Theme.font11Semibold)
-                        .foregroundStyle(Theme.secondaryText)
-                    Text("")
-                        .font(Theme.mono11Medium)
-                        .foregroundStyle(Theme.secondaryText)
-                }
-                .padding(.bottom, Theme.space32)
             }
+        }
+        .onChange(of: auth.errorMessage) { _, message in
+            if message != nil { errorFocused = true }
+        }
+        .onAppear {
+            if auth.errorMessage != nil { errorFocused = true }
+        }
+        .onDisappear {
+            loginTask?.cancel()
+            loginTask = nil
         }
         .onTapGesture {
             focusedField = nil
@@ -240,7 +292,7 @@ struct LoginView: View {
                             .foregroundStyle(Theme.secondaryText)
                             .font(Theme.icon11)
 
-                        TextField("http://192.168.0.111:3000", text: $serverURLDraft)
+                        TextField("https://server.example.com", text: $serverURLDraft)
                             .font(Theme.mono11Medium)
                             .foregroundStyle(Theme.primaryText)
                             .keyboardType(.URL)
@@ -285,7 +337,7 @@ struct LoginView: View {
                     .background(Theme.glassOverlay)
                     .clipShape(RoundedRectangle(cornerRadius: Theme.radiusSm))
                     .padding(.horizontal, Theme.space32)
-                    Text("Don't include passwords or tokens in the server URL.")
+                    Text("Use HTTPS. Don't include passwords or tokens in the server URL.")
                         .font(Theme.font11Regular)
                         .foregroundStyle(Theme.secondaryText)
                         .padding(.horizontal, Theme.space32)
@@ -334,7 +386,15 @@ struct LoginView: View {
     }
 
     private func saveServerURL() {
-        ServerConfig.setServerURL(serverURLDraft)
+        let trimmed = serverURLDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalized = trimmed.isEmpty || trimmed.contains("://") ? trimmed : "https://\(trimmed)"
+        guard normalized.isEmpty
+                || URL(string: normalized).flatMap(AuthServerIdentity.canonical) != nil else {
+            auth.errorMessage = AuthError.invalidServer.errorDescription
+            return
+        }
+        ServerConfig.setServerURL(normalized)
+        auth.errorMessage = nil
         showServerEditor = false
         focusedField = nil
     }
@@ -346,8 +406,11 @@ struct LoginView: View {
         let phone = phoneNumber
         let code = companyCode
         let submittedPIN = pin
-        Task {
-            defer { isStartingLogin = false }
+        loginTask = Task {
+            defer {
+                isStartingLogin = false
+                loginTask = nil
+            }
             await login(phone: phone, pin: submittedPIN, companyCode: code)
         }
     }
@@ -358,7 +421,7 @@ struct LoginView: View {
         do {
             try await auth.login(phoneNumber: phone, pin: pin, companyCode: companyCode)
         } catch {
-            if auth.sessionGeneration == generation {
+            if !Task.isCancelled, auth.sessionGeneration == generation {
                 auth.errorMessage = error.localizedDescription
             }
         }
