@@ -1,13 +1,20 @@
 # Experimental Upload Session API
 
-This server-only API stores a native original and can optionally hand it to Mux
+This experimental API stores a native original and can optionally hand it to Mux
 for playback. Upload sessions, the Mux handoff, and tracked-session cleanup are
 **separately disabled by default**. Existing clients continue using
-direct-to-Mux uploads. Do not enable upload intake or Mux handoff on the home
-server or in production yet: verified backups, proactive storage alerts,
+direct-to-Mux uploads unless they explicitly opt into a supported experimental
+client. Do not enable upload intake or Mux handoff on the home server or in
+production yet: verified backups, proactive storage alerts,
 cleanup validation, proxy-log verification, isolated real-Mux validation, and
 client integration remain open. The dev and production hostnames currently
 share the home backend; the dev hostname is not an isolated test environment.
+
+Apply the `20261110200000_original_upload_intents` migration before deploying
+this server version, even when upload sessions remain disabled: existing asset
+routes also read the new upload-mode fields. Do not enable store-first clients
+until all server instances run the new code; older instances do not enforce the
+new pre-session reservation.
 
 ## Isolated development configuration
 
@@ -179,9 +186,66 @@ attempt exists, even if the handoff is later disabled.
 ## Protocol
 
 All requests except the signed PUT require an active user's bearer JWT. Create
-an asset first with the existing `POST /api/assets` route. A new original
-session requires an owned, active, `UPLOADING` asset with no other clip. The
-server initializes its clip and reserves that asset for original uploads.
+an asset first, preferably with the idempotent original-upload route below. The
+existing `POST /api/assets` route remains available to legacy clients. A new
+original session requires an owned, active, `UPLOADING` asset with no other
+clip. The server initializes its clip and reserves that asset for original
+uploads.
+
+### 0. Reserve an original-upload asset
+
+`POST /api/assets/original-uploads` is registered only when upload sessions
+are enabled. Persist a new client-generated UUID, the chosen upload mode, and
+the staged original's size and SHA-256 before making this request, then reuse
+the same values after a lost response:
+
+```json
+{
+  "clientRequestId": "b9162fc4-5c45-4f6e-9de8-1c0b181a75fd",
+  "fileName": "native.mov",
+  "expectedSizeBytes": "15",
+  "expectedSha256": "77ececd9176974f1a4c22a09919d4c7c0f70d35042f2380f8eb4147bb5c5e2d2"
+}
+```
+
+The optional file name is a string or `null`. A new reservation returns 201;
+an equivalent retry returns 200 with the same `asset`, including its `id`,
+`mediasourceId`, `mediasourceUrl`, `originalFileName`, `status`, `clipCount`,
+`totalDuration`, and `uploadMode: "ORIGINAL"`. Request IDs are scoped to the
+authenticated owner. Reusing an ID with a different file name, size, or digest
+returns 409. Later sessions on the reservation must use the same size and
+digest. These fields describe unverified expected content until completion.
+After the asset is permanently deleted, the retained intent returns 410 rather
+than recreating it; the size and digest are deleted with the asset, and its
+nonsecret UUID tombstone is removed when the owner is deleted. This protection
+survives the administrative non-media reset.
+
+Reservation prevents direct-to-Mux upload on that asset even before a session
+exists. An original reservation without a session is protected from the
+automatic orphan sweep and administrative empty-asset cleanup for 24 hours.
+After that, the sweep can mark it `ERROR`, and administrative cleanup can
+remove it. A client must report this state and start a fresh job with a new
+request ID instead of claiming the old reservation was resumed.
+
+`GET /api/assets/:id` and `GET /api/assets/mine` expose `uploadMode` as
+`ORIGINAL`, `MUX`, or `UNKNOWN`, including while upload-session routes are
+disabled. The migration backfills mode from legacy original sessions, retained
+originals, and Mux upload identifiers. Missing or contradictory evidence
+produces `UNKNOWN`. Do not guess a mode or fall back to Mux for an unknown or
+original asset. Session IDs and private storage identifiers are not included
+in this mode-discovery data.
+
+For a new direct-Mux job, `POST /api/assets` accepts `uploadMode: "MUX"` and
+records it before a Mux upload is created. The response must confirm `MUX`
+before the client starts that upload. The field is optional for older clients;
+without it, a new asset has `UNKNOWN` mode until there is Mux evidence. An
+explicit `ORIGINAL` mode is rejected on this endpoint: use the content-bound
+reservation instead. Deploy this server change to all instances before
+releasing clients that require confirmation.
+
+If upload-session routes are disabled while a store-first job is pending, park
+the job and surface the unavailable service; do not silently switch it to the
+direct-Mux path. A changed client preference applies only to new jobs.
 
 ### 1. Create or retry
 
@@ -190,7 +254,16 @@ server initializes its clip and reserves that asset for original uploads.
 ```json
 {
   "expectedSizeBytes": "15",
-  "expectedSha256": "77ececd9176974f1a4c22a09919d4c7c0f70d35042f2380f8eb4147bb5c5e2d2"
+  "expectedSha256": "77ececd9176974f1a4c22a09919d4c7c0f70d35042f2380f8eb4147bb5c5e2d2",
+  "metadata": {
+    "capturedAt": "2026-01-15T12:00:00.000Z",
+    "duration": 12,
+    "resolution": "1920x1080",
+    "codec": "HEVC",
+    "orientation": "landscape",
+    "deviceModel": "iPhone",
+    "osVersion": "iOS"
+  }
 }
 ```
 
@@ -200,7 +273,26 @@ SHA-256 is required and is normalized to lowercase. A new session returns 201;
 an equivalent retry of an open or completed session returns 200. Different
 integrity metadata conflicts with an existing session (409). After abort or
 expiry, creating a new session reuses the reserved clip once previous cleanup
-has finished; a busy cleanup returns 409 and can be retried.
+has finished; a busy cleanup returns 409 and can be retried. If an asset has
+multiple recoverable original sessions, creation returns 409 instead of
+guessing which session to resume.
+
+An equivalent retry returns the verified completed session even if its asset
+has since moved to `PROCESSING`, `READY`, or `ERROR`; that session status does
+not imply Mux playback is ready. A moderated asset still rejects new or
+retried session writes.
+
+`metadata` is optional and uses the existing direct-Mux metadata fields. It may
+also include `gpsLat`, `gpsLon`, and `gpsAltitude`; clients must disclose that
+location can be included. Validated metadata and asset duration are saved
+when the first clip is created, using the existing default values when omitted.
+On a retry, nonempty supplied metadata fields
+must match the saved values or the server returns 409; omitted fields do not
+overwrite them. Creating the first clip emits the existing owner-scoped
+`upload:complete` and `form:request` events once, at upload start, not after
+the original has been verified. A disconnected client must recover a missing
+form from the asset/form state rather than assume it received the event. The
+clip's file size is not recorded as verified until successful completion.
 
 The response contains `uploadSession` with `id`, `assetId`, `clipId`, `status`,
 `expectedSizeBytes` (decimal string), `expectedSha256`, `partSizeBytes`
@@ -242,6 +334,15 @@ order. A successful response contains `part` with `partNumber`, `sizeBytes`
 idempotent. Concurrent writes to the same part, or retrying it with different
 bytes, return 409; abort and start a fresh session if a stored part is wrong.
 Interrupted streams do not publish partial parts.
+
+For experimental iOS background uploads, use file-backed tasks and a trusted,
+isolated HTTPS origin whose full proxy path has been verified not to redirect.
+Background sessions follow redirects automatically and iOS may delay a queued
+task until its five-minute URL expires. Reattach and reconcile both live tasks
+and authenticated server state before signing another request; do not cancel
+an already-started transfer solely because its URL has since expired. iOS may
+make system-managed copies of upload files, and force-quitting the app cancels
+outstanding background tasks until the user reopens it.
 
 ### 3. Resume, complete, or abort
 
@@ -319,8 +420,9 @@ debug logs.
 
 ## Moderation and storage safety
 
-An asset that has ever had an original session cannot use the legacy Mux-upload
-route, even after abort. To fall back to Mux, create a new asset. Pausing or
+An asset reserved for originals, or one that has ever had an original session,
+cannot use the legacy Mux-upload route, even after abort. To fall back to Mux,
+create a new asset. Pausing or
 flagging stops new part publication; an owner can still inspect a paused
 session, but flagged or removed sessions return 404. Permanent removal deletes
 the session parts and any completed original before reporting reconciliation as

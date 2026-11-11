@@ -1,6 +1,7 @@
 import AVFoundation
 import Foundation
 import Network
+import Observation
 import Photos
 import Synchronization
 import Testing
@@ -71,13 +72,15 @@ nonisolated private func testTranscriptReceipt(_ clipId: String = "clip-1") -> D
 }
 
 nonisolated private func testAssetData(
-    id: String, owner: String?, completed: Bool = false
+    id: String, owner: String?, completed: Bool = false,
+    uploadMode: Asset.AssetUploadMode? = .mux
 ) -> Data {
     let user = owner.map { #"{"id":"\#($0)","name":"Reporter"}"# } ?? "null"
     let form = completed ? #"{"id":"form-1"}"# : "null"
+    let mode = uploadMode.map { "\"\($0.rawValue)\"" } ?? "null"
     return Data(
         """
-        {"asset":{"id":"\(id)","status":"READY","user":\(user),"formResponse":\(form)}}
+        {"asset":{"id":"\(id)","status":"READY","uploadMode":\(mode),"user":\(user),"formResponse":\(form)}}
         """.utf8)
 }
 
@@ -210,7 +213,8 @@ private final class RecoveryResponseTestGate {
 
 @MainActor
 private final class SocketURLTestState {
-    var url = URL(string: "http://127.0.0.1:9/proxy")!
+    var url = URL(string: "https://127.0.0.1:9/proxy")!
+    var sessionIsCurrent = true
 }
 
 nonisolated private enum PhotoStoreTestError: Error {
@@ -464,8 +468,8 @@ struct ScopedPhotoAssociationTests {
 
     @Test
     func archiveOriginRejectsChangedAccountTokenOrServer() throws {
-        let auth = testAuth()
         let server = URL(string: "https://one.example.test")!
+        let auth = testAuth(serverURL: server)
         let origin = try #require(ArchiveSessionIdentity(auth: auth, serverURL: server))
         #expect(origin.isCurrent(auth, serverURL: server))
         #expect(!origin.isCurrent(auth, serverURL: URL(string: "https://two.example.test")!))
@@ -1325,8 +1329,8 @@ struct TranscriptDeliveryTests {
 }
 
 @MainActor
-private func testAuth(userId: String = "user-1") -> AuthService {
-    let auth = AuthService(storage: .memory)
+private func testAuth(userId: String = "user-1", serverURL: URL? = nil) -> AuthService {
+    let auth = AuthService(storage: .memory, serverURL: { serverURL ?? ServerConfig.baseURL })
     auth.token = "test-session-token"
     auth.currentUser = User(
         id: userId, phoneNumber: "5550100", name: "Reporter", email: nil, team: nil,
@@ -1446,6 +1450,44 @@ struct VideoLibraryAutoConfirmTests {
 }
 
 @MainActor
+private final class DelayedProgressTransfer: VideoUploadTransfer {
+    private let started = AsyncStream<Void>.makeStream()
+    private var completion: CheckedContinuation<Void, Never>?
+    private var progress: (@MainActor (Double) -> Void)?
+
+    func upload(
+        request: URLRequest, fileURL: URL, isCurrent: @MainActor () -> Bool,
+        validateBeforeTransfer: (@MainActor () throws -> Void)?,
+        onProgress: @escaping @MainActor (Double) -> Void,
+        onStart: @MainActor () -> Void
+    ) async throws -> (Data, URLResponse) {
+        try validateBeforeTransfer?()
+        progress = onProgress
+        onStart()
+        await withCheckedContinuation { continuation in
+            completion = continuation
+            started.continuation.yield(())
+        }
+        return (Data(), testHTTPResponse(200))
+    }
+
+    func waitForStart() async {
+        var iterator = started.stream.makeAsyncIterator()
+        _ = await iterator.next()
+    }
+
+    func publish(_ value: Double) {
+        progress?(value)
+    }
+
+    func finish() {
+        completion?.resume()
+        completion = nil
+        started.continuation.finish()
+    }
+}
+
+@MainActor
 private final class PhotoPreparationTestState {
     var events: [String] = []
     var saveCalls = 0
@@ -1460,6 +1502,7 @@ private final class PhotoPreparationTestState {
     var muxError: URLError?
     var saveError: (any Error)?
     var muxUploadURL: URL?
+    var createUploadMode: Asset.AssetUploadMode? = .mux
     var savedURL: URL?
     var savedFileName: String?
     var savedMetadata: VideoMetadata?
@@ -1505,7 +1548,7 @@ private final class PhotoPreparationTestState {
             try await onCreate?()
             let body = try JSONDecoder().decode(CreateAssetRequest.self, from: request.httpBody ?? Data())
             let id = (body.fileName as NSString).deletingPathExtension
-            return (testAssetData(id: id, owner: "user-1"), testHTTPResponse(200))
+            return (testAssetData(id: id, owner: "user-1", uploadMode: createUploadMode), testHTTPResponse(200))
         }
         if path.hasSuffix("/mux-upload") {
             events.append("mux")
@@ -1528,12 +1571,14 @@ private final class PhotoPreparationTestState {
     func model(
         fixture: FormTestFixture, auth: AuthService,
         formPresentation: FormPresentationState = FormPresentationState(),
-        associationStore: ScopedPHAssetIdentifierStore? = nil
+        associationStore: ScopedPHAssetIdentifierStore? = nil,
+        videoTransfer: (any VideoUploadTransfer)? = nil
     ) -> ChatViewModel {
         ChatViewModel(
             auth: auth, ws: WebSocketService(), formPresentation: formPresentation,
             pendingFormStore: fixture.store,
             httpTransport: { try await self.transport($0) },
+            videoTransfer: videoTransfer,
             thumbnailGenerator: { _ in nil },
             photoAssociationStore: associationStore
                 ?? ScopedPHAssetIdentifierStore(directory: fixture.directory),
@@ -2178,6 +2223,51 @@ struct PhotosFirstStagingTests {
         #expect(presentation.failedChatUploadAssetIDs.contains("active"))
     }
 
+    @Test(arguments: [nil, Asset.AssetUploadMode.original, .unknown])
+    func unverifiedNewAssetDoesNotStartMuxUpload(mode: Asset.AssetUploadMode?) async throws {
+        let fixture = try FormTestFixture()
+        defer { fixture.cleanup() }
+        let state = PhotoPreparationTestState()
+        state.createUploadMode = mode
+        let vm = state.model(fixture: fixture, auth: testAuth())
+        let (_, id) = try await stage(vm, fixture: fixture, name: "unverified.mov", trimmed: false)
+
+        await vm.confirmStagedUpload(id: id, transcribe: false)
+
+        #expect(state.createCalls == 1)
+        #expect(state.muxCalls == 0)
+        #expect(vm.messages.contains { $0.content.code == "IOS_UPLOAD_MODE_UNAVAILABLE" })
+        #expect(vm.stagedVideo?.id == id)
+    }
+
+    @Test
+    func cancelledUploadIgnoresProgressUntilItsTransferFinishes() async throws {
+        let fixture = try FormTestFixture()
+        defer { fixture.cleanup() }
+        let state = PhotoPreparationTestState()
+        state.muxUploadURL = URL(string: "https://uploads.example.test/video")!
+        let transfer = DelayedProgressTransfer()
+        let vm = state.model(fixture: fixture, auth: testAuth(), videoTransfer: transfer)
+        let (_, id) = try await stage(vm, fixture: fixture, name: "active.mov", trimmed: false)
+        let task = Task { await vm.confirmStagedUpload(id: id, transcribe: false) }
+        defer { transfer.finish(); task.cancel() }
+        await transfer.waitForStart()
+
+        transfer.publish(0.4)
+        for _ in 0..<50 where vm.uploadProgress != 0.4 {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        #expect(vm.uploadProgress == 0.4)
+        vm.cancelUpload()
+        transfer.publish(0.9)
+        try await Task.sleep(for: .milliseconds(250))
+        #expect(!vm.isUploading)
+        #expect(vm.uploadProgress == 0)
+
+        transfer.finish()
+        await task.value
+    }
+
     @Test
     func successfulBackgroundPutRetainsSourceUntilServerResponds() async throws {
         let fixture = try FormTestFixture()
@@ -2187,8 +2277,10 @@ struct PhotosFirstStagingTests {
         let baseURL = try await server.start()
         let state = PhotoPreparationTestState()
         let presentation = FormPresentationState()
-        state.muxUploadURL = baseURL.appendingPathComponent("upload")
-        let vm = state.model(fixture: fixture, auth: testAuth(), formPresentation: presentation)
+        state.muxUploadURL = URL(string: "https://uploads.example.test/video")!
+        let vm = state.model(
+            fixture: fixture, auth: testAuth(), formPresentation: presentation,
+            videoTransfer: LoopbackVideoUploadTransfer(endpoint: baseURL.appendingPathComponent("upload")))
         let scope = try #require(PendingFormScope(userId: "user-1", serverURL: ServerConfig.baseURL))
         let (url, id) = try await stage(vm, fixture: fixture, name: "actual-put.mov")
         let task = Task { await vm.confirmStagedUpload(id: id, transcribe: false) }
@@ -2595,11 +2687,11 @@ struct ArchiveRetryPhotoLinkTests {
         try store.save(assetId: "asset", association: old, for: fixture.scope)
         let snapshot = try store.snapshot(assetId: "asset", for: fixture.scope)
         let response = try JSONSerialization.data(withJSONObject: [
-            "uploadUrl": endpoint.absoluteString, "clipId": "clip", "muxUploadId": "test",
+            "uploadUrl": "https://uploads.example.test/video", "clipId": "clip", "muxUploadId": "test",
         ])
         let uploader = VideoUploadService(createTransport: { _ in
             (response, testHTTPResponse(200))
-        })
+        }, transfer: LoopbackVideoUploadTransfer(endpoint: endpoint))
         let owner = ArchiveMediaTaskOwner()
         var outcomeCount = 0
         let task = Task {
@@ -3046,12 +3138,12 @@ struct ArchiveRetryPhotoLinkTests {
         try store.save(assetId: "asset", association: old, for: fixture.scope)
         let snapshot = try store.snapshot(assetId: "asset", for: fixture.scope)
         let asset = try JSONDecoder().decode(
-            Asset.self, from: Data(#"{"id":"asset","status":"ERROR"}"#.utf8))
+            Asset.self, from: Data(#"{"id":"asset","uploadMode":"MUX","status":"ERROR"}"#.utf8))
         let changed = try JSONDecoder().decode(
-            Asset.self, from: Data(#"{"id":"asset","status":"PROCESSING"}"#.utf8))
+            Asset.self, from: Data(#"{"id":"asset","uploadMode":"MUX","status":"PROCESSING"}"#.utf8))
         let owner = ArchiveMediaTaskOwner()
-        let auth = testAuth()
         let serverURL = URL(string: "https://one.example.test")!
+        let auth = testAuth(serverURL: serverURL)
         let session = try #require(ArchiveSessionIdentity(auth: auth, serverURL: serverURL))
         #expect(session.scope == fixture.scope)
         let generation = session.generation
@@ -3112,6 +3204,31 @@ struct ArchiveRetryPhotoLinkTests {
 @MainActor
 @Suite(.timeLimit(.minutes(1)))
 struct ArchiveMediaTaskOwnerTests {
+    @Test
+    func retryRequiresVerifiedMuxModeAndInvalidatesWhenModeChanges() throws {
+        let owner = ArchiveMediaTaskOwner()
+        let scope = try #require(PendingFormScope(userId: "user-1", serverURL: ServerConfig.baseURL))
+        let generation = UUID()
+        let mux = try JSONDecoder().decode(
+            AssetDetailResponse.self, from: testAssetData(id: "asset", owner: "user-1")).asset
+        owner.updateAssetSnapshot([mux], scope: scope, sessionGeneration: generation)
+        let intent = try #require(owner.retryIntent(for: mux, scope: scope, sessionGeneration: generation))
+
+        let unverifiedModes: [Asset.AssetUploadMode?] = [.original, .unknown, nil]
+        for mode in unverifiedModes {
+            var changed = mux
+            changed.uploadMode = mode
+            owner.updateAssetSnapshot([changed], scope: scope, sessionGeneration: generation)
+            #expect(owner.retryIntent(for: changed, scope: scope, sessionGeneration: generation) == nil)
+            #expect(!intent.permits(changed))
+            #expect(!owner.intentIsCurrent(
+                intent, assetId: mux.id, scope: scope, sessionGeneration: generation))
+        }
+        owner.updateAssetSnapshot([mux], scope: scope, sessionGeneration: generation)
+        #expect(!owner.intentIsCurrent(
+            intent, assetId: mux.id, scope: scope, sessionGeneration: generation))
+    }
+
     @Test
     func retryIsClaimedPerAssetAndCancelledUntilItsReaderReturns() async throws {
         let owner = ArchiveMediaTaskOwner()
@@ -3266,14 +3383,14 @@ struct ArchiveMediaTaskOwnerTests {
         let decoder = JSONDecoder()
         let asset = try decoder.decode(
             Asset.self, from: Data(
-                #"{"id":"asset","status":"ERROR","clips":[{"id":"clip","codec":"h264"}]}"#.utf8))
+                #"{"id":"asset","uploadMode":"MUX","status":"ERROR","clips":[{"id":"clip","codec":"h264"}]}"#.utf8))
         let changed = try decoder.decode(
             Asset.self, from: Data(
-                #"{"id":"asset","status":"ERROR","clips":[{"id":"clip","codec":"hevc"}]}"#.utf8))
+                #"{"id":"asset","uploadMode":"MUX","status":"ERROR","clips":[{"id":"clip","codec":"hevc"}]}"#.utf8))
         let other = try decoder.decode(
-            Asset.self, from: Data(#"{"id":"other","status":"ERROR"}"#.utf8))
+            Asset.self, from: Data(#"{"id":"other","uploadMode":"MUX","status":"ERROR"}"#.utf8))
         let otherChanged = try decoder.decode(
-            Asset.self, from: Data(#"{"id":"other","status":"READY"}"#.utf8))
+            Asset.self, from: Data(#"{"id":"other","uploadMode":"MUX","status":"READY"}"#.utf8))
         let oldGate = PhotoPreparationGate<Bool>()
         let newGate = PhotoPreparationGate<Bool>()
         let oldFinished = AsyncStream<UUID>.makeStream()
@@ -3378,9 +3495,9 @@ struct ArchiveMediaTaskOwnerTests {
         let scope = try #require(PendingFormScope(userId: "user-1", serverURL: ServerConfig.baseURL))
         let generation = UUID()
         let asset = try JSONDecoder().decode(
-            Asset.self, from: Data(#"{"id":"asset","status":"ERROR"}"#.utf8))
+            Asset.self, from: Data(#"{"id":"asset","uploadMode":"MUX","status":"ERROR"}"#.utf8))
         let changed = try JSONDecoder().decode(
-            Asset.self, from: Data(#"{"id":"asset","status":"UPLOADING"}"#.utf8))
+            Asset.self, from: Data(#"{"id":"asset","uploadMode":"MUX","status":"UPLOADING"}"#.utf8))
         let replacementGate = PhotoPreparationGate<Bool>()
         let oldFinished = AsyncStream<UUID>.makeStream()
         defer { replacementGate.finish(true); owner.cancelAll() }
@@ -3430,9 +3547,9 @@ struct ArchiveMediaTaskOwnerTests {
         let generation = UUID()
         let nextGeneration = UUID()
         let asset = try JSONDecoder().decode(
-            Asset.self, from: Data(#"{"id":"asset","status":"ERROR"}"#.utf8))
+            Asset.self, from: Data(#"{"id":"asset","uploadMode":"MUX","status":"ERROR"}"#.utf8))
         let changed = try JSONDecoder().decode(
-            Asset.self, from: Data(#"{"id":"asset","status":"PROCESSING"}"#.utf8))
+            Asset.self, from: Data(#"{"id":"asset","uploadMode":"MUX","status":"PROCESSING"}"#.utf8))
         let gate = PhotoPreparationGate<Bool>()
         let finished = AsyncStream<UUID>.makeStream()
         defer { gate.finish(true); owner.cancelAll() }
@@ -3493,9 +3610,9 @@ struct ArchiveMediaTaskOwnerTests {
         let scope = try #require(PendingFormScope(userId: "user-1", serverURL: ServerConfig.baseURL))
         let generation = UUID()
         let asset = try JSONDecoder().decode(
-            Asset.self, from: Data(#"{"id":"asset","status":"ERROR"}"#.utf8))
+            Asset.self, from: Data(#"{"id":"asset","uploadMode":"MUX","status":"ERROR"}"#.utf8))
         let changed = try JSONDecoder().decode(
-            Asset.self, from: Data(#"{"id":"asset","status":"READY"}"#.utf8))
+            Asset.self, from: Data(#"{"id":"asset","uploadMode":"MUX","status":"READY"}"#.utf8))
         let gate = PhotoPreparationGate<Bool>()
         let finished = AsyncStream<UUID>.makeStream()
         defer { gate.finish(true); owner.cancelAll() }
@@ -3576,7 +3693,7 @@ struct ArchiveMediaTaskOwnerTests {
                 Asset.self,
                 from: Data(
                     """
-                    {"id":"asset","status":"\(status)",
+                    {"id":"asset","uploadMode":"MUX","status":"\(status)",
                      "clips":[{"id":"clip","codec":"\(codec)"}]}
                     """.utf8))
         }
@@ -3627,10 +3744,10 @@ struct ArchiveMediaTaskOwnerTests {
         let generation = UUID()
         let asset = try JSONDecoder().decode(
             Asset.self, from: Data(
-                #"{"id":"asset","status":"UPLOADING","clips":[{"id":"clip","muxUploadId":"upload"}]}"#.utf8))
+                #"{"id":"asset","uploadMode":"MUX","status":"UPLOADING","clips":[{"id":"clip","muxUploadId":"upload"}]}"#.utf8))
         let completed = try JSONDecoder().decode(
             Asset.self, from: Data(
-                #"{"id":"asset","status":"UPLOADING","clips":[{"id":"clip","muxUploadId":"upload","muxAssetId":"mux-asset"}]}"#.utf8))
+                #"{"id":"asset","uploadMode":"MUX","status":"UPLOADING","clips":[{"id":"clip","muxUploadId":"upload","muxAssetId":"mux-asset"}]}"#.utf8))
         owner.updateAssetSnapshot([asset], scope: scope, sessionGeneration: generation)
         let intent = try #require(owner.retryIntent(
             for: asset, scope: scope, sessionGeneration: generation))
@@ -3638,12 +3755,12 @@ struct ArchiveMediaTaskOwnerTests {
         let finished = AsyncStream<Void>.makeStream()
         defer { gate.finish(true); owner.cancelAll() }
         let response = try JSONSerialization.data(withJSONObject: [
-            "uploadUrl": endpoint.absoluteString, "clipId": "clip", "muxUploadId": "test",
+            "uploadUrl": "https://uploads.example.test/video", "clipId": "clip", "muxUploadId": "test",
         ])
         let uploader = VideoUploadService(createTransport: { _ in
             _ = await gate.wait()
             return (response, testHTTPResponse(200))
-        })
+        }, transfer: LoopbackVideoUploadTransfer(endpoint: endpoint))
         var sawChangedIntent = false
         var uploaded = false
         let started = owner.start(
@@ -3765,7 +3882,7 @@ struct ArchiveMediaTaskOwnerTests {
                 Asset.self,
                 from: Data(
                     """
-                    {"id":"asset","status":"\(status)","clipCount":1,
+                    {"id":"asset","uploadMode":"MUX","status":"\(status)","clipCount":1,
                      "clips":[{"id":"\(clipID)","status":"ready","createdAt":"2026-05-10T12:00:00Z",
                                "duration":\(duration),"gpsLat":\(latitude)}]}
                     """.utf8))
@@ -3784,7 +3901,7 @@ struct ArchiveMediaTaskOwnerTests {
         let paused = try JSONDecoder().decode(
             Asset.self,
             from: Data(
-                #"{"id":"asset","status":"ERROR","moderation":"PAUSED","clips":[{"id":"one","status":"ready","duration":7,"gpsLat":1}]}"#
+                #"{"id":"asset","uploadMode":"MUX","status":"ERROR","moderation":"PAUSED","clips":[{"id":"one","status":"ready","duration":7,"gpsLat":1}]}"#
                     .utf8))
         #expect(!intent.permits(paused))
     }
@@ -5091,7 +5208,7 @@ struct ArchiveVisibilityTests {
                     id: "form", assetId: nil, slug: nil, type: nil,
                     description: nil, priority: nil, submittedAt: submittedAt)
                 : nil,
-            userId: nil, updatedAt: nil, moderation: moderation)
+            userId: nil, updatedAt: nil, moderation: moderation, uploadMode: .mux)
     }
 
     @Test
@@ -5190,6 +5307,47 @@ struct ArchiveVisibilityTests {
 
 @MainActor
 struct SessionBoundaryTests {
+    @Test
+    func appTransportSecurityDoesNotAllowUnrestrictedHTTP() {
+        let settings = Bundle.main.object(forInfoDictionaryKey: "NSAppTransportSecurity") as? [String: Any]
+        #expect(settings?["NSAllowsArbitraryLoads"] as? Bool != true)
+        #expect(settings?["NSAllowsLocalNetworking"] as? Bool != true)
+    }
+
+    @Test
+    func insecureMuxCapabilityIsRejectedBeforeStartingATransfer() async throws {
+        let response = Data(#"{"uploadUrl":"http://127.0.0.1:9/upload","clipId":"clip"}"#.utf8)
+        let uploader = VideoUploadService(
+            createTransport: { _ in (response, testHTTPResponse(200)) },
+            transfer: LoopbackVideoUploadTransfer(endpoint: URL(string: "http://127.0.0.1:9/upload")!))
+        do {
+            _ = try await uploader.uploadViaMux(
+                assetId: "asset", fileURL: URL(fileURLWithPath: "/nonexistent-video"),
+                token: "test-token", serverURL: URL(string: "https://example.test")!,
+                isCurrent: { true })
+            Issue.record("An insecure Mux capability must not be used")
+        } catch UploadError.invalidResponse {
+        } catch {
+            Issue.record("Unexpected upload error: \(error)")
+        }
+        #expect(uploader.backgroundTransferStartCount == 0)
+    }
+
+    @Test(arguments: [false, true])
+    func delayedReconnectOnlyRunsForItsOwnGeneration(invalidate: Bool) async throws {
+        let gate = PhotoPreparationGate<Bool>()
+        let coordinator = WebSocketRetryCoordinator(sleep: { _ in
+            _ = await gate.wait()
+        })
+        var retries = 0
+        let task = coordinator.schedule(after: 1) { retries += 1 }
+        try await gate.waitForStart()
+        if invalidate { coordinator.invalidate() }
+        gate.finish(true)
+        await task.value
+        #expect(retries == (invalidate ? 0 : 1))
+    }
+
     @Test(arguments: [false, true])
     func stoppedHandshakeCannotOpenSocket(serverChanged: Bool) async throws {
         let gate = HandshakeTestGate()
@@ -5202,13 +5360,112 @@ struct SessionBoundaryTests {
         let task = try #require(ws.connect(token: "synthetic-token"))
         await gate.waitForStart()
         if serverChanged {
-            state.url = URL(string: "http://127.0.0.1:10/proxy")!
+            state.url = URL(string: "https://127.0.0.1:10/proxy")!
         } else {
             ws.disconnect()
         }
         gate.finish()
         await task.value
         #expect(ws.state == .disconnected)
+        #expect(!ws.hasActiveSocket)
+    }
+
+    @Test
+    func cancellingHandshakeReleasesItsConnectionWithoutWaitingForTransport() async throws {
+        let oldGate = HandshakeTestGate()
+        let replacementGate = HandshakeTestGate()
+        defer { oldGate.finish(); replacementGate.finish() }
+        let ws = WebSocketService(handshakeTransport: { request in
+            if request.value(forHTTPHeaderField: "Authorization") == "Bearer replacement-token" {
+                return await replacementGate.waitForResponse()
+            }
+            return await oldGate.waitForResponse()
+        })
+        defer { ws.disconnect() }
+        let task = try #require(ws.connect(token: "synthetic-token"))
+        await oldGate.waitForStart()
+
+        let disconnected = AsyncStream<Void>.makeStream()
+        defer { disconnected.continuation.finish() }
+        withObservationTracking {
+            _ = ws.state
+        } onChange: {
+            disconnected.continuation.yield(())
+        }
+        task.cancel()
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            let stream = disconnected.stream
+            group.addTask {
+                var iterator = stream.makeAsyncIterator()
+                guard await iterator.next() != nil else { throw CancellationError() }
+            }
+            group.addTask {
+                try await Task.sleep(for: .seconds(10))
+                throw RecoveryGateTimeout()
+            }
+            defer { group.cancelAll() }
+            _ = try await group.next()
+        }
+        #expect(ws.state == .disconnected)
+        let replacement = try #require(ws.connect(token: "replacement-token"))
+        await replacementGate.waitForStart()
+        oldGate.finish()
+        await task.value
+        #expect(ws.state == .connecting)
+        #expect(ws.connect(token: "third-token") == nil)
+        ws.disconnect()
+        replacementGate.finish()
+        await replacement.value
+        #expect(ws.state == .disconnected)
+    }
+
+    @Test
+    func cancellingBackoffReleasesItsConnection() async throws {
+        let reconnecting = AsyncStream<Void>.makeStream()
+        let ws = WebSocketService(handshakeTransport: { _ in (Data(), testHTTPResponse(500)) })
+        ws.onReconnecting = { _, _ in reconnecting.continuation.yield(()) }
+        defer { reconnecting.continuation.finish(); ws.disconnect() }
+        let task = try #require(ws.connect(token: "synthetic-token"))
+        var iterator = reconnecting.stream.makeAsyncIterator()
+        _ = await iterator.next()
+
+        task.cancel()
+        await task.value
+        #expect(ws.state == .disconnected)
+        let replacement = try #require(ws.connect(token: "replacement-token"))
+        ws.disconnect()
+        await replacement.value
+    }
+
+    @Test
+    func invalidatedSessionCannotProcessSocketAcknowledgementsOrEvents() async throws {
+        let gate = HandshakeTestGate()
+        defer { gate.finish() }
+        let state = SocketURLTestState()
+        let coordinator = WebSocketRetryCoordinator()
+        let ws = WebSocketService(
+            serverURL: { state.url },
+            handshakeTransport: { _ in await gate.waitForResponse() },
+            retryCoordinator: coordinator)
+        defer { ws.disconnect() }
+        var connections = 0
+        var events = 0
+        ws.onConnected = { connections += 1 }
+        ws.onFormRequest = { _ in events += 1 }
+        let connection = ws.connect(token: "synthetic-token", isCurrent: { state.sessionIsCurrent })
+        let task = try #require(connection)
+        await gate.waitForStart()
+        let generation = coordinator.generation
+
+        state.sessionIsCurrent = false
+        ws.receiveEngineIOMessage("40{}", generation: generation)
+        ws.receiveEngineIOMessage(
+            #"42["form:request",{"assetId":"asset"}]"#, generation: generation)
+        #expect(connections == 0)
+        #expect(events == 0)
+        #expect(ws.state == .disconnected)
+        gate.finish()
+        await task.value
         #expect(!ws.hasActiveSocket)
     }
 
@@ -5367,6 +5624,66 @@ struct SessionBoundaryTests {
         if case .requesting = service.state {
         } else {
             Issue.record("Recognition must not start after the session changes")
+        }
+    }
+}
+
+@MainActor
+private final class LoopbackVideoUploadTransfer: VideoUploadTransfer {
+    private let endpoint: URL
+
+    init(endpoint: URL) {
+        self.endpoint = endpoint
+    }
+
+    func upload(
+        request: URLRequest, fileURL: URL, isCurrent: @MainActor () -> Bool,
+        validateBeforeTransfer: (@MainActor () throws -> Void)?,
+        onProgress: @escaping @MainActor (Double) -> Void,
+        onStart: @MainActor () -> Void
+    ) async throws -> (Data, URLResponse) {
+        guard request.url?.scheme == "https",
+              endpoint.scheme == "http", endpoint.host == "127.0.0.1" else {
+            throw UploadError.invalidResponse
+        }
+        var loopbackRequest = request
+        loopbackRequest.url = endpoint
+        let cancellation = TaskCancellationBridge()
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                do {
+                    try Task.checkCancellation()
+                    guard isCurrent() else { throw UploadError.sessionChanged }
+                    try validateBeforeTransfer?()
+                } catch {
+                    continuation.resume(throwing: error)
+                    return
+                }
+                let delegate = UploadDelegate(
+                    onProgress: { progress in
+                        Task { @MainActor in onProgress(progress) }
+                    },
+                    onComplete: { data, response, error in
+                        if let error {
+                            continuation.resume(throwing: error)
+                        } else if let data, let response {
+                            continuation.resume(returning: (data, response))
+                        } else {
+                            continuation.resume(throwing: UploadError.invalidResponse)
+                        }
+                    })
+                let configuration = URLSessionConfiguration.background(
+                    withIdentifier: "com.directvideo.upload.test.\(UUID().uuidString)")
+                configuration.isDiscretionary = false
+                configuration.waitsForConnectivity = true
+                let session = URLSession(configuration: configuration, delegate: delegate, delegateQueue: nil)
+                let task = session.uploadTask(with: loopbackRequest, fromFile: fileURL)
+                cancellation.register { task.cancel() }
+                task.resume()
+                onStart()
+            }
+        } onCancel: {
+            cancellation.cancel()
         }
     }
 }

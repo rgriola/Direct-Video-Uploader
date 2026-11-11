@@ -9,6 +9,7 @@ import { hashPin } from '../lib/utils.js';
 import { assetMediaLockKey } from '../lib/media-lock-key.js';
 import { redactCompanyCode, redactPersonName, redactPhoneNumber } from '../lib/redact.js';
 import { teamScope, userScope } from '../lib/authorization.js';
+import { cleanupEligibleUploadModes } from '../lib/upload-intents.js';
 import { checkRoleChange, isSuperAdmin, ROLES, sameOrganization } from '../lib/roles.js';
 import { invalidateUserSockets } from '../ws/rooms.js';
 
@@ -296,6 +297,7 @@ export default async function adminRoutes(fastify) {
             clips: { none: {} },
             muxAssetReferences: { none: {} },
             mediaCreateOperationId: null,
+            ...cleanupEligibleUploadModes(),
         };
         const staleAssets = await prisma.asset.findMany({
             where: {

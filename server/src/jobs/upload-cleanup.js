@@ -11,6 +11,7 @@
  */
 import prisma from '../lib/prisma.js';
 import { dbRetry } from '../lib/utils.js';
+import { cleanupEligibleUploadModes } from '../lib/upload-intents.js';
 import { withAssetMediaLock } from '../lib/media-lock.js';
 import { localUploadPath, removeLocalUpload } from '../lib/local-media.js';
 import * as slack from '../lib/slack.js';
@@ -29,7 +30,9 @@ let cleanupLog = null;
 export async function cleanupOrphanedUploads(fastify, { fileSystem = fs } = {}) {
     const log = fastify?.log ?? null;
     try {
-        const cutoff = new Date(Date.now() - ORPHAN_THRESHOLD_MS);
+        const now = Date.now();
+        const cutoff = new Date(now - ORPHAN_THRESHOLD_MS);
+        const eligibleMode = cleanupEligibleUploadModes(now);
 
         const orphanedAssets = await dbRetry(() => prisma.asset.findMany({
             where: {
@@ -37,6 +40,7 @@ export async function cleanupOrphanedUploads(fastify, { fileSystem = fs } = {}) 
                 moderation: 'ACTIVE',
                 createdAt: { lt: cutoff },
                 uploadSessions: { none: {} },
+                ...eligibleMode,
             },
             select: { id: true },
         }));
@@ -60,6 +64,7 @@ export async function cleanupOrphanedUploads(fastify, { fileSystem = fs } = {}) 
                                 mediaCreateOperationId: null,
                                 createdAt: { lt: cutoff },
                                 uploadSessions: { none: {} },
+                                ...eligibleMode,
                             },
                             include: {
                                 clips: { select: { id: true, storageUrl: true } },

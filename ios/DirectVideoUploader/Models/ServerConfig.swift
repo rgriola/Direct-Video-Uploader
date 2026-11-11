@@ -26,6 +26,21 @@ enum ServerConfig {
     /// `DVU_SERVER_URL` in the scheme or enter the URL on the login screen.
     private static let devURL = "https://dev.ms-fixer.com"
 
+    static var sharedServerHosts: Set<String> {
+        Set([productionURL, devURL].compactMap { URL(string: $0)?.host?.lowercased() })
+    }
+
+    static var isolatedOriginalUploadOrigins: Set<String> {
+        #if DEBUG
+        let configured = ProcessInfo.processInfo.environment["DVU_ISOLATED_UPLOAD_ORIGINS"] ?? ""
+        return Set(configured.split(separator: ",").map {
+            $0.trimmingCharacters(in: .whitespacesAndNewlines)
+        }.filter { !$0.isEmpty })
+        #else
+        return []
+        #endif
+    }
+
     /// UserDefaults key for the user-saved server URL override
     private static let serverURLKey = UserDefaultsKeys.serverURL
 
@@ -69,7 +84,7 @@ enum ServerConfig {
             UserDefaults.standard.removeObject(forKey: serverURLKey)
         } else {
             // Ensure it has a scheme
-            let normalized = trimmed.hasPrefix("http") ? trimmed : "http://\(trimmed)"
+            let normalized = trimmed.hasPrefix("http") ? trimmed : "https://\(trimmed)"
             UserDefaults.standard.set(normalized, forKey: serverURLKey)
         }
     }

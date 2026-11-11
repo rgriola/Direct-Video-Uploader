@@ -57,6 +57,7 @@ integration('upload session HTTP routes against PostgreSQL and local storage', (
     const ownerId = `upload-owner-${randomUUID()}`;
     const otherId = `upload-other-${randomUUID()}`;
     const adminId = `upload-admin-${randomUUID()}`;
+    const teamAdminId = `upload-team-admin-${randomUUID()}`;
     const signingSecret = 'upload-route-integration-secret-32-bytes';
     const previousRoot = process.env.STORAGE_LOCAL_ROOT;
     let app;
@@ -72,6 +73,8 @@ integration('upload session HTTP routes against PostgreSQL and local storage', (
     let assetId;
     let currentTime;
     let tokens;
+    const socketEmit = vi.fn();
+    const socketTo = vi.fn(() => ({ emit: socketEmit }));
 
     beforeAll(async () => {
         const database = await import('../lib/prisma.js');
@@ -79,6 +82,7 @@ integration('upload session HTTP routes against PostgreSQL and local storage', (
         releaseDatabaseLock = await acquireIntegrationDatabaseLock(database.pool);
         const { authenticate } = await import('../lib/authentication.js');
         const { requireRole } = await import('../lib/authorization.js');
+        const { default: adminRoutes } = await import('../routes/admin.js');
         const { default: assetRoutes } = await import('../routes/assets.js');
         const { default: moderationRoutes } = await import('../routes/moderation.js');
         const { default: uploadSessionRoutes } = await import('../routes/upload-sessions.js');
@@ -86,14 +90,14 @@ integration('upload session HTTP routes against PostgreSQL and local storage', (
         ({ reconcileAssetMedia, createMediaReconciler } = await import('../lib/media-reconciliation.js'));
         ({ withAssetMediaLock } = await import('../lib/media-lock.js'));
 
-        for (const [index, id] of [ownerId, otherId, adminId].entries()) {
+        for (const [index, id] of [ownerId, otherId, adminId, teamAdminId].entries()) {
             await prisma.user.create({
                 data: {
                     id,
                     name: `Upload Route Test ${index}`,
                     phoneNumber: `upload-route-${randomUUID()}`,
                     pinHash: 'integration-test',
-                    role: id === adminId ? 'SUPER_ADMIN' : 'USER',
+                    role: id === adminId ? 'SUPER_ADMIN' : id === teamAdminId ? 'ADMIN' : 'USER',
                 },
             });
         }
@@ -107,11 +111,12 @@ integration('upload session HTTP routes against PostgreSQL and local storage', (
         app.decorate('socketAuthState', { revision: 0 });
         app.decorate('userSockets', new Map());
         app.decorate('io', {
-            to: () => ({ emit: () => {} }),
+            to: socketTo,
             of: () => ({ sockets: new Map() }),
             sockets: { sockets: new Map() },
         });
         await app.register(assetRoutes);
+        await app.register(adminRoutes);
         await app.register(moderationRoutes);
         await app.register(uploadSessionRoutes, {
             storage,
@@ -119,7 +124,7 @@ integration('upload session HTTP routes against PostgreSQL and local storage', (
             signingSecret,
             now: () => new Date(currentTime),
         });
-        tokens = Object.fromEntries([ownerId, otherId, adminId].map(id => [id, app.jwt.sign({ id })]));
+        tokens = Object.fromEntries([ownerId, otherId, adminId, teamAdminId].map(id => [id, app.jwt.sign({ id })]));
         address = await app.listen({ host: '127.0.0.1', port: 0 });
     }, INTEGRATION_SETUP_TIMEOUT_MS);
 
@@ -144,16 +149,16 @@ integration('upload session HTTP routes against PostgreSQL and local storage', (
 
     afterEach(async () => {
         await prisma.auditLog.deleteMany({ where: { actorUserId: adminId } });
-        await prisma.asset.deleteMany({ where: { userId: { in: [ownerId, otherId] } } });
+        await prisma.asset.deleteMany({ where: { userId: { in: [ownerId, otherId, adminId, teamAdminId] } } });
     });
 
     afterAll(async () => {
         try {
             if (app) await app.close();
             if (prisma) {
-                await prisma.asset.deleteMany({ where: { userId: { in: [ownerId, otherId] } } });
+                await prisma.asset.deleteMany({ where: { userId: { in: [ownerId, otherId, adminId, teamAdminId] } } });
                 await prisma.auditLog.deleteMany({ where: { actorUserId: adminId } });
-                await prisma.user.deleteMany({ where: { id: { in: [ownerId, otherId, adminId] } } });
+                await prisma.user.deleteMany({ where: { id: { in: [ownerId, otherId, adminId, teamAdminId] } } });
             }
         } finally {
             await releaseDatabaseLock?.();
@@ -224,6 +229,7 @@ integration('upload session HTTP routes against PostgreSQL and local storage', (
             await server.register(fastifyJwt, { secret: 'integration-jwt-secret' });
             server.decorate('authenticate', authenticate);
             server.decorate('requireRole', requireRole);
+            server.decorate('io', { to: socketTo });
             await registerApplicationRoutes(server);
             return server;
         }
@@ -239,12 +245,35 @@ integration('upload session HTTP routes against PostgreSQL and local storage', (
         try {
             const disabled = await buildServer(false);
             expect((await disabled.inject({ method: 'POST', url, payload })).statusCode).toBe(404);
+            expect((await disabled.inject({
+                method: 'POST', url: '/api/assets/original-uploads',
+                payload: { clientRequestId: randomUUID(), fileName: 'video.mp4' },
+            })).statusCode).toBe(404);
             const enabled = await buildServer(true);
             expect((await enabled.inject({ method: 'POST', url, payload })).statusCode).toBe(401);
             const headers = { authorization: ['Bearer', tokens[ownerId]].join(' ') };
+            const intent = await enabled.inject({
+                method: 'POST',
+                url: '/api/assets/original-uploads',
+                headers,
+                payload: { clientRequestId: randomUUID(), fileName: 'video.mp4', ...payload },
+            });
+            expect(intent.statusCode, intent.body).toBe(201);
+            const pendingId = intent.json().asset.id;
+            expect(await prisma.uploadSession.count({ where: { assetId: pendingId } })).toBe(0);
+            const disabledReservation = await disabled.inject({
+                method: 'GET', url: `/api/assets/${pendingId}`, headers,
+            });
+            expect(disabledReservation.statusCode).toBe(200);
+            expect(disabledReservation.json().asset.uploadMode).toBe('ORIGINAL');
             const created = await enabled.inject({ method: 'POST', url, payload, headers });
             expect(created.statusCode, created.body).toBe(201);
             const session = created.json().uploadSession;
+            const disabledDetail = await disabled.inject({
+                method: 'GET', url: `/api/assets/${assetId}`, headers,
+            });
+            expect(disabledDetail.statusCode).toBe(200);
+            expect(disabledDetail.json().asset.uploadMode).toBe('ORIGINAL');
             const signed = await enabled.inject({
                 method: 'POST', url: `/api/upload-sessions/${session.id}/parts/1/sign`, headers,
             });
@@ -265,6 +294,370 @@ integration('upload session HTTP routes against PostgreSQL and local storage', (
             await Promise.all(servers.map(server => server.close()));
             vi.unstubAllEnvs();
         }
+    });
+
+    it('persists an explicit Mux intent before upload and prevents an original session', async () => {
+        const content = Buffer.from('new direct upload');
+        const created = await requestAs(ownerId, 'POST', '/api/assets', {
+            fileName: 'direct.mov', uploadMode: 'MUX',
+        });
+        expect(created.statusCode).toBe(200);
+        const id = created.json().asset.id;
+        expect(created.json().asset.uploadMode).toBe('MUX');
+        expect(await prisma.asset.findUnique({ where: { id } })).toMatchObject({ uploadMode: 'MUX' });
+        expect((await requestAs(ownerId, 'GET', `/api/assets/${id}`)).json().asset.uploadMode).toBe('MUX');
+        expect((await requestAs(ownerId, 'GET', '/api/assets/mine')).json().assets
+            .find(asset => asset.id === id).uploadMode).toBe('MUX');
+        expect((await requestAs(ownerId, 'POST', `/api/assets/${id}/upload-sessions`, {
+            expectedSizeBytes: content.length, expectedSha256: sha256(content),
+        })).statusCode).toBe(409);
+        expect((await requestAs(ownerId, 'POST', `/api/assets/${id}/mux-upload`, {})).statusCode).toBe(200);
+
+        const legacy = await requestAs(ownerId, 'POST', '/api/assets', { fileName: 'legacy.mov' });
+        expect(legacy.statusCode).toBe(200);
+        expect(legacy.json().asset.uploadMode).toBe('UNKNOWN');
+        expect((await requestAs(ownerId, 'POST', `/api/assets/${legacy.json().asset.id}/mux-upload`, {}))
+            .statusCode).toBe(200);
+    });
+
+    it('creates an owner-scoped original asset idempotently and reserves it before a session exists', async () => {
+        const clientRequestId = randomUUID();
+        const content = Buffer.from('native original');
+        const payload = {
+            clientRequestId, fileName: 'native.mov',
+            expectedSizeBytes: content.length, expectedSha256: sha256(content),
+        };
+        expect((await requestAs(null, 'POST', '/api/assets/original-uploads', payload)).statusCode).toBe(401);
+        for (const invalid of [
+            {},
+            { ...payload, clientRequestId: 'not-a-uuid' },
+            { ...payload, fileName: { name: 'native.mov' } },
+            { ...payload, expectedSizeBytes: 0 },
+            { ...payload, expectedSha256: 'not-a-hash' },
+        ]) {
+            expect((await requestAs(ownerId, 'POST', '/api/assets/original-uploads', invalid)).statusCode).toBe(400);
+        }
+
+        const [first, retry] = await Promise.all([
+            requestAs(ownerId, 'POST', '/api/assets/original-uploads', payload),
+            requestAs(ownerId, 'POST', '/api/assets/original-uploads', {
+                ...payload, clientRequestId: clientRequestId.toUpperCase(),
+                expectedSha256: payload.expectedSha256.toUpperCase(),
+            }),
+        ]);
+        expect([first.statusCode, retry.statusCode].sort()).toEqual([200, 201]);
+        const created = first.json().asset;
+        expect(retry.json().asset.id).toBe(created.id);
+        expect(created).toMatchObject({ uploadMode: 'ORIGINAL', originalFileName: 'native.mov', status: 'UPLOADING' });
+        expect(await prisma.originalUploadIntent.count({ where: { userId: ownerId, clientRequestId } })).toBe(1);
+        expect((await requestAs(ownerId, 'POST', `/api/assets/${created.id}/mux-upload`, {})).statusCode).toBe(409);
+
+        const detail = await requestAs(ownerId, 'GET', `/api/assets/${created.id}`);
+        const mine = await requestAs(ownerId, 'GET', '/api/assets/mine');
+        expect(detail.json().asset.uploadMode).toBe('ORIGINAL');
+        expect(mine.json().assets.find(asset => asset.id === created.id).uploadMode).toBe('ORIGINAL');
+        expect(detail.body).not.toContain(clientRequestId);
+        expect(detail.json().asset).not.toHaveProperty('originalIntentSizeBytes');
+        expect(detail.json().asset).not.toHaveProperty('originalIntentSha256');
+        expect((await requestAs(ownerId, 'POST', '/api/assets/original-uploads', {
+            ...payload, fileName: 'different.mov',
+        })).statusCode).toBe(409);
+        expect((await requestAs(ownerId, 'POST', '/api/assets/original-uploads', {
+            ...payload, expectedSizeBytes: content.length + 1,
+        })).statusCode).toBe(409);
+        expect((await requestAs(ownerId, 'POST', '/api/assets/original-uploads', {
+            ...payload, expectedSha256: sha256(Buffer.from('different original')),
+        })).statusCode).toBe(409);
+        const sessionUrl = `/api/assets/${created.id}/upload-sessions`;
+        expect((await requestAs(ownerId, 'POST', sessionUrl, {
+            expectedSizeBytes: content.length,
+            expectedSha256: sha256(Buffer.from('different original')),
+        })).statusCode).toBe(409);
+        expect(await prisma.uploadSession.count({ where: { assetId: created.id } })).toBe(0);
+        expect((await requestAs(ownerId, 'POST', sessionUrl, payload)).statusCode).toBe(201);
+
+        const other = await requestAs(otherId, 'POST', '/api/assets/original-uploads', payload);
+        expect(other.statusCode).toBe(201);
+        expect(other.json().asset.id).not.toBe(created.id);
+        expect((await requestAs(otherId, 'GET', `/api/assets/${created.id}`)).statusCode).toBe(404);
+        const admin = await requestAs(adminId, 'POST', '/api/assets/original-uploads', payload);
+        expect(admin.statusCode).toBe(201);
+        expect(admin.json().asset.id).not.toBe(created.id);
+        expect(await prisma.asset.findUnique({ where: { id: admin.json().asset.id } }))
+            .toMatchObject({ userId: adminId, uploadMode: 'ORIGINAL' });
+        const teamAdmin = await requestAs(teamAdminId, 'POST', '/api/assets/original-uploads', payload);
+        expect(teamAdmin.statusCode).toBe(201);
+        expect(teamAdmin.json().asset.id).not.toBe(created.id);
+        expect(await prisma.asset.findUnique({ where: { id: teamAdmin.json().asset.id } }))
+            .toMatchObject({ userId: teamAdminId, uploadMode: 'ORIGINAL' });
+    });
+
+    it('does not create an original intent for a suspended account', async () => {
+        await prisma.user.update({ where: { id: ownerId }, data: { status: 'SUSPENDED' } });
+        const clientRequestId = randomUUID();
+        const response = await requestAs(ownerId, 'POST', '/api/assets/original-uploads', {
+            clientRequestId, fileName: 'suspended.mov', expectedSizeBytes: 1, expectedSha256: sha256(Buffer.from('a')),
+        });
+        expect(response.statusCode).toBe(403);
+        expect(await prisma.originalUploadIntent.count({ where: { userId: ownerId, clientRequestId } })).toBe(0);
+    });
+
+    it('reports contradictory modes even when a Mux clip is not the latest archive clip', async () => {
+        await prisma.asset.update({ where: { id: assetId }, data: { uploadMode: 'ORIGINAL' } });
+        await prisma.clip.create({
+            data: { assetId, muxUploadId: 'older-mux-upload', createdAt: new Date('2026-01-01T00:00:00Z') },
+        });
+        await prisma.clip.create({
+            data: { assetId, createdAt: new Date('2026-02-01T00:00:00Z') },
+        });
+        const detail = (await requestAs(ownerId, 'GET', `/api/assets/${assetId}`)).json().asset;
+        const mine = (await requestAs(ownerId, 'GET', '/api/assets/mine')).json().assets.find(asset => asset.id === assetId);
+        expect(detail.uploadMode).toBe('UNKNOWN');
+        expect(mine.uploadMode).toBe('UNKNOWN');
+        expect(mine.clips).toHaveLength(1);
+        expect(mine).not.toHaveProperty('_count');
+        const content = Buffer.from('new original');
+        const response = await requestAs(ownerId, 'POST', `/api/assets/${assetId}/upload-sessions`, {
+            expectedSizeBytes: content.length, expectedSha256: sha256(content),
+        });
+        expect(response.statusCode).toBe(409);
+        expect(await prisma.uploadSession.count({ where: { assetId } })).toBe(0);
+    });
+
+    it('reports contradictory modes when a retained original is not the latest archive clip', async () => {
+        await prisma.clip.create({
+            data: {
+                assetId,
+                storageKey: 'older-retained-original',
+                storageDriver: 'local',
+                sha256: sha256(Buffer.from('older original')),
+                createdAt: new Date('2026-01-01T00:00:00Z'),
+            },
+        });
+        await prisma.clip.create({
+            data: { assetId, muxUploadId: 'newer-mux-upload', createdAt: new Date('2026-02-01T00:00:00Z') },
+        });
+        const detail = (await requestAs(ownerId, 'GET', `/api/assets/${assetId}`)).json().asset;
+        const mine = (await requestAs(ownerId, 'GET', '/api/assets/mine')).json().assets.find(asset => asset.id === assetId);
+        expect(detail.uploadMode).toBe('UNKNOWN');
+        expect(mine.uploadMode).toBe('UNKNOWN');
+        expect(mine.clips).toHaveLength(1);
+        expect((await requestAs(ownerId, 'POST', `/api/assets/${assetId}/mux-upload`, {})).statusCode).toBe(409);
+    });
+
+    it('retains a tombstone after asset deletion and does not recreate a removed upload', async () => {
+        const payload = {
+            clientRequestId: randomUUID(), fileName: 'removed.mov',
+            expectedSizeBytes: 1, expectedSha256: sha256(Buffer.from('a')),
+        };
+        const created = await requestAs(ownerId, 'POST', '/api/assets/original-uploads', payload);
+        expect(created.statusCode).toBe(201);
+        await prisma.asset.delete({ where: { id: created.json().asset.id } });
+        await prisma.asset.delete({ where: { id: assetId } });
+        const reset = await requestAs(adminId, 'POST', '/api/admin/nuclear-reset', {});
+        expect(reset.statusCode, reset.body).toBe(200);
+
+        const retry = await requestAs(ownerId, 'POST', '/api/assets/original-uploads', payload);
+        expect(retry.statusCode).toBe(410);
+        const intent = await prisma.originalUploadIntent.findUnique({
+            where: { userId_clientRequestId: { userId: ownerId, clientRequestId: payload.clientRequestId } },
+        });
+        expect(intent.assetId).toBeNull();
+        expect(Object.keys(intent).sort()).toEqual(['assetId', 'clientRequestId', 'createdAt', 'userId']);
+    });
+
+    it('removes the nonsecret upload tombstone when its owner is deleted', async () => {
+        const deletedOwner = `deleted-upload-owner-${randomUUID()}`;
+        const payload = {
+            clientRequestId: randomUUID(), fileName: 'removed.mov',
+            expectedSizeBytes: 1, expectedSha256: sha256(Buffer.from('a')),
+        };
+        try {
+            await prisma.user.create({
+                data: {
+                    id: deletedOwner,
+                    name: 'Deleted Upload Owner',
+                    phoneNumber: `upload-route-${randomUUID()}`,
+                    pinHash: 'integration-test',
+                },
+            });
+            tokens[deletedOwner] = app.jwt.sign({ id: deletedOwner });
+            const created = await requestAs(deletedOwner, 'POST', '/api/assets/original-uploads', payload);
+            expect(created.statusCode, created.body).toBe(201);
+            await prisma.asset.delete({ where: { id: created.json().asset.id } });
+            expect(await prisma.originalUploadIntent.count({ where: { userId: deletedOwner } })).toBe(1);
+            await prisma.user.delete({ where: { id: deletedOwner } });
+            expect(await prisma.originalUploadIntent.count({ where: { userId: deletedOwner } })).toBe(0);
+        } finally {
+            await prisma.asset.deleteMany({ where: { userId: deletedOwner } });
+            await prisma.user.deleteMany({ where: { id: deletedOwner } });
+            delete tokens[deletedOwner];
+        }
+    });
+
+    it('persists original metadata and emits the existing owner form events only once', async () => {
+        const content = Buffer.from('metadata original');
+        const metadata = {
+            gpsLat: 40.7, gpsLon: -74, gpsAltitude: 15,
+            capturedAt: '2026-11-10T12:34:56.000Z',
+            deviceModel: 'Test iPhone', osVersion: 'iOS test',
+            codec: 'HEVC', resolution: '1920x1080', orientation: 'landscape', duration: 42,
+        };
+        const payload = { expectedSizeBytes: content.length, expectedSha256: sha256(content), metadata };
+        const url = `/api/assets/${assetId}/upload-sessions`;
+        const response = await requestAs(ownerId, 'POST', url, payload);
+        expect(response.statusCode, response.body).toBe(201);
+        const session = response.json().uploadSession;
+        const clip = await prisma.clip.findUnique({ where: { id: session.clipId } });
+        expect(clip).toMatchObject({
+            ...metadata, capturedAt: new Date(metadata.capturedAt), fileSize: null, status: 'UPLOADING',
+        });
+        expect(await prisma.asset.findUnique({ where: { id: assetId } }))
+            .toMatchObject({ uploadMode: 'ORIGINAL', clipCount: 1, totalDuration: 42 });
+        expect(socketTo).toHaveBeenCalledWith(`user:${ownerId}`);
+        expect(socketEmit).toHaveBeenCalledTimes(2);
+        expect(socketEmit).toHaveBeenCalledWith('upload:complete', expect.objectContaining({
+            assetId, metadata: expect.objectContaining({ gpsLat: 40.7, duration: 42 }),
+            clip: expect.objectContaining({ id: session.clipId, fileSize: String(content.length) }),
+        }));
+        expect(socketEmit).toHaveBeenCalledWith('form:request', expect.objectContaining({ assetId, duration: 42 }));
+
+        const retry = await requestAs(ownerId, 'POST', url, payload);
+        expect(retry.statusCode).toBe(200);
+        expect(retry.json().uploadSession.id).toBe(session.id);
+        expect(socketEmit).toHaveBeenCalledTimes(2);
+        const conflicting = await requestAs(ownerId, 'POST', url, {
+            ...payload, metadata: { ...metadata, duration: 43 },
+        });
+        expect(conflicting.statusCode).toBe(409);
+        expect(socketEmit).toHaveBeenCalledTimes(2);
+        expect(await prisma.clip.findUnique({ where: { id: session.clipId } })).toMatchObject({ duration: 42 });
+        const signed = await sign(session.id);
+        expect((await put(signed.url, content)).statusCode).toBe(200);
+        expect((await requestAs(ownerId, 'POST', `/api/upload-sessions/${session.id}/complete`)).statusCode).toBe(200);
+        expect(await prisma.clip.findUnique({ where: { id: session.clipId } })).toMatchObject({
+            fileSize: BigInt(content.length), duration: 42, resolution: '1920x1080',
+        });
+    });
+
+    it('rejects invalid metadata before creating a clip or sending notifications', async () => {
+        const content = Buffer.from('invalid metadata');
+        const base = { expectedSizeBytes: content.length, expectedSha256: sha256(content) };
+        for (const metadata of [
+            [],
+            { capturedAt: 'not-a-date' },
+            { duration: -1 },
+            { duration: 'not-a-number' },
+            { duration: '12 seconds' },
+            { duration: -0.5 },
+            { gpsLat: 91 },
+            { gpsLat: '1north' },
+            { gpsLon: -181 },
+            { gpsLon: '0x10' },
+            { deviceModel: { unexpected: true } },
+        ]) {
+            const response = await requestAs(ownerId, 'POST', `/api/assets/${assetId}/upload-sessions`, {
+                ...base, metadata,
+            });
+            expect(response.statusCode, response.body).toBe(400);
+        }
+        expect(await prisma.clip.count({ where: { assetId } })).toBe(0);
+        expect(await prisma.uploadSession.count({ where: { assetId } })).toBe(0);
+        expect(socketEmit).not.toHaveBeenCalled();
+    });
+
+    it('persists the same default metadata that is sent in form events', async () => {
+        const session = await createSession(Buffer.from('default metadata'));
+        const clip = await prisma.clip.findUnique({ where: { id: session.clipId } });
+        const formRequest = socketEmit.mock.calls.find(([event]) => event === 'form:request')[1];
+        expect(clip).toMatchObject({
+            capturedAt: formRequest.capturedAt,
+            deviceModel: 'Unknown Device',
+            osVersion: 'Unknown OS',
+            codec: 'Unknown',
+            resolution: 'Unknown',
+            orientation: 'landscape',
+            duration: 0,
+        });
+    });
+
+    it('preserves zero-valued location metadata on initial creation and retry', async () => {
+        const content = Buffer.from('equator');
+        const payload = {
+            expectedSizeBytes: content.length,
+            expectedSha256: sha256(content),
+            metadata: { gpsLat: 0, gpsLon: 0, gpsAltitude: 0, duration: 0 },
+        };
+        const url = `/api/assets/${assetId}/upload-sessions`;
+        const created = await requestAs(ownerId, 'POST', url, payload);
+        expect(created.statusCode, created.body).toBe(201);
+        expect(await prisma.clip.findUnique({ where: { id: created.json().uploadSession.clipId } }))
+            .toMatchObject({ gpsLat: 0, gpsLon: 0, gpsAltitude: 0, duration: 0 });
+        const retry = await requestAs(ownerId, 'POST', url, payload);
+        expect(retry.statusCode, retry.body).toBe(200);
+    });
+
+    it('discovers legacy original mode without exposing session records', async () => {
+        const session = await createSession(Buffer.from('legacy original'));
+        await prisma.asset.update({ where: { id: assetId }, data: { uploadMode: null } });
+        const detail = await requestAs(ownerId, 'GET', `/api/assets/${assetId}`);
+        expect(detail.statusCode).toBe(200);
+        expect(detail.json().asset.uploadMode).toBe('ORIGINAL');
+        expect(detail.json().asset).not.toHaveProperty('uploadSessions');
+        expect(detail.body).not.toContain(session.id);
+        expect((await requestAs(ownerId, 'POST', `/api/assets/${assetId}/mux-upload`, {})).statusCode).toBe(409);
+
+        await prisma.asset.update({ where: { id: assetId }, data: { uploadMode: 'MUX' } });
+        expect((await requestAs(ownerId, 'GET', `/api/assets/${assetId}`)).json().asset.uploadMode).toBe('UNKNOWN');
+        const retry = await requestAs(ownerId, 'POST', `/api/assets/${assetId}/upload-sessions`, {
+            expectedSizeBytes: session.expectedSizeBytes, expectedSha256: session.expectedSha256,
+        });
+        expect(retry.statusCode).toBe(409);
+    });
+
+    it('prefers active or completed sessions over an aborted session with the same timestamp', async () => {
+        const content = Buffer.from('same timestamp');
+        const first = await createSession(content);
+        expect((await requestAs(ownerId, 'DELETE', `/api/upload-sessions/${first.id}`)).statusCode).toBe(200);
+        await prisma.uploadSession.update({
+            where: { id: first.id },
+            data: { id: 'ffffffff-ffff-4fff-bfff-ffffffffffff' },
+        });
+        const url = `/api/assets/${assetId}/upload-sessions`;
+        const payload = { expectedSizeBytes: content.length, expectedSha256: sha256(content) };
+        const replacement = await requestAs(ownerId, 'POST', url, payload);
+        expect(replacement.statusCode, replacement.body).toBe(201);
+        const retry = await requestAs(ownerId, 'POST', url, payload);
+        expect(retry.statusCode, retry.body).toBe(200);
+        expect(retry.json().uploadSession.id).toBe(replacement.json().uploadSession.id);
+        const signed = await sign(replacement.json().uploadSession.id);
+        expect((await put(signed.url, content)).statusCode).toBe(200);
+        expect((await requestAs(ownerId, 'POST', `/api/upload-sessions/${replacement.json().uploadSession.id}/complete`))
+            .statusCode).toBe(200);
+        const completed = await requestAs(ownerId, 'POST', url, payload);
+        expect(completed.statusCode, completed.body).toBe(200);
+        expect(completed.json().uploadSession).toMatchObject({
+            id: replacement.json().uploadSession.id, status: 'COMPLETED',
+        });
+    });
+
+    it('does not guess between multiple recoverable sessions on an inconsistent asset', async () => {
+        const content = Buffer.from('ambiguous session');
+        await createSession(content);
+        const otherClip = await prisma.clip.create({ data: { assetId } });
+        await prisma.uploadSession.create({
+            data: {
+                id: randomUUID(), ownerId, assetId, clipId: otherClip.id,
+                storageKey: `unverified-${randomUUID()}`, expectedSizeBytes: BigInt(content.length),
+                expectedSha256: sha256(content), expiresAt: new Date(currentTime + 60_000),
+            },
+        });
+        const response = await requestAs(ownerId, 'POST', `/api/assets/${assetId}/upload-sessions`, {
+            expectedSizeBytes: content.length, expectedSha256: sha256(content),
+        });
+        expect(response.statusCode).toBe(409);
+        expect(response.json().error).toContain('multiple recoverable original sessions');
+        expect(await prisma.uploadSession.count({ where: { assetId } })).toBe(2);
     });
 
     it('creates, resumes, retries, and completes an owner-only session idempotently', async () => {
@@ -307,6 +700,14 @@ integration('upload session HTTP routes against PostgreSQL and local storage', (
         });
         expect(duplicate.statusCode).toBe(200);
         expect(duplicate.json().uploadSession.id).toBe(session.id);
+        for (const status of ['PROCESSING', 'READY', 'ERROR']) {
+            await prisma.asset.update({ where: { id: assetId }, data: { status } });
+            const recovered = await requestAs(ownerId, 'POST', `/api/assets/${assetId}/upload-sessions`, {
+                expectedSizeBytes: content.length, expectedSha256: sha256(content),
+            });
+            expect(recovered.statusCode, recovered.body).toBe(200);
+            expect(recovered.json().uploadSession).toMatchObject({ id: session.id, status: 'COMPLETED' });
+        }
         expect((await put(signed.url, content)).statusCode).toBe(403);
 
         const row = await prisma.uploadSession.findUnique({ where: { id: session.id } });
@@ -909,7 +1310,11 @@ integration('upload session HTTP routes against PostgreSQL and local storage', (
         expect((await requestAs(ownerId, 'POST', `/api/upload-sessions/${session.id}/complete`)).statusCode).toBe(200);
         const row = await prisma.uploadSession.findUnique({ where: { id: session.id } });
         await prisma.uploadSession.delete({ where: { id: session.id } });
-        await prisma.clip.update({ where: { id: session.clipId }, data: { status: 'PROCESSING' } });
+        await prisma.asset.update({ where: { id: assetId }, data: { uploadMode: null } });
+
+        const detail = await requestAs(ownerId, 'GET', `/api/assets/${assetId}`);
+        expect(detail.json().asset.uploadMode).toBe('ORIGINAL');
+        expect(detail.json().asset.clips[0]).not.toHaveProperty('storageKey');
 
         const response = await requestAs(ownerId, 'POST', `/api/assets/${assetId}/mux-upload`, {});
         expect(response.statusCode).toBe(409);

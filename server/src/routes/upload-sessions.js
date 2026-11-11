@@ -5,10 +5,17 @@ import { signUploadPart, verifyUploadPart } from '../lib/upload-part-signing.js'
 import { assertAcceptingUploads, createUploadSessionService, UploadSessionError } from '../lib/upload-sessions.js';
 import { MAX_PART_SIZE_BYTES, StorageError } from '../lib/storage/local-driver.js';
 import { createStorageCapacity } from '../lib/storage/capacity.js';
+import { getAssetUploadMode, serializeCreatedAsset } from '../lib/asset-serialization.js';
+import { generateMediasourceId, notifyUserSockets, parseClientMetadata } from '../lib/utils.js';
+import { notifyDashboardAssetChange } from '../ws/dashboard-notifications.js';
 
 const MAX_UPLOAD_SIZE_BYTES = 500 * 1024 * 1024;
 const PART_URL_TTL_MS = 5 * 60 * 1000;
 const SESSION_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const METADATA_FIELDS = [
+    'gpsLat', 'gpsLon', 'gpsAltitude', 'capturedAt', 'deviceModel', 'osVersion',
+    'codec', 'resolution', 'orientation', 'duration',
+];
 const ERROR_STATUS = {
     INVALID_ARGUMENT: 400,
     NOT_FOUND: 404,
@@ -27,7 +34,59 @@ const ERROR_STATUS = {
     PART_CONFLICT: 409,
     PART_SIZE_MISMATCH: 400,
     PART_TOO_LARGE: 413,
+    IDEMPOTENCY_CONFLICT: 409,
+    INTENT_REMOVED: 410,
+    INTENT_INCONSISTENT: 503,
 };
+
+function validateOriginalAssetInput(body) {
+    if (!body || typeof body !== 'object' || Array.isArray(body)
+        || typeof body.clientRequestId !== 'string' || !SESSION_ID_PATTERN.test(body.clientRequestId)
+        || (body.fileName != null && typeof body.fileName !== 'string')) {
+        throw new UploadSessionError('INVALID_ARGUMENT', 'A client request UUID and optional file name are required');
+    }
+    const { sizeBytes, sha256 } = validateCreateInput(body);
+    return { clientRequestId: body.clientRequestId.toLowerCase(), fileName: body.fileName || null, sizeBytes, sha256 };
+}
+
+function validateMetadata(raw) {
+    if (raw == null) return null;
+    if (typeof raw !== 'object' || Array.isArray(raw)) {
+        throw new UploadSessionError('INVALID_ARGUMENT', 'metadata must be an object');
+    }
+    for (const field of ['deviceModel', 'osVersion', 'codec', 'resolution', 'orientation', 'capturedAt']) {
+        if (raw[field] != null && typeof raw[field] !== 'string') {
+            throw new UploadSessionError('INVALID_ARGUMENT', `metadata.${field} must be a string`);
+        }
+    }
+    for (const field of ['gpsLat', 'gpsLon', 'gpsAltitude', 'duration']) {
+        if (raw[field] != null && !['number', 'string'].includes(typeof raw[field])) {
+            throw new UploadSessionError('INVALID_ARGUMENT', `metadata.${field} must be numeric`);
+        }
+    }
+    const metadata = parseClientMetadata(raw);
+    for (const field of ['gpsLat', 'gpsLon', 'gpsAltitude', 'duration']) {
+        const value = raw[field];
+        if (value == null || value === '') continue;
+        if (typeof value === 'string'
+            && !/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?$/i.test(value.trim())) {
+            throw new UploadSessionError('INVALID_ARGUMENT', `metadata.${field} must be numeric`);
+        }
+        const number = Number(value);
+        if (!Number.isFinite(number) || (field === 'duration' && number < 0)) {
+            throw new UploadSessionError('INVALID_ARGUMENT', `metadata.${field} must be numeric`);
+        }
+        metadata[field] = field === 'duration' ? Math.trunc(number) : number;
+    }
+    if (!Number.isFinite(metadata.capturedAt.getTime())
+        || !Number.isSafeInteger(metadata.duration) || metadata.duration < 0 || metadata.duration > 2_147_483_647
+        || ['gpsLat', 'gpsLon', 'gpsAltitude'].some(field => metadata[field] != null && !Number.isFinite(metadata[field]))
+        || (metadata.gpsLat != null && Math.abs(metadata.gpsLat) > 90)
+        || (metadata.gpsLon != null && Math.abs(metadata.gpsLon) > 180)) {
+        throw new UploadSessionError('INVALID_ARGUMENT', 'metadata contains an invalid date, duration, or location');
+    }
+    return metadata;
+}
 
 function validateCreateInput(body) {
     const size = body?.expectedSizeBytes;
@@ -42,7 +101,7 @@ function validateCreateInput(body) {
     if (typeof body.expectedSha256 !== 'string' || !/^[a-f0-9]{64}$/i.test(body.expectedSha256)) {
         throw new UploadSessionError('INVALID_ARGUMENT', 'expectedSha256 must contain 64 hexadecimal characters');
     }
-    return { sizeBytes, sha256: body.expectedSha256.toLowerCase() };
+    return { sizeBytes, sha256: body.expectedSha256.toLowerCase(), metadata: validateMetadata(body.metadata) };
 }
 
 function partSize(session, partNumber) {
@@ -98,6 +157,9 @@ async function handleErrors(reply, work, { closeConnection = false } = {}) {
             if (error.code === 'STORAGE_CAPACITY_EXCEEDED') {
                 reply.request.log.warn({ code: error.code }, 'Original storage capacity is insufficient');
             }
+            if (error.code === 'INTENT_INCONSISTENT') {
+                reply.request.log.error({ code: error.code }, 'Original upload intent is inconsistent');
+            }
             if (closeConnection) reply.header('Connection', 'close');
             return reply.status(ERROR_STATUS[error.code]).send({ error: error.message });
         }
@@ -141,6 +203,28 @@ export default async function uploadSessionRoutes(fastify, {
         return result;
     }
 
+    async function assertMatchingMetadata(previous, metadata, raw) {
+        if (!metadata) return;
+        const fields = METADATA_FIELDS.filter(field => raw[field] != null && raw[field] !== '');
+        if (!fields.length) return;
+        const clip = await db.clip.findUnique({
+            where: { id: previous.clipId },
+            select: {
+                assetId: true, gpsLat: true, gpsLon: true, gpsAltitude: true, capturedAt: true,
+                deviceModel: true, osVersion: true, codec: true, resolution: true, orientation: true, duration: true,
+            },
+        });
+        if (!clip || clip.assetId !== previous.assetId) {
+            throw new UploadSessionError('CLIP_CHANGED', 'Upload session clip cannot be verified');
+        }
+        const differs = fields.some(field => field === 'capturedAt'
+            ? clip.capturedAt?.getTime() !== metadata.capturedAt.getTime()
+            : clip[field] !== metadata[field]);
+        if (differs) {
+            throw new UploadSessionError('IDEMPOTENCY_CONFLICT', 'Upload metadata differs from the original session');
+        }
+    }
+
     fastify.decorateRequest('uploadPartAuthorization', null);
     fastify.addContentTypeParser('application/octet-stream', (_request, payload, done) => done(null, payload));
     fastify.addHook('onSend', async (_request, reply, payload) => {
@@ -148,33 +232,117 @@ export default async function uploadSessionRoutes(fastify, {
         return payload;
     });
 
+    fastify.post('/api/assets/original-uploads', {
+        preHandler: [fastify.authenticate],
+        config: { rateLimit: { max: 10, timeWindow: '1 minute' } },
+    }, async (request, reply) => handleErrors(reply, async () => {
+        const { clientRequestId, fileName, sizeBytes, sha256 } = validateOriginalAssetInput(request.body);
+        const ownerId = request.user.id;
+        const result = await db.$transaction(async tx => {
+            const users = await tx.$queryRaw`SELECT id, status FROM users WHERE id = ${ownerId} FOR UPDATE`;
+            if (!users.length || users[0].status !== 'ACTIVE') {
+                throw new UploadSessionError('ACCOUNT_SUSPENDED', 'Account is suspended');
+            }
+            const intent = await tx.originalUploadIntent.findUnique({
+                where: { userId_clientRequestId: { userId: ownerId, clientRequestId } },
+            });
+            if (intent) {
+                if (!intent.assetId) throw new UploadSessionError('INTENT_REMOVED', 'Original upload asset was removed');
+                await tx.$queryRaw`SELECT id FROM assets WHERE id = ${intent.assetId} FOR UPDATE`;
+                const asset = await tx.asset.findUnique({
+                    where: { id: intent.assetId },
+                    include: {
+                        clips: { select: { muxUploadId: true } },
+                        uploadSessions: { take: 1, select: { id: true } },
+                    },
+                });
+                if (!asset) throw new UploadSessionError('INTENT_REMOVED', 'Original upload asset was removed');
+                if (asset.userId !== ownerId || getAssetUploadMode(asset) !== 'ORIGINAL') {
+                    throw new UploadSessionError('INTENT_INCONSISTENT', 'Original upload intent cannot be verified');
+                }
+                if (!['ACTIVE', 'PAUSED'].includes(asset.moderation)) {
+                    throw new UploadSessionError('NOT_FOUND', 'Asset not found');
+                }
+                if (asset.originalIntentSizeBytes == null || asset.originalIntentSha256 == null) {
+                    throw new UploadSessionError('INTENT_INCONSISTENT', 'Original upload intent cannot be verified');
+                }
+                if (asset.originalFileName !== fileName || asset.originalIntentSizeBytes !== Number(sizeBytes)
+                    || asset.originalIntentSha256 !== sha256) {
+                    throw new UploadSessionError('IDEMPOTENCY_CONFLICT', 'Client request ID belongs to another upload');
+                }
+                return { asset, created: false };
+            }
+
+            const mediasourceId = await generateMediasourceId(tx);
+            const asset = await tx.asset.create({
+                data: {
+                    userId: ownerId,
+                    mediasourceId,
+                    mediasourceUrl: `/clips/${mediasourceId}`,
+                    originalFileName: fileName,
+                    status: 'UPLOADING',
+                    uploadMode: 'ORIGINAL',
+                    originalIntentSizeBytes: Number(sizeBytes),
+                    originalIntentSha256: sha256,
+                },
+            });
+            await tx.originalUploadIntent.create({ data: { userId: ownerId, clientRequestId, assetId: asset.id } });
+            return { asset, created: true };
+        });
+        if (result.created) await notifyDashboardAssetChange(fastify, result.asset.id);
+        return reply.status(result.created ? 201 : 200).send({ asset: serializeCreatedAsset(result.asset) });
+    }));
+
     fastify.post('/api/assets/:id/upload-sessions', {
         preHandler: [fastify.authenticate],
         config: { rateLimit: { max: 10, timeWindow: '1 minute' } },
     }, async (request, reply) => handleErrors(reply, async () => {
-        const { sizeBytes, sha256 } = validateCreateInput(request.body);
+        const { sizeBytes, sha256, metadata: suppliedMetadata } = validateCreateInput(request.body);
+        const metadata = suppliedMetadata ?? parseClientMetadata();
         const assetId = request.params.id;
         const ownerId = request.user.id;
         const locked = await withLock(assetId, async assertLocked => {
-            const asset = await db.asset.findUnique({ where: { id: assetId } });
+            const asset = await db.asset.findUnique({
+                where: { id: assetId },
+                include: { clips: { where: { muxUploadId: { not: null } }, take: 1, select: { id: true } } },
+            });
             if (!asset || asset.userId !== ownerId) {
                 throw new UploadSessionError('NOT_FOUND', 'Asset not found');
             }
-            if (asset.moderation !== 'ACTIVE' || asset.status !== 'UPLOADING') {
+            if (asset.moderation !== 'ACTIVE') {
                 throw new UploadSessionError('ASSET_NOT_ACTIVE', 'Asset is not accepting original uploads');
             }
-            const previous = await db.uploadSession.findFirst({
+            if (asset.uploadMode === 'MUX' || asset.clips.length) {
+                throw new UploadSessionError('CLIP_CHANGED', 'Asset is reserved for a direct Mux upload');
+            }
+            if ((asset.originalIntentSizeBytes != null || asset.originalIntentSha256 != null)
+                && (asset.originalIntentSizeBytes !== Number(sizeBytes) || asset.originalIntentSha256 !== sha256)) {
+                throw new UploadSessionError('IDEMPOTENCY_CONFLICT', 'Upload content differs from the original reservation');
+            }
+            const recoverable = await db.uploadSession.findMany({
+                where: { assetId, status: { in: ['OPEN', 'COMPLETING', 'COMPLETED'] } },
+                orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+                take: 2,
+            });
+            if (recoverable.length > 1) {
+                throw new UploadSessionError('CLIP_CHANGED', 'Asset has multiple recoverable original sessions');
+            }
+            const previous = recoverable[0] || await db.uploadSession.findFirst({
                 where: { assetId },
                 orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
             });
             if (previous && previous.ownerId !== ownerId) {
                 throw new UploadSessionError('CLIP_CHANGED', 'Asset has an upload owned by another user');
             }
+            if (previous) await assertMatchingMetadata(previous, suppliedMetadata, request.body.metadata);
             if (previous?.status === 'COMPLETED') {
                 if (previous.expectedSizeBytes !== sizeBytes || previous.expectedSha256 !== sha256) {
                     throw new UploadSessionError('SESSION_EXISTS', 'Asset already has a completed original');
                 }
                 return { session: await sessions.get({ ownerId, uploadSessionId: previous.id }), created: false };
+            }
+            if (asset.status !== 'UPLOADING') {
+                throw new UploadSessionError('ASSET_NOT_ACTIVE', 'Asset is not accepting original uploads');
             }
             await assertLocked();
             const session = await sessions.create({
@@ -184,17 +352,29 @@ export default async function uploadSessionRoutes(fastify, {
                 expectedSizeBytes: sizeBytes,
                 expectedSha256: sha256,
                 initializeClip: true,
+                metadata,
             });
             await assertLocked();
             const resumed = await sessions.get({ ownerId, uploadSessionId: session.id });
-            return { session: resumed, created: session.id !== previous?.id };
+            return { session: resumed, created: session.id !== previous?.id, notify: !previous, asset };
         });
         if (!locked.acquired) {
             throw new UploadSessionError('SESSION_BUSY', 'Asset media is being changed; retry the request');
         }
-        return reply.status(locked.value.created ? 201 : 200).send({
-            uploadSession: await serializeForResponse(locked.value.session),
-        });
+        const uploadSession = await serializeForResponse(locked.value.session);
+        if (locked.value.notify) {
+            const asset = locked.value.asset;
+            const originalFileName = asset.originalFileName || asset.mediasourceId;
+            notifyUserSockets(fastify.io, ownerId, {
+                assetId,
+                asset: { mediasourceId: asset.mediasourceId, mediasourceUrl: asset.mediasourceUrl, originalFileName },
+                userName: request.user.name,
+                metadata,
+                clip: { id: uploadSession.clipId, fileSize: sizeBytes.toString() },
+            });
+            await notifyDashboardAssetChange(fastify, assetId);
+        }
+        return reply.status(locked.value.created ? 201 : 200).send({ uploadSession });
     }));
 
     fastify.get('/api/upload-sessions/:sessionId', {

@@ -334,7 +334,7 @@ final class ArchiveMediaTaskOwner {
         for asset: Asset, scope: PendingFormScope, sessionGeneration: UUID
     ) -> ArchiveRetryIntent? {
         guard snapshotScope == scope, snapshotGeneration == sessionGeneration,
-              currentAssets[asset.id] == asset, asset.permitsMediaActions,
+              currentAssets[asset.id] == asset, asset.permitsDirectMuxRetry,
               let revision = assetRevisions[asset.id] else {
             return nil
         }
@@ -466,7 +466,7 @@ nonisolated struct ArchiveRetryIntent {
     }
 
     func permits(_ asset: Asset) -> Bool {
-        self.asset.permitsMediaActions && asset.permitsMediaActions && self.asset == asset
+        self.asset.permitsDirectMuxRetry && asset.permitsDirectMuxRetry && self.asset == asset
     }
 }
 
@@ -518,7 +518,11 @@ struct ArchiveSessionIdentity {
 
     init?(auth: AuthService, serverURL: URL = ServerConfig.baseURL) {
         guard let user = auth.currentUser, let token = auth.token,
-              let scope = PendingFormScope(userId: user.id, serverURL: serverURL) else { return nil }
+              let scope = PendingFormScope(userId: user.id, serverURL: serverURL),
+              let server = AuthServerIdentity.canonical(serverURL),
+              auth.isCurrent(AuthenticatedSessionSnapshot(
+                  generation: auth.sessionGeneration, token: token,
+                  userId: user.id, server: server)) else { return nil }
         self.scope = scope
         self.serverURL = serverURL
         self.generation = auth.sessionGeneration
@@ -528,6 +532,9 @@ struct ArchiveSessionIdentity {
     func isCurrent(_ auth: AuthService, serverURL: URL = ServerConfig.baseURL) -> Bool {
         guard auth.sessionGeneration == generation, auth.token == token,
               serverURL == self.serverURL, let user = auth.currentUser,
+              let server = AuthServerIdentity.canonical(serverURL),
+              auth.isCurrent(AuthenticatedSessionSnapshot(
+                  generation: generation, token: token, userId: scope.userId, server: server)),
               let currentScope = PendingFormScope(userId: user.id, serverURL: serverURL)
         else { return false }
         return currentScope == scope
@@ -1359,9 +1366,8 @@ struct ArchiveListView: View {
             fetchGeneration == generation && session.isCurrent(auth)
         }
 
-        let request = auth.authenticatedRequest(for: url)
-
         do {
+            let request = try auth.authenticatedRequest(for: url)
             let (data, response) = try await RedirectSafeTransport.data(for: request)
             guard isCurrent() else { return .superseded }
             guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {

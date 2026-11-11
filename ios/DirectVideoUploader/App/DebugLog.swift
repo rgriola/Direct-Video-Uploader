@@ -31,7 +31,7 @@ nonisolated enum Log {
         if error is DecodingError { return .decoding }
         if let error = error as? UploadError {
             switch error {
-            case .invalidResponse: return .invalidResponse
+            case .invalidResponse, .unverifiedMode: return .invalidResponse
             case .serverError(let status, _): return failure(forStatus: status)
             case .fileNotFound: return .notFound
             case .sessionChanged: return .unauthorized
@@ -40,8 +40,11 @@ nonisolated enum Log {
         if let error = error as? AuthError {
             switch error {
             case .invalidResponse: return .invalidResponse
-            case .loginFailed, .loginInProgress: return .rejected
-            case .notAuthenticated, .tokenExpired, .sessionChanged: return .unauthorized
+            case .loginFailed, .loginInProgress, .restoreInProgress, .invalidServer: return .rejected
+            case .notAuthenticated, .tokenExpired, .sessionChanged, .identityMismatch: return .unauthorized
+            case .secureStorageFailed, .secureStorageCleanupIncomplete, .secureSignOutIncomplete:
+                return .permission
+            case .restoreUnavailable: return .transport
             }
         }
         if error is WebSocketError { return .transport }

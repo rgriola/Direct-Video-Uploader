@@ -11,6 +11,7 @@ import { withAssetMediaLock } from '../lib/media-lock.js';
 import { canExposePlayback } from '../lib/media-visibility.js';
 import { teamScope } from '../lib/authorization.js';
 import { isSuperAdmin } from '../lib/roles.js';
+import { getAssetUploadMode, serializeCreatedAsset } from '../lib/asset-serialization.js';
 import { notifyDashboardAssetChange } from '../ws/dashboard-notifications.js';
 import { userRoom } from '../ws/rooms.js';
 
@@ -25,7 +26,7 @@ const ALLOWED_VIDEO_MIMES = new Set([
     'video/3gpp2',
 ]);
 
-function serializeAsset(asset) {
+function serializeAsset(asset, { hasStoredOriginal = false } = {}) {
     const playbackAvailable = canExposePlayback(asset);
     const clips = asset.clips.map(clip => {
         const serialized = serializeClip(clip);
@@ -41,24 +42,40 @@ function serializeAsset(asset) {
         mediaSyncRevision: _revision,
         mediaSyncNextAt: _nextAt,
         mediaSyncError: _error,
+        uploadSessions: _uploadSessions,
+        uploadMode: _uploadMode,
+        originalIntentSizeBytes: _intentSize,
+        originalIntentSha256: _intentHash,
+        _count: _relationCounts,
         ...visible
     } = asset;
-    return { ...visible, mediaPlaybackUnavailable: !playbackAvailable, clips };
+    return {
+        ...visible,
+        uploadMode: getAssetUploadMode(asset, {
+            hasStoredOriginal,
+            hasMuxUpload: (asset._count?.clips ?? 0) > 0,
+        }),
+        mediaPlaybackUnavailable: !playbackAvailable,
+        clips,
+    };
 }
 
 export default async function assetRoutes(fastify) {
     /**
      * POST /api/assets
      * Create a new asset record.
-     * Body: { fileName?: string }
+     * Body: { fileName?: string, uploadMode?: 'MUX' }
      */
     fastify.post('/api/assets', {
         preHandler: [fastify.authenticate],
         config: {
             rateLimit: { max: 10, timeWindow: '1 minute' },
         },
-    }, async (request) => {
-        const { fileName } = request.body || {};
+    }, async (request, reply) => {
+        const { fileName, uploadMode } = request.body || {};
+        if (uploadMode != null && uploadMode !== 'MUX') {
+            return reply.status(400).send({ error: 'Use an original-upload reservation for original storage' });
+        }
         const mediasourceId = await generateMediasourceId(prisma);
 
         const asset = await dbRetry(() => prisma.asset.create({
@@ -68,22 +85,13 @@ export default async function assetRoutes(fastify) {
                 mediasourceUrl: `/clips/${mediasourceId}`,
                 originalFileName: fileName || null,
                 status: 'UPLOADING',
+                ...(uploadMode === 'MUX' ? { uploadMode: 'MUX' } : {}),
             },
         }));
 
         await notifyDashboardAssetChange(fastify, asset.id);
 
-        return {
-            asset: {
-                id: asset.id,
-                mediasourceId: asset.mediasourceId,
-                mediasourceUrl: asset.mediasourceUrl,
-                originalFileName: asset.originalFileName,
-                status: asset.status,
-                clipCount: asset.clipCount,
-                totalDuration: asset.totalDuration,
-            },
-        };
+        return { asset: serializeCreatedAsset(asset) };
     });
 
     /**
@@ -122,7 +130,10 @@ export default async function assetRoutes(fastify) {
         let locked;
         try {
             locked = await withAssetMediaLock(id, async assertLocked => {
-                const asset = await dbRetry(() => prisma.asset.findUnique({ where: { id } }));
+                const asset = await dbRetry(() => prisma.asset.findUnique({
+                    where: { id },
+                    include: { clips: { where: { storageKey: { not: null } }, take: 1, select: { id: true } } },
+                }));
                 if (!asset || asset.userId !== request.user.id) {
                     return { status: 404, body: { error: 'Asset not found' } };
                 }
@@ -133,7 +144,7 @@ export default async function assetRoutes(fastify) {
                     where: { assetId: id },
                     select: { id: true },
                 });
-                if (originalSession) {
+                if (asset.uploadMode === 'ORIGINAL' || originalSession || asset.clips?.length) {
                     return { status: 409, body: { error: 'This asset is reserved for an original-file upload.' } };
                 }
 
@@ -195,9 +206,13 @@ export default async function assetRoutes(fastify) {
                 const clipId = randomUUID();
                 const claimed = await dbRetry(() => prisma.$transaction(async tx => {
                     const updated = await tx.asset.updateMany({
-                        where: { id, userId: request.user.id, moderation: 'ACTIVE' },
+                        where: {
+                            id, userId: request.user.id, moderation: 'ACTIVE',
+                            OR: [{ uploadMode: null }, { uploadMode: 'MUX' }],
+                        },
                         data: {
                             status: 'PROCESSING',
+                            uploadMode: 'MUX',
                             ...(!staleClip ? { clipCount: { increment: 1 } } : {}),
                             totalDuration: metadata.duration,
                         },
@@ -300,17 +315,27 @@ export default async function assetRoutes(fastify) {
     fastify.get('/api/assets/mine', {
         preHandler: [fastify.authenticate],
     }, async (request) => {
-        const assets = await prisma.asset.findMany({
-            where: { userId: request.user.id, moderation: { in: ['ACTIVE', 'PAUSED'] } },
-            orderBy: { createdAt: 'desc' },
-            include: {
-                clips: { take: 1, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }] },
-                formResponse: true,
-            },
-        });
+        const ownerScope = { userId: request.user.id, moderation: { in: ['ACTIVE', 'PAUSED'] } };
+        const [assets, storedOriginals] = await Promise.all([
+            prisma.asset.findMany({
+                where: ownerScope,
+                orderBy: { createdAt: 'desc' },
+                include: {
+                    clips: { take: 1, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }] },
+                    _count: { select: { clips: { where: { muxUploadId: { not: null } } } } },
+                    uploadSessions: { take: 1, select: { id: true } },
+                    formResponse: true,
+                },
+            }),
+            prisma.clip.groupBy({
+                by: ['assetId'],
+                where: { storageKey: { not: null }, asset: ownerScope },
+            }),
+        ]);
 
         // Convert BigInt to string for JSON serialization
-        const serialized = assets.map(serializeAsset);
+        const storedAssetIds = new Set(storedOriginals.map(clip => clip.assetId));
+        const serialized = assets.map(asset => serializeAsset(asset, { hasStoredOriginal: storedAssetIds.has(asset.id) }));
 
         return { assets: serialized };
     });
@@ -336,6 +361,8 @@ export default async function assetRoutes(fastify) {
             },
             include: {
                 clips: true,
+                _count: { select: { clips: { where: { muxUploadId: { not: null } } } } },
+                uploadSessions: { take: 1, select: { id: true } },
                 formResponse: true,
                 user: {
                     select: { id: true, name: true, phoneNumber: true, team: true },

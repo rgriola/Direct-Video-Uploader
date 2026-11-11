@@ -65,22 +65,7 @@ struct ContentView: View {
         .preferredColorScheme(appearance.preferredColorScheme)
         .task {
             protectPendingFormFiles()
-            // Validate stored token before showing any UI
-            if auth.token != nil {
-                let generation = auth.sessionGeneration
-                let serverURL = ServerConfig.baseURL
-                do {
-                    try await auth.fetchMe()
-                } catch {
-                    // fetchMe already calls logout() on 401/403;
-                    // any other error (network down) also forces login
-                    // so the user doesn't get stuck on a blank profile.
-                    if auth.sessionGeneration == generation, ServerConfig.baseURL == serverURL {
-                        Log.error("⚠️ [Session] Restore failed: \(Log.describe(error)) — clearing session", logger: Log.auth)
-                        auth.logout()
-                    }
-                }
-            }
+            await auth.restoreSavedSession()
             sessionCheckComplete = true
         }
         .onChange(of: scenePhase, initial: true) { _, newPhase in
@@ -97,9 +82,16 @@ struct ContentView: View {
                 // Reconnect only when fully disconnected. If we're already in
                 // .connecting, allow that in-flight attempt to finish.
                 if sessionCheckComplete, auth.currentUser != nil,
-                   auth.isAuthenticated, let token = auth.token, ws.isDisconnected {
-                    Log.debug("🔄 [Scene] Returned to foreground — reconnecting WebSocket", logger: Log.app)
-                    ws.reconnectFromForeground(token: token)
+                   auth.isAuthenticated, ws.isDisconnected {
+                    do {
+                        let snapshot = try auth.authenticatedSnapshot()
+                        let sessionAuth = auth
+                        Log.debug("🔄 [Scene] Returned to foreground — reconnecting WebSocket", logger: Log.app)
+                        ws.reconnectFromForeground(
+                            token: snapshot.token, isCurrent: { sessionAuth.isCurrent(snapshot) })
+                    } catch {
+                        Log.error("Could not reconnect the current session: \(Log.describe(error))", logger: Log.auth)
+                    }
                 }
             case .background:
                 // 30s grace period — quick tab switches won't disconnect
@@ -138,6 +130,11 @@ struct ContentView: View {
             for: UIApplication.protectedDataDidBecomeAvailableNotification)
         ) { _ in
             protectPendingFormFiles()
+            if auth.signOutRequiresRetry {
+                auth.logout()
+            } else {
+                Task { await auth.restoreSavedSession() }
+            }
         }
         .alert(
             "Saved recovery information needs attention",

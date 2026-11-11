@@ -16,6 +16,7 @@ const prismaMock = {
     },
     clip: {
         findFirst: vi.fn(),
+        groupBy: vi.fn(),
         create: vi.fn(),
         update: vi.fn(),
         updateMany: vi.fn(),
@@ -96,6 +97,7 @@ beforeEach(async () => {
     prismaMock.asset.updateMany.mockResolvedValue({ count: 1 });
 
     prismaMock.clip.findFirst.mockResolvedValue(null);
+    prismaMock.clip.groupBy.mockResolvedValue([]);
     prismaMock.clip.create.mockResolvedValue({});
     prismaMock.clip.update.mockResolvedValue({});
     prismaMock.clip.updateMany.mockResolvedValue({ count: 1 });
@@ -163,6 +165,32 @@ describe('assets route deeper coverage', () => {
         expect(notifyDashboardAssetChange.mock.calls[0][0].io).toBe(app.io);
         expect(notifyDashboardAssetChange.mock.calls[0][1]).toBe('asset-1');
     });
+
+    it('records an explicit direct-Mux intent before upload starts', async () => {
+        prismaMock.asset.create.mockImplementationOnce(async ({ data }) => ({
+            ...data, id: 'asset-1', clipCount: 0, totalDuration: 0,
+        }));
+        const response = await app.inject({
+            method: 'POST',
+            url: '/api/assets',
+            payload: { fileName: 'field-clip.mp4', uploadMode: 'MUX' },
+        });
+
+        expect(response.statusCode).toBe(200);
+        expect(prismaMock.asset.create).toHaveBeenCalledWith(
+            expect.objectContaining({ data: expect.objectContaining({ uploadMode: 'MUX' }) }));
+        expect(response.json().asset.uploadMode).toBe('MUX');
+    });
+
+    it.each(['ORIGINAL', 'UNKNOWN', 'other', false])(
+        'rejects unsupported requested upload mode %s', async uploadMode => {
+            const response = await app.inject({
+                method: 'POST', url: '/api/assets', payload: { fileName: 'video.mov', uploadMode },
+            });
+            expect(response.statusCode).toBe(400);
+            expect(prismaMock.asset.create).not.toHaveBeenCalled();
+        },
+    );
 
     it('rejects unsupported mux upload mime types', async () => {
         prismaMock.asset.findUnique.mockResolvedValue({
@@ -279,6 +307,21 @@ describe('assets route deeper coverage', () => {
 
         expect(response.statusCode).toBe(200);
         expect(response.json().assets[0].mediaPlaybackUnavailable).toBe(false);
+    });
+
+    it('uses evidence from all clips when serializing archive upload modes', async () => {
+        prismaMock.asset.findMany.mockResolvedValue([
+            { id: 'original', moderation: 'ACTIVE', uploadMode: 'ORIGINAL', clips: [], _count: { clips: 1 } },
+            { id: 'mux', moderation: 'ACTIVE', uploadMode: 'MUX', clips: [], _count: { clips: 0 } },
+            { id: 'clean', moderation: 'ACTIVE', uploadMode: 'ORIGINAL', clips: [], _count: { clips: 0 } },
+        ]);
+        prismaMock.clip.groupBy.mockResolvedValue([{ assetId: 'mux' }]);
+
+        const response = await app.inject({ method: 'GET', url: '/api/assets/mine' });
+
+        expect(response.statusCode).toBe(200);
+        expect(response.json().assets.map(asset => asset.uploadMode)).toEqual(['UNKNOWN', 'UNKNOWN', 'ORIGINAL']);
+        expect(response.json().assets.every(asset => !Object.hasOwn(asset, '_count'))).toBe(true);
     });
 
     it('reuses existing waiting mux upload for idempotency', async () => {

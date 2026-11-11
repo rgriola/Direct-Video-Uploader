@@ -9,12 +9,16 @@
 /* Begin PBXBuildFile section */
 		1180A5A70A26DEDC5C34B59B /* DVUDateFormatting.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4DBB133385999B4E09A826F7 /* DVUDateFormatting.swift */; };
 		169D8BAC6DCF93E8BA23331B /* OnboardingStepView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D9A41DBC2D0BD1F47AF7EE95 /* OnboardingStepView.swift */; };
+		22D94F34E5A4145C6C21AC3D /* OriginalUploadStorageTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9BF79E3D1A1F9D71A0580215 /* OriginalUploadStorageTests.swift */; };
 		257DDBB48613A0897D5754F0 /* VideoLibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC53E361C83E04580CF05221 /* VideoLibraryView.swift */; };
 		25F4475ABDC354FFB218DC4B /* VideoUploadService.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA58877C26F0C09FF7DFA4DC /* VideoUploadService.swift */; };
+		2E1A56B4B6C8BEB6D58831B4 /* AuthSessionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0DD61BA4737D815E9B34F78A /* AuthSessionTests.swift */; };
 		2F5EB0FE2B5962DCCF6BCD5B /* LoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAA58A3F30BFA24CE268AD67 /* LoginView.swift */; };
 		3326B73E86C395A539C4B69E /* WebSocketService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0813D4F9F9F55CFAE78F08B5 /* WebSocketService.swift */; };
 		3397724BA17E25882518C0BD /* ConversationSummaryBubble.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC2A1D0A89F18984A90B5686 /* ConversationSummaryBubble.swift */; };
 		37912629DFC4719F11FEB3F5 /* MetadataView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2796AFC62F34F3182D7CCE1C /* MetadataView.swift */; };
+		428BD7C7915AC86E04761F66 /* OriginalUploadBackgroundTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3D7411FA0D04757D161CBA1 /* OriginalUploadBackgroundTransport.swift */; };
+		4AAA87A67DA738FB8FB66AAE /* OriginalUploadAPITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 784AD6DC1EF125DC006EAB9A /* OriginalUploadAPITests.swift */; };
 		4B254383C12F662D1C19C869 /* ChatButtonStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = E40A97DC8EDA46629FA1ACA5 /* ChatButtonStyle.swift */; };
 		52DEC1E47DF5649ABBBC6F20 /* PermissionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 744BF6B02789CE656827F003 /* PermissionManager.swift */; };
 		573E4CF217840EE657777312 /* PermissionRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89340492FFB11E5B32505025 /* PermissionRow.swift */; };
@@ -32,8 +36,10 @@
 		8942F3630BCFD538BAE544E5 /* Asset.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F9DE735EEFFFCC798CA054C /* Asset.swift */; };
 		8CC14DFD30C33058BF4FA39B /* VideoTrimView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51E2EB93368D36F22B8AC2A4 /* VideoTrimView.swift */; };
 		8CDB0858FD44667AD9882E4D /* VideoBubble.swift in Sources */ = {isa = PBXBuildFile; fileRef = B136E4B9F4C6D88E9009D569 /* VideoBubble.swift */; };
+		92F3242D640208A131E26BFE /* OriginalUploadBackgroundTransportTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0FC1EC77ED09B5D1D2989516 /* OriginalUploadBackgroundTransportTests.swift */; };
 		94EB8482D6F7158958A03393 /* InputBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF5B8A623A0F5AA9CA07EA1A /* InputBar.swift */; };
 		958C853DDA42C7E81E258AC7 /* DVUDateFormatting.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4DBB133385999B4E09A826F7 /* DVUDateFormatting.swift */; };
+		95D5CCC75D07FFAC90B1270C /* OriginalUploadAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = B8E740547155B7FAF76FEC97 /* OriginalUploadAPI.swift */; };
 		96DC3023004885C6D827D556 /* DebugLogTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77D00A8D1DFCA0DE0632342A /* DebugLogTests.swift */; };
 		9BBB6F1B72D725E44BD68AC1 /* DebugLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 373E61FB61E12FD921DBF491 /* DebugLog.swift */; };
 		9C749D1F06E03EF78A32DA0D /* MessageBehaviorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17AEE28CC906D032D1BD31D0 /* MessageBehaviorTests.swift */; };
@@ -50,6 +56,7 @@
 		C580ED7D08982A24440B91B7 /* OnboardingCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = B32A4BA1AD50B50D44528EF2 /* OnboardingCatalog.swift */; };
 		CC1C0E76EF9FE58674443EC5 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A7F3BED43E9CB3FFE330020 /* Theme.swift */; };
 		CE6C303AB52C17CF99EFD315 /* User.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A0611DEBA9BE67788466164 /* User.swift */; };
+		D120A6B434358D959604F1A9 /* OriginalUploadStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2736CE2375DAE7AEBDFF1BE9 /* OriginalUploadStorage.swift */; };
 		D683D53CD3990DC7DE74FBC0 /* AuthService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86A11FF4693D09E9320E8C07 /* AuthService.swift */; };
 		E144F5D17D4BFEAD29916893 /* MessagePolicyCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 971135FDDFCC6553BD6FD5DC /* MessagePolicyCoordinator.swift */; };
 		E2AB9C60B42CFBE53F549879 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = CC7AA7D72D102A4BC8F6B464 /* Assets.xcassets */; };
@@ -75,10 +82,13 @@
 /* Begin PBXFileReference section */
 		02302BA1984533BE8F7E4F3E /* PhotosView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotosView.swift; sourceTree = "<group>"; };
 		0813D4F9F9F55CFAE78F08B5 /* WebSocketService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebSocketService.swift; sourceTree = "<group>"; };
+		0DD61BA4737D815E9B34F78A /* AuthSessionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthSessionTests.swift; sourceTree = "<group>"; };
 		0E996DE4500DDFF0790F62F0 /* VideoMetadataExtractor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoMetadataExtractor.swift; sourceTree = "<group>"; };
+		0FC1EC77ED09B5D1D2989516 /* OriginalUploadBackgroundTransportTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OriginalUploadBackgroundTransportTests.swift; sourceTree = "<group>"; };
 		11D39EE8D05CC894E99A1322 /* DirectVideoUploaderTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = DirectVideoUploaderTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		17AEE28CC906D032D1BD31D0 /* MessageBehaviorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageBehaviorTests.swift; sourceTree = "<group>"; };
 		19D31EFA40943514A1419E4D /* PermissionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionTests.swift; sourceTree = "<group>"; };
+		2736CE2375DAE7AEBDFF1BE9 /* OriginalUploadStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OriginalUploadStorage.swift; sourceTree = "<group>"; };
 		2796AFC62F34F3182D7CCE1C /* MetadataView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetadataView.swift; sourceTree = "<group>"; };
 		2B7EEEC345EAFF2EE3EFD9CA /* MessageBubble.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageBubble.swift; sourceTree = "<group>"; };
 		2F9DE735EEFFFCC798CA054C /* Asset.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Asset.swift; sourceTree = "<group>"; };
@@ -95,6 +105,7 @@
 		6F12FE8A5DFBB6A96349CB07 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		744BF6B02789CE656827F003 /* PermissionManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionManager.swift; sourceTree = "<group>"; };
 		77D00A8D1DFCA0DE0632342A /* DebugLogTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugLogTests.swift; sourceTree = "<group>"; };
+		784AD6DC1EF125DC006EAB9A /* OriginalUploadAPITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OriginalUploadAPITests.swift; sourceTree = "<group>"; };
 		7CB447F960F2A8A21F7DA5C5 /* RetryHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RetryHelper.swift; sourceTree = "<group>"; };
 		86A11FF4693D09E9320E8C07 /* AuthService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthService.swift; sourceTree = "<group>"; };
 		89340492FFB11E5B32505025 /* PermissionRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionRow.swift; sourceTree = "<group>"; };
@@ -102,12 +113,15 @@
 		897A61AF6BF471E837E565AE /* OriginalVideoLoader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OriginalVideoLoader.swift; sourceTree = "<group>"; };
 		89F6F2F5DBBEE529E69418D7 /* SlackShareSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SlackShareSheet.swift; sourceTree = "<group>"; };
 		971135FDDFCC6553BD6FD5DC /* MessagePolicyCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessagePolicyCoordinator.swift; sourceTree = "<group>"; };
+		9BF79E3D1A1F9D71A0580215 /* OriginalUploadStorageTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OriginalUploadStorageTests.swift; sourceTree = "<group>"; };
 		A77C71A9F537FD4326BD7943 /* PermissionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionsView.swift; sourceTree = "<group>"; };
 		AAA58A3F30BFA24CE268AD67 /* LoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginView.swift; sourceTree = "<group>"; };
 		AC53E361C83E04580CF05221 /* VideoLibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoLibraryView.swift; sourceTree = "<group>"; };
 		AD0ED0DC26FB3DB82C03DDF6 /* MessageCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageCatalog.swift; sourceTree = "<group>"; };
 		B136E4B9F4C6D88E9009D569 /* VideoBubble.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoBubble.swift; sourceTree = "<group>"; };
 		B32A4BA1AD50B50D44528EF2 /* OnboardingCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingCatalog.swift; sourceTree = "<group>"; };
+		B3D7411FA0D04757D161CBA1 /* OriginalUploadBackgroundTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OriginalUploadBackgroundTransport.swift; sourceTree = "<group>"; };
+		B8E740547155B7FAF76FEC97 /* OriginalUploadAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OriginalUploadAPI.swift; sourceTree = "<group>"; };
 		CC18F5FFC74280EFFEB0BE65 /* ChatMessage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatMessage.swift; sourceTree = "<group>"; };
 		CC7AA7D72D102A4BC8F6B464 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		CE10509FD1B4B7983FB58B3D /* DirectVideoUploaderApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DirectVideoUploaderApp.swift; sourceTree = "<group>"; };
@@ -134,10 +148,14 @@
 		0A6481ED3975CF016618D9E5 /* DirectVideoUploaderTests */ = {
 			isa = PBXGroup;
 			children = (
+				0DD61BA4737D815E9B34F78A /* AuthSessionTests.swift */,
 				77D00A8D1DFCA0DE0632342A /* DebugLogTests.swift */,
 				CF68B53E9AF4B264A2643194 /* DVUDateFormattingTests.swift */,
 				17AEE28CC906D032D1BD31D0 /* MessageBehaviorTests.swift */,
 				CF22B93B635C47AD22888777 /* ModelDecodingTests.swift */,
+				784AD6DC1EF125DC006EAB9A /* OriginalUploadAPITests.swift */,
+				0FC1EC77ED09B5D1D2989516 /* OriginalUploadBackgroundTransportTests.swift */,
+				9BF79E3D1A1F9D71A0580215 /* OriginalUploadStorageTests.swift */,
 				19D31EFA40943514A1419E4D /* PermissionTests.swift */,
 				DF9E9EFEDAF41E029941061B /* UploadFidelityTests.swift */,
 			);
@@ -163,6 +181,9 @@
 				AD0ED0DC26FB3DB82C03DDF6 /* MessageCatalog.swift */,
 				971135FDDFCC6553BD6FD5DC /* MessagePolicyCoordinator.swift */,
 				B32A4BA1AD50B50D44528EF2 /* OnboardingCatalog.swift */,
+				B8E740547155B7FAF76FEC97 /* OriginalUploadAPI.swift */,
+				B3D7411FA0D04757D161CBA1 /* OriginalUploadBackgroundTransport.swift */,
+				2736CE2375DAE7AEBDFF1BE9 /* OriginalUploadStorage.swift */,
 				897A61AF6BF471E837E565AE /* OriginalVideoLoader.swift */,
 				744BF6B02789CE656827F003 /* PermissionManager.swift */,
 				E0F22B2B9DC29CAFA863CDB2 /* TranscriptionService.swift */,
@@ -430,11 +451,15 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				2E1A56B4B6C8BEB6D58831B4 /* AuthSessionTests.swift in Sources */,
 				1180A5A70A26DEDC5C34B59B /* DVUDateFormatting.swift in Sources */,
 				EBEC000F1AAA3C0BD3EE4858 /* DVUDateFormattingTests.swift in Sources */,
 				96DC3023004885C6D827D556 /* DebugLogTests.swift in Sources */,
 				9C749D1F06E03EF78A32DA0D /* MessageBehaviorTests.swift in Sources */,
 				A03DEE56B0012BF04210CFB7 /* ModelDecodingTests.swift in Sources */,
+				4AAA87A67DA738FB8FB66AAE /* OriginalUploadAPITests.swift in Sources */,
+				92F3242D640208A131E26BFE /* OriginalUploadBackgroundTransportTests.swift in Sources */,
+				22D94F34E5A4145C6C21AC3D /* OriginalUploadStorageTests.swift in Sources */,
 				594327BAB71F0FC1D863A84C /* PermissionTests.swift in Sources */,
 				BBA09A91B5233D09E3031DF3 /* UploadFidelityTests.swift in Sources */,
 			);
@@ -471,6 +496,9 @@
 				C580ED7D08982A24440B91B7 /* OnboardingCatalog.swift in Sources */,
 				169D8BAC6DCF93E8BA23331B /* OnboardingStepView.swift in Sources */,
 				F10D6B52A7FB3C74ADB93160 /* OnboardingWalkthroughView.swift in Sources */,
+				95D5CCC75D07FFAC90B1270C /* OriginalUploadAPI.swift in Sources */,
+				428BD7C7915AC86E04761F66 /* OriginalUploadBackgroundTransport.swift in Sources */,
+				D120A6B434358D959604F1A9 /* OriginalUploadStorage.swift in Sources */,
 				58439F211DD0E7B94E6BBB6E /* OriginalVideoLoader.swift in Sources */,
 				52DEC1E47DF5649ABBBC6F20 /* PermissionManager.swift in Sources */,
 				573E4CF217840EE657777312 /* PermissionRow.swift in Sources */,
