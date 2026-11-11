@@ -415,7 +415,8 @@ outstanding background tasks until the user reopens it.
   to the clip. A successful retry returns the same completed session. Missing
   parts or an in-progress operation return 409; integrity mismatch returns 422.
 - `DELETE /api/upload-sessions/:sessionId` aborts an unfinished session.
-  Retrying is safe; an already expired session reports `EXPIRED`. If cleanup is
+  A successful HTTP 200 returns `{"uploadSession":{"id":"...","status":"ABORTED"}}`;
+  an already expired session reports `EXPIRED`. Retrying is safe. If cleanup is
   busy, retry until it succeeds. A completed original cannot be aborted (409).
 
 Invalid, expired, suspended-account, or moderated-asset signed PUTs return 403.

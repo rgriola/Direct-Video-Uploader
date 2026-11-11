@@ -1,5 +1,9 @@
 import Foundation
 
+nonisolated private enum OriginalUploadResponseLimit {
+    static let maximumBytes = 64 * 1024
+}
+
 nonisolated enum OriginalUploadAPIError: LocalizedError, Equatable {
     case unavailable
     case invalidOrigin
@@ -7,6 +11,8 @@ nonisolated enum OriginalUploadAPIError: LocalizedError, Equatable {
     case invalidResponse
     case partMismatch
     case sessionChanged
+    case cancellationQuota(retryAfterSeconds: Int)
+    case cancellationSessionLimit
     case httpStatus(Int)
 
     var errorDescription: String? {
@@ -17,6 +23,8 @@ nonisolated enum OriginalUploadAPIError: LocalizedError, Equatable {
         case .invalidResponse: "The server returned invalid upload information."
         case .partMismatch: "The server has different bytes for this upload part."
         case .sessionChanged: "The account or server changed. Reopen this upload under its original account."
+        case .cancellationQuota(let seconds): "Too many cancellation requests. Try again in \(seconds) seconds."
+        case .cancellationSessionLimit: "This cancellation needs server reconciliation before it can finish."
         case .httpStatus(let status): "The original upload service returned HTTP \(status)."
         }
     }
@@ -26,6 +34,111 @@ nonisolated struct OriginalUploadServerPart: Decodable, Equatable, Sendable {
     let partNumber: Int
     let sizeBytes: String
     let sha256: String
+}
+
+nonisolated private enum OriginalUploadReceiptJSON {
+    private struct Container {
+        let close: UInt8
+        let objectIndex: Int?
+        var expectsKey: Bool
+    }
+
+    static func objectKeys(in data: Data) throws -> [[String]] {
+        // The byte scanner and Foundation must interpret the same UTF-8 input.
+        guard !data.contains(0), String(data: data, encoding: .utf8) != nil else {
+            throw OriginalUploadAPIError.invalidResponse
+        }
+        // Foundation validates syntax but collapses duplicate object keys.
+        var keys: [[String]] = []
+        var stack: [Container] = []
+        var index = data.startIndex
+        while index < data.endIndex {
+            switch data[index] {
+            case 0x7B:
+                guard stack.count < 2, keys.count < 2 else { throw OriginalUploadAPIError.invalidResponse }
+                keys.append([])
+                stack.append(Container(close: 0x7D, objectIndex: keys.count - 1, expectsKey: true))
+            case 0x5B:
+                guard stack.count < 2 else { throw OriginalUploadAPIError.invalidResponse }
+                stack.append(Container(close: 0x5D, objectIndex: nil, expectsKey: false))
+            case 0x7D, 0x5D:
+                guard stack.last?.close == data[index] else { throw OriginalUploadAPIError.invalidResponse }
+                stack.removeLast()
+            case 0x2C:
+                if !stack.isEmpty, stack[stack.count - 1].objectIndex != nil {
+                    stack[stack.count - 1].expectsKey = true
+                }
+            case 0x22:
+                let start = index
+                index = data.index(after: index)
+                var escaped = false
+                while index < data.endIndex {
+                    let byte = data[index]
+                    if escaped {
+                        escaped = false
+                    } else if byte == 0x5C {
+                        escaped = true
+                    } else if byte == 0x22 {
+                        break
+                    }
+                    index = data.index(after: index)
+                }
+                guard index < data.endIndex else { throw OriginalUploadAPIError.invalidResponse }
+                if let objectIndex = stack.last?.objectIndex, stack.last?.expectsKey == true {
+                    guard keys[objectIndex].count < 2 else { throw OriginalUploadAPIError.invalidResponse }
+                    let end = data.index(after: index)
+                    let key = try JSONDecoder().decode(String.self, from: data.subdata(in: start..<end))
+                    guard !keys[objectIndex].contains(key) else { throw OriginalUploadAPIError.invalidResponse }
+                    keys[objectIndex].append(key)
+                    stack[stack.count - 1].expectsKey = false
+                }
+            default:
+                break
+            }
+            index = data.index(after: index)
+        }
+        guard stack.isEmpty else { throw OriginalUploadAPIError.invalidResponse }
+        return keys
+    }
+}
+
+nonisolated struct OriginalUploadCancellationReceipt: Decodable, Equatable, Sendable {
+    static let maximumSessions = 100
+    let assetId: String?
+    let sessionIds: [String]
+
+    static func decode(_ data: Data) throws -> Self {
+        do {
+            let keys = try OriginalUploadReceiptJSON.objectKeys(in: data)
+            guard keys.count == 1, Set(keys[0]) == Set(["assetId", "sessionIds"]) else {
+                throw OriginalUploadAPIError.invalidResponse
+            }
+            return try JSONDecoder().decode(Self.self, from: data)
+        } catch is DecodingError {
+            throw OriginalUploadAPIError.invalidResponse
+        }
+    }
+
+    func validate(for job: OriginalUploadJob) throws {
+        guard sessionIds.count <= Self.maximumSessions, assetId != nil || sessionIds.isEmpty else {
+            throw OriginalUploadAPIError.invalidResponse
+        }
+        guard sessionIds.allSatisfy({ UUID(uuidString: $0) != nil }),
+              Set(sessionIds).count == sessionIds.count else {
+            throw OriginalUploadAPIError.invalidResponse
+        }
+        if let assetId {
+            guard UUID(uuidString: assetId) != nil else { throw OriginalUploadAPIError.invalidResponse }
+            if let expected = job.assetId {
+                guard expected == assetId else { throw OriginalUploadAPIError.invalidResponse }
+            }
+            if let expected = job.sessionId {
+                guard sessionIds.contains(expected) else {
+                    throw OriginalUploadAPIError.invalidResponse
+                }
+            }
+        }
+    }
 }
 
 nonisolated struct OriginalUploadServerSession: Decodable, Sendable {
@@ -221,6 +334,19 @@ final class OriginalUploadAPI {
         let uploadSession: OriginalUploadServerSession
     }
 
+    private struct ErrorResponse: Decodable {
+        let code: String?
+    }
+
+    private struct AbortResponse: Decodable {
+        struct Session: Decodable {
+            let id: String
+            let status: OriginalUploadServerSession.Status
+        }
+
+        let uploadSession: Session
+    }
+
     private let access: OriginalUploadAccess
     private let journal: OriginalUploadJournal
     private let transport: @Sendable (URLRequest) async throws -> (Data, URLResponse)
@@ -230,7 +356,8 @@ final class OriginalUploadAPI {
         access: OriginalUploadAccess,
         journal: OriginalUploadJournal = .shared,
         transport: @escaping @Sendable (URLRequest) async throws -> (Data, URLResponse) = {
-            try await RedirectSafeTransport.data(for: $0)
+            try await RedirectSafeTransport.boundedData(
+                for: $0, maximumBytes: OriginalUploadResponseLimit.maximumBytes)
         }
     ) throws {
         #if !DEBUG
@@ -337,14 +464,42 @@ final class OriginalUploadAPI {
         return session
     }
 
+    func cancelIntent(for job: OriginalUploadJob) async throws -> OriginalUploadCancellationReceipt {
+        try ensureCurrent(job, allowsCancellation: true)
+        guard job.cancellationRequested else { throw OriginalUploadAPIError.invalidResponse }
+        let data = try await request(
+            job: job, path: "/api/assets/original-uploads/\(job.id.uuidString.lowercased())/cancel",
+            method: "POST", allowsCancellation: true, expectedStatus: 200, cancellationFence: true)
+        try ensureCurrent(job, allowsCancellation: true)
+        let receipt = try OriginalUploadCancellationReceipt.decode(data)
+        try receipt.validate(for: job)
+        return receipt
+    }
+
     func abort(_ job: OriginalUploadJob) async throws {
         try ensureCurrent(job, allowsCancellation: true)
         guard job.state == .uploading, let sessionId = job.sessionId else {
             throw OriginalUploadAPIError.invalidResponse
         }
-        _ = try await request(
-            job: job, path: "/api/upload-sessions/\(sessionId)", method: "DELETE", allowsCancellation: true)
+        let data = try await request(
+            job: job, path: "/api/upload-sessions/\(sessionId)", method: "DELETE",
+            allowsCancellation: true, expectedStatus: 200)
         try ensureCurrent(job, allowsCancellation: true)
+        let response: AbortResponse
+        do {
+            let keys = try OriginalUploadReceiptJSON.objectKeys(in: data)
+            guard keys.count == 2, keys[0] == ["uploadSession"],
+                  Set(keys[1]) == Set(["id", "status"]) else {
+                throw OriginalUploadAPIError.invalidResponse
+            }
+            response = try JSONDecoder().decode(AbortResponse.self, from: data)
+        } catch is DecodingError {
+            throw OriginalUploadAPIError.invalidResponse
+        }
+        guard response.uploadSession.id == sessionId,
+              [.aborted, .expired].contains(response.uploadSession.status) else {
+            throw OriginalUploadAPIError.invalidResponse
+        }
     }
 
     private func decodeSession(
@@ -374,15 +529,18 @@ final class OriginalUploadAPI {
         job: OriginalUploadJob, path: String, method: String, body: Body
     ) async throws -> Data {
         var request = try makeRequest(path: path, method: method)
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONEncoder().encode(body)
         return try await perform(request, job: job)
     }
 
     private func request(
-        job: OriginalUploadJob, path: String, method: String, allowsCancellation: Bool = false
+        job: OriginalUploadJob, path: String, method: String, allowsCancellation: Bool = false,
+        expectedStatus: Int? = nil, cancellationFence: Bool = false
     ) async throws -> Data {
         try await perform(
-            makeRequest(path: path, method: method), job: job, allowsCancellation: allowsCancellation)
+            makeRequest(path: path, method: method), job: job, allowsCancellation: allowsCancellation,
+            expectedStatus: expectedStatus, cancellationFence: cancellationFence)
     }
 
     private func makeRequest(path: String, method: String) throws -> URLRequest {
@@ -392,12 +550,12 @@ final class OriginalUploadAPI {
         var request = URLRequest(url: url)
         request.httpMethod = method
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         return request
     }
 
     private func perform(
-        _ request: URLRequest, job: OriginalUploadJob, allowsCancellation: Bool = false
+        _ request: URLRequest, job: OriginalUploadJob, allowsCancellation: Bool = false,
+        expectedStatus: Int? = nil, cancellationFence: Bool = false
     ) async throws -> Data {
         try Task.checkCancellation()
         try ensureCurrent(job, allowsCancellation: allowsCancellation)
@@ -408,13 +566,41 @@ final class OriginalUploadAPI {
         } catch {
             try Task.checkCancellation()
             try ensureCurrent(job, allowsCancellation: allowsCancellation)
+            if (error as? URLError)?.code == .dataLengthExceedsMaximum {
+                throw OriginalUploadAPIError.invalidResponse
+            }
             throw error
         }
         try Task.checkCancellation()
         try ensureCurrent(job, allowsCancellation: allowsCancellation)
+        guard data.count <= OriginalUploadResponseLimit.maximumBytes else {
+            throw OriginalUploadAPIError.invalidResponse
+        }
         guard let http = response as? HTTPURLResponse else { throw OriginalUploadAPIError.invalidResponse }
         guard (200...299).contains(http.statusCode) else {
+            if cancellationFence, [429, 503].contains(http.statusCode) {
+                let error: ErrorResponse
+                do {
+                    error = try JSONDecoder().decode(ErrorResponse.self, from: data)
+                } catch is DecodingError {
+                    throw OriginalUploadAPIError.httpStatus(http.statusCode)
+                }
+                if http.statusCode == 429, error.code == "INTENT_CANCELLATION_QUOTA" {
+                    guard let header = http.value(forHTTPHeaderField: "Retry-After"),
+                          !header.isEmpty, header.allSatisfy({ ("0"..."9").contains($0) }),
+                          let seconds = Int(header), (1...86_400).contains(seconds) else {
+                        throw OriginalUploadAPIError.invalidResponse
+                    }
+                    throw OriginalUploadAPIError.cancellationQuota(retryAfterSeconds: seconds)
+                }
+                if http.statusCode == 503, error.code == "INTENT_SESSION_LIMIT" {
+                    throw OriginalUploadAPIError.cancellationSessionLimit
+                }
+            }
             throw OriginalUploadAPIError.httpStatus(http.statusCode)
+        }
+        if let expectedStatus, http.statusCode != expectedStatus {
+            throw OriginalUploadAPIError.invalidResponse
         }
         return data
     }
