@@ -312,6 +312,7 @@ export default async function adminRoutes(fastify) {
         }
 
         const candidates = staleAssets.map(a => a.id);
+        // The locked recheck must see cancellations committed while waiting.
         const ids = await prisma.$transaction(async tx => {
             const locked = await tx.$queryRaw`
                 SELECT id FROM assets WHERE id IN (${Prisma.join(candidates)}) ORDER BY id FOR UPDATE
@@ -325,7 +326,7 @@ export default async function adminRoutes(fastify) {
             await tx.chatMessage.deleteMany({ where: { assetId: { in: safeIds } } });
             await tx.asset.deleteMany({ where: { id: { in: safeIds } } });
             return safeIds;
-        });
+        }, { isolationLevel: 'ReadCommitted' });
 
         if (!ids.length) return { cleaned: 0, message: 'No stale assets found' };
         request.log.info(
