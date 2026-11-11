@@ -297,6 +297,7 @@ export default async function adminRoutes(fastify) {
             clips: { none: {} },
             muxAssetReferences: { none: {} },
             mediaCreateOperationId: null,
+            NOT: { originalUploadIntent: { is: { cancelledAt: { not: null } } } },
             ...cleanupEligibleUploadModes(),
         };
         const staleAssets = await prisma.asset.findMany({

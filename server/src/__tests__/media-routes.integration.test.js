@@ -448,7 +448,7 @@ integration('media routes against PostgreSQL', () => {
             .toMatchObject({ status: 'ERROR', uploadMode: 'ORIGINAL' });
     });
 
-    it('does not mark a cancelled original reservation as an orphan', async () => {
+    it('retains a cancelled original reservation during orphan and administrative cleanup', async () => {
         await createAsset({
             status: 'UPLOADING',
             uploadMode: 'ORIGINAL',
@@ -465,7 +465,50 @@ integration('media routes against PostgreSQL', () => {
         expect(await prisma.asset.findUnique({ where: { id: assetId } }))
             .toMatchObject({ status: 'UPLOADING', uploadMode: 'ORIGINAL' });
         expect(vi.mocked(notifyDashboardAssetChange).mock.calls.some(([, id]) => id === assetId)).toBe(false);
+        const cleanup = await requestAs(adminId, 'POST', '/api/admin/cleanup-assets', {});
+        expect(cleanup.statusCode, cleanup.body).toBe(200);
+        expect(cleanup.json().cleaned).toBe(0);
+        expect(await prisma.originalUploadIntent.findFirst({ where: { assetId } }))
+            .toMatchObject({ assetId, userId });
     });
+
+    it('rechecks cancellation after administrative cleanup waits for the asset lock', async () => {
+        await createAsset({
+            status: 'UPLOADING',
+            uploadMode: 'ORIGINAL',
+            createdAt: new Date(Date.now() - 25 * 60 * 60 * 1000),
+        });
+        const clientRequestId = randomUUID();
+        const where = { userId_clientRequestId: { userId, clientRequestId } };
+        await prisma.originalUploadIntent.create({ data: { userId, clientRequestId, assetId } });
+        const entered = deferred();
+        const release = deferred();
+        const cancellation = prisma.$transaction(async tx => {
+            await tx.$queryRaw`SELECT id FROM users WHERE id = ${userId} FOR UPDATE`;
+            await tx.$queryRaw`SELECT id FROM assets WHERE id = ${assetId} FOR UPDATE`;
+            await tx.originalUploadIntent.update({ where, data: { cancelledAt: new Date() } });
+            entered.resolve();
+            await release.promise;
+        }, { timeout: 15_000 });
+        let cleanup;
+        let response;
+        try {
+            await Promise.race([
+                entered.promise,
+                cancellation.then(() => { throw new Error('Cancellation did not pause'); }),
+            ]);
+            cleanup = requestAs(adminId, 'POST', '/api/admin/cleanup-assets', {});
+            await waitForBlockedQuery(pool, 'SELECT id FROM assets WHERE id IN');
+        } finally {
+            release.resolve();
+            await cancellation;
+            if (cleanup) response = await cleanup;
+        }
+        expect(response.statusCode, response.body).toBe(200);
+        expect(response.json().cleaned).toBe(0);
+        expect(await prisma.asset.findUnique({ where: { id: assetId } })).not.toBeNull();
+        expect(await prisma.originalUploadIntent.findUnique({ where })).toMatchObject({ assetId });
+    }, 15_000);
 
     it('rechecks cancellation after waiting for the orphaned asset lock', async () => {
         await createAsset({

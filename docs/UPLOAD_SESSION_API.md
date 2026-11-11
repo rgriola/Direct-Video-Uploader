@@ -264,10 +264,10 @@ Reservation prevents direct-to-Mux upload on that asset even before a session
 exists. An original reservation without a session is protected from the
 automatic orphan sweep and administrative empty-asset cleanup for 24 hours.
 After that, the sweep can mark an uncancelled reservation `ERROR`, while
-cancelled intents are excluded from the sweep. Administrative cleanup can
-still remove eligible empty assets. A client must report an error or removal
-and start a fresh job with a new request ID instead of claiming the old
-reservation was resumed.
+cancelled intents are excluded from both the sweep and administrative
+empty-asset cleanup. That cleanup can still remove other eligible empty assets.
+A client must report an error or removal and start a fresh job with a new
+request ID instead of claiming the old reservation was resumed.
 
 `GET /api/assets/:id` and `GET /api/assets/mine` expose `uploadMode` as
 `ORIGINAL`, `MUX`, or `UNKNOWN`, including while upload-session routes are

@@ -705,7 +705,8 @@ sequenceDiagram
 - [x] Implement the separate opt-in tracked-session restart/expiry sweep and an
   operator procedure for ambiguous or orphaned local-driver data (Step 4.2g).
   The legacy orphan job excludes assets with any original session or a
-  cancelled original-upload intent; administrative cleanup remains separate.
+  cancelled original-upload intent; administrative empty-asset cleanup also
+  excludes cancelled intents.
 - [ ] Validate tracked cleanup and manual review of untracked directories and
   ambiguous locks on the intended storage before enabling production originals.
 - [ ] Disk guardrails:
