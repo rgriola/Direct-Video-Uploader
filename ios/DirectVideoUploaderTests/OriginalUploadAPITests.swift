@@ -249,6 +249,14 @@ struct OriginalUploadAPITests {
             (response, HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
         })
         let capability = try await api.sign(for: job, session: session, partNumber: 1)
+        let responseString = try #require(String(data: response, encoding: .utf8))
+        let duplicate = Data((String(responseString.dropLast()) + #", "\u0070artNumber":1}"#).utf8)
+        let ambiguous = try OriginalUploadAPI(access: access, journal: journal, transport: { request in
+            (duplicate, HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+        })
+        await #expect(throws: OriginalUploadAPIError.invalidResponse) {
+            try await ambiguous.sign(for: job, session: session, partNumber: 1)
+        }
         let part = OriginalUploadPart(
             url: URL(fileURLWithPath: "/nonexistent-test-part"), number: 1, fingerprint: fingerprint)
         try capability.require(job: job, part: part, access: access, now: now)
@@ -275,6 +283,106 @@ struct OriginalUploadAPITests {
             try capability.require(
                 job: job, part: part, access: access,
                 now: Date(timeIntervalSince1970: TimeInterval(expiry)))
+        }
+    }
+
+    @Test
+    @MainActor
+    func reservationRejectsAmbiguousJSONAndAcceptsUniqueNestedKeys() async throws {
+        let directory = try fixture()
+        defer { cleanup(directory) }
+        let server = URL(string: "https://isolated.example.test")!
+        let auth = AuthService(storage: .memory, serverURL: { server })
+        auth.token = "test-token"
+        auth.currentUser = User(
+            id: "user-1", phoneNumber: "5550100", name: "Reporter", email: nil, team: nil,
+            status: "ACTIVE", companyCode: nil, companyName: nil)
+        let access = try OriginalUploadAccess(auth: auth, allowedOrigins: ["https://isolated.example.test"])
+        let (journal, job) = try await prepareJob(access: access, directory: directory)
+        let assetId = UUID().uuidString
+        let asset = #"{"id":"\#(assetId)","status":"UPLOADING","uploadMode":"ORIGINAL"}"#
+
+        func api(_ data: Data) throws -> OriginalUploadAPI {
+            try OriginalUploadAPI(access: access, journal: journal, transport: { request in
+                (data, HTTPURLResponse(url: request.url!, statusCode: 201, httpVersion: nil, headerFields: nil)!)
+            })
+        }
+
+        let valid = #"{"asset":\#(asset),"future":[{"name":"one"},{"name":"two"}],"literal":"comma, braces{} and quote: \""}"#
+        #expect(try await api(Data(valid.utf8)).reserve(job).id == assetId)
+        #expect(try await api(Data([0xEF, 0xBB, 0xBF]) + Data(valid.utf8)).reserve(job).id == assetId)
+        let ambiguous = [
+            #"{"asset":\#(asset),"asset":\#(asset)}"#,
+            #"{"asset":{"id":"\#(assetId)","status":"UPLOADING","uploadMode":"ORIGINAL","\u0075ploadMode":"ORIGINAL"}}"#,
+            #"{"asset":\#(asset),"future":[{"name":"one","n\u0061me":"two"}]}"#,
+            #"{"asset":\#(asset),"future":{"\uD83D\uDE80":1,"\ud83d\ude80":2}}"#,
+            #"{"asset":\#(asset),"future":{"\u00e9":1,"e\u0301":2}}"#,
+            #"{"asset":\#(asset),"future":{"\uD800":1}}"#,
+        ]
+        for value in ambiguous {
+            await #expect(throws: OriginalUploadAPIError.invalidResponse) {
+                try await api(Data(value.utf8)).reserve(job)
+            }
+        }
+        for data in try nonUTF8JSON(valid) {
+            await #expect(throws: OriginalUploadAPIError.invalidResponse) {
+                try await api(data).reserve(job)
+            }
+        }
+        let fields = (0..<5_000).map { #""key\#($0)":0"# }.joined(separator: ",")
+        let wide = Data(#"{"asset":\#(asset),"future":{\#(fields)}}"#.utf8)
+        try #require(wide.count < 64 * 1024)
+        #expect(try await api(wide).reserve(job).id == assetId)
+        func nested(_ depth: Int) -> Data {
+            let arrays = String(repeating: "[", count: depth) + "0" + String(repeating: "]", count: depth)
+            return Data(#"{"asset":\#(asset),"future":\#(arrays)}"#.utf8)
+        }
+        #expect(try await api(nested(63)).reserve(job).id == assetId)
+        await #expect(throws: OriginalUploadAPIError.invalidResponse) {
+            try await api(nested(64)).reserve(job)
+        }
+    }
+
+    @Test
+    @MainActor
+    func sessionRejectsDuplicateStateAndPartFields() async throws {
+        let directory = try fixture()
+        defer { cleanup(directory) }
+        let server = URL(string: "https://isolated.example.test")!
+        let auth = AuthService(storage: .memory, serverURL: { server })
+        auth.token = "test-token"
+        auth.currentUser = User(
+            id: "user-1", phoneNumber: "5550100", name: "Reporter", email: nil, team: nil,
+            status: "ACTIVE", companyCode: nil, companyName: nil)
+        let access = try OriginalUploadAccess(auth: auth, allowedOrigins: ["https://isolated.example.test"])
+        let assetId = UUID().uuidString
+        let (journal, job) = try await prepareJob(
+            access: access, directory: directory, assetId: assetId, sessionId: sessionId)
+        let expiry = DVUDateFormatting.isoString(from: Date().addingTimeInterval(60))
+        let digest = job.fingerprint.sha256
+        let valid = """
+            {"uploadSession":{"id":"\(sessionId)","assetId":"\(assetId)","clipId":"\(UUID().uuidString)",\
+            "status":"OPEN","expectedSizeBytes":"15","expectedSha256":"\(digest)",\
+            "partSizeBytes":\(OriginalUploadFiles.maximumPartSize),"partCount":1,"expiresAt":"\(expiry)",\
+            "parts":[{"partNumber":1,"sizeBytes":"15","sha256":"\(digest)"}]}}
+            """
+
+        func api(_ body: String) throws -> OriginalUploadAPI {
+            let data = Data(body.utf8)
+            return try OriginalUploadAPI(access: access, journal: journal, transport: { request in
+                (data, HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+            })
+        }
+
+        #expect(try await api(valid).session(for: job).status == .open)
+        let duplicateStatus = valid.replacingOccurrences(
+            of: #""status":"OPEN""#, with: #""status":"OPEN","\u0073tatus":"OPEN""#)
+        let duplicatePart = valid.replacingOccurrences(
+            of: #""partNumber":1"#, with: #""partNumber":1,"partNumber":1"#)
+        for value in [duplicateStatus, duplicatePart] {
+            await #expect(throws: OriginalUploadAPIError.invalidResponse) {
+                try await api(value).session(for: job)
+            }
         }
     }
 
@@ -496,6 +604,18 @@ struct OriginalUploadAPITests {
         })
         await #expect(throws: OriginalUploadAPIError.cancellationSessionLimit) {
             try await overflow.cancelIntent(for: cancelled)
+        }
+        for (status, code) in [
+            (429, "INTENT_CANCELLATION_QUOTA"), (503, "INTENT_SESSION_LIMIT"),
+        ] {
+            let body = Data(#"{"code":"\#(code)","\u0063ode":"\#(code)"}"#.utf8)
+            let ambiguous = try OriginalUploadAPI(access: access, journal: journal, transport: { request in
+                (body, HTTPURLResponse(
+                    url: request.url!, statusCode: status, httpVersion: nil, headerFields: ["Retry-After": "60"])!)
+            })
+            await #expect(throws: OriginalUploadAPIError.httpStatus(status)) {
+                try await ambiguous.cancelIntent(for: cancelled)
+            }
         }
         #expect(try journal.read(id: job.id, access: access).cancellationRequested)
 
@@ -725,6 +845,25 @@ struct OriginalUploadAPITests {
         #expect(throws: OriginalUploadAPIError.invalidResponse) {
             try OriginalUploadCancellationReceipt.decode(ambiguousBytes)
         }
+    }
+
+    @Test
+    func cancellationReceiptValidationRespectsTaskCancellation() async throws {
+        let started = AsyncStream<Void>.makeStream()
+        let release = AsyncStream<Void>.makeStream()
+        defer { started.continuation.finish(); release.continuation.finish() }
+        let task = Task {
+            started.continuation.yield()
+            var iterator = release.stream.makeAsyncIterator()
+            _ = await iterator.next()
+            return try OriginalUploadCancellationReceipt.decode(
+                Data(#"{"assetId":null,"sessionIds":[]}"#.utf8))
+        }
+        var iterator = started.stream.makeAsyncIterator()
+        try #require(await iterator.next() != nil)
+        task.cancel()
+        release.continuation.yield()
+        await #expect(throws: CancellationError.self) { try await task.value }
     }
 
     @Test

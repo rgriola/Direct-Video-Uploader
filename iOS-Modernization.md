@@ -1,6 +1,6 @@
 # Fixer Roadmap — iOS Modernization → Web App Expansion
 
-_Drafted: October 19, 2026 · Updated: November 11, 2026_
+_Drafted: October 19, 2026 · Updated: November 12, 2026_
 _Owner: Rod_
 _Status: **In progress** — Step 1 verified; Steps 2.1 through 2.5, the Step 3.1 routing foundation, Step 3.2 thumbnails, Step 4.1 local storage, and Steps 4.2a–g are merged to `main`. The owner reported deploying storage safety and testing the existing Mux flow successfully. Encrypted original-file backups, dashboard monitoring, and tracked-session cleanup remain opt-in; their actual deployment and validation are not established here. Step 4.3a iOS client work is in progress on a feature branch. Actual backup and restore validation, cleanup rollout validation, proactive alerts, isolated real-Mux handoff validation, and client rollout remain open._
 
@@ -914,14 +914,24 @@ sequenceDiagram
   - Survival and reattachment require physical-device validation. iOS can delay
     background work until a short-lived URL expires and force-quitting cancels
     outstanding background tasks; reopening is required after a force-quit.
+  - The original-upload control session streams responses and caps its own
+    accumulated data at 64 KiB, rejecting reported expected lengths above that
+    limit and redirects.
+    Successful responses and cancellation quota/overflow errors must be UTF-8,
+    have at most 64 nested containers, and contain no duplicate object keys,
+    including escaped and canonically equivalent names. Ambiguous quota/overflow
+    JSON falls back to its HTTP status; oversized responses fail validation.
+    Neither clears pending cancellation. The scanner checks task cancellation
+    before and after work, including on errors; cancellation after the final
+    check can still race response delivery. Foundation's internal buffering
+    and backpressure are unspecified, so a hard end-to-end memory bound remains
+    unproven before enablement. Verify behavior on iOS 18.6 and devices.
   - Before real content, protect sensitive job journals and atomic copies with
     complete file protection, separately review the minimized background-event
     inbox, and verify locked-device persistence and unlock reconciliation.
-    Bound control-plane response bytes before buffering, reject ambiguous JSON,
-    surface quota and overflow errors without treating them as cleanup, and
-    verify production API pinning and key rotation. The original-upload control
-    session excludes shared HTTP credentials; the existing general bearer
-    transport still uses the shared credential store and needs separate review.
+    Verify production API pinning and key rotation. The original-upload control
+    session excludes shared HTTP credentials; the existing general bearer transport
+    still uses the shared credential store and needs separate review.
   - The owner reported that closing the current app mid-upload caused a failure and that
     manual retry succeeded. This does not demonstrate uninterrupted background transfer
     or test the new store-first path.
