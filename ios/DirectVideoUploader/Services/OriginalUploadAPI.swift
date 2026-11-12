@@ -217,6 +217,18 @@ nonisolated struct OriginalUploadCancellationEnumeration: Sendable {
     fileprivate let issuer: UUID
 }
 
+nonisolated struct OriginalUploadCancellationInspection: Sendable {
+    let session: OriginalUploadServerSession
+    fileprivate let enumeration: OriginalUploadCancellationEnumeration
+
+    fileprivate init(
+        session: OriginalUploadServerSession, enumeration: OriginalUploadCancellationEnumeration
+    ) {
+        self.session = session
+        self.enumeration = enumeration
+    }
+}
+
 @MainActor
 final class OriginalUploadCancellationTraversal {
     private static let maximumPages = 100
@@ -655,7 +667,7 @@ final class OriginalUploadAPI {
 
     func inspectCancelledSession(
         _ sessionId: String, for job: OriginalUploadJob, using enumeration: OriginalUploadCancellationEnumeration
-    ) async throws -> OriginalUploadServerSession {
+    ) async throws -> OriginalUploadCancellationInspection {
         try Task.checkCancellation()
         try ensureCancellationCurrent(job)
         guard enumeration.jobId == job.id, enumeration.incarnation == job.incarnation,
@@ -689,7 +701,7 @@ final class OriginalUploadAPI {
         }
         try session.validateForRecovery(for: job, expectedAssetId: assetId)
         try Task.checkCancellation()
-        return session
+        return OriginalUploadCancellationInspection(session: session, enumeration: enumeration)
     }
 
     func cancellationSessions(
@@ -762,15 +774,31 @@ final class OriginalUploadAPI {
             assetId: response.assetId, sessionIds: response.sessionIds, continuation: next)
     }
 
-    func abort(_ job: OriginalUploadJob) async throws {
-        try ensureCurrent(job, allowsCancellation: true)
-        guard job.state == .uploading, let sessionId = job.sessionId else {
+    func abort(
+        _ job: OriginalUploadJob, using inspection: OriginalUploadCancellationInspection
+    ) async throws {
+        try Task.checkCancellation()
+        try ensureCancellationCurrent(job)
+        let session = inspection.session
+        let enumeration = inspection.enumeration
+        guard enumeration.jobId == job.id, enumeration.incarnation == job.incarnation,
+              enumeration.revision == job.revision, enumeration.scope == job.scope,
+              enumeration.server == access.snapshot.server,
+              enumeration.sessionGeneration == access.snapshot.generation,
+              enumeration.issuer == evidenceIssuer,
+              [.reserving, .uploading].contains(job.state),
+              job.sessionId.map({ $0 == session.id }) ?? true,
+              enumeration.sessionIds.contains(session.id),
+              enumeration.assetId == session.assetId,
+              job.assetId.map({ $0 == session.assetId }) ?? true,
+              session.status != .completed else {
             throw OriginalUploadAPIError.invalidResponse
         }
+        let sessionId = session.id
         let data = try await request(
             job: job, path: "/api/upload-sessions/\(sessionId)", method: "DELETE",
             allowsCancellation: true, expectedStatus: 200)
-        try ensureCurrent(job, allowsCancellation: true)
+        try ensureCancellationCurrent(job)
         let response: AbortResponse
         do {
             let keys = try OriginalUploadResponseJSON.objectKeys(in: data)
