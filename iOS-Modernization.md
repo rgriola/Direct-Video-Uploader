@@ -907,10 +907,17 @@ sequenceDiagram
     not be treated as proof that a background task is terminal. The server-side
     cancellation fence returns the complete bounded session list on success;
     quota, overflow, and unavailable responses must leave cancellation pending.
-    A read-only, owner-scoped endpoint pages over-limit histories after fencing;
-    the iOS coordinator still needs to walk those pages and abort or reconcile
-    all returned and locally known sessions. Monitor retained fences before
-    rollout; the rolling quota does not cap lifetime storage.
+    A read-only, owner-scoped endpoint pages over-limit histories after fencing.
+    The iOS API validates identifiers in receipts and individual pages and binds
+    continuations to the saved job and authenticated session, preserving
+    identifier case; a page, including the final page, is not proof of cleanup.
+    The coordinator still needs bounded traversal with cursor-cycle and cross-page
+    duplicate detection, retry handling, and reconciliation or abort of all returned
+    and locally known sessions and background tasks. Uncertainty must leave
+    cancellation pending. Cancellation racing invalid-page validation can still
+    surface an invalid-response error rather than a cancellation error; neither
+    proves cleanup. Monitor retained fences before rollout; the rolling quota
+    does not cap lifetime storage.
   - Survival and reattachment require physical-device validation. iOS can delay
     background work until a short-lived URL expires and force-quitting cancels
     outstanding background tasks; reopening is required after a force-quit.
