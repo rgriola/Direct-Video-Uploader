@@ -17,7 +17,7 @@ We do not use Google Cloud or Render.
 | Weekly offsite sync | `launchd` (user LaunchAgent, Sun 3am) | `~/Library/LaunchAgents/com.msfixer.pgdump-offsite.plist` |
 
 ```bash
-git fetch origin
+git fetch origin # fetches orgin then backs up, syncs then switch back. 
 git branch -m main backup/main-before-sync
 git switch -c main --track origin/main
 git status
