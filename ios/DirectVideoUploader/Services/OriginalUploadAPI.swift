@@ -256,7 +256,10 @@ final class OriginalUploadCancellationTraversal {
         self.now = now
     }
 
-    func nextPage() async throws -> OriginalUploadCancellationPage? {
+    func nextPage(
+        onResponse: (@MainActor (Int, Int?) -> Void)? = nil,
+        onDispatch: (@MainActor () -> Void)? = nil
+    ) async throws -> OriginalUploadCancellationPage? {
         try Task.checkCancellation()
         try api.ensureCancellationCurrent(job)
         guard !inFlight else { throw OriginalUploadAPIError.cancellationTraversalInProgress }
@@ -283,13 +286,14 @@ final class OriginalUploadCancellationTraversal {
         let page = try await api.cancellationSessions(
             for: job, continuation: continuation, onResponse: { status, seconds in
                 observedResponse = true
+                onResponse?(status, seconds)
                 guard status == 429 else { return }
                 if let seconds {
                     self.retryNotBefore = self.now().advanced(by: .seconds(seconds))
                 } else {
                     self.invalidRetryAfter = true
                 }
-            })
+            }, onDispatch: onDispatch)
         try Task.checkCancellation()
         try api.ensureCancellationCurrent(job)
         guard seenSessionIds.isDisjoint(with: page.sessionIds) else {
@@ -646,20 +650,27 @@ final class OriginalUploadAPI {
         return session
     }
 
-    func cancelIntent(for job: OriginalUploadJob) async throws -> OriginalUploadCancellationReceipt {
+    func cancelIntent(
+        for job: OriginalUploadJob, onResponse: (@MainActor (Int, Int?) -> Void)? = nil,
+        onDispatch: (@MainActor () -> Void)? = nil
+    ) async throws -> OriginalUploadCancellationReceipt {
         try ensureCurrent(job, allowsCancellation: true)
         guard job.cancellationRequested else { throw OriginalUploadAPIError.invalidResponse }
         let data = try await request(
             job: job, path: "/api/assets/original-uploads/\(job.id.uuidString.lowercased())/cancel",
-            method: "POST", allowsCancellation: true, expectedStatus: 200, cancellationFence: true)
+            method: "POST", allowsCancellation: true, expectedStatus: 200, cancellationFence: true,
+            onResponse: onResponse, onDispatch: onDispatch)
         try ensureCurrent(job, allowsCancellation: true)
         let receipt = try OriginalUploadCancellationReceipt.decode(data)
         try receipt.validate(for: job)
         return receipt
     }
 
-    func fenceCancellation(for job: OriginalUploadJob) async throws -> OriginalUploadCancellationEnumeration {
-        let receipt = try await cancelIntent(for: job)
+    func fenceCancellation(
+        for job: OriginalUploadJob, onResponse: (@MainActor (Int, Int?) -> Void)? = nil,
+        onDispatch: (@MainActor () -> Void)? = nil
+    ) async throws -> OriginalUploadCancellationEnumeration {
+        let receipt = try await cancelIntent(for: job, onResponse: onResponse, onDispatch: onDispatch)
         try Task.checkCancellation()
         try ensureCancellationCurrent(job)
         return cancellationEnumeration(for: job, assetId: receipt.assetId, sessionIds: Set(receipt.sessionIds))
@@ -706,7 +717,8 @@ final class OriginalUploadAPI {
 
     func cancellationSessions(
         for job: OriginalUploadJob, continuation: OriginalUploadCancellationPage.Continuation? = nil,
-        onResponse: (@MainActor (Int, Int?) -> Void)? = nil
+        onResponse: (@MainActor (Int, Int?) -> Void)? = nil,
+        onDispatch: (@MainActor () -> Void)? = nil
     ) async throws -> OriginalUploadCancellationPage {
         try Task.checkCancellation()
         try ensureCancellationCurrent(job)
@@ -722,7 +734,7 @@ final class OriginalUploadAPI {
         let data = try await request(
             job: job, path: "/api/assets/original-uploads/\(job.id.uuidString.lowercased())/sessions\(query)",
             method: "GET", allowsCancellation: true, expectedStatus: 200, cancellationPage: true,
-            onResponse: onResponse)
+            onResponse: onResponse, onDispatch: onDispatch)
         try ensureCurrent(job, allowsCancellation: true)
         let response: CancellationPageResponse
         do {
@@ -865,12 +877,13 @@ final class OriginalUploadAPI {
     private func request(
         job: OriginalUploadJob, path: String, method: String, allowsCancellation: Bool = false,
         expectedStatus: Int? = nil, cancellationFence: Bool = false, cancellationPage: Bool = false,
-        onResponse: (@MainActor (Int, Int?) -> Void)? = nil
+        onResponse: (@MainActor (Int, Int?) -> Void)? = nil,
+        onDispatch: (@MainActor () -> Void)? = nil
     ) async throws -> Data {
         try await perform(
             makeRequest(path: path, method: method), job: job, allowsCancellation: allowsCancellation,
             expectedStatus: expectedStatus, cancellationFence: cancellationFence, cancellationPage: cancellationPage,
-            onResponse: onResponse)
+            onResponse: onResponse, onDispatch: onDispatch)
     }
 
     private func makeRequest(path: String, method: String) throws -> URLRequest {
@@ -886,13 +899,15 @@ final class OriginalUploadAPI {
     private func perform(
         _ request: URLRequest, job: OriginalUploadJob, allowsCancellation: Bool = false,
         expectedStatus: Int? = nil, cancellationFence: Bool = false, cancellationPage: Bool = false,
-        onResponse: (@MainActor (Int, Int?) -> Void)? = nil
+        onResponse: (@MainActor (Int, Int?) -> Void)? = nil,
+        onDispatch: (@MainActor () -> Void)? = nil
     ) async throws -> Data {
         try Task.checkCancellation()
         try ensureCurrent(job, allowsCancellation: allowsCancellation)
         let data: Data
         let response: URLResponse
         do {
+            onDispatch?()
             (data, response) = try await transport(request)
         } catch {
             try Task.checkCancellation()
@@ -903,7 +918,7 @@ final class OriginalUploadAPI {
             throw error
         }
         // Retain response metadata even if cancellation wins before the page is delivered.
-        if cancellationPage, let http = response as? HTTPURLResponse {
+        if (cancellationPage || cancellationFence), let http = response as? HTTPURLResponse {
             onResponse?(http.statusCode, http.statusCode == 429 ? Self.retryAfterSeconds(from: http) : nil)
         }
         try Task.checkCancellation()
@@ -939,6 +954,7 @@ final class OriginalUploadAPI {
                     throw OriginalUploadAPIError.cancellationSessionLimit
                 }
             }
+
             throw OriginalUploadAPIError.httpStatus(http.statusCode)
         }
         if let expectedStatus, http.statusCode != expectedStatus {
@@ -959,5 +975,278 @@ final class OriginalUploadAPI {
             return nil
         }
         return seconds
+    }
+}
+
+nonisolated enum OriginalUploadCancellationCoordinatorError: LocalizedError, Equatable {
+    case alreadyStarted
+    case busy
+    case reconciliationRequired
+    case rateLimited(retryAfterSeconds: Int)
+
+    var errorDescription: String? {
+        switch self {
+        case .alreadyStarted: "This cancellation has already been started in this app session."
+        case .busy: "Another cancellation request is in progress."
+        case .reconciliationRequired: "This cancellation needs reconciliation before it can continue."
+        case .rateLimited(let seconds): "Try cancellation reconciliation again in \(seconds) seconds."
+        }
+    }
+}
+
+nonisolated struct OriginalUploadCancellationObservation: Sendable {
+    let job: OriginalUploadJob
+    let requestedTaskIdentifiers: Set<Int>
+    let hasUnidentifiedTasks: Bool
+    let abortAcknowledgedSessionIds: Set<String>
+    let completedSessionIds: Set<String>
+    let terminalSessionIds: Set<String>
+}
+
+@MainActor
+final class OriginalUploadCancellationCoordinator {
+    fileprivate struct Key: Hashable {
+        let scope: PendingFormScope
+        let jobId: UUID
+    }
+
+    fileprivate final class Gate {
+        private var inFlight = false
+        private var blocked = false
+        private var retryNotBefore: ContinuousClock.Instant?
+
+        func acquire() throws {
+            guard !blocked else { throw OriginalUploadCancellationCoordinatorError.reconciliationRequired }
+            guard !inFlight else { throw OriginalUploadCancellationCoordinatorError.busy }
+            if let retryNotBefore {
+                let now = ContinuousClock.now
+                if now < retryNotBefore {
+                    let remaining = now.duration(to: retryNotBefore).components
+                    let seconds = Int(remaining.seconds) + (remaining.attoseconds > 0 ? 1 : 0)
+                    throw OriginalUploadCancellationCoordinatorError.rateLimited(retryAfterSeconds: seconds)
+                }
+                self.retryNotBefore = nil
+            }
+            inFlight = true
+        }
+
+        func park() { blocked = true }
+
+        func release(dispatched: Bool, status: Int?, retryAfter: Int?) {
+            inFlight = false
+            guard dispatched else { return }
+            guard let status else {
+                blocked = true
+                return
+            }
+            if status == 429 {
+                guard let retryAfter else {
+                    blocked = true
+                    return
+                }
+                retryNotBefore = ContinuousClock.now.advanced(by: .seconds(retryAfter))
+            }
+        }
+    }
+
+    private enum Phase {
+        case ready
+        case running
+        case parked
+        case finished
+    }
+
+    final class State {
+        fileprivate var owners: Set<Key> = []
+        fileprivate let fenceGate = Gate()
+        fileprivate let pageGate = Gate()
+    }
+
+    private static let sharedState = State()
+
+    private let key: Key
+    private let job: OriginalUploadJob
+    private var access: OriginalUploadAccess?
+    private let journal: OriginalUploadJournal
+    private let taskFence: OriginalUploadTaskFence
+    private var api: OriginalUploadAPI?
+    private var phase: Phase = .ready
+    private var state = sharedState
+
+    init(
+        job: OriginalUploadJob, access: OriginalUploadAccess, journal: OriginalUploadJournal,
+        taskFence: OriginalUploadTaskFence,
+        transport: @escaping @Sendable (URLRequest) async throws -> (Data, URLResponse) = {
+            try await RedirectSafeTransport.boundedData(
+                for: $0, maximumBytes: OriginalUploadResponseLimit.maximumBytes)
+        }
+    ) throws {
+        try access.require(job.scope)
+        guard journal.usesTaskFence(taskFence) else { throw OriginalUploadStorageError.invalidRecord }
+        self.key = Key(scope: job.scope, jobId: job.id)
+        self.job = job
+        self.access = access
+        self.journal = journal
+        self.taskFence = taskFence
+        self.api = try OriginalUploadAPI(access: access, journal: journal, transport: transport)
+    }
+
+    #if DEBUG
+    convenience init(
+        job: OriginalUploadJob, access: OriginalUploadAccess, journal: OriginalUploadJournal,
+        taskFence: OriginalUploadTaskFence, testingState: State,
+        transport: @escaping @Sendable (URLRequest) async throws -> (Data, URLResponse)
+    ) throws {
+        try self.init(job: job, access: access, journal: journal, taskFence: taskFence, transport: transport)
+        self.state = testingState
+    }
+    #endif
+
+    func start<TaskHandle>(
+        tasks: @MainActor () async -> [TaskHandle],
+        snapshot: @MainActor (TaskHandle) -> OriginalBackgroundTaskSnapshot,
+        cancel: @MainActor (TaskHandle) -> Void
+    ) async throws -> OriginalUploadCancellationObservation {
+        guard case .ready = phase else { throw OriginalUploadCancellationCoordinatorError.alreadyStarted }
+        do {
+            try Task.checkCancellation()
+        } catch {
+            park()
+            throw error
+        }
+        guard let access, let api else { throw OriginalUploadCancellationCoordinatorError.reconciliationRequired }
+        guard state.owners.insert(key).inserted else {
+            park()
+            throw OriginalUploadCancellationCoordinatorError.alreadyStarted
+        }
+        phase = .running
+        let local: OriginalBackgroundCancellationResult
+        do {
+            local = try await OriginalBackgroundCancellation.request(
+                for: job, journal: journal, fence: taskFence, access: access,
+                tasks: tasks, snapshot: snapshot, cancel: cancel, requireFreshCancellation: true)
+            try requireActive(local.job, api: api)
+        } catch OriginalUploadStorageError.cancellationRequested {
+            state.fenceGate.park()
+            state.pageGate.park()
+            park()
+            throw OriginalUploadCancellationCoordinatorError.reconciliationRequired
+        } catch {
+            park()
+            throw error
+        }
+        do {
+            let observation = try await fence(local, api: api)
+            try requireActive(local.job, api: api)
+            phase = .finished
+            self.access = nil
+            self.api = nil
+            return observation
+        } catch {
+            park()
+            throw error
+        }
+    }
+
+    func invalidate() {
+        park()
+    }
+
+    private func park() {
+        phase = .parked
+        access = nil
+        api = nil
+    }
+
+    private func requireActive(_ job: OriginalUploadJob, api: OriginalUploadAPI) throws {
+        try Task.checkCancellation()
+        guard self.api === api, let access, access.isCurrent else { throw OriginalUploadAPIError.sessionChanged }
+        try api.ensureCancellationCurrent(job)
+    }
+
+    private func fence(
+        _ local: OriginalBackgroundCancellationResult, api: OriginalUploadAPI
+    ) async throws -> OriginalUploadCancellationObservation {
+        let enumeration: OriginalUploadCancellationEnumeration
+        do {
+            try requireActive(local.job, api: api)
+            enumeration = try await request(through: state.fenceGate) { onResponse, onDispatch in
+                try await api.fenceCancellation(
+                    for: local.job, onResponse: onResponse, onDispatch: onDispatch)
+            }
+        } catch OriginalUploadAPIError.cancellationSessionLimit {
+            try requireActive(local.job, api: api)
+            let traversal = try OriginalUploadCancellationTraversal(api: api, job: local.job)
+            return try await traverse(local, traversal: traversal, api: api)
+        }
+        try requireActive(local.job, api: api)
+        return try await inspect(local, enumeration: enumeration, api: api)
+    }
+
+    private func traverse(
+        _ local: OriginalBackgroundCancellationResult, traversal: OriginalUploadCancellationTraversal,
+        api: OriginalUploadAPI
+    ) async throws -> OriginalUploadCancellationObservation {
+        while try traversal.completedEnumeration() == nil {
+            try requireActive(local.job, api: api)
+            _ = try await request(through: state.pageGate) { onResponse, onDispatch in
+                try await traversal.nextPage(onResponse: onResponse, onDispatch: onDispatch)
+            }
+            try requireActive(local.job, api: api)
+        }
+        guard let enumeration = try traversal.completedEnumeration() else {
+            throw OriginalUploadAPIError.cancellationNeedsReconciliation
+        }
+        return try await inspect(local, enumeration: enumeration, api: api)
+    }
+
+    private func inspect(
+        _ local: OriginalBackgroundCancellationResult, enumeration: OriginalUploadCancellationEnumeration,
+        api: OriginalUploadAPI
+    ) async throws -> OriginalUploadCancellationObservation {
+        let job = local.job
+        try requireActive(job, api: api)
+        guard job.assetId.map({ $0 == enumeration.assetId }) ?? true,
+              job.sessionId.map({ enumeration.sessionIds.contains($0) }) ?? true else {
+            throw OriginalUploadAPIError.cancellationNeedsReconciliation
+        }
+        var aborted: Set<String> = []
+        var completed: Set<String> = []
+        var terminal: Set<String> = []
+        for id in enumeration.sessionIds.sorted() {
+            let inspection = try await api.inspectCancelledSession(id, for: job, using: enumeration)
+            try requireActive(job, api: api)
+            switch inspection.session.status {
+            case .open, .completing:
+                try await api.abort(job, using: inspection)
+                try requireActive(job, api: api)
+                aborted.insert(id)
+            case .completed:
+                completed.insert(id)
+            case .aborted, .expired:
+                terminal.insert(id)
+            }
+        }
+        try requireActive(job, api: api)
+        return OriginalUploadCancellationObservation(
+            job: job, requestedTaskIdentifiers: local.requestedTaskIdentifiers,
+            hasUnidentifiedTasks: local.hasUnidentifiedTasks, abortAcknowledgedSessionIds: aborted,
+            completedSessionIds: completed, terminalSessionIds: terminal)
+    }
+
+    private func request<T>(
+        through gate: Gate,
+        operation: (@escaping @MainActor (Int, Int?) -> Void, @escaping @MainActor () -> Void) async throws -> T
+    ) async throws -> T {
+        try Task.checkCancellation()
+        try gate.acquire()
+        var status: Int?
+        var retryAfter: Int?
+        var dispatched = false
+        defer { gate.release(dispatched: dispatched, status: status, retryAfter: retryAfter) }
+        return try await operation({ observedStatus, observedRetryAfter in
+            status = observedStatus
+            retryAfter = observedRetryAfter
+        }, { dispatched = true })
     }
 }
