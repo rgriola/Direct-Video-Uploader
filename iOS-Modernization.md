@@ -910,11 +910,21 @@ sequenceDiagram
     A read-only, owner-scoped endpoint pages over-limit histories after fencing.
     The iOS API validates identifiers in receipts and individual pages and binds
     continuations to the saved job and authenticated session, preserving
-    identifier case; a page, including the final page, is not proof of cleanup.
-    The coordinator still needs bounded traversal with cursor-cycle and cross-page
-    duplicate detection, retry handling, and reconciliation or abort of all returned
-    and locally known sessions and background tasks. Uncertainty must leave
-    cancellation pending. Cancellation racing invalid-page validation can still
+    identifier case. An unwired, in-memory traversal reads one page at a time,
+    rejects cross-page duplicates and cursor cycles without assuming database
+    ordering, and stops after 100 pages (at most 10,000 session IDs). It retains
+    the accepted IDs in memory for retrieval after enumeration, even if a caller
+    missed a page delivery. It preserves its cursor across a page-level 429 and
+    will not retry before a validated, monotonic `Retry-After` delay; a missing or
+    invalid delay stops that scan.
+    If cancellation, transport, or response-size failure hides the response, the
+    scan stops rather than retrying without a verified delay. Progress and retry
+    delays do not survive restart or coordinate across scans. The coordinator
+    still needs conservative retry scheduling across scans and restarts, and
+    reconciliation or abort of all returned and locally known sessions and
+    background tasks. A page, including the final page, is not proof of cleanup;
+    uncertainty must leave cancellation pending.
+    Cancellation racing invalid-page validation can still
     surface an invalid-response error rather than a cancellation error; neither
     proves cleanup. Monitor retained fences before rollout; the rolling quota
     does not cap lifetime storage.
