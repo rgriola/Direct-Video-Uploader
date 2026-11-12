@@ -20,6 +20,7 @@ nonisolated enum OriginalUploadAPIError: LocalizedError, Equatable {
     case cancellationPageResponseUnknown
     case cancellationTraversalLimit
     case cancellationTraversalInProgress
+    case cancellationNeedsReconciliation
     case httpStatus(Int)
 
     var errorDescription: String? {
@@ -40,6 +41,8 @@ nonisolated enum OriginalUploadAPIError: LocalizedError, Equatable {
             "The cancellation history response was not received. A safely scheduled restart is required."
         case .cancellationTraversalLimit: "This cancellation history needs server reconciliation before it can finish."
         case .cancellationTraversalInProgress: "A cancellation history request is already in progress."
+        case .cancellationNeedsReconciliation:
+            "The cancellation's known upload information needs server reconciliation."
         case .httpStatus(let status): "The original upload service returned HTTP \(status)."
         }
     }
@@ -205,6 +208,13 @@ nonisolated struct OriginalUploadCancellationPage: Sendable {
 nonisolated struct OriginalUploadCancellationEnumeration: Sendable {
     let assetId: String?
     let sessionIds: Set<String>
+    fileprivate let jobId: UUID
+    fileprivate let incarnation: UUID
+    fileprivate let revision: UInt64
+    fileprivate let scope: PendingFormScope
+    fileprivate let server: String
+    fileprivate let sessionGeneration: UUID
+    fileprivate let issuer: UUID
 }
 
 @MainActor
@@ -286,7 +296,7 @@ final class OriginalUploadCancellationTraversal {
         try api.ensureCancellationCurrent(job)
         guard finished else { return nil }
         // Enumerating server pages does not prove remote or local cleanup.
-        return OriginalUploadCancellationEnumeration(assetId: assetId, sessionIds: seenSessionIds)
+        return api.cancellationEnumeration(for: job, assetId: assetId, sessionIds: seenSessionIds)
     }
 }
 
@@ -312,20 +322,24 @@ nonisolated struct OriginalUploadServerSession: Decodable, Sendable {
     let parts: [OriginalUploadServerPart]
 
     func validate(for job: OriginalUploadJob) throws {
-        try validateStructure(for: job)
+        try validateStructure(for: job, expectedAssetId: job.assetId)
         try validatePartDigests(for: job)
     }
 
     func validateForRecovery(for job: OriginalUploadJob) throws {
-        try validateStructure(for: job)
+        try validateForRecovery(for: job, expectedAssetId: job.assetId)
+    }
+
+    fileprivate func validateForRecovery(for job: OriginalUploadJob, expectedAssetId: String?) throws {
+        try validateStructure(for: job, expectedAssetId: expectedAssetId)
         if status != .aborted && status != .expired {
             try validatePartDigests(for: job)
         }
     }
 
-    private func validateStructure(for job: OriginalUploadJob) throws {
+    private func validateStructure(for job: OriginalUploadJob, expectedAssetId: String?) throws {
         guard UUID(uuidString: id) != nil, UUID(uuidString: assetId) != nil,
-              UUID(uuidString: clipId) != nil, assetId == job.assetId,
+              UUID(uuidString: clipId) != nil, assetId == expectedAssetId,
               expectedSizeBytes == String(job.fingerprint.byteCount),
               expectedSha256 == job.fingerprint.sha256,
               partSizeBytes == OriginalUploadFiles.maximumPartSize,
@@ -505,6 +519,7 @@ final class OriginalUploadAPI {
     private let access: OriginalUploadAccess
     private let journal: OriginalUploadJournal
     private let transport: @Sendable (URLRequest) async throws -> (Data, URLResponse)
+    private let evidenceIssuer = UUID()
     private var token: String { access.snapshot.token }
 
     init(
@@ -631,6 +646,52 @@ final class OriginalUploadAPI {
         return receipt
     }
 
+    func fenceCancellation(for job: OriginalUploadJob) async throws -> OriginalUploadCancellationEnumeration {
+        let receipt = try await cancelIntent(for: job)
+        try Task.checkCancellation()
+        try ensureCancellationCurrent(job)
+        return cancellationEnumeration(for: job, assetId: receipt.assetId, sessionIds: Set(receipt.sessionIds))
+    }
+
+    func inspectCancelledSession(
+        _ sessionId: String, for job: OriginalUploadJob, using enumeration: OriginalUploadCancellationEnumeration
+    ) async throws -> OriginalUploadServerSession {
+        try Task.checkCancellation()
+        try ensureCancellationCurrent(job)
+        guard enumeration.jobId == job.id, enumeration.incarnation == job.incarnation,
+              enumeration.revision == job.revision, enumeration.scope == job.scope,
+              enumeration.server == access.snapshot.server,
+              enumeration.sessionGeneration == access.snapshot.generation,
+              enumeration.issuer == evidenceIssuer else {
+            throw OriginalUploadAPIError.invalidResponse
+        }
+        guard job.assetId.map({ $0 == enumeration.assetId }) ?? true,
+              job.sessionId.map({ enumeration.sessionIds.contains($0) }) ?? true else {
+            throw OriginalUploadAPIError.cancellationNeedsReconciliation
+        }
+        guard let assetId = enumeration.assetId,
+              OriginalUploadCancellationIdentifier.isSession(sessionId),
+              enumeration.sessionIds.contains(sessionId) else {
+            throw OriginalUploadAPIError.invalidResponse
+        }
+        let data = try await request(
+            job: job, path: "/api/upload-sessions/\(sessionId)", method: "GET",
+            allowsCancellation: true, expectedStatus: 200)
+        try ensureCancellationCurrent(job)
+        let session: OriginalUploadServerSession
+        do {
+            session = try JSONDecoder().decode(SessionResponse.self, from: data).uploadSession
+        } catch is DecodingError {
+            throw OriginalUploadAPIError.invalidResponse
+        }
+        guard session.id == sessionId, OriginalUploadCancellationIdentifier.isUUID(session.clipId) else {
+            throw OriginalUploadAPIError.invalidResponse
+        }
+        try session.validateForRecovery(for: job, expectedAssetId: assetId)
+        try Task.checkCancellation()
+        return session
+    }
+
     func cancellationSessions(
         for job: OriginalUploadJob, continuation: OriginalUploadCancellationPage.Continuation? = nil,
         onResponse: (@MainActor (Int, Int?) -> Void)? = nil
@@ -753,6 +814,15 @@ final class OriginalUploadAPI {
     fileprivate func ensureCancellationCurrent(_ job: OriginalUploadJob) throws {
         try ensureCurrent(job, allowsCancellation: true)
         guard job.cancellationRequested else { throw OriginalUploadAPIError.invalidResponse }
+    }
+
+    fileprivate func cancellationEnumeration(
+        for job: OriginalUploadJob, assetId: String?, sessionIds: Set<String>
+    ) -> OriginalUploadCancellationEnumeration {
+        OriginalUploadCancellationEnumeration(
+            assetId: assetId, sessionIds: sessionIds, jobId: job.id, incarnation: job.incarnation,
+            revision: job.revision, scope: job.scope, server: access.snapshot.server,
+            sessionGeneration: access.snapshot.generation, issuer: evidenceIssuer)
     }
 
     private func request<Body: Encodable>(
