@@ -919,10 +919,18 @@ sequenceDiagram
     invalid delay stops that scan.
     If cancellation, transport, or response-size failure hides the response, the
     scan stops rather than retrying without a verified delay. Progress and retry
-    delays do not survive restart or coordinate across scans. The coordinator
-    still needs conservative retry scheduling across scans and restarts, and
+    delays do not survive restart or coordinate across scans. An unwired
+    inspection can use only a successful fence receipt or completed traversal
+    bound to its API instance, the saved job, and current authenticated session.
+    It checks one exact listed session per call against the asset and file
+    fingerprint; missing locally known identifiers require reconciliation. The
+    GET can expire or recover sessions, finalize an original, potentially enqueue
+    a Mux handoff, and perform server cleanup. It does not automatically retry,
+    abort, delete the local original, or clear pending cancellation; completed
+    originals must be retained. The coordinator still needs conservative retry
+    scheduling across scans and restarts, and
     reconciliation or abort of all returned and locally known sessions and
-    background tasks. A page, including the final page, is not proof of cleanup;
+    background tasks. Neither enumeration nor inspection proves cleanup;
     uncertainty must leave cancellation pending.
     Cancellation racing invalid-page validation can still
     surface an invalid-response error rather than a cancellation error; neither
