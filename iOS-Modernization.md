@@ -927,10 +927,15 @@ sequenceDiagram
     GET can expire or recover sessions, finalize an original, potentially enqueue
     a Mux handoff, and perform server cleanup. It does not automatically retry,
     abort, delete the local original, or clear pending cancellation; completed
-    originals must be retained. The coordinator still needs conservative retry
-    scheduling across scans and restarts, and
+    originals must be retained. Ordinary session recovery rejects blocked or saved
+    cancellation before transport handoff. A GET already handed to the transport
+    can start after cancellation and change server state even though its late
+    response is discarded. The coordinator still needs
+    conservative retry scheduling across scans and restarts, and
     reconciliation or abort of all returned and locally known sessions and
-    background tasks. Neither enumeration nor inspection proves cleanup;
+    background tasks. The existing single-session abort API does not require
+    fence evidence and must not be wired into cancellation without that guard.
+    Neither enumeration nor inspection proves cleanup;
     uncertainty must leave cancellation pending.
     Cancellation racing invalid-page validation can still
     surface an invalid-response error rather than a cancellation error; neither
