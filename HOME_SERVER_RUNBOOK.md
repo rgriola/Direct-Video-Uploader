@@ -16,6 +16,13 @@ We do not use Google Cloud or Render.
 | Nightly DB backup | `launchd` (user LaunchAgent, 2am daily) | `~/Library/LaunchAgents/com.msfixer.pgdump.plist` |
 | Weekly offsite sync | `launchd` (user LaunchAgent, Sun 3am) | `~/Library/LaunchAgents/com.msfixer.pgdump-offsite.plist` |
 
+```bash
+git fetch origin
+git branch -m main backup/main-before-sync
+git switch -c main --track origin/main
+git status
+```
+
 ## Restart commands
 
 **Postgres:**
