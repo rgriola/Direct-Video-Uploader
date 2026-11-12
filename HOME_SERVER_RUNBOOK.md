@@ -75,24 +75,33 @@ launchctl unload ~/Library/LaunchAgents/com.msfixer.fastify.plist
 launchctl load ~/Library/LaunchAgents/com.msfixer.fastify.plist
 ```
 
+## Upload Tests
+```bash
+cd server && DOTENV_CONFIG_PATH=.env.originals-test node src/index.js
+cd admin && DVU_API_TARGET=http://127.0.0.1:3001 npx vite --host 127.0.0.1 --port 5173
+
+http://127.0.0.1:5173 # use this url 
+
+```
+
 ## Schema changes
 
 Cloud Build and Render are retired, not deployment targets. `cloudbuild.yaml` has been removed.
-The legacy Render script still uses `prisma db push --accept-data-loss` and must not be reused
-without a separate migration review.
+The legacy Render script still uses `prisma db push --accept-data-loss` and must not be reused without a separate migration review.
 
 This DB uses Prisma migrations (not `db push`). Workflow:
 1. Edit `server/prisma/schema.prisma`
 2. Locally: `npx prisma migrate dev --name <description>` (creates + applies migration, needs a role with `CREATEDB` for the shadow DB — `fixer_app` intentionally lacks this; use the admin role via a one-off `DATABASE_URL` override if needed)
 
 3. Back up first (`scripts/pg-backup.sh`) whenever a migration changes data or types
-4. On the home server, from `server/` (the schema and the pinned Prisma version live there; running
-   from the repo root fails with "Could not find Prisma Schema" and makes `npx` download a different Prisma):
-   ```bash
-   cd ~/apps/direct-video-uploader/server
-   npx prisma migrate status    # lists pending migrations
-   npx prisma migrate deploy    # uses fixer_app, no shadow DB needed
-   ```
+4. On the home server, from `server/` (the schema and the pinned Prisma version live there; running from the repo root fails with "Could not find Prisma Schema" and makes `npx` download a different Prisma):
+
+```bash
+cd ~/apps/direct-video-uploader/server
+npx prisma migrate status    # lists pending migrations
+npx prisma migrate deploy    # uses fixer_app, no shadow DB needed
+```
+
 5. If a migration was bootstrapped as the admin role, fix ownership — tables **and enum types**
    (otherwise `ALTER TYPE` migrations fail with `must be owner of type`):
    ```sql
@@ -676,17 +685,11 @@ both experimental original-upload and Mux flags off.
 When enabled, Fastify checks every five minutes and the dashboard refreshes
 every 30 seconds. The panel reports:
 
-- Free space on the original source volume, original backup drive, and database
-  backup volume. Warning and critical thresholds are explicit byte counts; free
-  space **at or below** a threshold triggers that level. The source and external
-  original-backup identities and mount points must match the configured values.
-- Original-root bytes on disk and, if `UPLOAD_STORAGE_MAX_BYTES` is set, the
-  configured budget and a separately configured used-byte warning. These numbers
-  **exclude outstanding upload reservations and write leases** and are not an
-  admission-capacity calculation. The check walks original-storage filesystem
-  metadata each cycle; investigate timeouts or significant I/O on large trees.
-- Separate last-result/freshness checks for local and B2 originals, the nightly
-  local database dump, and the weekly database offsite sync. Originals are
+- Free space on the original source volume, original backup drive, and database backup volume. Warning and critical thresholds are explicit byte counts; free space **at or below** a threshold triggers that level. The source and external original-backup identities and mount points must match the configured values.
+
+- Original-root bytes on disk and, if `UPLOAD_STORAGE_MAX_BYTES` is set, the configured budget and a separately configured used-byte warning. These numbers **exclude outstanding upload reservations and write leases** and are not an admission-capacity calculation. The check walks original-storage filesystem metadata each cycle; investigate timeouts or significant I/O on large trees.
+
+- Separate last-result/freshness checks for local and B2 originals, the nightly local database dump, and the weekly database offsite sync. Originals are
   reported successful only after the existing crypt checks finish. Database
   status describes a completed job and recorded local archive, **not** a
   verified SQL restore or an independent check of B2 contents. Retained-only
@@ -707,7 +710,7 @@ The panel also warns if the monitoring cycle itself becomes stale. A job that
 cannot start or record a receipt may show missing, stale, or unknown rather
 than an immediate failure; continue checking LaunchAgent logs.
 
-#### Configuration and installation
+#### Configuration and installation 
 
 Perform this only after deploying the code **and** completing the separate
 original-backup setup above. No credentials should be pasted into chat. The
@@ -891,10 +894,11 @@ subscriber hook; no external service monitors the server itself.
 - Home: `launchctl unload ~/Library/LaunchAgents/com.msfixer.fastify.plist` + `brew services stop postgresql@18`
 - Cloudflare: delete the `ms-fixer.com` and/or `dev.ms-fixer.com` DNS routes (or `cloudflared tunnel delete fixer-dev`), and remove the corresponding public hostname from each of the 5 Zero Trust Access applications
 
-## Viewing Database 
-- cd ~/apps/direct-video-uploader/server
-- npx prisma studio
-
+## Viewing Database
+```bash
+cd ~/apps/direct-video-uploader/server
+npx prisma studio
+```
 ## For quick queries
 psql (CLI) — best for quick queries:
 

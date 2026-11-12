@@ -948,7 +948,6 @@ sequenceDiagram
 ---
 
 # Step 5: Expiring Download Links (Native Original)
-
 **Objective:** Let an authorized user create a link that gives a person **or a server** a download of the native original. The link has an expiry date and can be revoked.
 
 - [ ] `ShareLink` table:
@@ -971,13 +970,11 @@ sequenceDiagram
 ---
 
 ## Sequencing Note
-
 Until Step 4 ships, **new uploads keep no original**. They only exist in Mux, which doesn't return the byte-exact file. That's fine while pre-production. If real content starts flowing sooner, consider moving **Step 4.1–4.2 ahead of Step 3**. It only depends on Step 2.0 (migrations), not on the new UI.
 
 ---
 
 ## Open Questions
-
 - [ ] **Team = Organization?** Or a sub-group within an org? (2.3)
 - [ ] Can a Team Admin demote another Team Admin, or only promote? (2.1)
 - [ ] Does a paused video disappear from the **owner's** own list, or only show as paused? (2.2)
