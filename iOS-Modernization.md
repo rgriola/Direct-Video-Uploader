@@ -933,9 +933,12 @@ sequenceDiagram
     response is discarded. The coordinator still needs
     conservative retry scheduling across scans and restarts, and
     reconciliation or abort of all returned and locally known sessions and
-    background tasks. The existing single-session abort API does not require
-    fence evidence and must not be wired into cancellation without that guard.
-    Neither enumeration nor inspection proves cleanup;
+    background tasks. The single-session abort now requires an API-issued
+    inspection minted from a successful fence or completed traversal, bound to
+    the exact job, server, authenticated session, and listed session. It rejects
+    completed sessions and only accepts a terminal aborted or expired response.
+    This guard is not yet wired into cancellation orchestration. Neither
+    enumeration nor inspection proves cleanup;
     uncertainty must leave cancellation pending.
     Cancellation racing invalid-page validation can still
     surface an invalid-response error rather than a cancellation error; neither
