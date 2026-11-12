@@ -928,15 +928,17 @@ sequenceDiagram
     a Mux handoff, and perform server cleanup. It does not automatically retry,
     abort, delete the local original, or clear pending cancellation; completed
     originals must be retained. Ordinary session recovery rejects blocked or saved
-    cancellation before transport handoff. A GET already handed to the transport
-    can start after cancellation and change server state even though its late
-    response is discarded. The coordinator still needs
+    cancellation before transport handoff. A GET or DELETE already handed to the
+    transport can change server state even though its late response is discarded.
+    The coordinator still needs
     conservative retry scheduling across scans and restarts, and
     reconciliation or abort of all returned and locally known sessions and
     background tasks. The single-session abort now requires an API-issued
     inspection minted from a successful fence or completed traversal, bound to
-    the exact job, server, authenticated session, and listed session. It rejects
-    completed sessions and only accepts a terminal aborted or expired response.
+    the exact job, server, authenticated session, and listed session. An inspected
+    historical session can be aborted when the listing also contains the
+    journaled session. It rejects completed sessions and only accepts a terminal
+    aborted or expired response for the inspected session.
     This guard is not yet wired into cancellation orchestration. Neither
     enumeration nor inspection proves cleanup;
     uncertainty must leave cancellation pending.

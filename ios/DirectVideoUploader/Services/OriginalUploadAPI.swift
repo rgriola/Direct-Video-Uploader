@@ -787,7 +787,7 @@ final class OriginalUploadAPI {
               enumeration.sessionGeneration == access.snapshot.generation,
               enumeration.issuer == evidenceIssuer,
               [.reserving, .uploading].contains(job.state),
-              job.sessionId.map({ $0 == session.id }) ?? true,
+              job.sessionId.map({ enumeration.sessionIds.contains($0) }) ?? true,
               enumeration.sessionIds.contains(session.id),
               enumeration.assetId == session.assetId,
               job.assetId.map({ $0 == session.assetId }) ?? true,
