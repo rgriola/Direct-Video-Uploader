@@ -2553,6 +2553,935 @@ struct OriginalUploadAPITests {
         #expect(try journal.read(id: job.id, access: access).cancellationRequested)
     }
 
+    @Test("Cancellation coordinator reconciles local and server state in order", .timeLimit(.minutes(1)))
+    @MainActor
+    func cancellationCoordinatorRegressions() async throws {
+        let coordinatorState = OriginalUploadCancellationCoordinator.State()
+        let server = URL(string: "https://isolated.example.test")!
+        let auth = AuthService(storage: .memory, serverURL: { server })
+        let user = User(
+            id: "user-1", phoneNumber: "5550100", name: "Reporter", email: nil, team: nil,
+            status: "ACTIVE", companyCode: nil, companyName: nil)
+        auth.token = "test-token"
+        auth.currentUser = user
+        let access = try OriginalUploadAccess(auth: auth, allowedOrigins: ["https://isolated.example.test"])
+        let asset = "ab123456-789a-4bcd-8abc-0123456789ab"
+        let historical = "A1234567-0000-4000-8000-000000000001"
+        let completed = "A1234567-0000-4000-8000-000000000002"
+        let terminal = "A1234567-0000-4000-8000-000000000003"
+
+        do {
+            let firstDirectory = try fixture()
+            let secondDirectory = try fixture()
+            defer { cleanup(firstDirectory); cleanup(secondDirectory) }
+            let firstFence = OriginalUploadTaskFence()
+            let secondFence = OriginalUploadTaskFence()
+            let (firstJournal, firstJob) = try await prepareJob(
+                access: access, directory: firstDirectory, assetId: asset, taskFence: firstFence)
+            let (secondJournal, secondJob) = try await prepareJob(
+                access: access, directory: secondDirectory, assetId: asset, taskFence: secondFence)
+            let entered = AsyncStream<Void>.makeStream()
+            let release = AsyncStream<Void>.makeStream()
+            defer { release.continuation.yield(); release.continuation.finish(); entered.continuation.finish() }
+            let requests = Mutex<[URLRequest]>([])
+            let body = try JSONSerialization.data(withJSONObject: ["assetId": asset, "sessionIds": []])
+            let transport: @Sendable (URLRequest) async throws -> (Data, URLResponse) = { request in
+                requests.withLock { $0.append(request) }
+                entered.continuation.yield()
+                var iterator = release.stream.makeAsyncIterator()
+                _ = await iterator.next()
+                return (body, HTTPURLResponse(
+                    url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+            }
+            let first = try OriginalUploadCancellationCoordinator(
+                job: firstJob, access: access, journal: firstJournal, taskFence: firstFence, transport: transport)
+            let second = try OriginalUploadCancellationCoordinator(
+                job: secondJob, access: access, journal: secondJournal, taskFence: secondFence, transport: transport)
+            let firstTask = Task {
+                try await first.start(tasks: { [Int]() }, snapshot: {
+                    OriginalBackgroundTaskSnapshot(identifier: $0, tag: nil)
+                }, cancel: { _ in })
+            }
+            var iterator = entered.stream.makeAsyncIterator()
+            try #require(await iterator.next() != nil)
+            let cancelledDuplicate = Task {
+                try await first.start(tasks: { [Int]() }, snapshot: {
+                    OriginalBackgroundTaskSnapshot(identifier: $0, tag: nil)
+                }, cancel: { _ in })
+            }
+            cancelledDuplicate.cancel()
+            await #expect(throws: OriginalUploadCancellationCoordinatorError.alreadyStarted) {
+                try await cancelledDuplicate.value
+            }
+            await #expect(throws: OriginalUploadCancellationCoordinatorError.busy) {
+                try await second.start(tasks: { [Int]() }, snapshot: {
+                    OriginalBackgroundTaskSnapshot(identifier: $0, tag: nil)
+                }, cancel: { _ in })
+            }
+            #expect(requests.withLock { $0.count } == 1)
+            release.continuation.yield()
+            let observation = try await firstTask.value
+            #expect(observation.job.cancellationRequested)
+            #expect(try secondJournal.read(id: secondJob.id, access: access).cancellationRequested)
+        }
+
+        do {
+            let directory = try fixture()
+            defer { cleanup(directory) }
+            var retained: OriginalUploadCancellationCoordinator?
+            weak var releasedAuth: AuthService?
+            do {
+                let scopedAuth = AuthService(storage: .memory, serverURL: { server })
+                scopedAuth.token = "test-token"
+                scopedAuth.currentUser = user
+                releasedAuth = scopedAuth
+                let scopedAccess = try OriginalUploadAccess(
+                    auth: scopedAuth, allowedOrigins: ["https://isolated.example.test"])
+                let taskFence = OriginalUploadTaskFence()
+                let (journal, job) = try await prepareJob(
+                    access: scopedAccess, directory: directory, assetId: asset, taskFence: taskFence)
+                let requests = Mutex<[URLRequest]>([])
+                let coordinator = try OriginalUploadCancellationCoordinator(
+                    job: job, access: scopedAccess, journal: journal, taskFence: taskFence,
+                    testingState: coordinatorState, transport: { request in
+                        requests.withLock { $0.append(request) }
+                        throw URLError(.badServerResponse)
+                    })
+                retained = coordinator
+                let task = Task {
+                    try await coordinator.start(tasks: { [Int]() }, snapshot: {
+                        OriginalBackgroundTaskSnapshot(identifier: $0, tag: nil)
+                    }, cancel: { _ in })
+                }
+                task.cancel()
+                await #expect(throws: CancellationError.self) { try await task.value }
+                await #expect(throws: OriginalUploadCancellationCoordinatorError.alreadyStarted) {
+                    try await coordinator.start(tasks: { [Int]() }, snapshot: {
+                        OriginalBackgroundTaskSnapshot(identifier: $0, tag: nil)
+                    }, cancel: { _ in })
+                }
+                #expect(requests.withLock { $0.isEmpty })
+                #expect(!(try journal.read(id: job.id, access: scopedAccess)).cancellationRequested)
+            }
+            #expect(releasedAuth == nil)
+            withExtendedLifetime(retained) {}
+        }
+
+        // The known session and historical open session are aborted; completed and terminal
+        // sessions are observed without DELETE. Local cancellation remains pending.
+        do {
+            let directory = try fixture()
+            defer { cleanup(directory) }
+            let taskFence = OriginalUploadTaskFence()
+            let (journal, job) = try await prepareJob(
+                access: access, directory: directory, assetId: asset, sessionId: sessionId, taskFence: taskFence)
+            let original = try journal.originalURL(for: job, access: access)
+            let bytes = try Data(contentsOf: original)
+            let scope = try OriginalUploadJournal.scopeIdentifier(job.scope)
+            let matching = OriginalBackgroundTaskSnapshot(
+                identifier: 17, tag: OriginalBackgroundTaskTag(
+                    scope: scope, jobId: job.id, jobIncarnation: job.incarnation, attemptId: UUID()))
+            let other = OriginalBackgroundTaskSnapshot(
+                identifier: 19, tag: OriginalBackgroundTaskTag(
+                    scope: scope, jobId: UUID(), jobIncarnation: UUID(), attemptId: UUID()))
+            let unknown = OriginalBackgroundTaskSnapshot(identifier: 18, tag: nil)
+            let ids = [sessionId, historical, completed, terminal]
+            let fenceBody = try JSONSerialization.data(withJSONObject: ["assetId": asset, "sessionIds": ids])
+            let bodies = try Dictionary(uniqueKeysWithValues: ids.map { id in
+                let status = id == completed ? "COMPLETED" : (id == terminal ? "EXPIRED" : "OPEN")
+                return (id, try cancellationSessionResponse(job: job, assetId: asset, sessionId: id, status: status))
+            })
+            let requests = Mutex<[URLRequest]>([])
+            let transport: @Sendable (URLRequest) async throws -> (Data, URLResponse) = { request in
+                    requests.withLock { $0.append(request) }
+                    let id = request.url?.lastPathComponent ?? ""
+                    let data: Data
+                    switch request.httpMethod {
+                    case "POST": data = fenceBody
+                    case "GET":
+                        guard let body = bodies[id] else { throw URLError(.badServerResponse) }
+                        data = body
+                    case "DELETE":
+                        let status = id == historical ? "EXPIRED" : "ABORTED"
+                        data = Data(#"{"uploadSession":{"id":"\#(id)","status":"\#(status)"}}"#.utf8)
+                    default: throw URLError(.badServerResponse)
+                    }
+                    return (data, HTTPURLResponse(
+                        url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+                }
+            let coordinator = try OriginalUploadCancellationCoordinator(
+                job: job, access: access, journal: journal, taskFence: taskFence,
+                testingState: coordinatorState, transport: transport)
+            var cancelled: [Int] = []
+            let observation = try await coordinator.start(
+                tasks: { [matching, unknown, other] }, snapshot: { $0 },
+                cancel: { cancelled.append($0.identifier) })
+            #expect(cancelled == [17])
+            #expect(observation.requestedTaskIdentifiers == [17])
+            #expect(observation.hasUnidentifiedTasks)
+            #expect(observation.abortAcknowledgedSessionIds == [historical, sessionId])
+            #expect(observation.completedSessionIds == [completed])
+            #expect(observation.terminalSessionIds == [terminal])
+            #expect(observation.job.cancellationRequested)
+            #expect(try journal.read(id: job.id, access: access) == observation.job)
+            #expect(try Data(contentsOf: original) == bytes)
+            let intentPath = "/api/assets/original-uploads/\(job.id.uuidString.lowercased())/cancel"
+            let expected = ["POST \(intentPath)"] + ids.sorted().flatMap { id in
+                ["GET /api/upload-sessions/\(id)"] +
+                    ([historical, sessionId].contains(id) ? ["DELETE /api/upload-sessions/\(id)"] : [])
+            }
+            #expect(requests.withLock { $0.map { "\($0.httpMethod ?? "") \($0.url?.path ?? "")" } } == expected)
+            await #expect(throws: OriginalUploadCancellationCoordinatorError.alreadyStarted) {
+                try await coordinator.start(tasks: { [Int]() }, snapshot: {
+                    OriginalBackgroundTaskSnapshot(identifier: $0, tag: nil)
+                }, cancel: { _ in })
+            }
+            let duplicate = try OriginalUploadCancellationCoordinator(
+                job: job, access: access, journal: journal, taskFence: taskFence,
+                testingState: coordinatorState, transport: transport)
+            await #expect(throws: OriginalUploadCancellationCoordinatorError.alreadyStarted) {
+                try await duplicate.start(tasks: { [Int]() }, snapshot: {
+                    OriginalBackgroundTaskSnapshot(identifier: $0, tag: nil)
+                }, cancel: { _ in })
+            }
+        }
+
+        // Overflow requires both pages before any inspection, including the locally known ID.
+        do {
+            let directory = try fixture()
+            defer { cleanup(directory) }
+            let taskFence = OriginalUploadTaskFence()
+            let (journal, job) = try await prepareJob(
+                access: access, directory: directory, assetId: asset, sessionId: sessionId, taskFence: taskFence)
+            let original = try journal.originalURL(for: job, access: access)
+            let bytes = try Data(contentsOf: original)
+            let firstIds = (1...100).map { String(format: "A1234567-0000-4000-8000-%012x", $0) }
+            let cursor = try #require(firstIds.last)
+            let first = try cancellationPage(assetId: asset, sessionIds: firstIds, nextCursor: cursor)
+            let second = try cancellationPage(assetId: asset, sessionIds: [sessionId])
+            let all = firstIds + [sessionId]
+            let bodies = try Dictionary(uniqueKeysWithValues: all.map { id in
+                (id, try cancellationSessionResponse(job: job, assetId: asset, sessionId: id, status: "ABORTED"))
+            })
+            let requests = Mutex<[URLRequest]>([])
+            let coordinator = try OriginalUploadCancellationCoordinator(
+                job: job, access: access, journal: journal, taskFence: taskFence,
+                testingState: coordinatorState, transport: { request in
+                    requests.withLock { $0.append(request) }
+                    let path = request.url?.path ?? ""
+                    let data: Data
+                    let status: Int
+                    if request.httpMethod == "POST" {
+                        data = Data(#"{"code":"INTENT_SESSION_LIMIT"}"#.utf8)
+                        status = 503
+                    } else if path.hasSuffix("/sessions") {
+                        data = request.url?.query == nil ? first : second
+                        status = 200
+                    } else {
+                        guard let body = bodies[request.url?.lastPathComponent ?? ""] else {
+                            throw URLError(.badServerResponse)
+                        }
+                        data = body
+                        status = 200
+                    }
+                    return (data, HTTPURLResponse(
+                        url: request.url!, statusCode: status, httpVersion: nil, headerFields: nil)!)
+                })
+            let observation = try await coordinator.start(tasks: { [Int]() }, snapshot: {
+                OriginalBackgroundTaskSnapshot(identifier: $0, tag: nil)
+            }, cancel: { _ in })
+            #expect(observation.requestedTaskIdentifiers.isEmpty)
+            #expect(!observation.hasUnidentifiedTasks)
+            #expect(observation.abortAcknowledgedSessionIds.isEmpty)
+            #expect(observation.completedSessionIds.isEmpty)
+            #expect(observation.terminalSessionIds == Set(all))
+            #expect(try journal.read(id: job.id, access: access) == observation.job)
+            #expect(observation.job.cancellationRequested)
+            #expect(try Data(contentsOf: original) == bytes)
+            let base = "/api/assets/original-uploads/\(job.id.uuidString.lowercased())"
+            let expected = ["POST \(base)/cancel", "GET \(base)/sessions",
+                            "GET \(base)/sessions?after=\(cursor)"] +
+                all.sorted().map { "GET /api/upload-sessions/\($0)" }
+            #expect(requests.withLock {
+                $0.map { request in
+                    "\(request.httpMethod ?? "") \(request.url?.path ?? "")" +
+                        (request.url?.query.map { "?\($0)" } ?? "")
+                }
+            } == expected)
+        }
+
+        // A null asset or a missing known session must stop before any inspection.
+        for nullAsset in [true, false] {
+            let directory = try fixture()
+            defer { cleanup(directory) }
+            let taskFence = OriginalUploadTaskFence()
+            let (journal, job) = try await prepareJob(
+                access: access, directory: directory, assetId: asset, sessionId: sessionId, taskFence: taskFence)
+            let original = try journal.originalURL(for: job, access: access)
+            let bytes = try Data(contentsOf: original)
+            let body: Data
+            if nullAsset {
+                body = Data(#"{"assetId":null,"sessionIds":[]}"#.utf8)
+            } else {
+                body = try JSONSerialization.data(withJSONObject: ["assetId": asset, "sessionIds": [historical]])
+            }
+            let requests = Mutex<[URLRequest]>([])
+            let coordinator = try OriginalUploadCancellationCoordinator(
+                job: job, access: access, journal: journal, taskFence: taskFence,
+                testingState: coordinatorState, transport: { request in
+                    requests.withLock { $0.append(request) }
+                    return (body, HTTPURLResponse(
+                        url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+                })
+            let expectedError: OriginalUploadAPIError = nullAsset
+                ? .cancellationNeedsReconciliation : .invalidResponse
+            await #expect(throws: expectedError) {
+                try await coordinator.start(tasks: { [Int]() }, snapshot: {
+                    OriginalBackgroundTaskSnapshot(identifier: $0, tag: nil)
+                }, cancel: { _ in })
+            }
+            #expect(requests.withLock {
+                $0.map { "\($0.httpMethod ?? "") \($0.url?.path ?? "")" }
+            } == ["POST /api/assets/original-uploads/\(job.id.uuidString.lowercased())/cancel"])
+            #expect(try journal.read(id: job.id, access: access).cancellationRequested)
+            #expect(try Data(contentsOf: original) == bytes)
+            await #expect(throws: OriginalUploadCancellationCoordinatorError.alreadyStarted) {
+                try await coordinator.start(tasks: { [Int]() }, snapshot: {
+                    OriginalBackgroundTaskSnapshot(identifier: $0, tag: nil)
+                }, cancel: { _ in })
+            }
+        }
+
+        // Suspend inspection, not a gated fence/page request: late responses cannot authorize DELETE.
+        enum Change { case duplicate, journal, signOut, cancelTask, invalidate }
+        for change in [Change.duplicate, .journal, .cancelTask, .invalidate, .signOut] {
+            let directory = try fixture()
+            defer { cleanup(directory) }
+            let taskFence = OriginalUploadTaskFence()
+            let (journal, job) = try await prepareJob(
+                access: access, directory: directory, assetId: asset, sessionId: sessionId, taskFence: taskFence)
+            let original = try journal.originalURL(for: job, access: access)
+            let bytes = try Data(contentsOf: original)
+            let fenceBody = try JSONSerialization.data(withJSONObject: ["assetId": asset, "sessionIds": [sessionId]])
+            let session = try cancellationSessionResponse(
+                job: job, assetId: asset, sessionId: sessionId,
+                status: change == .duplicate ? "EXPIRED" : "OPEN")
+            let entered = AsyncStream<Void>.makeStream()
+            let release = AsyncStream<Void>.makeStream()
+            defer { release.continuation.yield(); release.continuation.finish(); entered.continuation.finish() }
+            let requests = Mutex<[URLRequest]>([])
+            let transport: @Sendable (URLRequest) async throws -> (Data, URLResponse) = { request in
+                requests.withLock { $0.append(request) }
+                if request.httpMethod == "GET" {
+                    entered.continuation.yield()
+                    var iterator = release.stream.makeAsyncIterator()
+                    _ = await iterator.next()
+                }
+                return (request.httpMethod == "POST" ? fenceBody : session, HTTPURLResponse(
+                    url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+            }
+            let coordinator = try OriginalUploadCancellationCoordinator(
+                job: job, access: access, journal: journal, taskFence: taskFence,
+                testingState: coordinatorState, transport: transport)
+            let task = Task {
+                try await coordinator.start(tasks: { [Int]() }, snapshot: {
+                    OriginalBackgroundTaskSnapshot(identifier: $0, tag: nil)
+                }, cancel: { _ in })
+            }
+            var iterator = entered.stream.makeAsyncIterator()
+            try #require(await iterator.next() != nil)
+            let saved = try journal.read(id: job.id, access: access)
+            var expected = saved
+            switch change {
+            case .duplicate:
+                let duplicate = try OriginalUploadCancellationCoordinator(
+                    job: job, access: access, journal: journal, taskFence: taskFence,
+                    testingState: coordinatorState, transport: transport)
+                await #expect(throws: OriginalUploadCancellationCoordinatorError.alreadyStarted) {
+                    try await duplicate.start(tasks: { [Int]() }, snapshot: {
+                        OriginalBackgroundTaskSnapshot(identifier: $0, tag: nil)
+                    }, cancel: { _ in })
+                }
+                await #expect(throws: OriginalUploadCancellationCoordinatorError.alreadyStarted) {
+                    try await coordinator.start(tasks: { [Int]() }, snapshot: {
+                        OriginalBackgroundTaskSnapshot(identifier: $0, tag: nil)
+                    }, cancel: { _ in })
+                }
+            case .journal: expected = try journal.update(saved, access: access)
+            case .signOut: auth.logout()
+            case .cancelTask: task.cancel()
+            case .invalidate: coordinator.invalidate()
+            }
+            release.continuation.yield()
+            switch change {
+            case .duplicate:
+                let observation = try await task.value
+                #expect(observation.terminalSessionIds == [sessionId])
+                #expect(observation.abortAcknowledgedSessionIds.isEmpty)
+                #expect(observation.job == saved)
+            case .journal:
+                await #expect(throws: OriginalUploadStorageError.staleJob) { try await task.value }
+            case .signOut:
+                await #expect(throws: OriginalUploadAPIError.sessionChanged) { try await task.value }
+                auth.token = "test-token"
+                auth.currentUser = user
+            case .cancelTask:
+                await #expect(throws: CancellationError.self) { try await task.value }
+            case .invalidate:
+                await #expect(throws: OriginalUploadAPIError.sessionChanged) { try await task.value }
+            }
+            let verificationAccess: OriginalUploadAccess
+            if change == .signOut {
+                verificationAccess = try OriginalUploadAccess(
+                    auth: auth, allowedOrigins: ["https://isolated.example.test"])
+            } else {
+                verificationAccess = access
+            }
+            #expect(try journal.read(id: job.id, access: verificationAccess) == expected)
+            #expect(try Data(contentsOf: original) == bytes)
+            #expect(requests.withLock {
+                $0.map { "\($0.httpMethod ?? "") \($0.url?.path ?? "")" }
+            } == [
+                "POST /api/assets/original-uploads/\(job.id.uuidString.lowercased())/cancel",
+                "GET /api/upload-sessions/\(sessionId)",
+            ])
+        }
+
+        var retainedCoordinators: [OriginalUploadCancellationCoordinator] = []
+        for succeeds in [true, false] {
+            weak var releasedAuth: AuthService?
+            do {
+                let directory = try fixture()
+                defer { cleanup(directory) }
+                let scopedAuth = AuthService(storage: .memory, serverURL: { server })
+                scopedAuth.token = "test-token"
+                scopedAuth.currentUser = user
+                releasedAuth = scopedAuth
+                let scopedAccess = try OriginalUploadAccess(
+                    auth: scopedAuth, allowedOrigins: ["https://isolated.example.test"])
+                let scopedFence = OriginalUploadTaskFence()
+                let (scopedJournal, scopedJob) = try await prepareJob(
+                    access: scopedAccess, directory: directory, assetId: asset, taskFence: scopedFence)
+                let response = succeeds
+                    ? try JSONSerialization.data(withJSONObject: ["assetId": asset, "sessionIds": []])
+                    : Data("{}".utf8)
+                let coordinator = try OriginalUploadCancellationCoordinator(
+                    job: scopedJob, access: scopedAccess, journal: scopedJournal, taskFence: scopedFence, testingState: coordinatorState,
+                    transport: { request in
+                        (response, HTTPURLResponse(
+                            url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+                    })
+                retainedCoordinators.append(coordinator)
+                if succeeds {
+                    _ = try await coordinator.start(tasks: { [Int]() }, snapshot: {
+                        OriginalBackgroundTaskSnapshot(identifier: $0, tag: nil)
+                    }, cancel: { _ in })
+                } else {
+                    await #expect(throws: OriginalUploadAPIError.invalidResponse) {
+                        try await coordinator.start(tasks: { [Int]() }, snapshot: {
+                            OriginalBackgroundTaskSnapshot(identifier: $0, tag: nil)
+                        }, cancel: { _ in })
+                    }
+                }
+            }
+            #expect(releasedAuth == nil)
+        }
+        withExtendedLifetime(retainedCoordinators) {}
+
+        // The sign-out case invalidated the original access generation.
+        let freshAccess = try OriginalUploadAccess(auth: auth, allowedOrigins: ["https://isolated.example.test"])
+
+        do {
+            let directory = try fixture()
+            let otherDirectory = try fixture()
+            defer { cleanup(directory); cleanup(otherDirectory) }
+            let taskFence = OriginalUploadTaskFence()
+            let (journal, job) = try await prepareJob(
+                access: freshAccess, directory: directory, assetId: asset, taskFence: taskFence)
+            let entered = AsyncStream<Void>.makeStream()
+            let release = AsyncStream<Void>.makeStream()
+            defer { release.continuation.yield(); release.continuation.finish(); entered.continuation.finish() }
+            let requests = Mutex<[URLRequest]>([])
+            let body = try JSONSerialization.data(withJSONObject: ["assetId": asset, "sessionIds": []])
+            let transport: @Sendable (URLRequest) async throws -> (Data, URLResponse) = { request in
+                requests.withLock { $0.append(request) }
+                return (body, HTTPURLResponse(
+                    url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+            }
+            let coordinator = try OriginalUploadCancellationCoordinator(
+                job: job, access: freshAccess, journal: journal, taskFence: taskFence,
+                testingState: coordinatorState, transport: transport)
+            let task = Task {
+                try await coordinator.start(tasks: {
+                    entered.continuation.yield()
+                    var iterator = release.stream.makeAsyncIterator()
+                    _ = await iterator.next()
+                    return [Int]()
+                }, snapshot: {
+                    OriginalBackgroundTaskSnapshot(identifier: $0, tag: nil)
+                }, cancel: { _ in })
+            }
+            var iterator = entered.stream.makeAsyncIterator()
+            try #require(await iterator.next() != nil)
+            #expect(try journal.read(id: job.id, access: freshAccess).cancellationRequested)
+            coordinator.invalidate()
+            release.continuation.yield()
+            await #expect(throws: OriginalUploadAPIError.sessionChanged) { try await task.value }
+
+            var rejected: OriginalUploadCancellationCoordinator?
+            weak var rejectedAuth: AuthService?
+            do {
+                let scopedAuth = AuthService(storage: .memory, serverURL: { server })
+                scopedAuth.token = "test-token"
+                scopedAuth.currentUser = user
+                rejectedAuth = scopedAuth
+                let scopedAccess = try OriginalUploadAccess(
+                    auth: scopedAuth, allowedOrigins: ["https://isolated.example.test"])
+                let duplicate = try OriginalUploadCancellationCoordinator(
+                    job: job, access: scopedAccess, journal: journal, taskFence: taskFence,
+                    testingState: coordinatorState, transport: transport)
+                rejected = duplicate
+                await #expect(throws: OriginalUploadCancellationCoordinatorError.alreadyStarted) {
+                    try await duplicate.start(tasks: { [Int]() }, snapshot: {
+                        OriginalBackgroundTaskSnapshot(identifier: $0, tag: nil)
+                    }, cancel: { _ in })
+                }
+            }
+            #expect(rejectedAuth == nil)
+            withExtendedLifetime(rejected) {}
+
+            let otherFence = OriginalUploadTaskFence()
+            let (otherJournal, otherJob) = try await prepareJob(
+                access: freshAccess, directory: otherDirectory, assetId: asset, taskFence: otherFence)
+            let other = try OriginalUploadCancellationCoordinator(
+                job: otherJob, access: freshAccess, journal: otherJournal, taskFence: otherFence,
+                testingState: coordinatorState, transport: transport)
+            _ = try await other.start(tasks: { [Int]() }, snapshot: {
+                OriginalBackgroundTaskSnapshot(identifier: $0, tag: nil)
+            }, cancel: { _ in })
+            #expect(requests.withLock { $0.map(\.url?.path) } == [
+                "/api/assets/original-uploads/\(otherJob.id.uuidString.lowercased())/cancel",
+            ])
+        }
+
+        // A fence quota delays other jobs without allowing parked jobs to retry.
+        do {
+            let firstDirectory = try fixture()
+            let secondDirectory = try fixture()
+            let thirdDirectory = try fixture()
+            defer { cleanup(firstDirectory); cleanup(secondDirectory); cleanup(thirdDirectory) }
+            let firstFence = OriginalUploadTaskFence()
+            let secondFence = OriginalUploadTaskFence()
+            let thirdFence = OriginalUploadTaskFence()
+            let (firstJournal, firstJob) = try await prepareJob(
+                access: freshAccess, directory: firstDirectory, assetId: asset, taskFence: firstFence)
+            let (secondJournal, secondJob) = try await prepareJob(
+                access: freshAccess, directory: secondDirectory, assetId: asset, taskFence: secondFence)
+            let (thirdJournal, thirdJob) = try await prepareJob(
+                access: freshAccess, directory: thirdDirectory, assetId: asset, taskFence: thirdFence)
+            let requests = Mutex<[URLRequest]>([])
+            let body = try JSONSerialization.data(withJSONObject: ["assetId": asset, "sessionIds": []])
+            let transport: @Sendable (URLRequest) async throws -> (Data, URLResponse) = { request in
+                let count = requests.withLock { requests in
+                    requests.append(request)
+                    return requests.count
+                }
+                if count == 1 {
+                    return (Data(#"{"code":"INTENT_CANCELLATION_QUOTA"}"#.utf8), HTTPURLResponse(
+                        url: request.url!, statusCode: 429, httpVersion: nil,
+                        headerFields: ["Retry-After": "5"])!)
+                }
+                return (body, HTTPURLResponse(
+                    url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+            }
+            let first = try OriginalUploadCancellationCoordinator(
+                job: firstJob, access: freshAccess, journal: firstJournal, taskFence: firstFence,
+                testingState: coordinatorState, transport: transport)
+            let second = try OriginalUploadCancellationCoordinator(
+                job: secondJob, access: freshAccess, journal: secondJournal, taskFence: secondFence,
+                testingState: coordinatorState, transport: transport)
+            let third = try OriginalUploadCancellationCoordinator(
+                job: thirdJob, access: freshAccess, journal: thirdJournal, taskFence: thirdFence,
+                testingState: coordinatorState, transport: transport)
+            await #expect(throws: OriginalUploadAPIError.cancellationQuota(retryAfterSeconds: 5)) {
+                try await first.start(tasks: { [Int]() }, snapshot: {
+                    OriginalBackgroundTaskSnapshot(identifier: $0, tag: nil)
+                }, cancel: { _ in })
+            }
+            do {
+                _ = try await second.start(tasks: { [Int]() }, snapshot: {
+                    OriginalBackgroundTaskSnapshot(identifier: $0, tag: nil)
+                }, cancel: { _ in })
+                Issue.record("The second job dispatched a fence during the shared retry delay")
+            } catch OriginalUploadCancellationCoordinatorError.rateLimited(let seconds) {
+                #expect((1...5).contains(seconds))
+            } catch {
+                Issue.record("Expected the shared fence rate limit, got \(error)")
+            }
+            #expect(requests.withLock { $0.count } == 1)
+            #expect(try firstJournal.read(id: firstJob.id, access: freshAccess).cancellationRequested)
+            #expect(try secondJournal.read(id: secondJob.id, access: freshAccess).cancellationRequested)
+            try await Task.sleep(for: .milliseconds(5_500))
+            _ = try await third.start(tasks: { [Int]() }, snapshot: {
+                OriginalBackgroundTaskSnapshot(identifier: $0, tag: nil)
+            }, cancel: { _ in })
+            #expect(requests.withLock { $0.map(\.url?.path) } == [
+                "/api/assets/original-uploads/\(firstJob.id.uuidString.lowercased())/cancel",
+                "/api/assets/original-uploads/\(thirdJob.id.uuidString.lowercased())/cancel",
+            ])
+        }
+
+        do {
+            let firstDirectory = try fixture()
+            let secondDirectory = try fixture()
+            defer { cleanup(firstDirectory); cleanup(secondDirectory) }
+            let firstFence = OriginalUploadTaskFence()
+            let secondFence = OriginalUploadTaskFence()
+            let (firstJournal, firstJob) = try await prepareJob(
+                access: freshAccess, directory: firstDirectory, assetId: asset, taskFence: firstFence)
+            let (secondJournal, secondJob) = try await prepareJob(
+                access: freshAccess, directory: secondDirectory, assetId: asset, taskFence: secondFence)
+            let firstPath = "/api/assets/original-uploads/\(firstJob.id.uuidString.lowercased())/sessions"
+            let pageCount = Mutex(0)
+            let transport: @Sendable (URLRequest) async throws -> (Data, URLResponse) = { request in
+                let data: Data
+                let status: Int
+                if request.httpMethod == "POST" {
+                    data = Data(#"{"code":"INTENT_SESSION_LIMIT"}"#.utf8)
+                    status = 503
+                } else if request.url?.path == firstPath {
+                    let index = pageCount.withLock { count in
+                        defer { count += 1 }
+                        return count
+                    }
+                    let ids = (0..<100).map {
+                        String(format: "A1234567-0000-4000-8000-%012llx", UInt64(index * 100 + $0))
+                    }
+                    data = try JSONSerialization.data(withJSONObject: [
+                        "assetId": asset, "sessionIds": ids, "nextCursor": ids[99],
+                    ])
+                    status = 200
+                } else {
+                    data = try JSONSerialization.data(withJSONObject: [
+                        "assetId": asset, "sessionIds": [], "nextCursor": NSNull(),
+                    ])
+                    status = 200
+                }
+                return (data, HTTPURLResponse(
+                    url: request.url!, statusCode: status, httpVersion: nil, headerFields: nil)!)
+            }
+            let first = try OriginalUploadCancellationCoordinator(
+                job: firstJob, access: freshAccess, journal: firstJournal, taskFence: firstFence,
+                testingState: coordinatorState, transport: transport)
+            await #expect(throws: OriginalUploadAPIError.cancellationTraversalLimit) {
+                try await first.start(tasks: { [Int]() }, snapshot: {
+                    OriginalBackgroundTaskSnapshot(identifier: $0, tag: nil)
+                }, cancel: { _ in })
+            }
+            #expect(pageCount.withLock { $0 } == 100)
+            let second = try OriginalUploadCancellationCoordinator(
+                job: secondJob, access: freshAccess, journal: secondJournal, taskFence: secondFence,
+                testingState: coordinatorState, transport: transport)
+            let observation = try await second.start(tasks: { [Int]() }, snapshot: {
+                OriginalBackgroundTaskSnapshot(identifier: $0, tag: nil)
+            }, cancel: { _ in })
+            #expect(observation.job.cancellationRequested)
+            #expect(try firstJournal.read(id: firstJob.id, access: freshAccess).cancellationRequested)
+        }
+
+        // A 429 on a continuation holds the process-wide page gate, including for another job.
+        do {
+            let firstDirectory = try fixture()
+            let secondDirectory = try fixture()
+            let thirdDirectory = try fixture()
+            defer { cleanup(firstDirectory); cleanup(secondDirectory); cleanup(thirdDirectory) }
+            let firstFence = OriginalUploadTaskFence()
+            let secondFence = OriginalUploadTaskFence()
+            let thirdFence = OriginalUploadTaskFence()
+            let (firstJournal, firstJob) = try await prepareJob(
+                access: freshAccess, directory: firstDirectory, assetId: asset, taskFence: firstFence)
+            let (secondJournal, secondJob) = try await prepareJob(
+                access: freshAccess, directory: secondDirectory, assetId: asset, taskFence: secondFence)
+            let (thirdJournal, thirdJob) = try await prepareJob(
+                access: freshAccess, directory: thirdDirectory, assetId: asset, taskFence: thirdFence)
+            let firstOriginal = try firstJournal.originalURL(for: firstJob, access: freshAccess)
+            let secondOriginal = try secondJournal.originalURL(for: secondJob, access: freshAccess)
+            let thirdOriginal = try thirdJournal.originalURL(for: thirdJob, access: freshAccess)
+            let firstBytes = try Data(contentsOf: firstOriginal)
+            let secondBytes = try Data(contentsOf: secondOriginal)
+            let thirdBytes = try Data(contentsOf: thirdOriginal)
+            let ids = (1...100).map { String(format: "A1234567-0000-4000-8000-%012x", $0) }
+            let cursor = try #require(ids.last)
+            let firstPage = try cancellationPage(assetId: asset, sessionIds: ids, nextCursor: cursor)
+            let lastPage = try cancellationPage(assetId: asset, sessionIds: [])
+            let firstBase = "/api/assets/original-uploads/\(firstJob.id.uuidString.lowercased())"
+            let secondBase = "/api/assets/original-uploads/\(secondJob.id.uuidString.lowercased())"
+            let thirdBase = "/api/assets/original-uploads/\(thirdJob.id.uuidString.lowercased())"
+            let requests = Mutex<[URLRequest]>([])
+            let transport: @Sendable (URLRequest) async throws -> (Data, URLResponse) = { request in
+                let path = request.url?.path ?? ""
+                requests.withLock { $0.append(request) }
+                let data: Data
+                let status: Int
+                var headers: [String: String] = [:]
+                if request.httpMethod == "POST" {
+                    data = Data(#"{"code":"INTENT_SESSION_LIMIT"}"#.utf8)
+                    status = 503
+                } else if path == "\(firstBase)/sessions" {
+                    if request.url?.query == nil {
+                        data = firstPage
+                        status = 200
+                    } else {
+                        data = Data(#"{"error":"throttled"}"#.utf8)
+                        status = 429
+                        headers["Retry-After"] = "5"
+                    }
+                } else if path == "\(secondBase)/sessions" || path == "\(thirdBase)/sessions" {
+                    data = lastPage
+                    status = 200
+                } else {
+                    throw URLError(.badServerResponse)
+                }
+                return (data, HTTPURLResponse(
+                    url: request.url!, statusCode: status, httpVersion: nil, headerFields: headers)!)
+            }
+            let first = try OriginalUploadCancellationCoordinator(
+                job: firstJob, access: freshAccess, journal: firstJournal, taskFence: firstFence,
+                testingState: coordinatorState, transport: transport)
+            let second = try OriginalUploadCancellationCoordinator(
+                job: secondJob, access: freshAccess, journal: secondJournal, taskFence: secondFence,
+                testingState: coordinatorState, transport: transport)
+            let third = try OriginalUploadCancellationCoordinator(
+                job: thirdJob, access: freshAccess, journal: thirdJournal, taskFence: thirdFence,
+                testingState: coordinatorState, transport: transport)
+            await #expect(throws: OriginalUploadAPIError.cancellationPageRateLimited(retryAfterSeconds: 5)) {
+                try await first.start(tasks: { [Int]() }, snapshot: {
+                    OriginalBackgroundTaskSnapshot(identifier: $0, tag: nil)
+                }, cancel: { _ in })
+            }
+            let firstPending = try firstJournal.read(id: firstJob.id, access: freshAccess)
+            #expect(firstPending.cancellationRequested)
+            do {
+                _ = try await second.start(tasks: { [Int]() }, snapshot: {
+                    OriginalBackgroundTaskSnapshot(identifier: $0, tag: nil)
+                }, cancel: { _ in })
+                Issue.record("The second job dispatched a page during the shared retry delay")
+            } catch OriginalUploadCancellationCoordinatorError.rateLimited(let seconds) {
+                #expect((1...5).contains(seconds))
+            } catch {
+                Issue.record("Expected the shared page rate limit, got \(error)")
+            }
+            let secondPending = try secondJournal.read(id: secondJob.id, access: freshAccess)
+            #expect(secondPending.cancellationRequested)
+            let beforeRetry = [
+                "POST \(firstBase)/cancel", "GET \(firstBase)/sessions",
+                "GET \(firstBase)/sessions?after=\(cursor)", "POST \(secondBase)/cancel",
+            ]
+            #expect(requests.withLock {
+                $0.map { request in
+                    "\(request.httpMethod ?? "") \(request.url?.path ?? "")" +
+                        (request.url?.query.map { "?\($0)" } ?? "")
+                }
+            } == beforeRetry)
+            #expect(try Data(contentsOf: firstOriginal) == firstBytes)
+            #expect(try Data(contentsOf: secondOriginal) == secondBytes)
+
+            // The coordinator's gate uses ContinuousClock directly; wait beyond Retry-After
+            // rather than racing the real monotonic deadline.
+            try await Task.sleep(for: .milliseconds(5_500))
+            for parked in [first, second] {
+                await #expect(throws: OriginalUploadCancellationCoordinatorError.alreadyStarted) {
+                    try await parked.start(tasks: { [Int]() }, snapshot: {
+                        OriginalBackgroundTaskSnapshot(identifier: $0, tag: nil)
+                    }, cancel: { _ in })
+                }
+            }
+            let firstDuplicate = try OriginalUploadCancellationCoordinator(
+                job: firstJob, access: freshAccess, journal: firstJournal, taskFence: firstFence,
+                testingState: coordinatorState, transport: transport)
+            let secondDuplicate = try OriginalUploadCancellationCoordinator(
+                job: secondJob, access: freshAccess, journal: secondJournal, taskFence: secondFence,
+                testingState: coordinatorState, transport: transport)
+            for duplicate in [firstDuplicate, secondDuplicate] {
+                await #expect(throws: OriginalUploadCancellationCoordinatorError.alreadyStarted) {
+                    try await duplicate.start(tasks: { [Int]() }, snapshot: {
+                        OriginalBackgroundTaskSnapshot(identifier: $0, tag: nil)
+                    }, cancel: { _ in })
+                }
+            }
+            let thirdObservation = try await third.start(tasks: { [Int]() }, snapshot: {
+                OriginalBackgroundTaskSnapshot(identifier: $0, tag: nil)
+            }, cancel: { _ in })
+            #expect(thirdObservation.job.cancellationRequested)
+            #expect(thirdObservation.terminalSessionIds.isEmpty)
+            #expect(thirdObservation.abortAcknowledgedSessionIds.isEmpty)
+            #expect(thirdObservation.completedSessionIds.isEmpty)
+            let expected = beforeRetry + ["POST \(thirdBase)/cancel", "GET \(thirdBase)/sessions"]
+            #expect(requests.withLock {
+                $0.map { request in
+                    "\(request.httpMethod ?? "") \(request.url?.path ?? "")" +
+                        (request.url?.query.map { "?\($0)" } ?? "")
+                }
+            } == expected)
+            #expect(try firstJournal.read(id: firstJob.id, access: freshAccess) == firstPending)
+            #expect(try secondJournal.read(id: secondJob.id, access: freshAccess) == secondPending)
+            #expect(try thirdJournal.read(id: thirdJob.id, access: freshAccess) == thirdObservation.job)
+            #expect(try Data(contentsOf: firstOriginal) == firstBytes)
+            #expect(try Data(contentsOf: secondOriginal) == secondBytes)
+            #expect(try Data(contentsOf: thirdOriginal) == thirdBytes)
+        }
+
+        // Unknown outcomes permanently poison their process-global gates.
+        do {
+            let firstDirectory = try fixture()
+            let secondDirectory = try fixture()
+            defer { cleanup(firstDirectory); cleanup(secondDirectory) }
+            let firstFence = OriginalUploadTaskFence()
+            let secondFence = OriginalUploadTaskFence()
+            let (firstJournal, firstJob) = try await prepareJob(
+                access: freshAccess, directory: firstDirectory, assetId: asset, taskFence: firstFence)
+            let (secondJournal, secondJob) = try await prepareJob(
+                access: freshAccess, directory: secondDirectory, assetId: asset, taskFence: secondFence)
+            let firstOriginal = try firstJournal.originalURL(for: firstJob, access: freshAccess)
+            let secondOriginal = try secondJournal.originalURL(for: secondJob, access: freshAccess)
+            let firstBytes = try Data(contentsOf: firstOriginal)
+            let secondBytes = try Data(contentsOf: secondOriginal)
+            let firstBase = "/api/assets/original-uploads/\(firstJob.id.uuidString.lowercased())"
+            let secondBase = "/api/assets/original-uploads/\(secondJob.id.uuidString.lowercased())"
+            let emptyPage = try cancellationPage(assetId: asset, sessionIds: [])
+            let requests = Mutex<[URLRequest]>([])
+            let transport: @Sendable (URLRequest) async throws -> (Data, URLResponse) = { request in
+                requests.withLock { $0.append(request) }
+                if request.httpMethod == "POST" {
+                    return (Data(#"{"code":"INTENT_SESSION_LIMIT"}"#.utf8), HTTPURLResponse(
+                        url: request.url!, statusCode: 503, httpVersion: nil, headerFields: nil)!)
+                }
+                if request.url?.path == "\(firstBase)/sessions" {
+                    throw URLError(.networkConnectionLost)
+                }
+                return (emptyPage, HTTPURLResponse(
+                    url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+            }
+            let first = try OriginalUploadCancellationCoordinator(
+                job: firstJob, access: freshAccess, journal: firstJournal, taskFence: firstFence,
+                testingState: coordinatorState, transport: transport)
+            let second = try OriginalUploadCancellationCoordinator(
+                job: secondJob, access: freshAccess, journal: secondJournal, taskFence: secondFence,
+                testingState: coordinatorState, transport: transport)
+            do {
+                _ = try await first.start(tasks: { [Int]() }, snapshot: {
+                    OriginalBackgroundTaskSnapshot(identifier: $0, tag: nil)
+                }, cancel: { _ in })
+                Issue.record("Expected an unknown page response")
+            } catch let error as URLError {
+                #expect(error.code == .networkConnectionLost)
+            } catch {
+                Issue.record("Expected the page transport error, got \(error)")
+            }
+            let firstPending = try firstJournal.read(id: firstJob.id, access: freshAccess)
+            #expect(firstPending.cancellationRequested)
+            await #expect(throws: OriginalUploadCancellationCoordinatorError.reconciliationRequired) {
+                try await second.start(tasks: { [Int]() }, snapshot: {
+                    OriginalBackgroundTaskSnapshot(identifier: $0, tag: nil)
+                }, cancel: { _ in })
+            }
+            let secondPending = try secondJournal.read(id: secondJob.id, access: freshAccess)
+            #expect(secondPending.cancellationRequested)
+            for parked in [first, second] {
+                await #expect(throws: OriginalUploadCancellationCoordinatorError.alreadyStarted) {
+                    try await parked.start(tasks: { [Int]() }, snapshot: {
+                        OriginalBackgroundTaskSnapshot(identifier: $0, tag: nil)
+                    }, cancel: { _ in })
+                }
+            }
+            #expect(requests.withLock {
+                $0.map { "\($0.httpMethod ?? "") \($0.url?.path ?? "")" }
+            } == [
+                "POST \(firstBase)/cancel", "GET \(firstBase)/sessions", "POST \(secondBase)/cancel",
+            ])
+            #expect(try firstJournal.read(id: firstJob.id, access: freshAccess) == firstPending)
+            #expect(try secondJournal.read(id: secondJob.id, access: freshAccess) == secondPending)
+            #expect(try Data(contentsOf: firstOriginal) == firstBytes)
+            #expect(try Data(contentsOf: secondOriginal) == secondBytes)
+
+            do {
+                let firstDirectory = try fixture()
+                let secondDirectory = try fixture()
+                defer { cleanup(firstDirectory); cleanup(secondDirectory) }
+                let firstFence = OriginalUploadTaskFence()
+                let secondFence = OriginalUploadTaskFence()
+                let (firstJournal, firstJob) = try await prepareJob(
+                    access: freshAccess, directory: firstDirectory, assetId: asset, taskFence: firstFence)
+                let (secondJournal, secondJob) = try await prepareJob(
+                    access: freshAccess, directory: secondDirectory, assetId: asset, taskFence: secondFence)
+                let requests = Mutex<[URLRequest]>([])
+                let transport: @Sendable (URLRequest) async throws -> (Data, URLResponse) = { request in
+                    requests.withLock { $0.append(request) }
+                    throw URLError(.networkConnectionLost)
+                }
+                let first = try OriginalUploadCancellationCoordinator(
+                    job: firstJob, access: freshAccess, journal: firstJournal, taskFence: firstFence, testingState: coordinatorState,
+                    transport: transport)
+                let second = try OriginalUploadCancellationCoordinator(
+                    job: secondJob, access: freshAccess, journal: secondJournal, taskFence: secondFence, testingState: coordinatorState,
+                    transport: transport)
+                await #expect(throws: URLError(.networkConnectionLost)) {
+                    try await first.start(tasks: { [Int]() }, snapshot: {
+                        OriginalBackgroundTaskSnapshot(identifier: $0, tag: nil)
+                    }, cancel: { _ in })
+                }
+                await #expect(throws: OriginalUploadCancellationCoordinatorError.reconciliationRequired) {
+                    try await second.start(tasks: { [Int]() }, snapshot: {
+                        OriginalBackgroundTaskSnapshot(identifier: $0, tag: nil)
+                    }, cancel: { _ in })
+                }
+                #expect(requests.withLock { $0.map(\.url?.path) } == [
+                    "/api/assets/original-uploads/\(firstJob.id.uuidString.lowercased())/cancel",
+                ])
+                #expect(try firstJournal.read(id: firstJob.id, access: freshAccess).cancellationRequested)
+                #expect(try secondJournal.read(id: secondJob.id, access: freshAccess).cancellationRequested)
+            }
+
+            // An already-cancelled job still cancels its matching local task without dispatching.
+            do {
+                let directory = try fixture()
+                defer { cleanup(directory) }
+                let taskFence = OriginalUploadTaskFence()
+                let (journal, job) = try await prepareJob(
+                    access: freshAccess, directory: directory, taskFence: taskFence)
+                let saved = try journal.requestCancellation(for: job, access: freshAccess)
+                let original = try journal.originalURL(for: saved, access: freshAccess)
+                let bytes = try Data(contentsOf: original)
+                let scope = try OriginalUploadJournal.scopeIdentifier(saved.scope)
+                let matching = OriginalBackgroundTaskSnapshot(
+                    identifier: 17, tag: OriginalBackgroundTaskTag(
+                        scope: scope, jobId: saved.id, jobIncarnation: saved.incarnation, attemptId: UUID()))
+                let unrelated = OriginalBackgroundTaskSnapshot(
+                    identifier: 19, tag: OriginalBackgroundTaskTag(
+                        scope: scope, jobId: UUID(), jobIncarnation: UUID(), attemptId: UUID()))
+                let unidentified = OriginalBackgroundTaskSnapshot(identifier: 18, tag: nil)
+                var cancelled: [Int] = []
+                let requests = Mutex<[URLRequest]>([])
+                let coordinator = try OriginalUploadCancellationCoordinator(
+                    job: saved, access: freshAccess, journal: journal, taskFence: taskFence,
+                    testingState: coordinatorState, transport: { request in
+                        requests.withLock { $0.append(request) }
+                        throw URLError(.badServerResponse)
+                    })
+                await #expect(throws: OriginalUploadCancellationCoordinatorError.reconciliationRequired) {
+                    try await coordinator.start(
+                        tasks: { [matching, unrelated, unidentified] }, snapshot: { $0 },
+                        cancel: { cancelled.append($0.identifier) })
+                }
+                #expect(cancelled == [17])
+                #expect(try taskFence.isCancellationBlocked(for: saved))
+                #expect(requests.withLock { $0.isEmpty })
+                #expect(try journal.read(id: job.id, access: freshAccess) == saved)
+                #expect(try Data(contentsOf: original) == bytes)
+            }
+        }
+    }
+
     @Test
     @MainActor
     func staleJobCannotStartRequestsAfterCancellation() async throws {

@@ -982,7 +982,8 @@ enum OriginalBackgroundCancellation {
         fence: OriginalUploadTaskFence, access: OriginalUploadAccess,
         tasks: @MainActor () async -> [TaskHandle],
         snapshot: @MainActor (TaskHandle) -> OriginalBackgroundTaskSnapshot,
-        cancel: @MainActor (TaskHandle) -> Void
+        cancel: @MainActor (TaskHandle) -> Void,
+        requireFreshCancellation: Bool = false
     ) async throws -> OriginalBackgroundCancellationResult {
         try access.require(supplied.scope)
         try fence.blockCancellation(for: supplied)
@@ -991,6 +992,11 @@ enum OriginalBackgroundCancellation {
         var failure: (any Error)?
         do {
             guard journal.usesTaskFence(fence) else { throw OriginalUploadStorageError.invalidRecord }
+            if requireFreshCancellation {
+                let current = try journal.read(id: supplied.id, access: access)
+                guard !current.cancellationRequested else { throw OriginalUploadStorageError.cancellationRequested }
+                guard current == supplied else { throw OriginalUploadStorageError.staleJob }
+            }
             savedJob = try journal.requestCancellation(for: supplied, access: access)
         } catch {
             failure = error
