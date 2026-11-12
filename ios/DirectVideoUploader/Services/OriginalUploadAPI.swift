@@ -15,6 +15,11 @@ nonisolated enum OriginalUploadAPIError: LocalizedError, Equatable {
     case sessionChanged
     case cancellationQuota(retryAfterSeconds: Int)
     case cancellationSessionLimit
+    case cancellationPageRateLimited(retryAfterSeconds: Int)
+    case cancellationPageRetryAfterInvalid
+    case cancellationPageResponseUnknown
+    case cancellationTraversalLimit
+    case cancellationTraversalInProgress
     case httpStatus(Int)
 
     var errorDescription: String? {
@@ -27,6 +32,14 @@ nonisolated enum OriginalUploadAPIError: LocalizedError, Equatable {
         case .sessionChanged: "The account or server changed. Reopen this upload under its original account."
         case .cancellationQuota(let seconds): "Too many cancellation requests. Try again in \(seconds) seconds."
         case .cancellationSessionLimit: "This cancellation needs server reconciliation before it can finish."
+        case .cancellationPageRateLimited(let seconds):
+            "Too many cancellation history requests. Try again in \(seconds) seconds."
+        case .cancellationPageRetryAfterInvalid:
+            "The cancellation history retry delay could not be verified."
+        case .cancellationPageResponseUnknown:
+            "The cancellation history response was not received. A safely scheduled restart is required."
+        case .cancellationTraversalLimit: "This cancellation history needs server reconciliation before it can finish."
+        case .cancellationTraversalInProgress: "A cancellation history request is already in progress."
         case .httpStatus(let status): "The original upload service returned HTTP \(status)."
         }
     }
@@ -187,6 +200,94 @@ nonisolated struct OriginalUploadCancellationPage: Sendable {
     let assetId: String?
     let sessionIds: [String]
     let continuation: Continuation?
+}
+
+nonisolated struct OriginalUploadCancellationEnumeration: Sendable {
+    let assetId: String?
+    let sessionIds: Set<String>
+}
+
+@MainActor
+final class OriginalUploadCancellationTraversal {
+    private static let maximumPages = 100
+
+    private let api: OriginalUploadAPI
+    private let job: OriginalUploadJob
+    private let now: @Sendable () -> ContinuousClock.Instant
+    private var continuation: OriginalUploadCancellationPage.Continuation?
+    private var assetId: String?
+    private var seenSessionIds: Set<String> = []
+    private var pageCount = 0
+    private var finished = false
+    private var inFlight = false
+    private var retryNotBefore: ContinuousClock.Instant?
+    private var invalidRetryAfter = false
+    private var responseUnknown = false
+
+    init(
+        api: OriginalUploadAPI, job: OriginalUploadJob,
+        now: @escaping @Sendable () -> ContinuousClock.Instant = { ContinuousClock.now }
+    ) throws {
+        try api.ensureCancellationCurrent(job)
+        self.api = api
+        self.job = job
+        self.now = now
+    }
+
+    func nextPage() async throws -> OriginalUploadCancellationPage? {
+        try Task.checkCancellation()
+        try api.ensureCancellationCurrent(job)
+        guard !inFlight else { throw OriginalUploadAPIError.cancellationTraversalInProgress }
+        if finished { return nil }
+        guard pageCount < Self.maximumPages else { throw OriginalUploadAPIError.cancellationTraversalLimit }
+        guard !invalidRetryAfter else { throw OriginalUploadAPIError.cancellationPageRetryAfterInvalid }
+        guard !responseUnknown else { throw OriginalUploadAPIError.cancellationPageResponseUnknown }
+        if let retryNotBefore {
+            let current = now()
+            if current < retryNotBefore {
+                let remaining = current.duration(to: retryNotBefore).components
+                let seconds = Int(remaining.seconds) + (remaining.attoseconds > 0 ? 1 : 0)
+                throw OriginalUploadAPIError.cancellationPageRateLimited(retryAfterSeconds: seconds)
+            }
+            self.retryNotBefore = nil
+        }
+
+        inFlight = true
+        var observedResponse = false
+        defer {
+            if !observedResponse { responseUnknown = true }
+            inFlight = false
+        }
+        let page = try await api.cancellationSessions(
+            for: job, continuation: continuation, onResponse: { status, seconds in
+                observedResponse = true
+                guard status == 429 else { return }
+                if let seconds {
+                    self.retryNotBefore = self.now().advanced(by: .seconds(seconds))
+                } else {
+                    self.invalidRetryAfter = true
+                }
+            })
+        try Task.checkCancellation()
+        try api.ensureCancellationCurrent(job)
+        guard seenSessionIds.isDisjoint(with: page.sessionIds) else {
+            throw OriginalUploadAPIError.invalidResponse
+        }
+        assetId = page.assetId
+        seenSessionIds.formUnion(page.sessionIds)
+        pageCount += 1
+        continuation = page.continuation
+        finished = continuation == nil
+        return page
+    }
+
+    func completedEnumeration() throws -> OriginalUploadCancellationEnumeration? {
+        try Task.checkCancellation()
+        try api.ensureCancellationCurrent(job)
+        guard finished else { return nil }
+        // Enumerating server pages does not prove remote or local cleanup.
+        return OriginalUploadCancellationEnumeration(assetId: assetId, sessionIds: seenSessionIds)
+    }
 }
 
 nonisolated struct OriginalUploadServerSession: Decodable, Sendable {
@@ -531,11 +632,11 @@ final class OriginalUploadAPI {
     }
 
     func cancellationSessions(
-        for job: OriginalUploadJob, continuation: OriginalUploadCancellationPage.Continuation? = nil
+        for job: OriginalUploadJob, continuation: OriginalUploadCancellationPage.Continuation? = nil,
+        onResponse: (@MainActor (Int, Int?) -> Void)? = nil
     ) async throws -> OriginalUploadCancellationPage {
         try Task.checkCancellation()
-        try ensureCurrent(job, allowsCancellation: true)
-        guard job.cancellationRequested else { throw OriginalUploadAPIError.invalidResponse }
+        try ensureCancellationCurrent(job)
         if let continuation {
             guard continuation.jobId == job.id, continuation.incarnation == job.incarnation,
                   continuation.revision == job.revision, continuation.scope == job.scope,
@@ -547,7 +648,8 @@ final class OriginalUploadAPI {
         let query = continuation.map { "?after=\($0.after)" } ?? ""
         let data = try await request(
             job: job, path: "/api/assets/original-uploads/\(job.id.uuidString.lowercased())/sessions\(query)",
-            method: "GET", allowsCancellation: true, expectedStatus: 200)
+            method: "GET", allowsCancellation: true, expectedStatus: 200, cancellationPage: true,
+            onResponse: onResponse)
         try ensureCurrent(job, allowsCancellation: true)
         let response: CancellationPageResponse
         do {
@@ -648,6 +750,11 @@ final class OriginalUploadAPI {
         }
     }
 
+    fileprivate func ensureCancellationCurrent(_ job: OriginalUploadJob) throws {
+        try ensureCurrent(job, allowsCancellation: true)
+        guard job.cancellationRequested else { throw OriginalUploadAPIError.invalidResponse }
+    }
+
     private func request<Body: Encodable>(
         job: OriginalUploadJob, path: String, method: String, body: Body
     ) async throws -> Data {
@@ -659,11 +766,13 @@ final class OriginalUploadAPI {
 
     private func request(
         job: OriginalUploadJob, path: String, method: String, allowsCancellation: Bool = false,
-        expectedStatus: Int? = nil, cancellationFence: Bool = false
+        expectedStatus: Int? = nil, cancellationFence: Bool = false, cancellationPage: Bool = false,
+        onResponse: (@MainActor (Int, Int?) -> Void)? = nil
     ) async throws -> Data {
         try await perform(
             makeRequest(path: path, method: method), job: job, allowsCancellation: allowsCancellation,
-            expectedStatus: expectedStatus, cancellationFence: cancellationFence)
+            expectedStatus: expectedStatus, cancellationFence: cancellationFence, cancellationPage: cancellationPage,
+            onResponse: onResponse)
     }
 
     private func makeRequest(path: String, method: String) throws -> URLRequest {
@@ -678,7 +787,8 @@ final class OriginalUploadAPI {
 
     private func perform(
         _ request: URLRequest, job: OriginalUploadJob, allowsCancellation: Bool = false,
-        expectedStatus: Int? = nil, cancellationFence: Bool = false
+        expectedStatus: Int? = nil, cancellationFence: Bool = false, cancellationPage: Bool = false,
+        onResponse: (@MainActor (Int, Int?) -> Void)? = nil
     ) async throws -> Data {
         try Task.checkCancellation()
         try ensureCurrent(job, allowsCancellation: allowsCancellation)
@@ -694,6 +804,10 @@ final class OriginalUploadAPI {
             }
             throw error
         }
+        // Retain response metadata even if cancellation wins before the page is delivered.
+        if cancellationPage, let http = response as? HTTPURLResponse {
+            onResponse?(http.statusCode, http.statusCode == 429 ? Self.retryAfterSeconds(from: http) : nil)
+        }
         try Task.checkCancellation()
         try ensureCurrent(job, allowsCancellation: allowsCancellation)
         guard data.count <= OriginalUploadResponseLimit.maximumBytes else {
@@ -701,6 +815,12 @@ final class OriginalUploadAPI {
         }
         guard let http = response as? HTTPURLResponse else { throw OriginalUploadAPIError.invalidResponse }
         guard (200...299).contains(http.statusCode) else {
+            if cancellationPage, http.statusCode == 429 {
+                guard let seconds = Self.retryAfterSeconds(from: http) else {
+                    throw OriginalUploadAPIError.cancellationPageRetryAfterInvalid
+                }
+                throw OriginalUploadAPIError.cancellationPageRateLimited(retryAfterSeconds: seconds)
+            }
             if cancellationFence, [429, 503].contains(http.statusCode) {
                 let error: ErrorResponse
                 do {
@@ -712,9 +832,7 @@ final class OriginalUploadAPI {
                     throw OriginalUploadAPIError.httpStatus(http.statusCode)
                 }
                 if http.statusCode == 429, error.code == "INTENT_CANCELLATION_QUOTA" {
-                    guard let header = http.value(forHTTPHeaderField: "Retry-After"),
-                          !header.isEmpty, header.allSatisfy({ ("0"..."9").contains($0) }),
-                          let seconds = Int(header), (1...86_400).contains(seconds) else {
+                    guard let seconds = Self.retryAfterSeconds(from: http) else {
                         throw OriginalUploadAPIError.invalidResponse
                     }
                     throw OriginalUploadAPIError.cancellationQuota(retryAfterSeconds: seconds)
@@ -734,5 +852,14 @@ final class OriginalUploadAPI {
             throw OriginalUploadAPIError.invalidResponse
         }
         return data
+    }
+
+    private static func retryAfterSeconds(from response: HTTPURLResponse) -> Int? {
+        guard let header = response.value(forHTTPHeaderField: "Retry-After"),
+              !header.isEmpty, header.allSatisfy({ ("0"..."9").contains($0) }),
+              let seconds = Int(header), (1...86_400).contains(seconds) else {
+            return nil
+        }
+        return seconds
     }
 }
