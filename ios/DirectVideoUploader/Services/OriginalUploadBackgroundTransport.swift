@@ -82,17 +82,24 @@ final class OriginalUploadEventInbox {
         ["scope", "jobId", "jobIncarnation", "attemptId"],
     ]
 
-    // The app-private directory must not have independent, concurrent writers.
+    // Cooperating writers must serialize access and keep the namespace coherent.
+    // FD-relative scans do not secure prepare, recovery writes/metadata, deletion, or URLSession.
     private let directory: URL
+    // Preserve the supplied spelling for lexical validation before it can be standardized.
+    private let configuredDirectory: URL
+    private let inventoryDidOpen: (() throws -> Void)?
     private let synchronizeDirectory: (URL) throws -> Void
 
     init(
         directory: URL,
         synchronizeDirectory: @escaping (URL) throws -> Void = {
             try DurableFile.synchronize($0, directory: true)
-        }
+        },
+        inventoryDidOpen: (() throws -> Void)? = nil
     ) {
         self.directory = directory.standardizedFileURL
+        self.configuredDirectory = directory
+        self.inventoryDidOpen = inventoryDidOpen
         self.synchronizeDirectory = synchronizeDirectory
     }
 
@@ -165,6 +172,8 @@ final class OriginalUploadEventInbox {
                 canonical.insert(id)
             }
         }
+        // Reopen independently after path-based recovery: reusing the first FD could acknowledge
+        // an event from a displaced inbox. This comparison does not secure later path mutations.
         // Recovery succeeds only if the complete logical inbox is unchanged and no stages remain.
         let recovered = try scanRecords(matching: event)
         guard recovered.records == snapshot.records, recovered.stages.isEmpty else {
@@ -176,7 +185,13 @@ final class OriginalUploadEventInbox {
     private func scanRecords(matching event: OriginalBackgroundCompletion?) throws -> (
         records: [StoredEvent], canonical: Set<UUID>, stages: [StagedEvent]
     ) {
-        let files = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
+        let descriptor = try openInventoryDirectory()
+        var closed = false
+        defer { if !closed { closeDirectoryDescriptorLogged(descriptor) } }
+
+        // Synchronous main-actor observation only; all scan I/O still uses the real descriptors.
+        try inventoryDidOpen?()
+        let names = try inventoryNames(in: descriptor)
         var records: [UUID: StoredEvent] = [:]
         var sequences: [UInt64: UUID] = [:]
         var canonical: Set<UUID> = []
@@ -184,8 +199,7 @@ final class OriginalUploadEventInbox {
         var links: [FileIdentity: (found: Int, total: Int, snapshot: ReadEvent)] = [:]
 
         // Inspect the entire inbox before changing any staged file.
-        for file in files {
-            let name = file.lastPathComponent
+        for name in names {
             let canonicalID: UUID?
             if name.hasPrefix("event-update-"), name.hasSuffix(".tmp"),
                UUID(uuidString: String(name.dropFirst("event-update-".count).dropLast(4))) != nil {
@@ -194,13 +208,13 @@ final class OriginalUploadEventInbox {
                 // Only the generated spelling is canonical, including UUID letter case.
                 guard name.hasPrefix("event-"), name.hasSuffix(".json"),
                       let id = UUID(uuidString: String(name.dropFirst("event-".count).dropLast(5))),
-                      name == eventURL(id).lastPathComponent else {
+                      name == "event-\(id.uuidString).json" else {
                     throw OriginalUploadStorageError.invalidRecord
                 }
                 canonicalID = id
             }
 
-            let snapshot = try read(file)
+            let snapshot = try read(name, in: descriptor)
             let record = snapshot.record
             let id = record.event.id
             if let canonicalID {
@@ -208,7 +222,9 @@ final class OriginalUploadEventInbox {
                     throw OriginalUploadStorageError.invalidRecord
                 }
             } else {
-                stages.append(StagedEvent(url: file, snapshot: snapshot))
+                // This URL is for the existing path-based recovery, never for scan I/O.
+                let url = directory.appendingPathComponent(name, isDirectory: false)
+                stages.append(StagedEvent(url: url, snapshot: snapshot))
             }
             if let existing = records[id], existing != record {
                 throw OriginalUploadStorageError.invalidRecord
@@ -237,7 +253,209 @@ final class OriginalUploadEventInbox {
         if let event, let existing = records[event.id], existing.event != event {
             throw OriginalUploadStorageError.invalidRecord
         }
-        return (records.values.sorted { $0.sequence < $1.sequence }, canonical, stages)
+        let result = (records.values.sorted { $0.sequence < $1.sequence }, canonical, stages)
+        let closeResult = Darwin.close(descriptor)
+        closed = true
+        guard closeResult == 0 else { throw posixError() }
+        return result
+    }
+
+    private func openInventoryDirectory() throws -> Int32 {
+        let homePath = NSHomeDirectory()
+        // Only the OS-provided home and its OS-managed ancestors are trusted.
+        let (homeDescriptor, homeError) = homePath.withCString { path in
+            let result = Darwin.open(path, O_RDONLY | O_DIRECTORY | O_CLOEXEC)
+            return (result, result < 0 ? errno : 0)
+        }
+        guard homeDescriptor >= 0 else { throw posixError(homeError) }
+        var descriptor = homeDescriptor
+        do {
+            let homeStatus = try directoryStatus(descriptor)
+            let components = try inventoryComponents(under: homePath, matching: homeStatus)
+            for component in components {
+                // Open one component at a time; O_NOFOLLOW works on iOS 18.
+                let (next, openError) = component.withCString { name in
+                    let result = Darwin.openat(descriptor, name, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
+                    return (result, result < 0 ? errno : 0)
+                }
+                guard next >= 0 else { throw posixError(openError) }
+                do {
+                    _ = try directoryStatus(next)
+                } catch {
+                    closeDirectoryDescriptorLogged(next)
+                    throw error
+                }
+                let previous = descriptor
+                descriptor = next
+                guard Darwin.close(previous) == 0 else { throw posixError() }
+            }
+            return descriptor
+        } catch {
+            closeDirectoryDescriptorLogged(descriptor)
+            throw error
+        }
+    }
+
+    func inventoryComponents(under homePath: String, matching homeStatus: stat) throws -> [String] {
+        guard configuredDirectory.isFileURL, (configuredDirectory.host?.isEmpty ?? true),
+              configuredDirectory.user == nil, configuredDirectory.password == nil,
+              configuredDirectory.port == nil, configuredDirectory.query == nil,
+              configuredDirectory.fragment == nil else {
+            throw OriginalUploadStorageError.invalidScope
+        }
+        // Resolve only the OS-provided home; inbox descendants remain lexical.
+        let (resolved, resolveError) = homePath.withCString { path in
+            let result = Darwin.realpath(path, nil)
+            return (result, result == nil ? errno : 0)
+        }
+        guard let resolved else { throw posixError(resolveError) }
+        defer { free(resolved) }
+
+        let home = try absoluteComponents(homePath)
+        let canonicalHome = try absoluteComponents(String(cString: resolved))
+        guard !home.isEmpty, !canonicalHome.isEmpty else { throw OriginalUploadStorageError.invalidScope }
+        var aliases = [home, canonicalHome]
+        for path in [home, canonicalHome] {
+            if let alias = systemVarAlias(path) { aliases.append(alias) }
+        }
+        return try inventoryComponents(matching: aliases, homeStatus: homeStatus)
+    }
+
+    func inventoryComponents(matching aliases: [[String]], homeStatus: stat) throws -> [String] {
+        let inbox = try absoluteComponents(configuredDirectory.path)
+        let matching = aliases.filter {
+            !$0.isEmpty && inbox.count >= $0.count
+                && zip($0, inbox).allSatisfy { $0.0.utf8.elementsEqual($0.1.utf8) }
+        }
+        guard let alias = matching.max(by: { $0.count < $1.count }) else {
+            throw OriginalUploadStorageError.invalidScope
+        }
+        try verifyHomeAlias(alias, matches: homeStatus)
+        return Array(inbox.dropFirst(alias.count))
+    }
+
+    private func absoluteComponents(_ path: String) throws -> [String] {
+        guard path.first == "/" else { throw OriginalUploadStorageError.invalidScope }
+        var components = path.split(separator: "/", omittingEmptySubsequences: false).map { String($0) }
+        guard components.first == "" else { throw OriginalUploadStorageError.invalidScope }
+        components.removeFirst()
+        if components.last == "" { components.removeLast() }
+        guard components.allSatisfy({ isSafeComponent($0) }) else {
+            throw OriginalUploadStorageError.invalidScope
+        }
+        return components
+    }
+
+    private func systemVarAlias(_ components: [String]) -> [String]? {
+        if components.first?.utf8.elementsEqual("var".utf8) == true {
+            return ["private"] + components
+        }
+        if components.count >= 2, components[0].utf8.elementsEqual("private".utf8),
+           components[1].utf8.elementsEqual("var".utf8) {
+            return Array(components.dropFirst())
+        }
+        return nil
+    }
+
+    private func verifyHomeAlias(_ components: [String], matches homeStatus: stat) throws {
+        let path = "/" + components.joined(separator: "/")
+        let (descriptor, openError) = path.withCString { name in
+            let result = Darwin.open(name, O_RDONLY | O_DIRECTORY | O_CLOEXEC)
+            return (result, result < 0 ? errno : 0)
+        }
+        guard descriptor >= 0 else { throw posixError(openError) }
+        var closed = false
+        defer { if !closed { closeDirectoryDescriptorLogged(descriptor) } }
+        let status = try directoryStatus(descriptor)
+        guard FileIdentity(status) == FileIdentity(homeStatus) else { throw POSIXError(.ESTALE) }
+        let result = Darwin.close(descriptor)
+        let closeError = errno
+        closed = true
+        guard result == 0 else { throw posixError(closeError) }
+    }
+
+    private func isSafeComponent(_ name: String) -> Bool {
+        !name.isEmpty && name != "." && name != ".."
+            && !name.utf8.contains(0) && !name.utf8.contains(0x2F)
+    }
+
+    private func directoryStatus(_ descriptor: Int32) throws -> stat {
+        var status = stat()
+        guard Darwin.fstat(descriptor, &status) == 0 else { throw posixError() }
+        guard status.st_mode & mode_t(S_IFMT) == mode_t(S_IFDIR) else {
+            throw OriginalUploadStorageError.invalidFile
+        }
+        return status
+    }
+
+    private func inventoryNames(in descriptor: Int32) throws -> [String] {
+        // dup() would share the directory offset; opening "." creates a fresh description.
+        let (enumerationDescriptor, openError) = ".".withCString { name in
+            let result = Darwin.openat(descriptor, name, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
+            return (result, result < 0 ? errno : 0)
+        }
+        guard enumerationDescriptor >= 0 else { throw posixError(openError) }
+        do {
+            let parent = try directoryStatus(descriptor)
+            let reopened = try directoryStatus(enumerationDescriptor)
+            guard parent.st_dev == reopened.st_dev, parent.st_ino == reopened.st_ino else {
+                throw POSIXError(.ESTALE)
+            }
+        } catch {
+            closeDirectoryDescriptorLogged(enumerationDescriptor)
+            throw error
+        }
+
+        guard let stream = Darwin.fdopendir(enumerationDescriptor) else {
+            let error = posixError()
+            closeDirectoryDescriptorLogged(enumerationDescriptor)
+            throw error
+        }
+        // fdopendir owns enumerationDescriptor on success.
+        var closed = false
+        defer {
+            if !closed && Darwin.closedir(stream) != 0 {
+                Log.error("Could not close the background event inventory", logger: Log.upload)
+            }
+        }
+        var names: [String] = []
+        var seen: Set<String> = []
+        guard let nameOffset = MemoryLayout<dirent>.offset(of: \.d_name) else {
+            throw POSIXError(.EIO)
+        }
+        while true {
+            errno = 0
+            let next = Darwin.readdir(stream)
+            let readError = errno
+            guard let entry = next else {
+                guard readError == 0 else { throw posixError(readError) }
+                break
+            }
+            let length = Int(entry.pointee.d_namlen)
+            let recordLength = Int(entry.pointee.d_reclen)
+            guard length > 0, recordLength > nameOffset, length < recordLength - nameOffset else {
+                throw OriginalUploadStorageError.invalidRecord
+            }
+            let bytes = UnsafeRawBufferPointer(
+                start: UnsafeRawPointer(entry).advanced(by: nameOffset), count: length + 1)
+            guard bytes[length] == 0, let name = String(bytes: bytes.prefix(length), encoding: .utf8) else {
+                throw OriginalUploadStorageError.invalidRecord
+            }
+            if name == "." || name == ".." { continue }
+            guard isSafeComponent(name) else { throw OriginalUploadStorageError.invalidRecord }
+            guard seen.insert(name).inserted else { throw POSIXError(.ESTALE) }
+            names.append(name)
+        }
+        let closeResult = Darwin.closedir(stream)
+        closed = true
+        guard closeResult == 0 else { throw posixError() }
+        return names
+    }
+
+    private func closeDirectoryDescriptorLogged(_ descriptor: Int32) {
+        if Darwin.close(descriptor) != 0 {
+            Log.error("Could not close the background event directory", logger: Log.upload)
+        }
     }
 
     private func writeStage(_ data: Data, to url: URL) throws {
@@ -351,6 +569,7 @@ final class OriginalUploadEventInbox {
     private func unlinkFile(_ url: URL, expected: stat) throws {
         do {
             try withDirectoryDescriptor { descriptor in
+                // The identity/version check and unlink are non-atomic; a replacement could be removed.
                 try requireVersion(url, expected: expected, in: descriptor)
                 let result = url.lastPathComponent.withCString { Darwin.unlinkat(descriptor, $0, 0) }
                 guard result == 0 else { throw posixError() }
@@ -408,6 +627,21 @@ final class OriginalUploadEventInbox {
 
     private func read(_ url: URL, synchronizing: Bool = false) throws -> ReadEvent {
         let (input, before) = try openRegular(url)
+        return try read(input, before: before, synchronizing: synchronizing) {
+            try pathStatus(url)
+        }
+    }
+
+    private func read(_ name: String, in descriptor: Int32) throws -> ReadEvent {
+        let (input, before) = try openRegular(name, in: descriptor)
+        return try read(input, before: before, synchronizing: false) {
+            try entryStatus(name, in: descriptor)
+        }
+    }
+
+    private func read(
+        _ input: FileHandle, before: stat, synchronizing: Bool, currentStatus: () throws -> stat
+    ) throws -> ReadEvent {
         var closed = false
         defer { if !closed { closeLogged(input) } }
         guard before.st_size > 0, before.st_size <= 1_048_576 else {
@@ -422,7 +656,7 @@ final class OriginalUploadEventInbox {
             data.append(chunk)
         }
         var after = try fileStatus(input)
-        guard sameVersion(before, after), sameVersion(after, try pathStatus(url)) else {
+        guard sameVersion(before, after), sameVersion(after, try currentStatus()) else {
             throw POSIXError(.ESTALE)
         }
 
@@ -437,7 +671,7 @@ final class OriginalUploadEventInbox {
         if synchronizing {
             guard Darwin.fsync(input.fileDescriptor) == 0 else { throw posixError() }
             let synced = try fileStatus(input)
-            guard sameVersion(after, synced), sameVersion(synced, try pathStatus(url)) else {
+            guard sameVersion(after, synced), sameVersion(synced, try currentStatus()) else {
                 throw POSIXError(.ESTALE)
             }
             after = synced
@@ -505,6 +739,36 @@ final class OriginalUploadEventInbox {
         guard scopes.isEmpty else { throw OriginalUploadStorageError.invalidRecord }
     }
 
+    private func openRegular(_ name: String, in directoryDescriptor: Int32) throws -> (FileHandle, stat) {
+        let entry = try entryStatus(name, in: directoryDescriptor)
+        guard isRegular(entry) else { throw OriginalUploadStorageError.invalidRecord }
+        let (descriptor, openError) = name.withCString { component in
+            let result = Darwin.openat(directoryDescriptor, component, O_RDONLY | O_NONBLOCK | O_NOFOLLOW | O_CLOEXEC)
+            return (result, result < 0 ? errno : 0)
+        }
+        guard descriptor >= 0 else { throw posixError(openError) }
+        let file = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
+        do {
+            let opened = try fileStatus(file)
+            guard sameVersion(entry, opened) else { throw POSIXError(.ESTALE) }
+            return (file, opened)
+        } catch {
+            closeLogged(file)
+            throw error
+        }
+    }
+
+    private func entryStatus(_ name: String, in directoryDescriptor: Int32) throws -> stat {
+        guard isSafeComponent(name) else { throw OriginalUploadStorageError.invalidRecord }
+        var status = stat()
+        let (result, statusError) = name.withCString { component in
+            let result = Darwin.fstatat(directoryDescriptor, component, &status, AT_SYMLINK_NOFOLLOW)
+            return (result, result == 0 ? 0 : errno)
+        }
+        guard result == 0 else { throw posixError(statusError) }
+        return status
+    }
+
     private func openRegular(_ url: URL) throws -> (FileHandle, stat) {
         let path = try pathStatus(url)
         guard isRegular(path) else { throw OriginalUploadStorageError.invalidRecord }
@@ -553,8 +817,8 @@ final class OriginalUploadEventInbox {
             && left.st_ctimespec.tv_nsec == right.st_ctimespec.tv_nsec
     }
 
-    private func posixError() -> POSIXError {
-        POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+    private func posixError(_ code: Int32 = errno) -> POSIXError {
+        POSIXError(POSIXErrorCode(rawValue: code) ?? .EIO)
     }
 
     private func closeLogged(_ file: FileHandle) {
