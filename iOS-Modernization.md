@@ -880,10 +880,15 @@ sequenceDiagram
     records now recover after a crash; ambiguous records remain in place and block
     inbox progress. The event pump also blocks acknowledgement of its pending
     persistence retries. The inbox inventory verifies trusted app-home aliases,
-    traverses descendants without following links, and reads records relative to
-    the opened directory.
-    This does not secure path-based directory preparation, staged recovery, deletion,
-    file-protection and backup metadata, or the background `URLSession` file handoff.
+    traverses descendants without following links, and retains its opened directory
+    descriptor for staged-record rereads. It checks directory identity before
+    recovery, before the second scan, and after that scan, rejecting observed
+    substitutions even when the records are identical. These checkpoints cannot
+    detect swaps between checks and do not secure path-based directory preparation,
+    recovery mutations, deletion, file-protection and backup metadata, or the
+    background `URLSession` file handoff. A hard link added after inventory can
+    still share recovery metadata changes, and an interrupted or failed reseal can
+    leave an event file writable; resolve both before enabling the transport.
     A repair workflow and end-to-end ancestor-path safety, including namespace
     ownership, remain necessary. Verify the real `/var` alias and iOS 18.6 behavior
     on a physical device. Attachment changes must be resolved before trusting task
