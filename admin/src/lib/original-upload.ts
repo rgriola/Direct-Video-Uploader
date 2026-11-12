@@ -54,6 +54,7 @@ export interface UploadTransport {
 export interface OriginalUploadJob {
   clientRequestId: string;
   file: File;
+  originalFileName?: string;
   sha256?: string;
   assetId?: string;
   /** Once set, the server may hold a reservation that only cancellation can fence. */
@@ -183,6 +184,7 @@ export async function runOriginalUpload(
   onProgress: (progress: UploadProgress) => void,
   signal: AbortSignal,
   transport: UploadTransport = browserTransport,
+  beforeRequests?: (job: OriginalUploadJob) => void,
 ): Promise<void> {
   const { file } = job;
   const total = file.size;
@@ -194,11 +196,12 @@ export async function runOriginalUpload(
 
   onProgress({ phase: "reserving", loaded: 0, total });
   const expected = { expectedSizeBytes: String(total), expectedSha256: job.sha256 };
+  beforeRequests?.(job);
   if (!job.assetId) {
     job.reservationRequested = true;
     const { asset } = await transport.request<{ asset: ReservedAsset }>("POST", "/api/assets/original-uploads", {
       clientRequestId: job.clientRequestId,
-      fileName: file.name || null,
+      fileName: (job.originalFileName ?? file.name) || null,
       ...expected,
       uploadSource: "WEB",
     });

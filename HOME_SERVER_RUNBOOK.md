@@ -691,6 +691,11 @@ every 30 seconds. The panel reports:
   status describes a completed job and recorded local archive, **not** a
   verified SQL restore or an independent check of B2 contents. Retained-only
   originals are not included in recurring crypt checks.
+- If tracked upload-session cleanup is enabled, its cycle health. A failure is
+  critical until a later complete scan finds no failures; a cycle that has not
+  finished for 15 minutes is also critical. Deferred sessions and untracked
+  storage still require log review. Cleanup status is in memory and resets
+  when the server restarts.
 
 Missing receipts show a warning; failed, stale, or overlong runs show critical.
 An unreadable receipt, missing/wrong mount, failed check, or timed-out check

@@ -118,6 +118,42 @@ describe("original upload client", () => {
     expect(job.reservationRequested).toBe(true);
   });
 
+  it("persists recovery metadata before reserving and stops if persistence fails", async () => {
+    const file = makeFile("abcd");
+    const { transport, calls } = fakeTransport(uploadRoutes(file));
+    const job: OriginalUploadJob = { clientRequestId: REQUEST_ID, file };
+
+    await expect(runOriginalUpload(job, () => {}, new AbortController().signal, transport, saved => {
+      expect(saved.sha256).toBe(bytesToHex(sha256(new TextEncoder().encode("abcd"))));
+      expect(calls).toHaveLength(0);
+      throw new Error("Recovery storage unavailable");
+    })).rejects.toThrow("Recovery storage unavailable");
+    expect(calls).toHaveLength(0);
+    expect(job.reservationRequested).toBeUndefined();
+  });
+
+  it("rechecks recovery state before any network request on a retry with a known asset", async () => {
+    const file = makeFile("abcd");
+    const { transport, calls } = fakeTransport(uploadRoutes(file));
+    const job: OriginalUploadJob = {
+      clientRequestId: REQUEST_ID, file, assetId: ASSET_ID, sha256: "a".repeat(64), reservationRequested: true,
+    };
+    await expect(runOriginalUpload(job, () => {}, new AbortController().signal, transport, () => {
+      throw new Error("Cancellation is pending");
+    })).rejects.toThrow("Cancellation is pending");
+    expect(calls).toHaveLength(0);
+  });
+
+  it("keeps the originally reserved filename when resuming a renamed file", async () => {
+    const file = makeFile("abcd");
+    const { transport, calls } = fakeTransport(uploadRoutes(file));
+    await runOriginalUpload(
+      { clientRequestId: REQUEST_ID, file, originalFileName: "original.mov" },
+      () => {}, new AbortController().signal, transport,
+    );
+    expect(calls[0].body).toMatchObject({ fileName: "original.mov" });
+  });
+
   it("resumes by skipping parts the server already stored", async () => {
     const file = makeFile("abcdefghij");
     const { transport, calls, puts } = fakeTransport(uploadRoutes(file, [1, 2]));

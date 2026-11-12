@@ -838,10 +838,12 @@ sequenceDiagram
   for manual review rather than deleting them.
 - [x] Exercise PostgreSQL/local-filesystem recovery, moderation serialization,
   partial failures, capacity leases, bounded inventory, and Mux handoff settings.
+- [x] Detect failed or stalled cleanup cycles through the opt-in dashboard and Slack
+  monitoring when both cleanup and monitoring are enabled.
 - [ ] Verify rollout, actual storage/mount behavior, operator log review, and
   recovery on an isolated environment before enabling it on the home backend.
-- [ ] Add independent failure and freshness alerts; the worker currently logs
-  outcomes only and cannot report while the server is down.
+- [ ] Configure and verify alert delivery and add an independent check for a stopped
+  server or host. Review deferred sessions and untracked directories separately.
 
 ### 4.2 Upload Protocol (Why Parts)
 
@@ -874,9 +876,11 @@ sequenceDiagram
     and orphaned legacy Mux sessions from premature background-event acknowledgement,
     reconcile scheduled attempts against live tasks and server parts at startup, and
     provide a durable resolution for unidentified or late completion events.
-    Local callback ordering alone does not identify an OS wake. Recover or
-    quarantine staged inbox records after a crash instead of deleting potentially
-    complete events, and resolve attachment changes before trusting task inventory.
+    Local callback ordering alone does not identify an OS wake. Intact staged inbox
+    records now recover after a crash; ambiguous records remain in place and block
+    inbox progress. The event pump also blocks acknowledgement of its pending
+    persistence retries. A repair workflow and ancestor-path validation remain
+    necessary, and attachment changes must be resolved before trusting task inventory.
     This unreleased journal format includes a job-incarnation identifier; if any
     earlier experimental installation created older records or tasks, migrate and
     reconcile them before enabling recovery rather than deleting staged files.
@@ -925,8 +929,17 @@ sequenceDiagram
     locally. The panel discloses retention and warns before leaving.
   - [x] Owners can add a missing context form (slug, type, description, priority)
     to their active videos from My Videos.
-  - [ ] Jobs are held in memory only: reloading or leaving My Videos stops uploads,
-    and a stopped reservation is not recovered across reloads (sessions expire).
+  - [x] Persist account- and origin-scoped recovery metadata in browser storage
+    before reserving; resume requires selecting a file and, for reserved uploads,
+    matching the original hash.
+    Once the browser lock is acquired, cancellation remains pending until fenced
+    and cleaned up; browser locks prevent the same job from running in multiple tabs.
+  - [ ] Leaving My Videos or reloading stops active transfers. Recovery requires
+    the same browser profile and access to the original file; clearing browser
+    data loses the recovery records. File names, sizes, and hashes remain in that
+    browser until the job finishes or is cancelled and are visible to others with
+    access to the profile. A queued file interrupted before hashing cannot be
+    content-verified until the user selects it again.
   - [ ] Validate in desktop browsers against an isolated backend with real files
     up to 500 MiB before enabling upload sessions on the shared backend.
 - [ ] Keep direct-to-Mux as the default until the new path and all rollout gates

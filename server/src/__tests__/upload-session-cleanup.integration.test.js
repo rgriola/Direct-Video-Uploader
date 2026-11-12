@@ -4,11 +4,14 @@ import os from 'node:os';
 import path from 'node:path';
 import { PassThrough } from 'node:stream';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createUploadSessionCleanupWorker, startUploadSessionCleanup } from '../jobs/upload-session-cleanup.js';
+import {
+    createUploadSessionCleanupWorker, scheduleUploadSessionCleanup, startUploadSessionCleanup,
+} from '../jobs/upload-session-cleanup.js';
 import { createLocalStorageDriver } from '../lib/storage/local-driver.js';
 import { createStorageCapacity, SESSION_OVERHEAD_BYTES } from '../lib/storage/capacity.js';
 import { getUploadSessionCleanupConfig } from '../lib/upload-session-cleanup-config.js';
 import { createUploadSessionService } from '../lib/upload-sessions.js';
+import { createMonitoringService } from '../lib/monitoring.js';
 import {
     acquireIntegrationDatabaseLock, INTEGRATION_SETUP_TIMEOUT_MS, waitForBlockedQuery,
 } from './helpers/database-lock.js';
@@ -635,11 +638,114 @@ integration('upload session cleanup against PostgreSQL and local storage', () =>
         expect((await worker.runOnce()).sessions.processed).toBe(1);
     });
 
+    it('reports and clears a real cleanup failure through monitoring', async () => {
+        const { session, content } = await trackedUpload('monitored storage identity');
+        const identityPath = path.join(storageRoot, '.dvu-storage-id');
+        const identity = await readFile(identityPath, 'utf8');
+        await writeFile(identityPath, `${randomUUID()}\n`);
+        await expireAtCurrentTime(session);
+        const monitoring = createMonitoringService();
+        const stop = scheduleUploadSessionCleanup({
+            worker: createWorker(), log, monitoring, intervalMs: 200,
+        });
+        try {
+            await waitFor(() => log.error.mock.calls.some(
+                ([, message]) => message === 'Original upload cleanup failed; recovery is required',
+            ));
+            await monitoring.runOnce();
+            expect(monitoring.snapshot().checks[0]).toMatchObject({
+                id: 'original-upload-cleanup', status: 'critical',
+            });
+            expect(await readFile(path.join(sessionPath(session), 'parts', '00001'))).toEqual(content);
+
+            await writeFile(identityPath, identity);
+            await waitFor(async () => {
+                await monitoring.runOnce();
+                return monitoring.snapshot().checks[0]?.status === 'ok';
+            });
+            expect((await prisma.uploadSession.findUnique({ where: { id: session.id } })).status).toBe('EXPIRED');
+        } finally {
+            await stop();
+        }
+    });
+
     it('does not create a missing storage root during inventory', async () => {
         const missing = path.join(storageRoot, 'missing-originals');
         const worker = createWorker({ storage: createLocalStorageDriver({ root: missing }) });
         await expect(worker.runOnce()).rejects.toMatchObject({ message: 'Upload session cleanup cycle failed' });
         await expect(lstat(missing)).rejects.toMatchObject({ code: 'ENOENT' });
+    });
+
+    it('treats a fresh unmarked storage root as empty but refuses an unmarked root with files', async () => {
+        const fresh = path.join(storageRoot, 'fresh-originals');
+        await mkdir(fresh);
+        const worker = createWorker({ storage: createLocalStorageDriver({ root: fresh }) });
+        await expect(worker.runOnce()).resolves.toBeTruthy();
+        await expect(lstat(path.join(fresh, '.dvu-storage-id'))).rejects.toMatchObject({ code: 'ENOENT' });
+
+        await writeFile(path.join(fresh, 'unexpected'), 'not ours');
+        await expect(worker.runOnce()).rejects.toMatchObject({ message: 'Upload session cleanup cycle failed' });
+    });
+
+    it.each(['active upload', 'retained original', 'write lease'])(
+        'refuses a fresh-looking unmarked root when there is a tracked %s',
+        async tracked => {
+            let session;
+            let content;
+            if (tracked === 'write lease') {
+                await prisma.storageWriteLease.create({
+                    data: {
+                        id: randomUUID(),
+                        uploadSessionId: randomUUID(),
+                        storageIdentity: randomUUID(),
+                        sizeBytes: 1n,
+                        host: 'another-host',
+                        pid: 1,
+                    },
+                });
+            } else {
+                ({ session, content } = await trackedUpload('tracked storage'));
+                if (tracked === 'retained original') {
+                    await service.complete({ ownerId, uploadSessionId: session.id });
+                }
+            }
+            const fresh = path.join(storageRoot, 'other-originals');
+            await mkdir(fresh);
+            const worker = createWorker({ storage: createLocalStorageDriver({ root: fresh }) });
+
+            await expect(worker.runOnce()).rejects.toMatchObject({
+                message: 'Upload session cleanup cycle failed',
+                errors: [expect.objectContaining({ code: 'STORAGE_UNAVAILABLE' })],
+            });
+            if (session) {
+                const existing = tracked === 'retained original'
+                    ? originalPath(session) : path.join(sessionPath(session), 'parts', '00001');
+                expect(await readFile(existing)).toEqual(content);
+            }
+        },
+    );
+
+    it('rechecks a root initialized while its inventory was opening', async () => {
+        const fresh = path.join(storageRoot, 'concurrent-originals');
+        await mkdir(fresh);
+        const freshStorage = createLocalStorageDriver({ root: fresh });
+        const openInventory = freshStorage.openUploadInventory.bind(freshStorage);
+        let untracked;
+        vi.spyOn(freshStorage, 'openUploadInventory').mockImplementationOnce(async () => {
+            const inventory = await openInventory();
+            untracked = await freshStorage.createUpload({
+                ownerId, assetId: randomUUID(), clipId: randomUUID(),
+            });
+            return inventory;
+        });
+        const worker = createWorker({ storage: freshStorage });
+
+        expect((await worker.runOnce()).inventory).toEqual({ inspected: 0, reported: 0 });
+        expect((await worker.runOnce()).inventory).toMatchObject({ inspected: 1, reported: 1 });
+        expect(log.warn).toHaveBeenCalledWith(
+            { uploadSessionId: untracked.uploadId, kind: 'directory' },
+            'Possible untracked original upload data requires manual review',
+        );
     });
 
     it('defers completion while an asset is moderated and resumes once active', async () => {

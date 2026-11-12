@@ -1,6 +1,7 @@
 import { createUploadSessionRecovery, UploadSessionError } from '../lib/upload-sessions.js';
 import { createStorageDriver } from '../lib/storage/driver.js';
 import { lockStorageCapacity } from '../lib/storage/capacity.js';
+import { StorageError } from '../lib/storage/local-driver.js';
 
 const CYCLE_INTERVAL_MS = 5 * 60 * 1000;
 const SESSION_BATCH_SIZE = 50;
@@ -30,7 +31,8 @@ export function createUploadSessionCleanupWorker({
     sessionBatchSize = SESSION_BATCH_SIZE,
     inventoryBatchSize = INVENTORY_BATCH_SIZE,
 }) {
-    if (!db || !storage || typeof storage.openUploadInventory !== 'function'
+    if (!db || !storage || typeof storage.getCapacitySnapshot !== 'function'
+        || typeof storage.openUploadInventory !== 'function'
         || typeof storage.assertUploadInventory !== 'function' || !log
         || typeof log.info !== 'function' || typeof log.warn !== 'function'
         || typeof log.error !== 'function' || typeof withLock !== 'function'
@@ -114,12 +116,43 @@ export function createUploadSessionCleanupWorker({
                 }
             }
         }
-        if (candidates.length < sessionBatchSize) cursor = null;
-        return counts;
+        const scanComplete = candidates.length < sessionBatchSize;
+        if (scanComplete) cursor = null;
+        return { ...counts, scanComplete };
     }
 
     async function reportInventory() {
         if (!inventory) inventory = await storage.openUploadInventory();
+        if (inventory?.unmarkedRoot) {
+            inventory = null;
+            // An empty unmarked root may be a missing volume, not a new installation.
+            await db.$transaction(async tx => {
+                await lockStorageCapacity(tx);
+                const root = await storage.getCapacitySnapshot({ create: false });
+                if (root.identity) return;
+                const activeSession = await tx.uploadSession.findFirst({
+                    where: {
+                        OR: [
+                            { storageReservationBytes: null },
+                            { storageReservationBytes: { gt: 0n } },
+                            { status: { in: ['OPEN', 'COMPLETING'] } },
+                        ],
+                    },
+                    select: { id: true },
+                });
+                const original = await tx.clip.findFirst({
+                    where: { storageKey: { not: null } },
+                    select: { id: true },
+                });
+                const lease = await tx.storageWriteLease.findFirst({ select: { id: true } });
+                if (root.hasEntries || activeSession || original || lease) {
+                    throw new StorageError('Original upload inventory requires a verified storage root', {
+                        code: 'STORAGE_UNAVAILABLE',
+                    });
+                }
+            }, { timeout: 60000, isolationLevel: 'ReadCommitted' });
+            return { inspected: 0, reported: 0 };
+        }
         if (!inventory) return { inspected: 0, reported: 0 };
 
         const entries = [];
@@ -235,20 +268,93 @@ export function createUploadSessionCleanupWorker({
     return { runOnce, close: closeInventory };
 }
 
-export function scheduleUploadSessionCleanup({ worker, log, intervalMs = CYCLE_INTERVAL_MS }) {
+export function scheduleUploadSessionCleanup({
+    worker, log, monitoring, intervalMs = CYCLE_INTERVAL_MS, clock = () => Date.now(),
+}) {
     if (typeof worker?.runOnce !== 'function' || typeof worker?.close !== 'function'
         || typeof log?.info !== 'function' || typeof log?.error !== 'function'
-        || !Number.isSafeInteger(intervalMs) || intervalMs < 1) {
+        || (monitoring != null && typeof monitoring.registerCheck !== 'function')
+        || !Number.isSafeInteger(intervalMs) || intervalMs < 1 || typeof clock !== 'function') {
         throw new TypeError('Upload session cleanup scheduler requires a worker, logger, and positive interval');
     }
     let running;
     let stopped = false;
     let stopping;
+    const startedAt = clock();
+    let lastCycleAt = null;
+    let lastSuccessAt = null;
+    let failurePending = false;
+    let failedInScan = false;
+    let firstFinished;
+    const firstCycle = new Promise(resolve => { firstFinished = resolve; });
+    const unregister = monitoring?.registerCheck({
+        id: 'original-upload-cleanup',
+        label: 'Original upload cleanup',
+        category: 'service',
+        async collect() {
+            const initialAge = clock() - startedAt;
+            if (lastCycleAt === null && Number.isFinite(initialAge)
+                && initialAge >= -60_000 && initialAge < intervalMs * 3) {
+                let timeout;
+                try {
+                    await Promise.race([
+                        firstCycle,
+                        new Promise(resolve => { timeout = setTimeout(resolve, intervalMs * 3 - initialAge); }),
+                    ]);
+                } finally {
+                    clearTimeout(timeout);
+                }
+            }
+            const age = clock() - (lastCycleAt ?? startedAt);
+            if (!Number.isFinite(age) || age < -60_000) {
+                return { status: 'unknown', message: 'Cleanup cycle time cannot be verified' };
+            }
+            if (age >= intervalMs * 3) {
+                return { status: 'critical', message: 'No cleanup cycle has finished within the freshness limit' };
+            }
+            if (lastCycleAt === null) {
+                return { status: 'unknown', message: 'No cleanup cycle has finished' };
+            }
+            if (failurePending) {
+                return { status: 'critical', message: 'A cleanup failure requires recovery; inspect server logs' };
+            }
+            return {
+                status: 'ok',
+                message: 'Cleanup cycles are running',
+                ...(lastSuccessAt === null ? {} : { lastSuccessAt: new Date(lastSuccessAt).toISOString() }),
+            };
+        },
+    });
     const run = () => {
         if (stopped || running) return;
-        running = worker.runOnce()
-            .catch(error => log.error({ err: errorDetails(error) }, 'Upload session cleanup cycle failed'))
-            .finally(() => { running = null; });
+        running = Promise.resolve().then(() => worker.runOnce())
+            .then(result => {
+                if (!Number.isSafeInteger(result?.sessions?.failed) || result.sessions.failed < 0
+                    || typeof result.sessions.scanComplete !== 'boolean') {
+                    throw new Error('Upload session cleanup returned an invalid result');
+                }
+                if (result.sessions.failed > 0) {
+                    failurePending = true;
+                    failedInScan = true;
+                }
+                if (result.sessions.scanComplete) {
+                    if (!failedInScan) {
+                        failurePending = false;
+                        lastSuccessAt = clock();
+                    }
+                    failedInScan = false;
+                }
+            })
+            .catch(error => {
+                failurePending = true;
+                failedInScan = true;
+                log.error({ err: errorDetails(error) }, 'Upload session cleanup cycle failed');
+            })
+            .finally(() => {
+                lastCycleAt = clock();
+                firstFinished();
+                running = null;
+            });
     };
     const startup = setTimeout(run, 0);
     const interval = setInterval(run, intervalMs);
@@ -261,6 +367,8 @@ export function scheduleUploadSessionCleanup({ worker, log, intervalMs = CYCLE_I
             stopping = (async () => {
                 if (running) await running;
                 await worker.close();
+                firstFinished();
+                unregister?.();
                 log.info('Upload session cleanup worker stopped');
             })();
         }
@@ -280,5 +388,5 @@ export function startUploadSessionCleanup(fastify, {
     if (!config.enabled) return async () => {};
     const storage = createStorageDriver({ provider: 'local', root: config.storageRoot });
     const worker = createUploadSessionCleanupWorker({ db, storage, log: fastify.log, withLock, onCompleted });
-    return scheduleUploadSessionCleanup({ worker, log: fastify.log });
+    return scheduleUploadSessionCleanup({ worker, log: fastify.log, monitoring: fastify.monitoring });
 }

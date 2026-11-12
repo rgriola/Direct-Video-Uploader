@@ -766,6 +766,10 @@ export function createLocalStorageDriver({ root = resolveLocalStorageRoot() } = 
       const rootPath = await getRoot({ create: false });
       const rootInfo = await lstat(rootPath, { bigint: true });
       const identity = await readStorageIdentity(rootPath);
+      if (!identity && rootInfo.isDirectory() && !rootInfo.isSymbolicLink()
+        && (await readdir(rootPath)).length === 0) {
+        return { unmarkedRoot: true };
+      }
       if (!rootInfo.isDirectory() || rootInfo.isSymbolicLink() || !identity) {
         throw new StorageError("Original upload inventory requires a verified storage root", {
           code: "STORAGE_UNAVAILABLE",
