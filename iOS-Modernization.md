@@ -879,8 +879,15 @@ sequenceDiagram
     Local callback ordering alone does not identify an OS wake. Intact staged inbox
     records now recover after a crash; ambiguous records remain in place and block
     inbox progress. The event pump also blocks acknowledgement of its pending
-    persistence retries. A repair workflow and ancestor-path validation remain
-    necessary, and attachment changes must be resolved before trusting task inventory.
+    persistence retries. The inbox inventory verifies trusted app-home aliases,
+    traverses descendants without following links, and reads records relative to
+    the opened directory.
+    This does not secure path-based directory preparation, staged recovery, deletion,
+    file-protection and backup metadata, or the background `URLSession` file handoff.
+    A repair workflow and end-to-end ancestor-path safety, including namespace
+    ownership, remain necessary. Verify the real `/var` alias and iOS 18.6 behavior
+    on a physical device. Attachment changes must be resolved before trusting task
+    inventory.
     This unreleased journal format includes a job-incarnation identifier; if any
     earlier experimental installation created older records or tasks, migrate and
     reconcile them before enabling recovery rather than deleting staged files.
