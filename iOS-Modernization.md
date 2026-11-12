@@ -922,8 +922,9 @@ sequenceDiagram
     including escaped and canonically equivalent names. Ambiguous quota/overflow
     JSON falls back to its HTTP status; oversized responses fail validation.
     Neither clears pending cancellation. The scanner checks task cancellation
-    before and after work, including on errors. Foundation's internal buffering and
-    backpressure are unspecified, so a hard end-to-end memory bound remains
+    before and after work, including on errors; cancellation after the final
+    check can still race response delivery. Foundation's internal buffering
+    and backpressure are unspecified, so a hard end-to-end memory bound remains
     unproven before enablement. Verify behavior on iOS 18.6 and devices.
   - Before real content, protect sensitive job journals and atomic copies with
     complete file protection, separately review the minimized background-event
