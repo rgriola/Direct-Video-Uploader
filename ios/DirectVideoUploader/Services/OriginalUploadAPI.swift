@@ -577,13 +577,13 @@ final class OriginalUploadAPI {
     }
 
     func session(for job: OriginalUploadJob) async throws -> OriginalUploadServerSession {
-        try ensureCurrent(job, allowsCancellation: true)
+        try ensureCurrent(job)
         guard [.uploading, .stored].contains(job.state), let sessionId = job.sessionId else {
             throw OriginalUploadAPIError.invalidResponse
         }
         let data = try await request(
-            job: job, path: "/api/upload-sessions/\(sessionId)", method: "GET", allowsCancellation: true)
-        try ensureCurrent(job, allowsCancellation: true)
+            job: job, path: "/api/upload-sessions/\(sessionId)", method: "GET")
+        try ensureCurrent(job)
         let session = try decodeSession(data, job: job, forRecovery: true)
         guard session.id == sessionId else { throw OriginalUploadAPIError.invalidResponse }
         return session
