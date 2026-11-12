@@ -643,6 +643,262 @@ struct OriginalUploadAPITests {
 
     @Test
     @MainActor
+    func cancellationPagesPreserveIdentifiersAndBindContinuations() async throws {
+        let directory = try fixture()
+        defer { cleanup(directory) }
+        let server = URL(string: "https://isolated.example.test")!
+        let auth = AuthService(storage: .memory, serverURL: { server })
+        let user = User(
+            id: "user-1", phoneNumber: "5550100", name: "Reporter", email: nil, team: nil,
+            status: "ACTIVE", companyCode: nil, companyName: nil)
+        auth.token = "test-token"
+        auth.currentUser = user
+        let access = try OriginalUploadAccess(auth: auth, allowedOrigins: ["https://isolated.example.test"])
+        let assetId = "ab123456-789a-4bcd-8abc-0123456789ab"
+        let (journal, job) = try await prepareJob(
+            access: access, directory: directory, assetId: assetId, sessionId: sessionId)
+        let ids = (1...100).map { String(format: "A1234567-0000-4000-8000-%012x", $0) }
+        let cursor = try #require(ids.last)
+        let first = try JSONSerialization.data(withJSONObject: [
+            "assetId": assetId, "sessionIds": ids, "nextCursor": cursor,
+        ])
+        let secondIds = [cursor.lowercased(), sessionId]
+        let second = try JSONSerialization.data(withJSONObject: [
+            "assetId": assetId, "sessionIds": secondIds, "nextCursor": NSNull(),
+        ])
+        let requests = Mutex<[URLRequest]>([])
+        let transport: @Sendable (URLRequest) async throws -> (Data, URLResponse) = { request in
+            requests.withLock { $0.append(request) }
+            return (request.url?.query == nil ? first : second, HTTPURLResponse(
+                url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+        }
+        let api = try OriginalUploadAPI(access: access, journal: journal, transport: transport)
+
+        await #expect(throws: OriginalUploadAPIError.invalidResponse) {
+            try await api.cancellationSessions(for: job)
+        }
+        var unsaved = job
+        unsaved.cancellationRequested = true
+        await #expect(throws: OriginalUploadStorageError.staleJob) {
+            try await api.cancellationSessions(for: unsaved)
+        }
+        #expect(requests.withLock { $0.isEmpty })
+
+        let cancelled = try journal.requestCancellation(for: job, access: access)
+        let page = try await api.cancellationSessions(for: cancelled)
+        #expect(page.assetId == assetId)
+        #expect(page.sessionIds == ids)
+        let continuation = try #require(page.continuation)
+        let last = try await api.cancellationSessions(for: cancelled, continuation: continuation)
+        #expect(last.sessionIds == secondIds)
+        #expect(last.continuation == nil)
+        let sent = requests.withLock { $0 }
+        try #require(sent.count == 2)
+        #expect(sent.allSatisfy { $0.httpMethod == "GET" && $0.httpBody == nil })
+        #expect(sent.allSatisfy { $0.value(forHTTPHeaderField: "Authorization") == "Bearer test-token" })
+        #expect(sent[0].url?.path == "/api/assets/original-uploads/\(job.id.uuidString.lowercased())/sessions")
+        #expect(sent[0].url?.query == nil)
+        #expect(sent[1].url?.query == "after=\(cursor)")
+
+        let (_, otherJob) = try await prepareJob(access: access, directory: directory)
+        let otherCancelled = try journal.requestCancellation(for: otherJob, access: access)
+        await #expect(throws: OriginalUploadAPIError.invalidResponse) {
+            try await api.cancellationSessions(for: otherCancelled, continuation: continuation)
+        }
+        let updated = try journal.update(cancelled, access: access)
+        await #expect(throws: OriginalUploadAPIError.invalidResponse) {
+            try await api.cancellationSessions(for: updated, continuation: continuation)
+        }
+        #expect(requests.withLock { $0.count } == 2)
+
+        let newPage = try await api.cancellationSessions(for: updated)
+        let newContinuation = try #require(newPage.continuation)
+        auth.logout()
+        auth.token = "other-token"
+        auth.currentUser = User(
+            id: "user-2", phoneNumber: "5550101", name: "Other", email: nil, team: nil,
+            status: "ACTIVE", companyCode: nil, companyName: nil)
+        let otherAccess = try OriginalUploadAccess(auth: auth, allowedOrigins: ["https://isolated.example.test"])
+        let otherAPI = try OriginalUploadAPI(access: otherAccess, journal: journal, transport: transport)
+        await #expect(throws: OriginalUploadAPIError.sessionChanged) {
+            try await otherAPI.cancellationSessions(for: updated, continuation: newContinuation)
+        }
+        auth.logout()
+        auth.token = "test-token"
+        auth.currentUser = user
+        let freshAccess = try OriginalUploadAccess(auth: auth, allowedOrigins: ["https://isolated.example.test"])
+        let freshJob = try journal.read(id: job.id, access: freshAccess)
+        let freshAPI = try OriginalUploadAPI(access: freshAccess, journal: journal, transport: transport)
+        await #expect(throws: OriginalUploadAPIError.invalidResponse) {
+            try await freshAPI.cancellationSessions(for: freshJob, continuation: newContinuation)
+        }
+        #expect(requests.withLock { $0.count } == 3)
+        #expect(try journal.read(id: job.id, access: freshAccess).cancellationRequested)
+    }
+
+    @Test
+    @MainActor
+    func cancellationPagesRejectAmbiguousOrInconsistentResponses() async throws {
+        let directory = try fixture()
+        defer { cleanup(directory) }
+        let server = URL(string: "https://isolated.example.test")!
+        let auth = AuthService(storage: .memory, serverURL: { server })
+        auth.token = "test-token"
+        auth.currentUser = User(
+            id: "user-1", phoneNumber: "5550100", name: "Reporter", email: nil, team: nil,
+            status: "ACTIVE", companyCode: nil, companyName: nil)
+        let access = try OriginalUploadAccess(auth: auth, allowedOrigins: ["https://isolated.example.test"])
+        let assetId = "ab123456-789a-4bcd-8abc-0123456789ab"
+        let (journal, job) = try await prepareJob(
+            access: access, directory: directory, assetId: assetId, sessionId: sessionId)
+        let cancelled = try journal.requestCancellation(for: job, access: access)
+        let ids = (1...101).map { String(format: "A1234567-0000-4000-8000-%012x", $0) }
+
+        func api(_ data: Data, status: Int = 200) throws -> OriginalUploadAPI {
+            try OriginalUploadAPI(access: access, journal: journal, transport: { request in
+                (data, HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: nil)!)
+            })
+        }
+        func body(_ value: [String: Any]) throws -> Data {
+            try JSONSerialization.data(withJSONObject: value)
+        }
+        let empty = try body(["assetId": NSNull(), "sessionIds": [], "nextCursor": NSNull()])
+        let emptyPage = try await api(empty).cancellationSessions(for: cancelled)
+        #expect(emptyPage.assetId == nil)
+        #expect(emptyPage.sessionIds.isEmpty)
+        #expect(emptyPage.continuation == nil)
+        let boundaryIds = [
+            "A1234567-0000-1000-9000-000000000001",
+            "A1234567-0000-8000-a000-000000000002",
+            "A1234567-0000-8000-B000-000000000003",
+        ]
+        let boundaryPage = try await api(body([
+            "assetId": assetId, "sessionIds": boundaryIds, "nextCursor": NSNull(),
+        ])).cancellationSessions(for: cancelled)
+        #expect(boundaryPage.sessionIds == boundaryIds)
+        let fullPage = try await api(body([
+            "assetId": assetId, "sessionIds": Array(ids.prefix(100)), "nextCursor": NSNull(),
+        ])).cancellationSessions(for: cancelled)
+        #expect(fullPage.sessionIds.count == 100)
+        #expect(fullPage.continuation == nil)
+
+        let invalid: [Data] = try [
+            body(["sessionIds": [], "nextCursor": NSNull()]),
+            body(["assetId": assetId, "sessionIds": []]),
+            body(["assetId": assetId, "sessionIds": [], "nextCursor": NSNull(), "extra": true]),
+            body(["assetId": "invalid", "sessionIds": [], "nextCursor": NSNull()]),
+            body(["assetId": assetId.uppercased(), "sessionIds": [], "nextCursor": NSNull()]),
+            body(["assetId": NSNull(), "sessionIds": [sessionId], "nextCursor": NSNull()]),
+            body(["assetId": assetId, "sessionIds": ["invalid"], "nextCursor": NSNull()]),
+            body(["assetId": assetId, "sessionIds": ["A1234567-0000-0000-8000-000000000001"], "nextCursor": NSNull()]),
+            body(["assetId": assetId, "sessionIds": ["A1234567-0000-4000-c000-000000000001"], "nextCursor": NSNull()]),
+            body(["assetId": assetId, "sessionIds": [sessionId + "\0&after=invalid"], "nextCursor": NSNull()]),
+            body(["assetId": assetId, "sessionIds": [sessionId, sessionId], "nextCursor": NSNull()]),
+            body(["assetId": assetId, "sessionIds": ids, "nextCursor": NSNull()]),
+            body(["assetId": assetId, "sessionIds": [], "nextCursor": sessionId]),
+            body(["assetId": assetId, "sessionIds": [sessionId], "nextCursor": sessionId]),
+            body(["assetId": assetId, "sessionIds": [sessionId], "nextCursor": ids[0]]),
+            body(["assetId": assetId, "sessionIds": Array(ids.prefix(100)), "nextCursor": ids[98]]),
+            body(["assetId": assetId, "sessionIds": Array(ids.prefix(100)), "nextCursor": "invalid"]),
+        ] + [
+            Data(#"{"assetId":"\#(assetId)","sessionIds":[],"nextCursor":null,"\u006eextCursor":null}"#.utf8),
+            Data(repeating: 0x20, count: 65_537),
+        ]
+        for data in invalid {
+            await #expect(throws: OriginalUploadAPIError.invalidResponse) {
+                try await api(data).cancellationSessions(for: cancelled)
+            }
+        }
+        let (_, unassigned) = try await prepareJob(access: access, directory: directory)
+        let unassignedCancelled = try journal.requestCancellation(for: unassigned, access: access)
+        let embeddedNull = try body([
+            "assetId": assetId + "\0invalid", "sessionIds": [], "nextCursor": NSNull(),
+        ])
+        await #expect(throws: OriginalUploadAPIError.invalidResponse) {
+            try await api(embeddedNull).cancellationSessions(for: unassignedCancelled)
+        }
+        #expect(throws: OriginalUploadAPIError.invalidResponse) {
+            try OriginalUploadCancellationReceipt(
+                assetId: assetId + "\0invalid", sessionIds: []).validate(for: unassignedCancelled)
+        }
+        for status in [401, 404, 429, 503] {
+            await #expect(throws: OriginalUploadAPIError.httpStatus(status)) {
+                try await api(empty, status: status).cancellationSessions(for: cancelled)
+            }
+        }
+        await #expect(throws: OriginalUploadAPIError.invalidResponse) {
+            try await api(empty, status: 201).cancellationSessions(for: cancelled)
+        }
+
+        let cursor = ids[99]
+        let first = try body(["assetId": assetId, "sessionIds": Array(ids.prefix(100)), "nextCursor": cursor])
+        let continuation = try #require(try await api(first).cancellationSessions(for: cancelled).continuation)
+        let unassignedContinuation = try #require(
+            try await api(first).cancellationSessions(for: unassignedCancelled).continuation)
+        for data in try [
+            body(["assetId": UUID().uuidString, "sessionIds": [], "nextCursor": NSNull()]),
+            body(["assetId": NSNull(), "sessionIds": [], "nextCursor": NSNull()]),
+        ] {
+            await #expect(throws: OriginalUploadAPIError.invalidResponse) {
+                try await api(data).cancellationSessions(
+                    for: unassignedCancelled, continuation: unassignedContinuation)
+            }
+        }
+        let repeated = try body(["assetId": assetId, "sessionIds": [cursor], "nextCursor": NSNull()])
+        await #expect(throws: OriginalUploadAPIError.invalidResponse) {
+            try await api(repeated).cancellationSessions(for: cancelled, continuation: continuation)
+        }
+        #expect(try journal.read(id: job.id, access: access).cancellationRequested)
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    @MainActor
+    func cancellationPagesRejectCancelledOrStaleRequests() async throws {
+        enum Change { case cancelTask, journal, signOut }
+        for change in [Change.cancelTask, .journal, .signOut] {
+            let directory = try fixture()
+            defer { cleanup(directory) }
+            let server = URL(string: "https://isolated.example.test")!
+            let auth = AuthService(storage: .memory, serverURL: { server })
+            auth.token = "test-token"
+            auth.currentUser = User(
+                id: "user-1", phoneNumber: "5550100", name: "Reporter", email: nil, team: nil,
+                status: "ACTIVE", companyCode: nil, companyName: nil)
+            let access = try OriginalUploadAccess(auth: auth, allowedOrigins: ["https://isolated.example.test"])
+            let (journal, job) = try await prepareJob(access: access, directory: directory)
+            let cancelled = try journal.requestCancellation(for: job, access: access)
+            let entered = AsyncStream<Void>.makeStream()
+            let release = AsyncStream<Void>.makeStream()
+            defer { entered.continuation.finish(); release.continuation.finish() }
+            let api = try OriginalUploadAPI(access: access, journal: journal, transport: { request in
+                entered.continuation.yield()
+                var iterator = release.stream.makeAsyncIterator()
+                _ = await iterator.next()
+                return (Data(#"{"assetId":null,"sessionIds":[],"nextCursor":null}"#.utf8), HTTPURLResponse(
+                    url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+            })
+            let request = Task { try await api.cancellationSessions(for: cancelled) }
+            var iterator = entered.stream.makeAsyncIterator()
+            try #require(await iterator.next() != nil)
+            switch change {
+            case .cancelTask: request.cancel()
+            case .journal: _ = try journal.update(cancelled, access: access)
+            case .signOut: auth.logout()
+            }
+            release.continuation.yield()
+            switch change {
+            case .cancelTask:
+                await #expect(throws: CancellationError.self) { try await request.value }
+            case .journal:
+                await #expect(throws: OriginalUploadStorageError.staleJob) { try await request.value }
+            case .signOut:
+                await #expect(throws: OriginalUploadAPIError.sessionChanged) { try await request.value }
+            }
+        }
+    }
+
+    @Test
+    @MainActor
     func uploadRequestsDeclareJSONOnlyWhenTheyHaveABody() async throws {
         let directory = try fixture()
         defer { cleanup(directory) }
@@ -805,6 +1061,9 @@ struct OriginalUploadAPITests {
             ["assetId": assetId, "sessionIds": [sessionId, sessionId]],
             ["assetId": assetId, "sessionIds": []],
             ["assetId": assetId, "sessionIds": ["invalid"]],
+            ["assetId": assetId, "sessionIds": [sessionId, sessionId + "\0&after=invalid"]],
+            ["assetId": assetId, "sessionIds": [sessionId, "A1234567-0000-0000-8000-000000000001"]],
+            ["assetId": assetId, "sessionIds": [sessionId, "A1234567-0000-4000-c000-000000000001"]],
             ["assetId": assetId, "sessionIds": [sessionId] + historical],
             ["assetId": assetId, "sessionIds": [sessionId], "nextCursor": sessionId],
         ]

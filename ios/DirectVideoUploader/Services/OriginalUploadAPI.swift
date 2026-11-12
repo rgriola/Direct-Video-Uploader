@@ -119,6 +119,19 @@ nonisolated private enum OriginalUploadResponseJSON {
     }
 }
 
+nonisolated private enum OriginalUploadCancellationIdentifier {
+    static func isUUID(_ value: String) -> Bool {
+        value.utf8.count == 36 && UUID(uuidString: value) != nil
+    }
+
+    static func isSession(_ value: String) -> Bool {
+        guard isUUID(value) else { return false }
+        let bytes = Array(value.utf8)
+        // The server requires UUID versions 1-8 and the RFC variant.
+        return "12345678".utf8.contains(bytes[14]) && "89AaBb".utf8.contains(bytes[19])
+    }
+}
+
 nonisolated struct OriginalUploadCancellationReceipt: Decodable, Equatable, Sendable {
     static let maximumSessions = 100
     let assetId: String?
@@ -140,12 +153,14 @@ nonisolated struct OriginalUploadCancellationReceipt: Decodable, Equatable, Send
         guard sessionIds.count <= Self.maximumSessions, assetId != nil || sessionIds.isEmpty else {
             throw OriginalUploadAPIError.invalidResponse
         }
-        guard sessionIds.allSatisfy({ UUID(uuidString: $0) != nil }),
+        guard sessionIds.allSatisfy(OriginalUploadCancellationIdentifier.isSession),
               Set(sessionIds).count == sessionIds.count else {
             throw OriginalUploadAPIError.invalidResponse
         }
         if let assetId {
-            guard UUID(uuidString: assetId) != nil else { throw OriginalUploadAPIError.invalidResponse }
+            guard OriginalUploadCancellationIdentifier.isUUID(assetId) else {
+                throw OriginalUploadAPIError.invalidResponse
+            }
             if let expected = job.assetId {
                 guard expected == assetId else { throw OriginalUploadAPIError.invalidResponse }
             }
@@ -156,6 +171,22 @@ nonisolated struct OriginalUploadCancellationReceipt: Decodable, Equatable, Send
             }
         }
     }
+}
+
+nonisolated struct OriginalUploadCancellationPage: Sendable {
+    struct Continuation: Sendable {
+        fileprivate let jobId: UUID
+        fileprivate let incarnation: UUID
+        fileprivate let revision: UInt64
+        fileprivate let scope: PendingFormScope
+        fileprivate let sessionGeneration: UUID
+        fileprivate let assetId: String
+        fileprivate let after: String
+    }
+
+    let assetId: String?
+    let sessionIds: [String]
+    let continuation: Continuation?
 }
 
 nonisolated struct OriginalUploadServerSession: Decodable, Sendable {
@@ -355,6 +386,12 @@ final class OriginalUploadAPI {
         let code: String?
     }
 
+    private struct CancellationPageResponse: Decodable {
+        let assetId: String?
+        let sessionIds: [String]
+        let nextCursor: String?
+    }
+
     private struct AbortResponse: Decodable {
         struct Session: Decodable {
             let id: String
@@ -491,6 +528,75 @@ final class OriginalUploadAPI {
         let receipt = try OriginalUploadCancellationReceipt.decode(data)
         try receipt.validate(for: job)
         return receipt
+    }
+
+    func cancellationSessions(
+        for job: OriginalUploadJob, continuation: OriginalUploadCancellationPage.Continuation? = nil
+    ) async throws -> OriginalUploadCancellationPage {
+        try Task.checkCancellation()
+        try ensureCurrent(job, allowsCancellation: true)
+        guard job.cancellationRequested else { throw OriginalUploadAPIError.invalidResponse }
+        if let continuation {
+            guard continuation.jobId == job.id, continuation.incarnation == job.incarnation,
+                  continuation.revision == job.revision, continuation.scope == job.scope,
+                  continuation.sessionGeneration == access.snapshot.generation,
+                  job.assetId.map({ $0 == continuation.assetId }) ?? true else {
+                throw OriginalUploadAPIError.invalidResponse
+            }
+        }
+        let query = continuation.map { "?after=\($0.after)" } ?? ""
+        let data = try await request(
+            job: job, path: "/api/assets/original-uploads/\(job.id.uuidString.lowercased())/sessions\(query)",
+            method: "GET", allowsCancellation: true, expectedStatus: 200)
+        try ensureCurrent(job, allowsCancellation: true)
+        let response: CancellationPageResponse
+        do {
+            let keys = try OriginalUploadResponseJSON.objectKeys(in: data)
+            guard keys.count == 1, keys[0] == Set(["assetId", "sessionIds", "nextCursor"]) else {
+                throw OriginalUploadAPIError.invalidResponse
+            }
+            response = try JSONDecoder().decode(CancellationPageResponse.self, from: data)
+        } catch is DecodingError {
+            throw OriginalUploadAPIError.invalidResponse
+        }
+        guard response.sessionIds.count <= OriginalUploadCancellationReceipt.maximumSessions,
+              response.sessionIds.allSatisfy(OriginalUploadCancellationIdentifier.isSession),
+              Set(response.sessionIds).count == response.sessionIds.count else {
+            throw OriginalUploadAPIError.invalidResponse
+        }
+        if let assetId = response.assetId {
+            guard OriginalUploadCancellationIdentifier.isUUID(assetId),
+                  job.assetId.map({ $0 == assetId }) ?? true else {
+                throw OriginalUploadAPIError.invalidResponse
+            }
+        } else {
+            guard response.sessionIds.isEmpty, response.nextCursor == nil else {
+                throw OriginalUploadAPIError.invalidResponse
+            }
+        }
+        if let continuation {
+            guard response.assetId == continuation.assetId,
+                  !response.sessionIds.contains(continuation.after) else {
+                throw OriginalUploadAPIError.invalidResponse
+            }
+        }
+        let next: OriginalUploadCancellationPage.Continuation?
+        if let cursor = response.nextCursor {
+            guard response.sessionIds.count == OriginalUploadCancellationReceipt.maximumSessions,
+                  let assetId = response.assetId, cursor == response.sessionIds.last else {
+                throw OriginalUploadAPIError.invalidResponse
+            }
+            next = OriginalUploadCancellationPage.Continuation(
+                jobId: job.id, incarnation: job.incarnation, revision: job.revision,
+                scope: job.scope, sessionGeneration: access.snapshot.generation,
+                assetId: assetId, after: cursor)
+        } else {
+            next = nil
+        }
+        try Task.checkCancellation()
+        // A server page is not proof that local or remote cleanup has finished.
+        return OriginalUploadCancellationPage(
+            assetId: response.assetId, sessionIds: response.sessionIds, continuation: next)
     }
 
     func abort(_ job: OriginalUploadJob) async throws {
