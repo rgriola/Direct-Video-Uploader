@@ -1,6 +1,8 @@
 import Foundation
 
 nonisolated private enum OriginalUploadResponseLimit {
+    // Server limits include 100 UUIDs per cancellation receipt/page and at most
+    // 10 50-MiB parts per 500-MiB upload; other response text can vary.
     static let maximumBytes = 64 * 1024
 }
 
@@ -36,30 +38,45 @@ nonisolated struct OriginalUploadServerPart: Decodable, Equatable, Sendable {
     let sha256: String
 }
 
-nonisolated private enum OriginalUploadReceiptJSON {
+nonisolated private enum OriginalUploadResponseJSON {
+    private static let maximumDepth = 64
+
     private struct Container {
         let close: UInt8
         let objectIndex: Int?
         var expectsKey: Bool
     }
 
-    static func objectKeys(in data: Data) throws -> [[String]] {
+    static func objectKeys(in data: Data) throws -> [Set<String>] {
+        try Task.checkCancellation()
+        do {
+            let keys = try scanObjectKeys(in: data)
+            try Task.checkCancellation()
+            return keys
+        } catch {
+            try Task.checkCancellation()
+            throw error
+        }
+    }
+
+    private static func scanObjectKeys(in data: Data) throws -> [Set<String>] {
         // The byte scanner and Foundation must interpret the same UTF-8 input.
-        guard !data.contains(0), String(data: data, encoding: .utf8) != nil else {
+        guard data.count <= OriginalUploadResponseLimit.maximumBytes,
+              !data.contains(0), String(data: data, encoding: .utf8) != nil else {
             throw OriginalUploadAPIError.invalidResponse
         }
         // Foundation validates syntax but collapses duplicate object keys.
-        var keys: [[String]] = []
+        var keys: [Set<String>] = []
         var stack: [Container] = []
         var index = data.startIndex
         while index < data.endIndex {
             switch data[index] {
             case 0x7B:
-                guard stack.count < 2, keys.count < 2 else { throw OriginalUploadAPIError.invalidResponse }
+                guard stack.count < maximumDepth else { throw OriginalUploadAPIError.invalidResponse }
                 keys.append([])
                 stack.append(Container(close: 0x7D, objectIndex: keys.count - 1, expectsKey: true))
             case 0x5B:
-                guard stack.count < 2 else { throw OriginalUploadAPIError.invalidResponse }
+                guard stack.count < maximumDepth else { throw OriginalUploadAPIError.invalidResponse }
                 stack.append(Container(close: 0x5D, objectIndex: nil, expectsKey: false))
             case 0x7D, 0x5D:
                 guard stack.last?.close == data[index] else { throw OriginalUploadAPIError.invalidResponse }
@@ -85,11 +102,11 @@ nonisolated private enum OriginalUploadReceiptJSON {
                 }
                 guard index < data.endIndex else { throw OriginalUploadAPIError.invalidResponse }
                 if let objectIndex = stack.last?.objectIndex, stack.last?.expectsKey == true {
-                    guard keys[objectIndex].count < 2 else { throw OriginalUploadAPIError.invalidResponse }
                     let end = data.index(after: index)
                     let key = try JSONDecoder().decode(String.self, from: data.subdata(in: start..<end))
-                    guard !keys[objectIndex].contains(key) else { throw OriginalUploadAPIError.invalidResponse }
-                    keys[objectIndex].append(key)
+                    guard keys[objectIndex].insert(key).inserted else {
+                        throw OriginalUploadAPIError.invalidResponse
+                    }
                     stack[stack.count - 1].expectsKey = false
                 }
             default:
@@ -109,8 +126,8 @@ nonisolated struct OriginalUploadCancellationReceipt: Decodable, Equatable, Send
 
     static func decode(_ data: Data) throws -> Self {
         do {
-            let keys = try OriginalUploadReceiptJSON.objectKeys(in: data)
-            guard keys.count == 1, Set(keys[0]) == Set(["assetId", "sessionIds"]) else {
+            let keys = try OriginalUploadResponseJSON.objectKeys(in: data)
+            guard keys.count == 1, keys[0] == Set(["assetId", "sessionIds"]) else {
                 throw OriginalUploadAPIError.invalidResponse
             }
             return try JSONDecoder().decode(Self.self, from: data)
@@ -487,9 +504,9 @@ final class OriginalUploadAPI {
         try ensureCurrent(job, allowsCancellation: true)
         let response: AbortResponse
         do {
-            let keys = try OriginalUploadReceiptJSON.objectKeys(in: data)
+            let keys = try OriginalUploadResponseJSON.objectKeys(in: data)
             guard keys.count == 2, keys[0] == ["uploadSession"],
-                  Set(keys[1]) == Set(["id", "status"]) else {
+                  keys[1] == Set(["id", "status"]) else {
                 throw OriginalUploadAPIError.invalidResponse
             }
             response = try JSONDecoder().decode(AbortResponse.self, from: data)
@@ -581,8 +598,11 @@ final class OriginalUploadAPI {
             if cancellationFence, [429, 503].contains(http.statusCode) {
                 let error: ErrorResponse
                 do {
+                    _ = try OriginalUploadResponseJSON.objectKeys(in: data)
                     error = try JSONDecoder().decode(ErrorResponse.self, from: data)
                 } catch is DecodingError {
+                    throw OriginalUploadAPIError.httpStatus(http.statusCode)
+                } catch OriginalUploadAPIError.invalidResponse {
                     throw OriginalUploadAPIError.httpStatus(http.statusCode)
                 }
                 if http.statusCode == 429, error.code == "INTENT_CANCELLATION_QUOTA" {
@@ -600,6 +620,11 @@ final class OriginalUploadAPI {
             throw OriginalUploadAPIError.httpStatus(http.statusCode)
         }
         if let expectedStatus, http.statusCode != expectedStatus {
+            throw OriginalUploadAPIError.invalidResponse
+        }
+        do {
+            _ = try OriginalUploadResponseJSON.objectKeys(in: data)
+        } catch is DecodingError {
             throw OriginalUploadAPIError.invalidResponse
         }
         return data
