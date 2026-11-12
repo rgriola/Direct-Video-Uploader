@@ -1045,17 +1045,24 @@ struct OriginalUploadAPITests {
     @Test
     func cancellationPageValidationPrefersCancellationOnFailure() async throws {
         #expect(throws: OriginalUploadAPIError.invalidResponse) {
-            try OriginalUploadCancellationPageValidation.preservingCancellation { () -> Void in
+            try OriginalUploadCancellationValidation.preservingCancellation { () -> Void in
                 throw OriginalUploadAPIError.invalidResponse
             }
         }
         let task = Task {
-            try OriginalUploadCancellationPageValidation.preservingCancellation { () -> Void in
+            try OriginalUploadCancellationValidation.preservingCancellation { () -> Void in
                 defer { withUnsafeCurrentTask { $0?.cancel() } }
                 throw OriginalUploadAPIError.invalidResponse
             }
         }
         await #expect(throws: CancellationError.self) { try await task.value }
+        let success = Task {
+            try OriginalUploadCancellationValidation.preservingCancellation {
+                defer { withUnsafeCurrentTask { $0?.cancel() } }
+                return true
+            }
+        }
+        await #expect(throws: CancellationError.self) { try await success.value }
     }
 
     @Test
@@ -1063,12 +1070,12 @@ struct OriginalUploadAPITests {
     func cancellationCrossPageValidationChecksBeforeAdvancing() async throws {
         let seen: Set<String> = [sessionId]
         #expect(throws: OriginalUploadAPIError.invalidResponse) {
-            try OriginalUploadCancellationPageValidation.requireDisjoint(seen, [sessionId])
+            try OriginalUploadCancellationValidation.requireDisjoint(seen, [sessionId])
         }
-        try OriginalUploadCancellationPageValidation.requireDisjoint(seen, ["other"])
+        try OriginalUploadCancellationValidation.requireDisjoint(seen, ["other"])
 
         for page in [[sessionId], ["other"]] {
-            let task = Task { try OriginalUploadCancellationPageValidation.requireDisjoint(seen, page) }
+            let task = Task { try OriginalUploadCancellationValidation.requireDisjoint(seen, page) }
             task.cancel()
             await #expect(throws: CancellationError.self) { try await task.value }
         }
@@ -1698,6 +1705,41 @@ struct OriginalUploadAPITests {
             (response, HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
         })
         #expect(try await retry.cancelIntent(for: saved).sessionIds.isEmpty)
+    }
+
+    @Test
+    @MainActor
+    func cancelledFenceDoesNotInspectOrRemoveOriginal() async throws {
+        let directory = try fixture()
+        defer { cleanup(directory) }
+        let assetId = "ab123456-789a-4bcd-8abc-0123456789ab"
+        let (_, access, journal, job) = try await prepareCancelledJob(
+            directory: directory, assetId: assetId, sessionId: sessionId)
+        let original = try journal.originalURL(for: job, access: access)
+        let bytes = try Data(contentsOf: original)
+        let response = try JSONSerialization.data(withJSONObject: [
+            "assetId": assetId, "sessionIds": [sessionId],
+        ])
+        let requests = Mutex<[URLRequest]>([])
+        let api = try OriginalUploadAPI(access: access, journal: journal, transport: { request in
+            requests.withLock { $0.append(request) }
+            return (response, HTTPURLResponse(
+                url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+        })
+        var observedStatus: Int?
+        let task = Task {
+            let enumeration = try await api.fenceCancellation(for: job, onResponse: { status, _ in
+                observedStatus = status
+                withUnsafeCurrentTask { $0?.cancel() }
+            })
+            let inspection = try await api.inspectCancelledSession(sessionId, for: job, using: enumeration)
+            try await api.abort(job, using: inspection)
+        }
+        await #expect(throws: CancellationError.self) { try await task.value }
+        #expect(observedStatus == 200)
+        #expect(requests.withLock { $0.map(\.httpMethod) } == ["POST"])
+        #expect(try journal.read(id: job.id, access: access) == job)
+        #expect(try Data(contentsOf: original) == bytes)
     }
 
     @Test
@@ -2494,22 +2536,94 @@ struct OriginalUploadAPITests {
     }
 
     @Test
+    @MainActor
     func cancellationReceiptValidationRespectsTaskCancellation() async throws {
-        let started = AsyncStream<Void>.makeStream()
-        let release = AsyncStream<Void>.makeStream()
-        defer { started.continuation.finish(); release.continuation.finish() }
-        let task = Task {
-            started.continuation.yield()
-            var iterator = release.stream.makeAsyncIterator()
-            _ = await iterator.next()
-            return try OriginalUploadCancellationReceipt.decode(
-                Data(#"{"assetId":null,"sessionIds":[]}"#.utf8))
+        let directory = try fixture()
+        defer { cleanup(directory) }
+        let assetId = "ab123456-789a-4bcd-8abc-0123456789ab"
+        let (_, access, journal, job) = try await prepareCancelledJob(
+            directory: directory, assetId: assetId, sessionId: sessionId)
+        let valid = try JSONSerialization.data(withJSONObject: [
+            "assetId": assetId, "sessionIds": [sessionId],
+        ])
+        let invalid = Data(#"{"assetId":false,"sessionIds":[]}"#.utf8)
+        let receipt = try OriginalUploadCancellationReceipt.decode(valid)
+        let invalidReceipt = OriginalUploadCancellationReceipt(assetId: assetId, sessionIds: [])
+        try receipt.validate(for: job)
+        #expect(throws: OriginalUploadAPIError.invalidResponse) {
+            try OriginalUploadCancellationReceipt.decode(invalid)
         }
-        var iterator = started.stream.makeAsyncIterator()
-        try #require(await iterator.next() != nil)
-        task.cancel()
-        release.continuation.yield()
+        #expect(throws: OriginalUploadAPIError.invalidResponse) {
+            try invalidReceipt.validate(for: job)
+        }
+        for data in [valid, invalid] {
+            let task = Task {
+                try OriginalUploadCancellationReceipt.decodeForTesting(data) { input in
+                    defer { withUnsafeCurrentTask { $0?.cancel() } }
+                    return try JSONDecoder().decode(OriginalUploadCancellationReceipt.self, from: input)
+                }
+            }
+            await #expect(throws: CancellationError.self) { try await task.value }
+        }
+        for value in [receipt, invalidReceipt] {
+            let task = Task { try value.validate(for: job) }
+            task.cancel()
+            await #expect(throws: CancellationError.self) { try await task.value }
+            let boundary = Task {
+                try OriginalUploadCancellationValidation.preservingCancellation {
+                    defer { withUnsafeCurrentTask { $0?.cancel() } }
+                    try value.validate(for: job)
+                }
+            }
+            await #expect(throws: CancellationError.self) { try await boundary.value }
+        }
+        #expect(try journal.read(id: job.id, access: access) == job)
+    }
+
+    @Test
+    @MainActor
+    func cancelledCoordinatorFenceKeepsTheOriginalAndPendingState() async throws {
+        let directory = try fixture()
+        defer { cleanup(directory) }
+        let server = URL(string: "https://isolated.example.test")!
+        let auth = AuthService(storage: .memory, serverURL: { server })
+        auth.token = "test-token"
+        auth.currentUser = User(
+            id: "user-1", phoneNumber: "5550100", name: "Reporter", email: nil, team: nil,
+            status: "ACTIVE", companyCode: nil, companyName: nil)
+        let access = try OriginalUploadAccess(auth: auth, allowedOrigins: ["https://isolated.example.test"])
+        let assetId = "ab123456-789a-4bcd-8abc-0123456789ab"
+        let taskFence = OriginalUploadTaskFence()
+        let (journal, job) = try await prepareJob(
+            access: access, directory: directory, assetId: assetId, sessionId: sessionId, taskFence: taskFence)
+        let original = try journal.originalURL(for: job, access: access)
+        let bytes = try Data(contentsOf: original)
+        let response = try JSONSerialization.data(withJSONObject: [
+            "assetId": assetId, "sessionIds": [sessionId],
+        ])
+        let requests = Mutex<[URLRequest]>([])
+        let coordinator = try OriginalUploadCancellationCoordinator(
+            job: job, access: access, journal: journal, taskFence: taskFence,
+            testingState: OriginalUploadCancellationCoordinator.State(), transport: { request in
+                requests.withLock { $0.append(request) }
+                withUnsafeCurrentTask { $0?.cancel() }
+                return (response, HTTPURLResponse(
+                    url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+            })
+        let task = Task {
+            try await coordinator.start(tasks: { [Int]() }, snapshot: {
+                OriginalBackgroundTaskSnapshot(identifier: $0, tag: nil)
+            }, cancel: { _ in })
+        }
         await #expect(throws: CancellationError.self) { try await task.value }
+        #expect(requests.withLock { $0.map(\.httpMethod) } == ["POST"])
+        #expect(try journal.read(id: job.id, access: access).cancellationRequested)
+        #expect(try Data(contentsOf: original) == bytes)
+        await #expect(throws: OriginalUploadCancellationCoordinatorError.alreadyStarted) {
+            try await coordinator.start(tasks: { [Int]() }, snapshot: {
+                OriginalBackgroundTaskSnapshot(identifier: $0, tag: nil)
+            }, cancel: { _ in })
+        }
     }
 
     @Test
