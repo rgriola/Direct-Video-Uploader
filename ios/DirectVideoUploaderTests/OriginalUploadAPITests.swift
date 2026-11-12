@@ -21,12 +21,13 @@ struct OriginalUploadAPITests {
 
     @MainActor
     private func prepareJob(
-        access: OriginalUploadAccess, directory: URL, assetId: String? = nil, sessionId: String? = nil
+        access: OriginalUploadAccess, directory: URL, assetId: String? = nil, sessionId: String? = nil,
+        taskFence: OriginalUploadTaskFence? = nil
     ) async throws -> (OriginalUploadJournal, OriginalUploadJob) {
         let source = directory.appendingPathComponent("video.mov")
         try Data("native original".utf8).write(to: source)
         let journal = OriginalUploadJournal(
-            directory: directory.appendingPathComponent("journal"), taskFence: OriginalUploadTaskFence())
+            directory: directory.appendingPathComponent("journal"), taskFence: taskFence ?? OriginalUploadTaskFence())
         var job = try await journal.prepare(
             id: UUID(), source: source, fileName: "video.mov",
             metadata: VideoMetadata(
@@ -69,6 +70,23 @@ struct OriginalUploadAPITests {
         var body: [String: Any] = ["assetId": assetId, "sessionIds": sessionIds, "nextCursor": NSNull()]
         if let nextCursor { body["nextCursor"] = nextCursor }
         return try JSONSerialization.data(withJSONObject: body)
+    }
+
+    private func cancellationSessionResponse(
+        job: OriginalUploadJob, assetId: String, sessionId: String,
+        status: String = "OPEN", overrides: [String: Any] = [:]
+    ) throws -> Data {
+        let part = job.manifest.parts[0]
+        var session: [String: Any] = [
+            "id": sessionId, "assetId": assetId, "clipId": "ab123456-789a-4bcd-8abc-0123456789ab",
+            "status": status, "expectedSizeBytes": String(job.fingerprint.byteCount),
+            "expectedSha256": job.fingerprint.sha256, "partSizeBytes": OriginalUploadFiles.maximumPartSize,
+            "partCount": job.manifest.parts.count, "expiresAt": "2033-05-18T03:33:20Z",
+            "completedAt": status == "COMPLETED" ? "2033-05-18T03:30:00Z" : NSNull(),
+            "parts": [["partNumber": 1, "sizeBytes": String(part.byteCount), "sha256": part.sha256]],
+        ]
+        session.merge(overrides) { _, value in value }
+        return try JSONSerialization.data(withJSONObject: ["uploadSession": session])
     }
 
     private func fixture() throws -> URL {
@@ -406,6 +424,105 @@ struct OriginalUploadAPITests {
             await #expect(throws: OriginalUploadAPIError.invalidResponse) {
                 try await api(value).session(for: job)
             }
+        }
+    }
+
+    @Test
+    @MainActor
+    func sessionRecoveryStopsWhenCancellationIsBlockedOrSaved() async throws {
+        let directory = try fixture()
+        defer { cleanup(directory) }
+        let server = URL(string: "https://isolated.example.test")!
+        let auth = AuthService(storage: .memory, serverURL: { server })
+        auth.token = "test-token"
+        auth.currentUser = User(
+            id: "user-1", phoneNumber: "5550100", name: "Reporter", email: nil, team: nil,
+            status: "ACTIVE", companyCode: nil, companyName: nil)
+        let access = try OriginalUploadAccess(auth: auth, allowedOrigins: ["https://isolated.example.test"])
+        let assetId = "ab123456-789a-4bcd-8abc-0123456789ab"
+        let fence = OriginalUploadTaskFence()
+        let (journal, job) = try await prepareJob(
+            access: access, directory: directory, assetId: assetId, sessionId: sessionId, taskFence: fence)
+        let body = try cancellationSessionResponse(job: job, assetId: assetId, sessionId: sessionId)
+        let requests = Mutex<[URLRequest]>([])
+        let transport: @Sendable (URLRequest) async throws -> (Data, URLResponse) = { request in
+            requests.withLock { $0.append(request) }
+            return (body, HTTPURLResponse(
+                url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+        }
+        let api = try OriginalUploadAPI(access: access, journal: journal, transport: transport)
+        #expect(try await api.session(for: job).status == .open)
+        try fence.blockCancellation(for: job)
+        #expect(try !journal.read(id: job.id, access: access).cancellationRequested)
+        await #expect(throws: OriginalUploadStorageError.cancellationRequested) {
+            try await api.session(for: job)
+        }
+        let cancelled = try journal.requestCancellation(for: job, access: access)
+        let recoveredJournal = OriginalUploadJournal(
+            directory: directory.appendingPathComponent("journal"), taskFence: OriginalUploadTaskFence())
+        #expect(try !recoveredJournal.isCancellationBlocked(for: cancelled))
+        let recoveredAPI = try OriginalUploadAPI(access: access, journal: recoveredJournal, transport: transport)
+        await #expect(throws: OriginalUploadStorageError.cancellationRequested) {
+            try await recoveredAPI.session(for: cancelled)
+        }
+        #expect(requests.withLock { $0.map(\.httpMethod) } == ["GET"])
+        #expect(try journal.read(id: job.id, access: access) == cancelled)
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    @MainActor
+    func sessionRecoveryDiscardsAResponseAfterCancellation() async throws {
+        enum Change { case block, save }
+        for change in [Change.block, .save] {
+            let directory = try fixture()
+            defer { cleanup(directory) }
+            let server = URL(string: "https://isolated.example.test")!
+            let auth = AuthService(storage: .memory, serverURL: { server })
+            auth.token = "test-token"
+            auth.currentUser = User(
+                id: "user-1", phoneNumber: "5550100", name: "Reporter", email: nil, team: nil,
+                status: "ACTIVE", companyCode: nil, companyName: nil)
+            let access = try OriginalUploadAccess(auth: auth, allowedOrigins: ["https://isolated.example.test"])
+            let assetId = "ab123456-789a-4bcd-8abc-0123456789ab"
+            let fence = OriginalUploadTaskFence()
+            let (journal, job) = try await prepareJob(
+                access: access, directory: directory, assetId: assetId, sessionId: sessionId, taskFence: fence)
+            let body = try cancellationSessionResponse(job: job, assetId: assetId, sessionId: sessionId)
+            let original = try journal.originalURL(for: job, access: access)
+            let originalBytes = try Data(contentsOf: original)
+            let entered = AsyncStream<Void>.makeStream()
+            let release = AsyncStream<Void>.makeStream()
+            let requests = Mutex<[URLRequest]>([])
+            defer { entered.continuation.finish(); release.continuation.finish() }
+            let api = try OriginalUploadAPI(access: access, journal: journal, transport: { request in
+                entered.continuation.yield()
+                var iterator = release.stream.makeAsyncIterator()
+                _ = await iterator.next()
+                requests.withLock { $0.append(request) }
+                return (body, HTTPURLResponse(
+                    url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+            })
+            let request = Task { try await api.session(for: job) }
+            var iterator = entered.stream.makeAsyncIterator()
+            try #require(await iterator.next() != nil)
+            let saved: OriginalUploadJob
+            switch change {
+            case .block:
+                try fence.blockCancellation(for: job)
+                saved = job
+            case .save:
+                saved = try journal.requestCancellation(for: job, access: access)
+            }
+            release.continuation.yield()
+            switch change {
+            case .block:
+                await #expect(throws: OriginalUploadStorageError.cancellationRequested) { try await request.value }
+            case .save:
+                await #expect(throws: OriginalUploadStorageError.staleJob) { try await request.value }
+            }
+            #expect(requests.withLock { $0.map(\.httpMethod) } == ["GET"])
+            #expect(try journal.read(id: job.id, access: access) == saved)
+            #expect(try Data(contentsOf: original) == originalBytes)
         }
     }
 
@@ -1591,6 +1708,454 @@ struct OriginalUploadAPITests {
         let ambiguousBytes = try #require(ambiguous.data(using: .utf16BigEndian))
         #expect(throws: OriginalUploadAPIError.invalidResponse) {
             try OriginalUploadCancellationReceipt.decode(ambiguousBytes)
+        }
+    }
+
+    @Test
+    @MainActor
+    func cancellationInspectionUsesFenceForKnownAndDiscoveredSessions() async throws {
+        let directory = try fixture()
+        defer { cleanup(directory) }
+        let server = URL(string: "https://isolated.example.test")!
+        let auth = AuthService(storage: .memory, serverURL: { server })
+        auth.token = "test-token"
+        auth.currentUser = User(
+            id: "user-1", phoneNumber: "5550100", name: "Reporter", email: nil, team: nil,
+            status: "ACTIVE", companyCode: nil, companyName: nil)
+        let access = try OriginalUploadAccess(auth: auth, allowedOrigins: ["https://isolated.example.test"])
+        let assetId = "ab123456-789a-4bcd-8abc-0123456789ab"
+        let discoveredId = "A1234567-0000-4000-8000-000000000001"
+        let (journal, job) = try await prepareJob(
+            access: access, directory: directory, assetId: assetId, sessionId: sessionId)
+        let cancelled = try journal.requestCancellation(for: job, access: access)
+        let original = try journal.originalURL(for: cancelled, access: access)
+        let originalBytes = try Data(contentsOf: original)
+        let fence = try JSONSerialization.data(withJSONObject: [
+            "assetId": assetId, "sessionIds": [sessionId, discoveredId],
+        ])
+        let statuses: [OriginalUploadServerSession.Status] = [.open, .completing, .completed, .aborted, .expired]
+        let responses = try statuses.map {
+            try cancellationSessionResponse(job: cancelled, assetId: assetId, sessionId: sessionId, status: $0.rawValue)
+        } + [cancellationSessionResponse(job: cancelled, assetId: assetId, sessionId: discoveredId)]
+        let requests = Mutex<[URLRequest]>([])
+        let api = try OriginalUploadAPI(access: access, journal: journal, transport: { request in
+            let index = requests.withLock { requests in
+                requests.append(request)
+                return requests.count - 1
+            }
+            guard index <= responses.count else { throw URLError(.badServerResponse) }
+            let data = index == 0 ? fence : responses[index - 1]
+            return (data, HTTPURLResponse(
+                url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+        })
+
+        await #expect(throws: OriginalUploadStorageError.staleJob) {
+            try await api.fenceCancellation(for: job)
+        }
+        let enumeration = try await api.fenceCancellation(for: cancelled)
+        #expect(enumeration.assetId == assetId)
+        #expect(enumeration.sessionIds == Set([sessionId, discoveredId]))
+        for (index, status) in statuses.enumerated() {
+            let session = try await api.inspectCancelledSession(sessionId, for: cancelled, using: enumeration)
+            #expect(session.id == sessionId)
+            #expect(session.status == status)
+            #expect(requests.withLock { $0.count } == index + 2)
+        }
+        let discovered = try await api.inspectCancelledSession(discoveredId, for: cancelled, using: enumeration)
+        #expect(discovered.id == discoveredId)
+        await #expect(throws: OriginalUploadAPIError.invalidResponse) {
+            try await api.inspectCancelledSession(sessionId.uppercased(), for: cancelled, using: enumeration)
+        }
+        await #expect(throws: OriginalUploadAPIError.invalidResponse) {
+            try await api.inspectCancelledSession(sessionId + "\0suffix", for: cancelled, using: enumeration)
+        }
+        await #expect(throws: OriginalUploadAPIError.invalidResponse) {
+            try await api.inspectCancelledSession(
+                "B1234567-0000-4000-8000-000000000002", for: cancelled, using: enumeration)
+        }
+
+        let sent = requests.withLock { $0 }
+        #expect(sent.count == statuses.count + 2)
+        #expect(sent[0].httpMethod == "POST")
+        #expect(sent.dropFirst().allSatisfy { $0.httpMethod == "GET" && $0.httpBody == nil })
+        #expect(sent.allSatisfy { $0.value(forHTTPHeaderField: "Authorization") == "Bearer test-token" })
+        #expect(sent[1].url?.path == "/api/upload-sessions/\(sessionId)")
+        #expect(sent.last?.url?.path == "/api/upload-sessions/\(discoveredId)")
+        #expect(try journal.read(id: job.id, access: access) == cancelled)
+        #expect(try Data(contentsOf: original) == originalBytes)
+    }
+
+    @Test
+    @MainActor
+    func cancellationInspectionUsesOnlyCompletedTraversalForUnassignedJobs() async throws {
+        let directory = try fixture()
+        defer { cleanup(directory) }
+        let (_, access, journal, cancelled) = try await prepareCancelledJob(directory: directory)
+        let assetId = "ab123456-789a-4bcd-8abc-0123456789ab"
+        let ids = (1...100).map { String(format: "A1234567-0000-4000-8000-%012x", $0) }
+        let first = try cancellationPage(assetId: assetId, sessionIds: ids, nextCursor: ids.last)
+        let last = try cancellationPage(assetId: assetId, sessionIds: [sessionId])
+        let session = try cancellationSessionResponse(job: cancelled, assetId: assetId, sessionId: sessionId)
+        let requests = Mutex<[URLRequest]>([])
+        let api = try OriginalUploadAPI(access: access, journal: journal, transport: { request in
+            let index = requests.withLock { requests in
+                requests.append(request)
+                return requests.count - 1
+            }
+            let response: Data
+            switch index {
+            case 0: response = first
+            case 1: response = last
+            case 2: response = session
+            default: throw URLError(.badServerResponse)
+            }
+            return (response, HTTPURLResponse(
+                url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+        })
+        let traversal = try OriginalUploadCancellationTraversal(api: api, job: cancelled)
+        #expect(try traversal.completedEnumeration() == nil)
+        #expect(try await traversal.nextPage()?.sessionIds == ids)
+        #expect(try traversal.completedEnumeration() == nil)
+        #expect(try await traversal.nextPage()?.sessionIds == [sessionId])
+        let enumeration = try #require(try traversal.completedEnumeration())
+        let inspected = try await api.inspectCancelledSession(sessionId, for: cancelled, using: enumeration)
+        #expect(inspected.id == sessionId)
+        #expect(inspected.assetId == assetId)
+        #expect(cancelled.assetId == nil)
+        #expect(cancelled.sessionId == nil)
+        let sent = requests.withLock { $0 }
+        #expect(sent.count == 3)
+        #expect(sent.allSatisfy { $0.httpMethod == "GET" })
+        #expect(sent[2].url?.path == "/api/upload-sessions/\(sessionId)")
+        #expect(try journal.read(id: cancelled.id, access: access) == cancelled)
+    }
+
+    @Test
+    @MainActor
+    func cancellationInspectionKeepsUnreconciledKnownIdentifiersPending() async throws {
+        let directory = try fixture()
+        defer { cleanup(directory) }
+        let server = URL(string: "https://isolated.example.test")!
+        let auth = AuthService(storage: .memory, serverURL: { server })
+        auth.token = "test-token"
+        auth.currentUser = User(
+            id: "user-1", phoneNumber: "5550100", name: "Reporter", email: nil, team: nil,
+            status: "ACTIVE", companyCode: nil, companyName: nil)
+        let access = try OriginalUploadAccess(auth: auth, allowedOrigins: ["https://isolated.example.test"])
+        let assetId = "ab123456-789a-4bcd-8abc-0123456789ab"
+        let otherId = "A1234567-0000-4000-8000-000000000001"
+        let (journal, job) = try await prepareJob(
+            access: access, directory: directory, assetId: assetId, sessionId: sessionId)
+        let cancelled = try journal.requestCancellation(for: job, access: access)
+        let requests = Mutex<[URLRequest]>([])
+        let nullFence = try OriginalUploadAPI(access: access, journal: journal, transport: { request in
+            requests.withLock { $0.append(request) }
+            return (Data(#"{"assetId":null,"sessionIds":[]}"#.utf8), HTTPURLResponse(
+                url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+        })
+        let missingAsset = try await nullFence.fenceCancellation(for: cancelled)
+        await #expect(throws: OriginalUploadAPIError.cancellationNeedsReconciliation) {
+            try await nullFence.inspectCancelledSession(sessionId, for: cancelled, using: missingAsset)
+        }
+        let (_, assetOnlyAccess, assetOnlyJournal, assetOnly) = try await prepareCancelledJob(
+            directory: directory, assetId: assetId)
+        let assetOnlyAPI = try OriginalUploadAPI(access: assetOnlyAccess, journal: assetOnlyJournal, transport: { request in
+            requests.withLock { $0.append(request) }
+            return (Data(#"{"assetId":null,"sessionIds":[]}"#.utf8), HTTPURLResponse(
+                url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+        })
+        let missingKnownAsset = try await assetOnlyAPI.fenceCancellation(for: assetOnly)
+        await #expect(throws: OriginalUploadAPIError.cancellationNeedsReconciliation) {
+            try await assetOnlyAPI.inspectCancelledSession(sessionId, for: assetOnly, using: missingKnownAsset)
+        }
+
+        let page = try cancellationPage(assetId: assetId, sessionIds: [otherId])
+        let missingSessionAPI = try OriginalUploadAPI(access: access, journal: journal, transport: { request in
+            requests.withLock { $0.append(request) }
+            return (page, HTTPURLResponse(
+                url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+        })
+        let traversal = try OriginalUploadCancellationTraversal(api: missingSessionAPI, job: cancelled)
+        _ = try await traversal.nextPage()
+        let missingSession = try #require(try traversal.completedEnumeration())
+        await #expect(throws: OriginalUploadAPIError.cancellationNeedsReconciliation) {
+            try await missingSessionAPI.inspectCancelledSession(otherId, for: cancelled, using: missingSession)
+        }
+        let overflow = try OriginalUploadAPI(access: access, journal: journal, transport: { request in
+            requests.withLock { $0.append(request) }
+            return (Data(#"{"code":"INTENT_SESSION_LIMIT"}"#.utf8), HTTPURLResponse(
+                url: request.url!, statusCode: 503, httpVersion: nil, headerFields: nil)!)
+        })
+        await #expect(throws: OriginalUploadAPIError.cancellationSessionLimit) {
+            try await overflow.fenceCancellation(for: cancelled)
+        }
+        let sent = requests.withLock { $0 }
+        #expect(sent.count == 4)
+        #expect(sent.map(\.httpMethod) == ["POST", "POST", "GET", "POST"])
+        #expect(try journal.read(id: job.id, access: access) == cancelled)
+        #expect(try assetOnlyJournal.read(id: assetOnly.id, access: assetOnlyAccess) == assetOnly)
+    }
+
+    @Test
+    @MainActor
+    func cancellationInspectionValidatesSessionResponsesAndBounds() async throws {
+        let directory = try fixture()
+        defer { cleanup(directory) }
+        let (_, access, journal, cancelled) = try await prepareCancelledJob(directory: directory)
+        let assetId = "ab123456-789a-4bcd-8abc-0123456789ab"
+        let fence = try JSONSerialization.data(withJSONObject: ["assetId": assetId, "sessionIds": [sessionId]])
+        let response = Mutex((data: fence, status: 200, tooLarge: false))
+        let requests = Mutex<[URLRequest]>([])
+        let api = try OriginalUploadAPI(access: access, journal: journal, transport: { request in
+            requests.withLock { $0.append(request) }
+            let current = response.withLock { $0 }
+            if current.tooLarge { throw URLError(.dataLengthExceedsMaximum) }
+            return (current.data, HTTPURLResponse(
+                url: request.url!, statusCode: current.status, httpVersion: nil, headerFields: nil)!)
+        })
+        let enumeration = try await api.fenceCancellation(for: cancelled)
+        func inspect(data: Data, status: Int = 200) async throws -> OriginalUploadServerSession {
+            response.withLock { $0 = (data, status, false) }
+            return try await api.inspectCancelledSession(sessionId, for: cancelled, using: enumeration)
+        }
+        let part = cancelled.manifest.parts[0]
+        let wrongDigest = String(repeating: part.sha256.first == "a" ? "b" : "a", count: 64)
+        let recordedPart: [String: Any] = [
+            "partNumber": 1, "sizeBytes": String(part.byteCount), "sha256": part.sha256,
+        ]
+        let valid = try cancellationSessionResponse(job: cancelled, assetId: assetId, sessionId: sessionId)
+        let validJSON = try #require(String(data: valid, encoding: .utf8))
+        let statusField = #""status":"OPEN""#
+        try #require(validJSON.contains(statusField))
+        let duplicateStatus = Data(validJSON.replacingOccurrences(
+            of: statusField, with: #""status":"OPEN","\u0073tatus":"ABORTED""#).utf8)
+        let invalid = try [
+            cancellationSessionResponse(job: cancelled, assetId: assetId, sessionId: sessionId,
+                                        overrides: ["id": sessionId.uppercased()]),
+            cancellationSessionResponse(job: cancelled, assetId: assetId, sessionId: sessionId,
+                                        overrides: ["id": sessionId + "\0suffix"]),
+            cancellationSessionResponse(job: cancelled, assetId: assetId, sessionId: sessionId,
+                                        overrides: ["assetId": assetId.uppercased()]),
+            cancellationSessionResponse(job: cancelled, assetId: assetId, sessionId: sessionId,
+                                        overrides: ["assetId": assetId + "\0suffix"]),
+            cancellationSessionResponse(job: cancelled, assetId: assetId, sessionId: sessionId,
+                                        overrides: ["clipId": assetId + "\0suffix"]),
+            cancellationSessionResponse(job: cancelled, assetId: assetId, sessionId: sessionId,
+                                        overrides: ["expectedSizeBytes": "999"]),
+            cancellationSessionResponse(job: cancelled, assetId: assetId, sessionId: sessionId,
+                                        overrides: ["expectedSha256": wrongDigest]),
+            cancellationSessionResponse(job: cancelled, assetId: assetId, sessionId: sessionId,
+                                        overrides: ["partSizeBytes": 0]),
+            cancellationSessionResponse(job: cancelled, assetId: assetId, sessionId: sessionId,
+                                        overrides: ["partCount": 2]),
+            cancellationSessionResponse(job: cancelled, assetId: assetId, sessionId: sessionId,
+                                        overrides: ["expiresAt": "invalid"]),
+            cancellationSessionResponse(job: cancelled, assetId: assetId, sessionId: sessionId,
+                                        overrides: ["status": "UNKNOWN"]),
+            cancellationSessionResponse(job: cancelled, assetId: assetId, sessionId: sessionId,
+                                        overrides: ["parts": [recordedPart, recordedPart]]),
+            Data(#"{"uploadSession":{}}"#.utf8),
+            duplicateStatus,
+            Data(repeating: 0x20, count: 65_537),
+        ]
+        for data in invalid {
+            await #expect(throws: OriginalUploadAPIError.invalidResponse) {
+                try await inspect(data: data)
+            }
+        }
+        let mismatchedPart: [String: Any] = [
+            "partNumber": 1, "sizeBytes": String(part.byteCount), "sha256": wrongDigest,
+        ]
+        for status in ["OPEN", "COMPLETING", "COMPLETED"] {
+            let body = try cancellationSessionResponse(
+                job: cancelled, assetId: assetId, sessionId: sessionId,
+                status: status, overrides: ["parts": [mismatchedPart]])
+            await #expect(throws: OriginalUploadAPIError.partMismatch) {
+                try await inspect(data: body)
+            }
+        }
+        for status in ["ABORTED", "EXPIRED"] {
+            let body = try cancellationSessionResponse(
+                job: cancelled, assetId: assetId, sessionId: sessionId,
+                status: status, overrides: ["parts": [mismatchedPart]])
+            #expect(try await inspect(data: body).status.rawValue == status)
+            for overrides in [["expectedSizeBytes": "999"], ["expectedSha256": wrongDigest]] {
+                let wrongFingerprint = try cancellationSessionResponse(
+                    job: cancelled, assetId: assetId, sessionId: sessionId, status: status, overrides: overrides)
+                await #expect(throws: OriginalUploadAPIError.invalidResponse) {
+                    try await inspect(data: wrongFingerprint)
+                }
+            }
+        }
+        try #require(valid.count < 65_536)
+        let maximum = valid + Data(repeating: 0x20, count: 65_536 - valid.count)
+        #expect(try await inspect(data: maximum).status == .open)
+        for data in try nonUTF8JSON(String(decoding: valid, as: UTF8.self)) {
+            await #expect(throws: OriginalUploadAPIError.invalidResponse) {
+                try await inspect(data: data)
+            }
+        }
+        await #expect(throws: OriginalUploadAPIError.invalidResponse) {
+            try await inspect(data: valid, status: 201)
+        }
+        for status in [401, 404, 429, 503] {
+            let count = requests.withLock { $0.count }
+            await #expect(throws: OriginalUploadAPIError.httpStatus(status)) {
+                try await inspect(data: valid, status: status)
+            }
+            #expect(requests.withLock { $0.count } == count + 1)
+        }
+        response.withLock { $0.tooLarge = true }
+        await #expect(throws: OriginalUploadAPIError.invalidResponse) {
+            try await api.inspectCancelledSession(sessionId, for: cancelled, using: enumeration)
+        }
+        #expect(requests.withLock { $0.dropFirst().allSatisfy { $0.httpMethod == "GET" } })
+        #expect(try journal.read(id: cancelled.id, access: access) == cancelled)
+    }
+
+    @Test
+    @MainActor
+    func cancellationInspectionBindsEvidenceToJobAndAuthentication() async throws {
+        let directory = try fixture()
+        defer { cleanup(directory) }
+        let server = URL(string: "https://isolated.example.test")!
+        let auth = AuthService(storage: .memory, serverURL: { server })
+        let user = User(
+            id: "user-1", phoneNumber: "5550100", name: "Reporter", email: nil, team: nil,
+            status: "ACTIVE", companyCode: nil, companyName: nil)
+        auth.token = "test-token"
+        auth.currentUser = user
+        let access = try OriginalUploadAccess(auth: auth, allowedOrigins: ["https://isolated.example.test"])
+        let assetId = "ab123456-789a-4bcd-8abc-0123456789ab"
+        let (journal, job) = try await prepareJob(
+            access: access, directory: directory, assetId: assetId, sessionId: sessionId)
+        let cancelled = try journal.requestCancellation(for: job, access: access)
+        let fence = try JSONSerialization.data(withJSONObject: ["assetId": assetId, "sessionIds": [sessionId]])
+        let requests = Mutex<[URLRequest]>([])
+        let transport: @Sendable (URLRequest) async throws -> (Data, URLResponse) = { request in
+            requests.withLock { $0.append(request) }
+            return (fence, HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+        }
+        let api = try OriginalUploadAPI(access: access, journal: journal, transport: transport)
+        let enumeration = try await api.fenceCancellation(for: cancelled)
+        let session = try cancellationSessionResponse(job: cancelled, assetId: assetId, sessionId: sessionId)
+        let otherIssuer = try OriginalUploadAPI(access: access, journal: journal, transport: { request in
+            requests.withLock { $0.append(request) }
+            return (session, HTTPURLResponse(
+                url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+        })
+        await #expect(throws: OriginalUploadAPIError.invalidResponse) {
+            try await otherIssuer.inspectCancelledSession(sessionId, for: cancelled, using: enumeration)
+        }
+        let (_, otherJob) = try await prepareJob(access: access, directory: directory)
+        let otherCancelled = try journal.requestCancellation(for: otherJob, access: access)
+        await #expect(throws: OriginalUploadAPIError.invalidResponse) {
+            try await api.inspectCancelledSession(sessionId, for: otherCancelled, using: enumeration)
+        }
+        let otherEnumeration = try await api.fenceCancellation(for: otherCancelled)
+        await #expect(throws: OriginalUploadAPIError.invalidResponse) {
+            try await otherIssuer.inspectCancelledSession(sessionId, for: otherCancelled, using: otherEnumeration)
+        }
+        #expect(requests.withLock { $0.count } == 2)
+        let updated = try journal.update(cancelled, access: access)
+        await #expect(throws: OriginalUploadStorageError.staleJob) {
+            try await api.inspectCancelledSession(sessionId, for: cancelled, using: enumeration)
+        }
+        await #expect(throws: OriginalUploadAPIError.invalidResponse) {
+            try await api.inspectCancelledSession(sessionId, for: updated, using: enumeration)
+        }
+        let updatedEnumeration = try await api.fenceCancellation(for: updated)
+
+        auth.logout()
+        auth.token = "test-token"
+        auth.currentUser = user
+        await #expect(throws: OriginalUploadAPIError.sessionChanged) {
+            try await api.inspectCancelledSession(sessionId, for: updated, using: updatedEnumeration)
+        }
+        let freshAccess = try OriginalUploadAccess(auth: auth, allowedOrigins: ["https://isolated.example.test"])
+        let freshAPI = try OriginalUploadAPI(access: freshAccess, journal: journal, transport: transport)
+        await #expect(throws: OriginalUploadAPIError.invalidResponse) {
+            try await freshAPI.inspectCancelledSession(sessionId, for: updated, using: updatedEnumeration)
+        }
+        let otherUser = User(
+            id: "user-2", phoneNumber: "5550101", name: "Other", email: nil, team: nil,
+            status: "ACTIVE", companyCode: nil, companyName: nil)
+        let otherAuth = AuthService(storage: .memory, serverURL: { server })
+        otherAuth.token = "test-token"
+        otherAuth.currentUser = otherUser
+        let otherUserAccess = try OriginalUploadAccess(
+            auth: otherAuth, allowedOrigins: ["https://isolated.example.test"])
+        let otherUserAPI = try OriginalUploadAPI(access: otherUserAccess, journal: journal, transport: transport)
+        await #expect(throws: OriginalUploadAPIError.sessionChanged) {
+            try await otherUserAPI.inspectCancelledSession(sessionId, for: updated, using: updatedEnumeration)
+        }
+        let otherServer = URL(string: "https://other.example.test")!
+        let otherServerAuth = AuthService(storage: .memory, serverURL: { otherServer })
+        otherServerAuth.token = "test-token"
+        otherServerAuth.currentUser = user
+        let otherAccess = try OriginalUploadAccess(
+            auth: otherServerAuth, allowedOrigins: ["https://other.example.test"])
+        let otherAPI = try OriginalUploadAPI(access: otherAccess, journal: journal, transport: transport)
+        await #expect(throws: OriginalUploadAPIError.sessionChanged) {
+            try await otherAPI.inspectCancelledSession(sessionId, for: updated, using: updatedEnumeration)
+        }
+        #expect(requests.withLock { $0.count } == 3)
+        #expect(try journal.read(id: job.id, access: freshAccess).cancellationRequested)
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    @MainActor
+    func cancellationInspectionRejectsInflightCancellationAndIdentityChanges() async throws {
+        enum Change { case cancelTask, journal, signOut }
+        for change in [Change.cancelTask, .journal, .signOut] {
+            let directory = try fixture()
+            defer { cleanup(directory) }
+            let (auth, access, journal, cancelled) = try await prepareCancelledJob(directory: directory)
+            let assetId = "ab123456-789a-4bcd-8abc-0123456789ab"
+            let fence = try JSONSerialization.data(withJSONObject: [
+                "assetId": assetId, "sessionIds": [sessionId],
+            ])
+            let session = try cancellationSessionResponse(job: cancelled, assetId: assetId, sessionId: sessionId)
+            let original = try journal.originalURL(for: cancelled, access: access)
+            let originalBytes = try Data(contentsOf: original)
+            let entered = AsyncStream<Void>.makeStream()
+            let release = AsyncStream<Void>.makeStream()
+            let requests = Mutex<[URLRequest]>([])
+            defer { entered.continuation.finish(); release.continuation.finish() }
+            let api = try OriginalUploadAPI(access: access, journal: journal, transport: { request in
+                requests.withLock { $0.append(request) }
+                if request.httpMethod == "POST" {
+                    return (fence, HTTPURLResponse(
+                        url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+                }
+                entered.continuation.yield()
+                var iterator = release.stream.makeAsyncIterator()
+                _ = await iterator.next()
+                return (session, HTTPURLResponse(
+                    url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+            })
+            let enumeration = try await api.fenceCancellation(for: cancelled)
+            let request = Task {
+                try await api.inspectCancelledSession(sessionId, for: cancelled, using: enumeration)
+            }
+            var iterator = entered.stream.makeAsyncIterator()
+            try #require(await iterator.next() != nil)
+            switch change {
+            case .cancelTask: request.cancel()
+            case .journal: _ = try journal.update(cancelled, access: access)
+            case .signOut: auth.logout()
+            }
+            release.continuation.yield()
+            switch change {
+            case .cancelTask:
+                await #expect(throws: CancellationError.self) { try await request.value }
+            case .journal:
+                await #expect(throws: OriginalUploadStorageError.staleJob) { try await request.value }
+            case .signOut:
+                await #expect(throws: OriginalUploadAPIError.sessionChanged) { try await request.value }
+            }
+            #expect(requests.withLock { $0.map(\.httpMethod) } == ["POST", "GET"])
+            #expect(try Data(contentsOf: original) == originalBytes)
         }
     }
 
