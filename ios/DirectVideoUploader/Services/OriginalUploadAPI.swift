@@ -148,10 +148,12 @@ nonisolated private enum OriginalUploadCancellationIdentifier {
     }
 }
 
-nonisolated enum OriginalUploadCancellationPageValidation {
+nonisolated enum OriginalUploadCancellationValidation {
     static func preservingCancellation<T>(_ validate: () throws -> T) throws -> T {
         do {
-            return try validate()
+            let result = try validate()
+            try Task.checkCancellation()
+            return result
         } catch {
             try Task.checkCancellation()
             throw error
@@ -164,7 +166,6 @@ nonisolated enum OriginalUploadCancellationPageValidation {
                 throw OriginalUploadAPIError.invalidResponse
             }
         }
-        try Task.checkCancellation()
     }
 }
 
@@ -174,35 +175,49 @@ nonisolated struct OriginalUploadCancellationReceipt: Decodable, Equatable, Send
     let sessionIds: [String]
 
     static func decode(_ data: Data) throws -> Self {
-        do {
-            let keys = try OriginalUploadResponseJSON.objectKeys(in: data)
-            guard keys.count == 1, keys[0] == Set(["assetId", "sessionIds"]) else {
+        try decode(data, using: { try JSONDecoder().decode(Self.self, from: $0) })
+    }
+
+    #if DEBUG
+    static func decodeForTesting(_ data: Data, using decoder: (Data) throws -> Self) throws -> Self {
+        try decode(data, using: decoder)
+    }
+    #endif
+
+    private static func decode(_ data: Data, using decoder: (Data) throws -> Self) throws -> Self {
+        try OriginalUploadCancellationValidation.preservingCancellation {
+            do {
+                let keys = try OriginalUploadResponseJSON.objectKeys(in: data)
+                guard keys.count == 1, keys[0] == Set(["assetId", "sessionIds"]) else {
+                    throw OriginalUploadAPIError.invalidResponse
+                }
+                return try decoder(data)
+            } catch is DecodingError {
                 throw OriginalUploadAPIError.invalidResponse
             }
-            return try JSONDecoder().decode(Self.self, from: data)
-        } catch is DecodingError {
-            throw OriginalUploadAPIError.invalidResponse
         }
     }
 
     func validate(for job: OriginalUploadJob) throws {
-        guard sessionIds.count <= Self.maximumSessions, assetId != nil || sessionIds.isEmpty else {
-            throw OriginalUploadAPIError.invalidResponse
-        }
-        guard sessionIds.allSatisfy(OriginalUploadCancellationIdentifier.isSession),
-              Set(sessionIds).count == sessionIds.count else {
-            throw OriginalUploadAPIError.invalidResponse
-        }
-        if let assetId {
-            guard OriginalUploadCancellationIdentifier.isUUID(assetId) else {
+        try OriginalUploadCancellationValidation.preservingCancellation {
+            guard sessionIds.count <= Self.maximumSessions, assetId != nil || sessionIds.isEmpty else {
                 throw OriginalUploadAPIError.invalidResponse
             }
-            if let expected = job.assetId {
-                guard expected == assetId else { throw OriginalUploadAPIError.invalidResponse }
+            guard sessionIds.allSatisfy(OriginalUploadCancellationIdentifier.isSession),
+                  Set(sessionIds).count == sessionIds.count else {
+                throw OriginalUploadAPIError.invalidResponse
             }
-            if let expected = job.sessionId {
-                guard sessionIds.contains(expected) else {
+            if let assetId {
+                guard OriginalUploadCancellationIdentifier.isUUID(assetId) else {
                     throw OriginalUploadAPIError.invalidResponse
+                }
+                if let expected = job.assetId {
+                    guard expected == assetId else { throw OriginalUploadAPIError.invalidResponse }
+                }
+                if let expected = job.sessionId {
+                    guard sessionIds.contains(expected) else {
+                        throw OriginalUploadAPIError.invalidResponse
+                    }
                 }
             }
         }
@@ -316,7 +331,7 @@ final class OriginalUploadCancellationTraversal {
             }, onDispatch: onDispatch)
         try Task.checkCancellation()
         try api.ensureCancellationCurrent(job)
-        try OriginalUploadCancellationPageValidation.requireDisjoint(seenSessionIds, page.sessionIds)
+        try OriginalUploadCancellationValidation.requireDisjoint(seenSessionIds, page.sessionIds)
         assetId = page.assetId
         seenSessionIds.formUnion(page.sessionIds)
         pageCount += 1
@@ -741,7 +756,7 @@ final class OriginalUploadAPI {
         try Task.checkCancellation()
         try ensureCancellationCurrent(job)
         if let continuation {
-            try OriginalUploadCancellationPageValidation.preservingCancellation {
+            try OriginalUploadCancellationValidation.preservingCancellation {
                 guard continuation.jobId == job.id, continuation.incarnation == job.incarnation,
                       continuation.revision == job.revision, continuation.scope == job.scope,
                       continuation.sessionGeneration == access.snapshot.generation,
@@ -756,7 +771,7 @@ final class OriginalUploadAPI {
             method: "GET", allowsCancellation: true, expectedStatus: 200, cancellationPage: true,
             onResponse: onResponse, onDispatch: onDispatch)
         try ensureCurrent(job, allowsCancellation: true)
-        return try OriginalUploadCancellationPageValidation.preservingCancellation {
+        return try OriginalUploadCancellationValidation.preservingCancellation {
             let response: CancellationPageResponse
             do {
                 let keys = try OriginalUploadResponseJSON.objectKeys(in: data)
@@ -801,7 +816,6 @@ final class OriginalUploadAPI {
             } else {
                 next = nil
             }
-            try Task.checkCancellation()
             // A server page is not proof that local or remote cleanup has finished.
             return OriginalUploadCancellationPage(
                 assetId: response.assetId, sessionIds: response.sessionIds, continuation: next)
