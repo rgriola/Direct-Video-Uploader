@@ -87,7 +87,11 @@ final class OriginalUploadEventInbox {
     private let directory: URL
     // Preserve the supplied spelling for lexical validation before it can be standardized.
     private let configuredDirectory: URL
+    // Synchronous main-actor test observations; no descriptor is exposed.
     private let inventoryDidOpen: (() throws -> Void)?
+    private let initialInventoryDidScan: (() throws -> Void)?
+    private let recoveryPreflightDidComplete: (() throws -> Void)?
+    private let stageDidRevalidate: (() throws -> Void)?
     private let synchronizeDirectory: (URL) throws -> Void
 
     init(
@@ -95,11 +99,17 @@ final class OriginalUploadEventInbox {
         synchronizeDirectory: @escaping (URL) throws -> Void = {
             try DurableFile.synchronize($0, directory: true)
         },
-        inventoryDidOpen: (() throws -> Void)? = nil
+        inventoryDidOpen: (() throws -> Void)? = nil,
+        initialInventoryDidScan: (() throws -> Void)? = nil,
+        recoveryPreflightDidComplete: (() throws -> Void)? = nil,
+        stageDidRevalidate: (() throws -> Void)? = nil
     ) {
         self.directory = directory.standardizedFileURL
         self.configuredDirectory = directory
         self.inventoryDidOpen = inventoryDidOpen
+        self.initialInventoryDidScan = initialInventoryDidScan
+        self.recoveryPreflightDidComplete = recoveryPreflightDidComplete
+        self.stageDidRevalidate = stageDidRevalidate
         self.synchronizeDirectory = synchronizeDirectory
     }
 
@@ -150,45 +160,62 @@ final class OriginalUploadEventInbox {
     }
 
     private func readRecords(matching event: OriginalBackgroundCompletion? = nil) throws -> [StoredEvent] {
-        let snapshot = try scanRecords(matching: event)
-        var canonical = snapshot.canonical
-        let stages = snapshot.stages.sorted {
-            let left = $0.snapshot.record.sequence
-            let right = $1.snapshot.record.sequence
-            return left == right ? $0.url.lastPathComponent < $1.url.lastPathComponent : left < right
-        }
-        for stage in stages {
-            // Earlier hardlinked siblings may have changed metadata; verify identity and contents again.
-            let current = try read(stage.url)
-            guard sameIdentity(stage.snapshot.status, current.status),
-                  stage.snapshot.record == current.record else { throw POSIXError(.ESTALE) }
-            let refreshed = StagedEvent(url: stage.url, snapshot: current)
-            let id = current.record.event.id
-            if canonical.contains(id) {
-                try discardDuplicate(refreshed)
-            } else {
-                let synced = try protectAndSynchronize(stage.url, snapshot: current)
-                try publish(refreshed, expected: synced.status)
-                canonical.insert(id)
+        // Keep the first inode pinned through recovery and every identity observation.
+        try withInventoryDirectory { original in
+            let snapshot = try scanRecords(matching: event, in: original)
+            try initialInventoryDidScan?()
+
+            // These are observations, not namespace ownership: path-based operations can
+            // still race between checks or afterward, including ABA and prior substitutions.
+            try withInventoryDirectory { current in
+                try requireSameInventoryDirectory(original, current)
+            }
+            try recoveryPreflightDidComplete?()
+
+            var canonical = snapshot.canonical
+            let stages = snapshot.stages.sorted {
+                let left = $0.snapshot.record.sequence
+                let right = $1.snapshot.record.sequence
+                return left == right ? $0.url.lastPathComponent < $1.url.lastPathComponent : left < right
+            }
+            for stage in stages {
+                // Earlier hardlinked siblings may have changed metadata; refresh after checking
+                // identity and contents, relative to the original inventory descriptor.
+                let current = try read(stage.url.lastPathComponent, in: original)
+                guard sameIdentity(stage.snapshot.status, current.status),
+                      stage.snapshot.record == current.record else { throw POSIXError(.ESTALE) }
+                try stageDidRevalidate?()
+                let refreshed = StagedEvent(url: stage.url, snapshot: current)
+                let id = current.record.event.id
+                if canonical.contains(id) {
+                    try discardDuplicate(refreshed)
+                } else {
+                    let synced = try protectAndSynchronize(stage.url, snapshot: current)
+                    try publish(refreshed, expected: synced.status)
+                    canonical.insert(id)
+                }
+            }
+
+            return try withInventoryDirectory { second in
+                try requireSameInventoryDirectory(original, second)
+                let recovered = try scanRecords(matching: event, in: second)
+                try withInventoryDirectory { current in
+                    try requireSameInventoryDirectory(original, current)
+                    try requireSameInventoryDirectory(second, current)
+                }
+                // Recovery succeeds only if the logical inbox is unchanged and no stages remain.
+                guard recovered.records == snapshot.records, recovered.stages.isEmpty else {
+                    throw POSIXError(.ESTALE)
+                }
+                return recovered.records
             }
         }
-        // Reopen independently after path-based recovery: reusing the first FD could acknowledge
-        // an event from a displaced inbox. This comparison does not secure later path mutations.
-        // Recovery succeeds only if the complete logical inbox is unchanged and no stages remain.
-        let recovered = try scanRecords(matching: event)
-        guard recovered.records == snapshot.records, recovered.stages.isEmpty else {
-            throw POSIXError(.ESTALE)
-        }
-        return recovered.records
     }
 
-    private func scanRecords(matching event: OriginalBackgroundCompletion?) throws -> (
+    private func scanRecords(matching event: OriginalBackgroundCompletion?, in descriptor: Int32) throws -> (
         records: [StoredEvent], canonical: Set<UUID>, stages: [StagedEvent]
     ) {
-        let descriptor = try openInventoryDirectory()
-        var closed = false
-        defer { if !closed { closeDirectoryDescriptorLogged(descriptor) } }
-
+        // The caller owns the descriptor for the whole scan.
         // Synchronous main-actor observation only; all scan I/O still uses the real descriptors.
         try inventoryDidOpen?()
         let names = try inventoryNames(in: descriptor)
@@ -253,11 +280,29 @@ final class OriginalUploadEventInbox {
         if let event, let existing = records[event.id], existing.event != event {
             throw OriginalUploadStorageError.invalidRecord
         }
-        let result = (records.values.sorted { $0.sequence < $1.sequence }, canonical, stages)
+        return (records.values.sorted { $0.sequence < $1.sequence }, canonical, stages)
+    }
+
+    private func withInventoryDirectory<T>(_ body: (Int32) throws -> T) throws -> T {
+        // The synchronous, nonescaping body borrows this descriptor.
+        let descriptor = try openInventoryDirectory()
+        var closed = false
+        defer { if !closed { closeDirectoryDescriptorLogged(descriptor) } }
+        let result = try body(descriptor)
         let closeResult = Darwin.close(descriptor)
+        let closeError = errno
         closed = true
-        guard closeResult == 0 else { throw posixError() }
+        guard closeResult == 0 else { throw posixError(closeError) }
         return result
+    }
+
+    private func requireSameInventoryDirectory(_ first: Int32, _ second: Int32) throws {
+        let left = try directoryStatus(first)
+        let right = try directoryStatus(second)
+        // Recovery can legitimately change directory timestamps.
+        guard left.st_dev == right.st_dev, left.st_ino == right.st_ino else {
+            throw POSIXError(.ESTALE)
+        }
     }
 
     private func openInventoryDirectory() throws -> Int32 {
