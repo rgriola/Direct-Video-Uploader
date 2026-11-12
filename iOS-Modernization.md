@@ -930,16 +930,27 @@ sequenceDiagram
     originals must be retained. Ordinary session recovery rejects blocked or saved
     cancellation before transport handoff. A GET or DELETE already handed to the
     transport can change server state even though its late response is discarded.
-    The coordinator still needs
-    conservative retry scheduling across scans and restarts, and
-    reconciliation or abort of all returned and locally known sessions and
-    background tasks. The single-session abort now requires an API-issued
+    The single-session abort requires an API-issued
     inspection minted from a successful fence or completed traversal, bound to
     the exact job, server, authenticated session, and listed session. An inspected
     historical session can be aborted when the listing also contains the
     journaled session. It rejects completed sessions and only accepts a terminal
     aborted or expired response for the inspected session.
-    This guard is not yet wired into cancellation orchestration. Neither
+    An unwired coordinator now saves cancellation, requests cancellation of matching
+    tagged tasks, fences the intent, finishes enumeration, and inspects the listed
+    sessions before aborting eligible ones. Completed and already-terminal sessions
+    are not sent DELETE; the original, attempts, events, and cancellation flag
+    remain in place.
+    In-memory job tombstones and shared fence/page gates prevent default coordinator
+    scans from bypassing a known delay or an uncertain response in the same process.
+    The Debug-only isolated state initializer is for tests, not app integration.
+    This isolated coordinator parks rather than resuming after a delay or failure;
+    its job tombstone remains even when local cancellation persistence is uncertain.
+    It releases its API and access references when finished or parked. Raw API
+    calls do not use those gates, and no retry marker or gate survives restart.
+    Do not wire this coordinator into the app until all relevant callers use a
+    durable, scope-wide retry and sign-out policy, in-flight work is invalidated,
+    and background task and event reconciliation can prove safe cleanup. Neither
     enumeration nor inspection proves cleanup;
     uncertainty must leave cancellation pending.
     Cancellation racing invalid-page validation can still
