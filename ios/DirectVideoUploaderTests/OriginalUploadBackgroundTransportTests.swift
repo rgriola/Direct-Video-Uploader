@@ -39,8 +39,28 @@ struct OriginalUploadBackgroundTransportTests {
         case canonicalAndStaged, twoStaged, twoCanonical
     }
 
+    nonisolated enum InboxOperation: String, Sendable {
+        case events, persist, remove
+    }
+
     private enum AncestorReplacement {
         case symbolicLink, directory
+    }
+
+    private struct FixtureFileSnapshot {
+        let url: URL
+        let bytes: Data
+        let status: stat
+    }
+
+    private struct InboxDirectorySwap {
+        let active: URL
+        let parked: URL
+        let decoy: URL
+        let originalStatus: stat
+        let decoyStatus: stat
+        let originalSentinel: FixtureFileSnapshot
+        let decoySentinel: FixtureFileSnapshot
     }
 
     private struct InboxFilesFixture {
@@ -97,7 +117,12 @@ struct OriginalUploadBackgroundTransportTests {
     }
 
     private func fixture() throws -> URL {
-        let directory = FileManager.default.temporaryDirectory
+        let temporary = FileManager.default.temporaryDirectory
+        let home = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
+            .standardizedFileURL.resolvingSymlinksInPath().path
+        let parent = temporary.standardizedFileURL.resolvingSymlinksInPath().path
+        try #require(parent == home || parent.hasPrefix(home + "/"))
+        let directory = temporary
             .appendingPathComponent("original-events-test-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         return directory
@@ -172,6 +197,80 @@ struct OriginalUploadBackgroundTransportTests {
             .standardizedFileURL.resolvingSymlinksInPath().path
         let owned = directory.standardizedFileURL.resolvingSymlinksInPath().path
         try #require(owned.hasPrefix(home + "/"))
+    }
+
+    private func snapshotFixtureFile(at url: URL) throws -> FixtureFileSnapshot {
+        let bytes = try Data(contentsOf: url)
+        return FixtureFileSnapshot(url: url, bytes: bytes, status: try fileStatus(at: url))
+    }
+
+    private func createFixtureFile(_ bytes: Data, at url: URL) throws -> FixtureFileSnapshot {
+        try #require(!itemExists(at: url))
+        try #require(FileManager.default.createFile(
+            atPath: url.path, contents: bytes, attributes: [.posixPermissions: 0o600]))
+        return try snapshotFixtureFile(at: url)
+    }
+
+    private func makeInboxDirectorySwap(in directory: URL) throws -> InboxDirectorySwap {
+        try requireFixtureInsideHome(directory)
+        let active = directory.appendingPathComponent("active", isDirectory: true)
+        let parked = directory.appendingPathComponent("parked", isDirectory: true)
+        let decoy = directory.appendingPathComponent("decoy", isDirectory: true)
+        try FileManager.default.createDirectory(at: active, withIntermediateDirectories: false)
+        try FileManager.default.createDirectory(at: decoy, withIntermediateDirectories: false)
+        try #require(!itemExists(at: parked))
+        let originalStatus = try fileStatus(at: active)
+        let decoyStatus = try fileStatus(at: decoy)
+        try #require(originalStatus.st_mode & mode_t(S_IFMT) == mode_t(S_IFDIR))
+        try #require(decoyStatus.st_mode & mode_t(S_IFMT) == mode_t(S_IFDIR))
+        try #require(originalStatus.st_dev != decoyStatus.st_dev || originalStatus.st_ino != decoyStatus.st_ino)
+        let originalSentinel = try createFixtureFile(
+            Data("original sentinel".utf8), at: directory.appendingPathComponent("original-sentinel"))
+        let decoySentinel = try createFixtureFile(
+            Data("decoy sentinel".utf8), at: directory.appendingPathComponent("decoy-sentinel"))
+        return InboxDirectorySwap(
+            active: active, parked: parked, decoy: decoy,
+            originalStatus: originalStatus, decoyStatus: decoyStatus,
+            originalSentinel: originalSentinel, decoySentinel: decoySentinel)
+    }
+
+    private func swapInboxDirectories(_ swap: InboxDirectorySwap) throws {
+        try FileManager.default.moveItem(at: swap.active, to: swap.parked)
+        try FileManager.default.moveItem(at: swap.decoy, to: swap.active)
+    }
+
+    private func expectSwappedDirectoriesAndSentinelsUnchanged(_ swap: InboxDirectorySwap) throws {
+        let parked = try fileStatus(at: swap.parked)
+        let active = try fileStatus(at: swap.active)
+        #expect(parked.st_dev == swap.originalStatus.st_dev && parked.st_ino == swap.originalStatus.st_ino)
+        #expect(active.st_dev == swap.decoyStatus.st_dev && active.st_ino == swap.decoyStatus.st_ino)
+        #expect(!itemExists(at: swap.decoy))
+        for sentinel in [swap.originalSentinel, swap.decoySentinel] {
+            expectFixtureFileUnchanged(sentinel.bytes, status: sentinel.status, at: sentinel.url)
+        }
+    }
+
+    private func expectInboxNames(_ names: [String], in directory: URL) throws {
+        let actual = try FileManager.default.contentsOfDirectory(atPath: directory.path)
+        #expect(Set(actual) == Set(names))
+    }
+
+    private func seedIdenticalCanonicalCopies(
+        _ completion: OriginalBackgroundCompletion, in swap: InboxDirectorySwap
+    ) throws -> (original: FixtureFileSnapshot, decoy: FixtureFileSnapshot) {
+        let bytes = try recordBytes(completion, sequence: 1)
+        let original = canonicalURL(for: completion, in: swap.active)
+        let decoy = canonicalURL(for: completion, in: swap.decoy)
+        try OriginalUploadFiles.writeProtected(bytes, to: original)
+        try OriginalUploadFiles.writeProtected(bytes, to: decoy)
+        let originalFile = try snapshotFixtureFile(at: original)
+        let decoyFile = try snapshotFixtureFile(at: decoy)
+        try #require(originalFile.url.lastPathComponent == decoyFile.url.lastPathComponent)
+        try #require(originalFile.bytes == bytes && decoyFile.bytes == bytes)
+        try #require(originalFile.status.st_dev != decoyFile.status.st_dev
+            || originalFile.status.st_ino != decoyFile.status.st_ino)
+        try #require(originalFile.status.st_nlink == 1 && decoyFile.status.st_nlink == 1)
+        return (originalFile, decoyFile)
     }
 
     private func nestedInbox(under ancestor: URL) -> URL {
@@ -322,7 +421,7 @@ struct OriginalUploadBackgroundTransportTests {
 
         // Only inventory reads are descriptor-rooted. Prepare, staged recovery,
         // writes, and removal still use path-based operations. The original has
-        // no stages, so a correct first scan does not enter recovery before the second.
+        // no stages, and the pre-recovery checkpoint rejects the replacement.
         let failure = #expect(throws: (any Error).self) {
             if sameNameConflict {
                 // This matching-record check fails in the first scan, before persist can write.
@@ -340,12 +439,12 @@ struct OriginalUploadBackgroundTransportTests {
         } else {
             switch replacement {
             case .symbolicLink:
-                // The second scan cannot open the substituted symlink ancestor.
+                // The checkpoint cannot open the substituted symlink ancestor.
                 #expect(inventoryOpens == 1)
                 if let failure { #expect(isUnsafeAncestorRejection(failure)) }
             case .directory:
-                // The second scan opens the replacement; its different inventory fails the existing gate.
-                #expect(inventoryOpens == 2)
+                // The checkpoint rejects the replacement before a second scan.
+                #expect(inventoryOpens == 1)
                 if let failure { #expect((failure as? POSIXError)?.code == .ESTALE) }
             }
         }
@@ -499,7 +598,7 @@ struct OriginalUploadBackgroundTransportTests {
         try exerciseAncestorSwap(.symbolicLink)
     }
 
-    @Test("A different real ancestor is rejected by the second inventory")
+    @Test("A different real ancestor is rejected at the pre-recovery checkpoint")
     func openedInventoryRejectsDifferentDirectoryAtRecoveryGate() throws {
         try exerciseAncestorSwap(.directory)
     }
@@ -512,6 +611,268 @@ struct OriginalUploadBackgroundTransportTests {
     @Test("An opened inventory reads its original record after a same-name symlink swap")
     func openedInventoryReadsOriginalBytesWithSymlinkedSameNameDecoy() throws {
         try exerciseAncestorSwap(.symbolicLink, sameNameConflict: true)
+    }
+
+    @Test("Identical real inbox substitutions fail before later operations", arguments: [
+        (InboxOperation.events, true), (.persist, true), (.remove, true),
+        (.events, false), (.persist, false), (.remove, false),
+    ])
+    func identicalDirectorySwapRejectsEveryInboxOperation(
+        operation: InboxOperation, hasCanonical: Bool
+    ) throws {
+        let directory = try fixture()
+        defer { cleanup(directory) }
+        let swap = try makeInboxDirectorySwap(in: directory)
+        let existing = event(taskIdentifier: 31)
+        let newEvent = event(taskIdentifier: 32)
+        try #require(existing.id != newEvent.id)
+        let files: (original: FixtureFileSnapshot, decoy: FixtureFileSnapshot)?
+        if hasCanonical {
+            files = try seedIdenticalCanonicalCopies(existing, in: swap)
+        } else {
+            files = nil
+        }
+
+        var inventoryOpens = 0
+        var swaps = 0
+        var synchronizationsAfterSwap = 0
+        let inbox = OriginalUploadEventInbox(
+            directory: swap.active,
+            synchronizeDirectory: { url in
+                if swaps > 0 { synchronizationsAfterSwap += 1 }
+                try DurableFile.synchronize(url, directory: true)
+            },
+            inventoryDidOpen: {
+                inventoryOpens += 1
+                guard inventoryOpens == 1 else { return }
+                try self.swapInboxDirectories(swap)
+                swaps += 1
+            }
+        )
+        let failure = #expect(throws: (any Error).self) {
+            switch operation {
+            case .events:
+                _ = try inbox.events()
+            case .persist:
+                try inbox.persist(newEvent)
+            case .remove:
+                try inbox.remove(existing)
+            }
+        }
+        #expect((failure as? POSIXError)?.code == .ESTALE)
+        try #require(swaps == 1)
+        #expect(inventoryOpens == 1)
+        #expect(synchronizationsAfterSwap == 0)
+        try expectSwappedDirectoriesAndSentinelsUnchanged(swap)
+        let names = files.map { [$0.original.url.lastPathComponent] } ?? []
+        try expectInboxNames(names, in: swap.parked)
+        try expectInboxNames(names, in: swap.active)
+        if let files {
+            expectFixtureFileUnchanged(
+                files.original.bytes, status: files.original.status,
+                at: swap.parked.appendingPathComponent(files.original.url.lastPathComponent))
+            expectFixtureFileUnchanged(
+                files.decoy.bytes, status: files.decoy.status,
+                at: swap.active.appendingPathComponent(files.decoy.url.lastPathComponent))
+        }
+        #expect(!itemExists(at: canonicalURL(for: newEvent, in: swap.active)))
+        #expect(!itemExists(at: canonicalURL(for: newEvent, in: swap.parked)))
+    }
+
+    @Test("Pre-recovery identity check prevents mutation through a newly external hard link")
+    func preRecoveryGateRejectsExternalHardLinkDirectorySwap() throws {
+        let directory = try fixture()
+        defer { cleanup(directory) }
+        let swap = try makeInboxDirectorySwap(in: directory)
+        let completion = event(taskIdentifier: 41)
+        let stage = stagedURL(in: swap.active)
+        let bytes = try recordBytes(completion, sequence: 1)
+        _ = try createFixtureFile(bytes, at: stage)
+        try TemporaryVideoStorage.applyProtection(to: stage)
+        try OriginalUploadFiles.excludeFromBackup(stage)
+        let initial = try snapshotFixtureFile(at: stage)
+        try #require(initial.status.st_mode & mode_t(0o7777) == mode_t(0o600))
+        try #require(initial.status.st_nlink == 1)
+        let decoyStage = swap.decoy.appendingPathComponent(stage.lastPathComponent)
+
+        var inventoryOpens = 0
+        var completedScans = 0
+        var revalidatedStages = 0
+        var swaps = 0
+        var synchronizationsAfterSwap = 0
+        var afterLink: FixtureFileSnapshot?
+        var protectionAfterLink: String?
+        var backupExclusionAfterLink: Bool?
+        let inbox = OriginalUploadEventInbox(
+            directory: swap.active,
+            synchronizeDirectory: { url in
+                if swaps > 0 { synchronizationsAfterSwap += 1 }
+                try DurableFile.synchronize(url, directory: true)
+            },
+            inventoryDidOpen: { inventoryOpens += 1 },
+            initialInventoryDidScan: {
+                completedScans += 1
+                guard completedScans == 1 else { return }
+                try FileManager.default.linkItem(at: stage, to: decoyStage)
+                let linked = try self.snapshotFixtureFile(at: stage)
+                try #require(linked.status.st_dev == initial.status.st_dev
+                    && linked.status.st_ino == initial.status.st_ino)
+                try #require(linked.status.st_nlink == 2)
+                try #require(linked.bytes == bytes)
+                let decoyLink = try self.fileStatus(at: decoyStage)
+                try #require(decoyLink.st_dev == linked.status.st_dev && decoyLink.st_ino == linked.status.st_ino)
+                try #require(decoyLink.st_nlink == 2)
+                afterLink = linked
+                let attributes = try FileManager.default.attributesOfItem(atPath: stage.path)
+                protectionAfterLink = attributes[.protectionKey] as? String
+                backupExclusionAfterLink = try stage.resourceValues(forKeys: [.isExcludedFromBackupKey])
+                    .isExcludedFromBackup
+                try self.swapInboxDirectories(swap)
+                swaps += 1
+            },
+            stageDidRevalidate: { revalidatedStages += 1 }
+        )
+        let failure = #expect(throws: (any Error).self) { _ = try inbox.events() }
+        #expect((failure as? POSIXError)?.code == .ESTALE)
+        try #require(swaps == 1)
+        #expect(inventoryOpens == 1 && completedScans == 1)
+        #expect(revalidatedStages == 0 && synchronizationsAfterSwap == 0)
+        let linked = try #require(afterLink)
+        try expectSwappedDirectoriesAndSentinelsUnchanged(swap)
+        try expectInboxNames([stage.lastPathComponent], in: swap.parked)
+        try expectInboxNames([stage.lastPathComponent], in: swap.active)
+        for parent in [swap.parked, swap.active] {
+            let link = parent.appendingPathComponent(stage.lastPathComponent)
+            expectFixtureFileUnchanged(linked.bytes, status: linked.status, at: link)
+            let attributes = try FileManager.default.attributesOfItem(atPath: link.path)
+            #expect(attributes[.protectionKey] as? String == protectionAfterLink)
+            #expect(try link.resourceValues(forKeys: [.isExcludedFromBackupKey]).isExcludedFromBackup
+                == backupExclusionAfterLink)
+        }
+        #expect(!itemExists(at: canonicalURL(for: completion, in: swap.parked)))
+        #expect(!itemExists(at: canonicalURL(for: completion, in: swap.active)))
+    }
+
+    @Test("A substituted second inventory is rejected before scanning its malformed record")
+    func secondInventoryRejectsReplacementBeforeScanningDecoy() throws {
+        let directory = try fixture()
+        defer { cleanup(directory) }
+        let swap = try makeInboxDirectorySwap(in: directory)
+        let completion = event(taskIdentifier: 51)
+        let originalURL = canonicalURL(for: completion, in: swap.active)
+        let decoyURL = canonicalURL(for: completion, in: swap.decoy)
+        let bytes = try recordBytes(completion, sequence: 1)
+        try OriginalUploadFiles.writeProtected(bytes, to: originalURL)
+        let original = try snapshotFixtureFile(at: originalURL)
+        let decoy = try createFixtureFile(Data("{malformed".utf8), at: decoyURL)
+        try #require(original.status.st_dev != decoy.status.st_dev || original.status.st_ino != decoy.status.st_ino)
+
+        var inventoryOpens = 0
+        var preflights = 0
+        var swaps = 0
+        let inbox = OriginalUploadEventInbox(
+            directory: swap.active,
+            inventoryDidOpen: { inventoryOpens += 1 },
+            recoveryPreflightDidComplete: {
+                preflights += 1
+                guard preflights == 1 else { return }
+                try self.swapInboxDirectories(swap)
+                swaps += 1
+            }
+        )
+        let failure = #expect(throws: (any Error).self) { _ = try inbox.events() }
+        #expect((failure as? POSIXError)?.code == .ESTALE)
+        try #require(swaps == 1)
+        #expect(preflights == 1 && inventoryOpens == 1)
+        try expectSwappedDirectoriesAndSentinelsUnchanged(swap)
+        try expectInboxNames([originalURL.lastPathComponent], in: swap.parked)
+        try expectInboxNames([decoyURL.lastPathComponent], in: swap.active)
+        expectFixtureFileUnchanged(
+            original.bytes, status: original.status,
+            at: swap.parked.appendingPathComponent(originalURL.lastPathComponent))
+        expectFixtureFileUnchanged(
+            decoy.bytes, status: decoy.status,
+            at: swap.active.appendingPathComponent(decoyURL.lastPathComponent))
+    }
+
+    @Test("A real identical inbox substituted after the second descriptor opens is rejected")
+    func finalCheckpointRejectsSwapAfterSecondInventoryOpens() throws {
+        let directory = try fixture()
+        defer { cleanup(directory) }
+        let swap = try makeInboxDirectorySwap(in: directory)
+        let completion = event(taskIdentifier: 61)
+        let files = try seedIdenticalCanonicalCopies(completion, in: swap)
+        var inventoryOpens = 0
+        var swaps = 0
+        let inbox = OriginalUploadEventInbox(directory: swap.active, inventoryDidOpen: {
+            inventoryOpens += 1
+            guard inventoryOpens == 2 else { return }
+            try self.swapInboxDirectories(swap)
+            swaps += 1
+        })
+        let failure = #expect(throws: (any Error).self) { _ = try inbox.events() }
+        #expect((failure as? POSIXError)?.code == .ESTALE)
+        try #require(swaps == 1)
+        #expect(inventoryOpens == 2)
+        try expectSwappedDirectoriesAndSentinelsUnchanged(swap)
+        try expectInboxNames([files.original.url.lastPathComponent], in: swap.parked)
+        try expectInboxNames([files.decoy.url.lastPathComponent], in: swap.active)
+        expectFixtureFileUnchanged(
+            files.original.bytes, status: files.original.status,
+            at: swap.parked.appendingPathComponent(files.original.url.lastPathComponent))
+        expectFixtureFileUnchanged(
+            files.decoy.bytes, status: files.decoy.status,
+            at: swap.active.appendingPathComponent(files.decoy.url.lastPathComponent))
+    }
+
+    @Test("Stage revalidation reads the pinned inbox rather than a malformed path decoy")
+    func stageRereadUsesPinnedDirectoryAfterPreflightSwap() throws {
+        let directory = try fixture()
+        defer { cleanup(directory) }
+        let swap = try makeInboxDirectorySwap(in: directory)
+        let completion = event(taskIdentifier: 71)
+        let stage = stagedURL(in: swap.active)
+        let bytes = try recordBytes(completion, sequence: 1)
+        let original = try createFixtureFile(bytes, at: stage)
+        let decoyURL = swap.decoy.appendingPathComponent(stage.lastPathComponent)
+        let decoy = try createFixtureFile(Data("{malformed".utf8), at: decoyURL)
+        try #require(original.url.lastPathComponent == decoy.url.lastPathComponent)
+        try #require(original.bytes != decoy.bytes)
+        try #require(original.status.st_dev != decoy.status.st_dev || original.status.st_ino != decoy.status.st_ino)
+        try #require(original.status.st_nlink == 1 && decoy.status.st_nlink == 1)
+
+        var inventoryOpens = 0
+        var preflights = 0
+        var revalidatedStages = 0
+        var swaps = 0
+        let inbox = OriginalUploadEventInbox(
+            directory: swap.active,
+            inventoryDidOpen: { inventoryOpens += 1 },
+            recoveryPreflightDidComplete: {
+                preflights += 1
+                guard preflights == 1 else { return }
+                try self.swapInboxDirectories(swap)
+                swaps += 1
+            },
+            stageDidRevalidate: { revalidatedStages += 1 }
+        )
+        let failure = #expect(throws: (any Error).self) { _ = try inbox.events() }
+        // A path-relative stage reread would decode the malformed decoy as invalidRecord.
+        // The pinned reread succeeds; the subsequent path identity comparison fails.
+        #expect((failure as? POSIXError)?.code == .ESTALE)
+        try #require(swaps == 1)
+        #expect(preflights == 1 && inventoryOpens == 1 && revalidatedStages == 1)
+        try expectSwappedDirectoriesAndSentinelsUnchanged(swap)
+        try expectInboxNames([stage.lastPathComponent], in: swap.parked)
+        try expectInboxNames([stage.lastPathComponent], in: swap.active)
+        expectFixtureFileUnchanged(
+            original.bytes, status: original.status,
+            at: swap.parked.appendingPathComponent(stage.lastPathComponent))
+        expectFixtureFileUnchanged(
+            decoy.bytes, status: decoy.status,
+            at: swap.active.appendingPathComponent(stage.lastPathComponent))
+        #expect(!itemExists(at: canonicalURL(for: completion, in: swap.parked)))
+        #expect(!itemExists(at: canonicalURL(for: completion, in: swap.active)))
     }
 
     @Test("A pre-existing in-home symlink ancestor cannot open an inventory")
@@ -876,6 +1237,44 @@ struct OriginalUploadBackgroundTransportTests {
         try recovered.remove(first)
         #expect(!itemExists(at: canonical))
         #expect(try OriginalUploadEventInbox(directory: inboxDirectory).events() == [second])
+    }
+
+    @Test("Hard-linked sibling stages refresh after the first duplicate is removed")
+    func hardLinkedSiblingStagesRefreshAfterDeduplication() throws {
+        let directory = try fixture()
+        defer { cleanup(directory) }
+        try requireFixtureInsideHome(directory)
+        let inboxDirectory = directory.appendingPathComponent("inbox")
+        let completion = event(taskIdentifier: 81)
+        try OriginalUploadEventInbox(directory: inboxDirectory).persist(completion)
+        let canonical = canonicalURL(for: completion, in: inboxDirectory)
+        let first = stagedURL(in: inboxDirectory)
+        let second = stagedURL(in: inboxDirectory)
+        try #require(first != second)
+        try FileManager.default.linkItem(at: canonical, to: first)
+        try FileManager.default.linkItem(at: canonical, to: second)
+        let before = try snapshotFixtureFile(at: canonical)
+        try #require(before.status.st_nlink == 3)
+        let firstStatus = try fileStatus(at: first)
+        let secondStatus = try fileStatus(at: second)
+        try #require(firstStatus.st_dev == before.status.st_dev && firstStatus.st_ino == before.status.st_ino)
+        try #require(secondStatus.st_dev == before.status.st_dev && secondStatus.st_ino == before.status.st_ino)
+
+        var inventoryOpens = 0
+        var revalidatedStages = 0
+        let recovered = try OriginalUploadEventInbox(
+            directory: inboxDirectory,
+            inventoryDidOpen: { inventoryOpens += 1 },
+            stageDidRevalidate: { revalidatedStages += 1 }
+        ).events()
+        #expect(recovered == [completion])
+        #expect(inventoryOpens == 2 && revalidatedStages == 2)
+        #expect(!itemExists(at: first) && !itemExists(at: second))
+        let after = try fileStatus(at: canonical)
+        #expect(after.st_dev == before.status.st_dev && after.st_ino == before.status.st_ino)
+        #expect(after.st_mode & mode_t(0o7777) == mode_t(0o400))
+        #expect(after.st_nlink == 1)
+        #expect((try? Data(contentsOf: canonical)) == before.bytes)
     }
 
     @Test("A recovered sequence participates in the next sequence assignment")
