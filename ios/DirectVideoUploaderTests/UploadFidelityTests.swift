@@ -5688,7 +5688,7 @@ private final class LoopbackVideoUploadTransfer: VideoUploadTransfer {
     }
 }
 
-nonisolated private final class LoopbackRedirectServer: @unchecked Sendable {
+nonisolated final class LoopbackRedirectServer: @unchecked Sendable {
     private struct Connections {
         var stopped = false
         var connections: [NWConnection] = []
@@ -5885,7 +5885,7 @@ nonisolated private final class LoopbackRedirectServer: @unchecked Sendable {
             body.append(0x61)
         } else if path.hasPrefix("bounded-stall-after-headers") {
             header = "Content-Length: 100\r\n"
-        } else if path == "bounded-stall-body" {
+        } else if path == "bounded-stall-body" || path == "bounded-stall-rate-limit" {
             header = "Transfer-Encoding: chunked\r\n"
             body.append(Data("1\r\na\r\n".utf8))
         } else {
@@ -5896,10 +5896,13 @@ nonisolated private final class LoopbackRedirectServer: @unchecked Sendable {
         }
         let contentType = path == "bounded-stall-after-headers-no-type"
             ? "" : "Content-Type: application/json\r\n"
-        var response = Data("HTTP/1.1 200 OK\r\n\(contentType)\(header)\r\n".utf8)
+        let status = path == "bounded-stall-rate-limit"
+            ? "429 Too Many Requests\r\nRetry-After: 60" : "200 OK"
+        var response = Data("HTTP/1.1 \(status)\r\n\(contentType)\(header)\r\n".utf8)
         response.append(body)
         connection.send(content: response, completion: .contentProcessed { [weak self] error in
-            if error == nil, path == "bounded-stall-body" || path.hasPrefix("bounded-stall-after-headers") {
+            if error == nil, path == "bounded-stall-body" || path == "bounded-stall-rate-limit"
+                || path.hasPrefix("bounded-stall-after-headers") {
                 self?.stalledResponses.continuation.yield(path)
             } else if error == nil, path == "bounded-stream-oversize" {
                 self?.pendingExtraChunk.withLock { $0 = connection }
@@ -5946,7 +5949,7 @@ nonisolated private final class LoopbackRedirectServer: @unchecked Sendable {
             for path in [
                 "bounded-exact", "bounded-declared-oversize", "bounded-stream-oversize",
                 "bounded-stall-headers", "bounded-stall-after-headers",
-                "bounded-stall-after-headers-no-type", "bounded-stall-body",
+                "bounded-stall-after-headers-no-type", "bounded-stall-body", "bounded-stall-rate-limit",
             ] {
                 if request.contains(" /\(path) ") {
                     self.sendBoundedResponse(connection, path: path)
