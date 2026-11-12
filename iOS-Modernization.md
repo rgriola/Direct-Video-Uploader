@@ -953,10 +953,11 @@ sequenceDiagram
     and background task and event reconciliation can prove safe cleanup. Neither
     enumeration nor inspection proves cleanup;
     uncertainty must leave cancellation pending.
-    Cancellation racing invalid-page validation can still
-    surface an invalid-response error rather than a cancellation error; neither
-    proves cleanup. Monitor retained fences before rollout; the rolling quota
-    does not cap lifetime storage.
+    Page and cross-page validation recheck task cancellation before reporting an
+    error, without advancing the traversal on failure. Cancellation can still race
+    after the final check, and receipt validation can still report an invalid response
+    during cancellation. Neither error proves cleanup. Monitor retained fences before
+    rollout; the rolling quota does not cap lifetime storage.
   - Survival and reattachment require physical-device validation. iOS can delay
     background work until a short-lived URL expires and force-quitting cancels
     outstanding background tasks; reopening is required after a force-quit.

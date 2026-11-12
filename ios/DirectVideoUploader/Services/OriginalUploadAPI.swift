@@ -148,6 +148,26 @@ nonisolated private enum OriginalUploadCancellationIdentifier {
     }
 }
 
+nonisolated enum OriginalUploadCancellationPageValidation {
+    static func preservingCancellation<T>(_ validate: () throws -> T) throws -> T {
+        do {
+            return try validate()
+        } catch {
+            try Task.checkCancellation()
+            throw error
+        }
+    }
+
+    static func requireDisjoint(_ seen: Set<String>, _ page: [String]) throws {
+        try preservingCancellation {
+            guard seen.isDisjoint(with: page) else {
+                throw OriginalUploadAPIError.invalidResponse
+            }
+        }
+        try Task.checkCancellation()
+    }
+}
+
 nonisolated struct OriginalUploadCancellationReceipt: Decodable, Equatable, Sendable {
     static let maximumSessions = 100
     let assetId: String?
@@ -296,9 +316,7 @@ final class OriginalUploadCancellationTraversal {
             }, onDispatch: onDispatch)
         try Task.checkCancellation()
         try api.ensureCancellationCurrent(job)
-        guard seenSessionIds.isDisjoint(with: page.sessionIds) else {
-            throw OriginalUploadAPIError.invalidResponse
-        }
+        try OriginalUploadCancellationPageValidation.requireDisjoint(seenSessionIds, page.sessionIds)
         assetId = page.assetId
         seenSessionIds.formUnion(page.sessionIds)
         pageCount += 1
@@ -723,11 +741,13 @@ final class OriginalUploadAPI {
         try Task.checkCancellation()
         try ensureCancellationCurrent(job)
         if let continuation {
-            guard continuation.jobId == job.id, continuation.incarnation == job.incarnation,
-                  continuation.revision == job.revision, continuation.scope == job.scope,
-                  continuation.sessionGeneration == access.snapshot.generation,
-                  job.assetId.map({ $0 == continuation.assetId }) ?? true else {
-                throw OriginalUploadAPIError.invalidResponse
+            try OriginalUploadCancellationPageValidation.preservingCancellation {
+                guard continuation.jobId == job.id, continuation.incarnation == job.incarnation,
+                      continuation.revision == job.revision, continuation.scope == job.scope,
+                      continuation.sessionGeneration == access.snapshot.generation,
+                      job.assetId.map({ $0 == continuation.assetId }) ?? true else {
+                    throw OriginalUploadAPIError.invalidResponse
+                }
             }
         }
         let query = continuation.map { "?after=\($0.after)" } ?? ""
@@ -736,54 +756,56 @@ final class OriginalUploadAPI {
             method: "GET", allowsCancellation: true, expectedStatus: 200, cancellationPage: true,
             onResponse: onResponse, onDispatch: onDispatch)
         try ensureCurrent(job, allowsCancellation: true)
-        let response: CancellationPageResponse
-        do {
-            let keys = try OriginalUploadResponseJSON.objectKeys(in: data)
-            guard keys.count == 1, keys[0] == Set(["assetId", "sessionIds", "nextCursor"]) else {
+        return try OriginalUploadCancellationPageValidation.preservingCancellation {
+            let response: CancellationPageResponse
+            do {
+                let keys = try OriginalUploadResponseJSON.objectKeys(in: data)
+                guard keys.count == 1, keys[0] == Set(["assetId", "sessionIds", "nextCursor"]) else {
+                    throw OriginalUploadAPIError.invalidResponse
+                }
+                response = try JSONDecoder().decode(CancellationPageResponse.self, from: data)
+            } catch is DecodingError {
                 throw OriginalUploadAPIError.invalidResponse
             }
-            response = try JSONDecoder().decode(CancellationPageResponse.self, from: data)
-        } catch is DecodingError {
-            throw OriginalUploadAPIError.invalidResponse
-        }
-        guard response.sessionIds.count <= OriginalUploadCancellationReceipt.maximumSessions,
-              response.sessionIds.allSatisfy(OriginalUploadCancellationIdentifier.isSession),
-              Set(response.sessionIds).count == response.sessionIds.count else {
-            throw OriginalUploadAPIError.invalidResponse
-        }
-        if let assetId = response.assetId {
-            guard OriginalUploadCancellationIdentifier.isUUID(assetId),
-                  job.assetId.map({ $0 == assetId }) ?? true else {
+            guard response.sessionIds.count <= OriginalUploadCancellationReceipt.maximumSessions,
+                  response.sessionIds.allSatisfy(OriginalUploadCancellationIdentifier.isSession),
+                  Set(response.sessionIds).count == response.sessionIds.count else {
                 throw OriginalUploadAPIError.invalidResponse
             }
-        } else {
-            guard response.sessionIds.isEmpty, response.nextCursor == nil else {
-                throw OriginalUploadAPIError.invalidResponse
+            if let assetId = response.assetId {
+                guard OriginalUploadCancellationIdentifier.isUUID(assetId),
+                      job.assetId.map({ $0 == assetId }) ?? true else {
+                    throw OriginalUploadAPIError.invalidResponse
+                }
+            } else {
+                guard response.sessionIds.isEmpty, response.nextCursor == nil else {
+                    throw OriginalUploadAPIError.invalidResponse
+                }
             }
-        }
-        if let continuation {
-            guard response.assetId == continuation.assetId,
-                  !response.sessionIds.contains(continuation.after) else {
-                throw OriginalUploadAPIError.invalidResponse
+            if let continuation {
+                guard response.assetId == continuation.assetId,
+                      !response.sessionIds.contains(continuation.after) else {
+                    throw OriginalUploadAPIError.invalidResponse
+                }
             }
-        }
-        let next: OriginalUploadCancellationPage.Continuation?
-        if let cursor = response.nextCursor {
-            guard response.sessionIds.count == OriginalUploadCancellationReceipt.maximumSessions,
-                  let assetId = response.assetId, cursor == response.sessionIds.last else {
-                throw OriginalUploadAPIError.invalidResponse
+            let next: OriginalUploadCancellationPage.Continuation?
+            if let cursor = response.nextCursor {
+                guard response.sessionIds.count == OriginalUploadCancellationReceipt.maximumSessions,
+                      let assetId = response.assetId, cursor == response.sessionIds.last else {
+                    throw OriginalUploadAPIError.invalidResponse
+                }
+                next = OriginalUploadCancellationPage.Continuation(
+                    jobId: job.id, incarnation: job.incarnation, revision: job.revision,
+                    scope: job.scope, sessionGeneration: access.snapshot.generation,
+                    assetId: assetId, after: cursor)
+            } else {
+                next = nil
             }
-            next = OriginalUploadCancellationPage.Continuation(
-                jobId: job.id, incarnation: job.incarnation, revision: job.revision,
-                scope: job.scope, sessionGeneration: access.snapshot.generation,
-                assetId: assetId, after: cursor)
-        } else {
-            next = nil
+            try Task.checkCancellation()
+            // A server page is not proof that local or remote cleanup has finished.
+            return OriginalUploadCancellationPage(
+                assetId: response.assetId, sessionIds: response.sessionIds, continuation: next)
         }
-        try Task.checkCancellation()
-        // A server page is not proof that local or remote cleanup has finished.
-        return OriginalUploadCancellationPage(
-            assetId: response.assetId, sessionIds: response.sessionIds, continuation: next)
     }
 
     func abort(

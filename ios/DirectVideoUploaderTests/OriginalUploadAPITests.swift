@@ -1043,6 +1043,38 @@ struct OriginalUploadAPITests {
     }
 
     @Test
+    func cancellationPageValidationPrefersCancellationOnFailure() async throws {
+        #expect(throws: OriginalUploadAPIError.invalidResponse) {
+            try OriginalUploadCancellationPageValidation.preservingCancellation { () -> Void in
+                throw OriginalUploadAPIError.invalidResponse
+            }
+        }
+        let task = Task {
+            try OriginalUploadCancellationPageValidation.preservingCancellation { () -> Void in
+                defer { withUnsafeCurrentTask { $0?.cancel() } }
+                throw OriginalUploadAPIError.invalidResponse
+            }
+        }
+        await #expect(throws: CancellationError.self) { try await task.value }
+    }
+
+    @Test
+    @MainActor
+    func cancellationCrossPageValidationChecksBeforeAdvancing() async throws {
+        let seen: Set<String> = [sessionId]
+        #expect(throws: OriginalUploadAPIError.invalidResponse) {
+            try OriginalUploadCancellationPageValidation.requireDisjoint(seen, [sessionId])
+        }
+        try OriginalUploadCancellationPageValidation.requireDisjoint(seen, ["other"])
+
+        for page in [[sessionId], ["other"]] {
+            let task = Task { try OriginalUploadCancellationPageValidation.requireDisjoint(seen, page) }
+            task.cancel()
+            await #expect(throws: CancellationError.self) { try await task.value }
+        }
+    }
+
+    @Test
     @MainActor
     func cancellationTraversalRejectsCrossPageDuplicatesAndCycles() async throws {
         let directory = try fixture()
@@ -1087,6 +1119,54 @@ struct OriginalUploadAPITests {
             #expect(sent[3].url?.query == sent[2].url?.query)
             #expect(try journal.read(id: cancelled.id, access: access).cancellationRequested)
         }
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    @MainActor
+    func cancelledInvalidPageDoesNotAdvanceTraversal() async throws {
+        let directory = try fixture()
+        defer { cleanup(directory) }
+        let assetId = "ab123456-789a-4bcd-8abc-0123456789ab"
+        let (_, access, journal, cancelled) = try await prepareCancelledJob(directory: directory, assetId: assetId)
+        let ids = (1...100).map { String(format: "A1234567-0000-4000-8000-%012x", $0) }
+        let first = try cancellationPage(assetId: assetId, sessionIds: ids, nextCursor: ids.last)
+        let invalid = try cancellationPage(assetId: assetId, sessionIds: [ids[0]])
+        let corrected = try cancellationPage(assetId: assetId, sessionIds: [sessionId])
+        let entered = AsyncStream<Void>.makeStream()
+        let release = AsyncStream<Void>.makeStream()
+        defer { entered.continuation.finish(); release.continuation.finish() }
+        let requests = Mutex<[URLRequest]>([])
+        let api = try OriginalUploadAPI(access: access, journal: journal, transport: { request in
+            let count = requests.withLock { requests in
+                requests.append(request)
+                return requests.count
+            }
+            if count == 2 {
+                entered.continuation.yield()
+                var iterator = release.stream.makeAsyncIterator()
+                _ = await iterator.next()
+            }
+            let body = count == 1 ? first : (count == 2 ? invalid : corrected)
+            return (body, HTTPURLResponse(
+                url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+        })
+        let traversal = try OriginalUploadCancellationTraversal(api: api, job: cancelled)
+        #expect(try await traversal.nextPage()?.sessionIds == ids)
+        let request = Task { try await traversal.nextPage() }
+        var iterator = entered.stream.makeAsyncIterator()
+        try #require(await iterator.next() != nil)
+        request.cancel()
+        release.continuation.yield()
+        await #expect(throws: CancellationError.self) { try await request.value }
+        #expect(try traversal.completedEnumeration() == nil)
+        #expect(try await traversal.nextPage()?.sessionIds == [sessionId])
+        let enumeration = try #require(try traversal.completedEnumeration())
+        #expect(enumeration.sessionIds == Set(ids + [sessionId]))
+        let sent = requests.withLock { $0 }
+        #expect(sent.count == 3)
+        #expect(sent[1].url?.query == "after=\(ids[99])")
+        #expect(sent[2].url?.query == sent[1].url?.query)
+        #expect(try journal.read(id: cancelled.id, access: access).cancellationRequested)
     }
 
     @Test(.timeLimit(.minutes(1)))
