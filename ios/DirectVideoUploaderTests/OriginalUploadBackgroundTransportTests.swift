@@ -39,6 +39,63 @@ struct OriginalUploadBackgroundTransportTests {
         case canonicalAndStaged, twoStaged, twoCanonical
     }
 
+    private enum AncestorReplacement {
+        case symbolicLink, directory
+    }
+
+    private struct InboxFilesFixture {
+        let canonicalEvent: OriginalBackgroundCompletion
+        let stagedEvent: OriginalBackgroundCompletion
+        let canonical: URL
+        let canonicalBytes: Data
+        let canonicalStatus: stat
+        let stage: URL
+        let stageBytes: Data
+        let stageStatus: stat
+        let sentinelBytes: Data
+        let sentinelStatus: stat
+    }
+
+    nonisolated private static func varAliasPaths(for path: String) -> (varPath: String, privatePath: String)? {
+        if path == "/var" || path.hasPrefix("/var/") {
+            return (path, "/private" + path)
+        }
+        if path == "/private/var" || path.hasPrefix("/private/var/") {
+            return (String(path.dropFirst("/private".count)), path)
+        }
+        return nil
+    }
+
+    nonisolated private static func sameDirectoryFollowingLinks(_ first: String, _ second: String) -> Bool {
+        var left = stat()
+        var right = stat()
+        guard first.withCString({ Darwin.fstatat(AT_FDCWD, $0, &left, 0) }) == 0,
+              second.withCString({ Darwin.fstatat(AT_FDCWD, $0, &right, 0) }) == 0 else {
+            return false
+        }
+        return left.st_mode & mode_t(S_IFMT) == mode_t(S_IFDIR)
+            && right.st_mode & mode_t(S_IFMT) == mode_t(S_IFDIR)
+            && left.st_dev == right.st_dev && left.st_ino == right.st_ino
+    }
+
+    nonisolated fileprivate static func hasRealVarAliasInAppHome() -> Bool {
+        let home = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true).standardizedFileURL
+        let temporary = FileManager.default.temporaryDirectory.standardizedFileURL
+        guard let homePaths = varAliasPaths(for: home.path),
+              let temporaryPaths = varAliasPaths(for: temporary.path) else { return false }
+        let resolvedHome = home.resolvingSymlinksInPath().standardizedFileURL.path
+        let resolvedTemporary = temporary.resolvingSymlinksInPath().standardizedFileURL.path
+        guard resolvedTemporary == resolvedHome || resolvedTemporary.hasPrefix(resolvedHome + "/") else {
+            return false
+        }
+        var link = stat()
+        guard "/var".withCString({ Darwin.lstat($0, &link) }) == 0,
+              link.st_mode & mode_t(S_IFMT) == mode_t(S_IFLNK) else { return false }
+        return sameDirectoryFollowingLinks("/var", "/private/var")
+            && sameDirectoryFollowingLinks(homePaths.varPath, homePaths.privatePath)
+            && sameDirectoryFollowingLinks(temporaryPaths.varPath, temporaryPaths.privatePath)
+    }
+
     private func fixture() throws -> URL {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("original-events-test-\(UUID().uuidString)", isDirectory: true)
@@ -99,6 +156,217 @@ struct OriginalUploadBackgroundTransportTests {
             && current.st_mtimespec.tv_nsec == original.st_mtimespec.tv_nsec)
         #expect(current.st_ctimespec.tv_sec == original.st_ctimespec.tv_sec
             && current.st_ctimespec.tv_nsec == original.st_ctimespec.tv_nsec)
+    }
+
+    private func expectFixtureFileUnchanged(_ bytes: Data, status: stat, at url: URL) {
+        #expect((try? Data(contentsOf: url)) == bytes)
+        do {
+            try expectFileVersionUnchanged(status, at: url)
+        } catch {
+            Issue.record("Could not inspect an event fixture file: \(Log.describe(error))")
+        }
+    }
+
+    private func requireFixtureInsideHome(_ directory: URL) throws {
+        let home = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
+            .standardizedFileURL.resolvingSymlinksInPath().path
+        let owned = directory.standardizedFileURL.resolvingSymlinksInPath().path
+        try #require(owned.hasPrefix(home + "/"))
+    }
+
+    private func nestedInbox(under ancestor: URL) -> URL {
+        ancestor.appendingPathComponent("nested", isDirectory: true)
+            .appendingPathComponent("inbox", isDirectory: true)
+    }
+
+    private func seedInboxWithStage(
+        under ancestor: URL, canonical canonicalEvent: OriginalBackgroundCompletion
+    ) throws -> InboxFilesFixture {
+        let inbox = nestedInbox(under: ancestor)
+        try FileManager.default.createDirectory(at: inbox, withIntermediateDirectories: true)
+        let stagedEvent = event(taskIdentifier: 92)
+        try #require(canonicalEvent.isValid && stagedEvent.isValid)
+        try #require(canonicalEvent.id != stagedEvent.id)
+        let canonical = canonicalURL(for: canonicalEvent, in: inbox)
+        let canonicalBytes = try recordBytes(canonicalEvent, sequence: 1)
+        try OriginalUploadFiles.writeProtected(canonicalBytes, to: canonical)
+
+        let stage = stagedURL(in: inbox)
+        let stageBytes = try recordBytes(stagedEvent, sequence: 2)
+        try #require(!itemExists(at: stage))
+        let created = FileManager.default.createFile(
+            atPath: stage.path, contents: stageBytes, attributes: [.posixPermissions: 0o600])
+        try #require(created)
+        try TemporaryVideoStorage.applyProtection(to: stage)
+        try OriginalUploadFiles.excludeFromBackup(stage)
+        let stageStatus = try fileStatus(at: stage)
+        try #require(stageStatus.st_mode & mode_t(S_IFMT) == mode_t(S_IFREG))
+        try #require(stageStatus.st_mode & mode_t(0o7777) == mode_t(0o600))
+        try #require(stageStatus.st_nlink == 1)
+        try #require(try Data(contentsOf: stage) == stageBytes)
+        try #require(!itemExists(at: canonicalURL(for: stagedEvent, in: inbox)))
+
+        let sentinel = inbox.deletingLastPathComponent().appendingPathComponent("sibling-sentinel.txt")
+        let sentinelBytes = Data("untouched sibling sentinel".utf8)
+        let sentinelCreated = FileManager.default.createFile(
+            atPath: sentinel.path, contents: sentinelBytes, attributes: [.posixPermissions: 0o600])
+        try #require(sentinelCreated)
+        return InboxFilesFixture(
+            canonicalEvent: canonicalEvent, stagedEvent: stagedEvent,
+            canonical: canonical, canonicalBytes: canonicalBytes, canonicalStatus: try fileStatus(at: canonical),
+            stage: stage, stageBytes: stageBytes, stageStatus: stageStatus,
+            sentinelBytes: sentinelBytes, sentinelStatus: try fileStatus(at: sentinel))
+    }
+
+    private func expectInboxFixtureUnchanged(_ files: InboxFilesFixture, under ancestor: URL) {
+        let inbox = nestedInbox(under: ancestor)
+        let canonical = inbox.appendingPathComponent(files.canonical.lastPathComponent)
+        let stage = inbox.appendingPathComponent(files.stage.lastPathComponent)
+        let sentinel = inbox.deletingLastPathComponent().appendingPathComponent("sibling-sentinel.txt")
+        expectFixtureFileUnchanged(files.canonicalBytes, status: files.canonicalStatus, at: canonical)
+        expectFixtureFileUnchanged(files.stageBytes, status: files.stageStatus, at: stage)
+        expectFixtureFileUnchanged(files.sentinelBytes, status: files.sentinelStatus, at: sentinel)
+        #expect(!itemExists(at: canonicalURL(for: files.stagedEvent, in: inbox)))
+    }
+
+    private func removeFixtureLink(_ url: URL) throws {
+        let status = try fileStatus(at: url)
+        guard status.st_mode & mode_t(S_IFMT) == mode_t(S_IFLNK) else { throw POSIXError(.EINVAL) }
+        guard url.path.withCString({ Darwin.unlink($0) }) == 0 else {
+            throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+        }
+    }
+
+    private func isUnsafeAncestorRejection(_ error: any Error) -> Bool {
+        if let error = error as? POSIXError {
+            return error.code == .ELOOP || error.code == .ENOTDIR
+        }
+        return false
+    }
+
+    private func exerciseAncestorSwap(
+        _ replacement: AncestorReplacement, sameNameConflict: Bool = false
+    ) throws {
+        let directory = try fixture()
+        defer { cleanup(directory) }
+        try requireFixtureInsideHome(directory)
+        let active = directory.appendingPathComponent("active", isDirectory: false)
+        let parked = directory.appendingPathComponent("parked", isDirectory: false)
+        let decoy = directory.appendingPathComponent("decoy", isDirectory: false)
+        let originalInbox = nestedInbox(under: active)
+        try FileManager.default.createDirectory(at: originalInbox, withIntermediateDirectories: true)
+        let original = event(taskIdentifier: 11)
+        let originalURL = canonicalURL(for: original, in: originalInbox)
+        let originalBytes = try recordBytes(original, sequence: 1)
+        try OriginalUploadFiles.writeProtected(originalBytes, to: originalURL)
+        let originalStatus = try fileStatus(at: originalURL)
+        let originalAncestorStatus = try fileStatus(at: active)
+        let decoyEvent = sameNameConflict
+            ? event(id: original.id, taskIdentifier: 91) : event(taskIdentifier: 91)
+        let decoyFiles = try seedInboxWithStage(under: decoy, canonical: decoyEvent)
+        let decoyAncestorStatus = try fileStatus(at: decoy)
+        let ownedPath = directory.resolvingSymlinksInPath().standardizedFileURL.path
+        let decoyPath = decoy.resolvingSymlinksInPath().standardizedFileURL.path
+        try #require(decoyPath.hasPrefix(ownedPath + "/"))
+        try #require(!itemExists(at: parked))
+        try #require(original != decoyEvent)
+        try #require(originalBytes != decoyFiles.canonicalBytes)
+        try #require(original.id != decoyFiles.stagedEvent.id)
+        try #require(try FileManager.default.contentsOfDirectory(atPath: originalInbox.path)
+            == [originalURL.lastPathComponent])
+        if sameNameConflict {
+            try #require(originalURL.lastPathComponent == decoyFiles.canonical.lastPathComponent)
+        } else {
+            let originalNameInDecoy = nestedInbox(under: decoy).appendingPathComponent(originalURL.lastPathComponent)
+            try #require(!itemExists(at: originalNameInDecoy))
+        }
+
+        var originalParked = false
+        var replacementInstalled = false
+        defer {
+            if replacementInstalled {
+                do {
+                    switch replacement {
+                    case .symbolicLink:
+                        try removeFixtureLink(active)
+                    case .directory:
+                        try FileManager.default.moveItem(at: active, to: decoy)
+                    }
+                } catch {
+                    Issue.record("Could not restore the substituted event ancestor: \(Log.describe(error))")
+                }
+            }
+            if originalParked {
+                do {
+                    try FileManager.default.moveItem(at: parked, to: active)
+                } catch {
+                    Issue.record("Could not restore the original event ancestor: \(Log.describe(error))")
+                }
+            }
+        }
+
+        var inventoryOpens = 0
+        let inbox = OriginalUploadEventInbox(directory: originalInbox, inventoryDidOpen: {
+            inventoryOpens += 1
+            guard inventoryOpens == 1 else { return }
+            try FileManager.default.moveItem(at: active, to: parked)
+            originalParked = true
+            switch replacement {
+            case .symbolicLink:
+                try FileManager.default.createSymbolicLink(atPath: active.path, withDestinationPath: decoy.path)
+            case .directory:
+                try FileManager.default.moveItem(at: decoy, to: active)
+            }
+            replacementInstalled = true
+        })
+
+        // Only inventory reads are descriptor-rooted. Prepare, staged recovery,
+        // writes, and removal still use path-based operations. The original has
+        // no stages, so a correct first scan does not enter recovery before the second.
+        let failure = #expect(throws: (any Error).self) {
+            if sameNameConflict {
+                // This matching-record check fails in the first scan, before persist can write.
+                try inbox.persist(decoyEvent)
+            } else {
+                _ = try inbox.events()
+            }
+        }
+        try #require(originalParked && replacementInstalled)
+        if sameNameConflict {
+            #expect(inventoryOpens == 1)
+            if let failure {
+                #expect((failure as? OriginalUploadStorageError) == .invalidRecord)
+            }
+        } else {
+            switch replacement {
+            case .symbolicLink:
+                // The second scan cannot open the substituted symlink ancestor.
+                #expect(inventoryOpens == 1)
+                if let failure { #expect(isUnsafeAncestorRejection(failure)) }
+            case .directory:
+                // The second scan opens the replacement; its different inventory fails the existing gate.
+                #expect(inventoryOpens == 2)
+                if let failure { #expect((failure as? POSIXError)?.code == .ESTALE) }
+            }
+        }
+
+        let parkedStatus = try? fileStatus(at: parked)
+        #expect(parkedStatus?.st_dev == originalAncestorStatus.st_dev)
+        #expect(parkedStatus?.st_ino == originalAncestorStatus.st_ino)
+        let parkedOriginal = nestedInbox(under: parked).appendingPathComponent(originalURL.lastPathComponent)
+        expectFixtureFileUnchanged(originalBytes, status: originalStatus, at: parkedOriginal)
+        let currentDecoy: URL
+        switch replacement {
+        case .symbolicLink:
+            #expect((try? FileManager.default.destinationOfSymbolicLink(atPath: active.path)) == decoy.path)
+            currentDecoy = decoy
+        case .directory:
+            currentDecoy = active
+        }
+        let currentDecoyStatus = try? fileStatus(at: currentDecoy)
+        #expect(currentDecoyStatus?.st_dev == decoyAncestorStatus.st_dev)
+        #expect(currentDecoyStatus?.st_ino == decoyAncestorStatus.st_ino)
+        expectInboxFixtureUnchanged(decoyFiles, under: currentDecoy)
     }
 
     private func seedHealthyInbox(at directory: URL) throws -> OriginalBackgroundCompletion {
@@ -226,6 +494,214 @@ struct OriginalUploadBackgroundTransportTests {
         #expect(try recovered.events() == [second])
     }
 
+    @Test("An opened inventory ignores an ancestor replaced with an in-home symlink")
+    func openedInventoryIgnoresSymlinkedAncestorSwap() throws {
+        try exerciseAncestorSwap(.symbolicLink)
+    }
+
+    @Test("A different real ancestor is rejected by the second inventory")
+    func openedInventoryRejectsDifferentDirectoryAtRecoveryGate() throws {
+        try exerciseAncestorSwap(.directory)
+    }
+
+    @Test("An opened inventory reads its original record despite a same-name decoy")
+    func openedInventoryReadsOriginalBytesWithSameNameDecoy() throws {
+        try exerciseAncestorSwap(.directory, sameNameConflict: true)
+    }
+
+    @Test("An opened inventory reads its original record after a same-name symlink swap")
+    func openedInventoryReadsOriginalBytesWithSymlinkedSameNameDecoy() throws {
+        try exerciseAncestorSwap(.symbolicLink, sameNameConflict: true)
+    }
+
+    @Test("A pre-existing in-home symlink ancestor cannot open an inventory")
+    func inventoryRejectsExistingInHomeSymlinkAncestor() throws {
+        let directory = try fixture()
+        defer { cleanup(directory) }
+        try requireFixtureInsideHome(directory)
+        let decoy = directory.appendingPathComponent("decoy", isDirectory: false)
+        let files = try seedInboxWithStage(under: decoy, canonical: event(taskIdentifier: 91))
+        let link = directory.appendingPathComponent("linked-ancestor", isDirectory: false)
+        try FileManager.default.createSymbolicLink(atPath: link.path, withDestinationPath: decoy.path)
+        defer {
+            do {
+                try removeFixtureLink(link)
+            } catch {
+                Issue.record("Could not remove the fixture ancestor link: \(Log.describe(error))")
+            }
+        }
+        let resolvedRoot = directory.resolvingSymlinksInPath().standardizedFileURL.path
+        let resolvedTarget = link.resolvingSymlinksInPath().standardizedFileURL.path
+        try #require(resolvedTarget.hasPrefix(resolvedRoot + "/"))
+        try #require(resolvedTarget == decoy.resolvingSymlinksInPath().standardizedFileURL.path)
+
+        var inventoryOpens = 0
+        let inbox = OriginalUploadEventInbox(directory: nestedInbox(under: link), inventoryDidOpen: {
+            inventoryOpens += 1
+        })
+        // Preparation is still path-based and may touch the target directory;
+        // this checks rejection and file preservation, not hardened preparation.
+        let failure = #expect(throws: (any Error).self) { _ = try inbox.events() }
+        #expect(inventoryOpens == 0)
+        if let failure { #expect(isUnsafeAncestorRejection(failure)) }
+        #expect((try? FileManager.default.destinationOfSymbolicLink(atPath: link.path)) == decoy.path)
+        expectInboxFixtureUnchanged(files, under: decoy)
+    }
+
+    @Test("Trusted home aliases are verified and matched by whole components")
+    func inventoryAcceptsVerifiedTrustedHomeAliases() throws {
+        let directory = try fixture()
+        defer { cleanup(directory) }
+        let home = directory.appendingPathComponent("home", isDirectory: true)
+        let alias = directory.appendingPathComponent("home-alias", isDirectory: true)
+        try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(atPath: alias.path, withDestinationPath: home.path)
+        let status = try fileStatus(at: home)
+        let canonicalHome = home.resolvingSymlinksInPath().standardizedFileURL
+        let canonicalInbox = canonicalHome.appendingPathComponent("nested/inbox", isDirectory: true)
+        let aliasInbox = alias.appendingPathComponent("nested/inbox", isDirectory: true)
+
+        #expect(try OriginalUploadEventInbox(directory: canonicalInbox)
+            .inventoryComponents(under: alias.path, matching: status) == ["nested", "inbox"])
+        #expect(try OriginalUploadEventInbox(directory: aliasInbox)
+            .inventoryComponents(under: alias.path, matching: status) == ["nested", "inbox"])
+
+        let sibling = directory.appendingPathComponent("home-alias-other/nested/inbox", isDirectory: true)
+        #expect(throws: OriginalUploadStorageError.invalidScope) {
+            try OriginalUploadEventInbox(directory: sibling)
+                .inventoryComponents(under: alias.path, matching: status)
+        }
+    }
+
+    @Test("The most specific matching trusted home alias is verified")
+    func inventoryUsesLongestMatchingTrustedHomeAlias() throws {
+        let directory = try fixture()
+        defer { cleanup(directory) }
+        let home = directory.appendingPathComponent("home", isDirectory: true)
+        let alias = home.appendingPathComponent("alias", isDirectory: true)
+        try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(atPath: alias.path, withDestinationPath: home.path)
+        let homeStatus = try fileStatus(at: home)
+        let homeComponents = home.path.split(separator: "/").map(String.init)
+        let aliasComponents = alias.path.split(separator: "/").map(String.init)
+        let inbox = OriginalUploadEventInbox(directory: alias.appendingPathComponent("inbox"))
+
+        #expect(try inbox.inventoryComponents(
+            matching: [homeComponents, aliasComponents], homeStatus: homeStatus) == ["inbox"])
+
+        let decoy = home.appendingPathComponent("decoy", isDirectory: true)
+        try FileManager.default.createDirectory(at: decoy, withIntermediateDirectories: true)
+        let decoyComponents = decoy.path.split(separator: "/").map(String.init)
+        let decoyInbox = OriginalUploadEventInbox(directory: decoy.appendingPathComponent("inbox"))
+        let failure = #expect(throws: POSIXError.self) {
+            try decoyInbox.inventoryComponents(
+                matching: [homeComponents, decoyComponents], homeStatus: homeStatus)
+        }
+        #expect(failure?.code == .ESTALE)
+    }
+
+    @Test("A replaced trusted home alias cannot redirect an inventory")
+    func inventoryRejectsReplacedTrustedHomeAlias() throws {
+        let directory = try fixture()
+        defer { cleanup(directory) }
+        let home = directory.appendingPathComponent("home", isDirectory: true)
+        let parked = directory.appendingPathComponent("parked", isDirectory: true)
+        let decoy = directory.appendingPathComponent("decoy", isDirectory: true)
+        try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: decoy, withIntermediateDirectories: true)
+        let sentinel = decoy.appendingPathComponent("sentinel")
+        let bytes = Data("untouched home alias sentinel".utf8)
+        try bytes.write(to: sentinel)
+        let sentinelStatus = try fileStatus(at: sentinel)
+        let descriptor = home.path.withCString { Darwin.open($0, O_RDONLY | O_DIRECTORY | O_CLOEXEC) }
+        try #require(descriptor >= 0)
+        defer { #expect(Darwin.close(descriptor) == 0) }
+        var homeStatus = stat()
+        try #require(Darwin.fstat(descriptor, &homeStatus) == 0)
+
+        let inbox = OriginalUploadEventInbox(directory: home.appendingPathComponent("nested/inbox"))
+        try FileManager.default.moveItem(at: home, to: parked)
+        try FileManager.default.createSymbolicLink(atPath: home.path, withDestinationPath: decoy.path)
+        defer {
+            do {
+                try removeFixtureLink(home)
+                try FileManager.default.moveItem(at: parked, to: home)
+            } catch {
+                Issue.record("Could not restore the trusted home fixture: \(Log.describe(error))")
+            }
+        }
+        let failure = #expect(throws: POSIXError.self) {
+            try inbox.inventoryComponents(under: home.path, matching: homeStatus)
+        }
+        #expect(failure?.code == .ESTALE)
+        expectFixtureFileUnchanged(bytes, status: sentinelStatus, at: sentinel)
+    }
+
+    @Test(
+        "The real /var and /private/var app-home aliases share an inbox",
+        .enabled(
+            if: OriginalUploadBackgroundTransportTests.hasRealVarAliasInAppHome(),
+            "Requires the real /var alias for app home and temp; otherwise device coverage is needed")
+    )
+    func realSystemVarAliasesReadAndRecoverSameInbox() throws {
+        let directory = try fixture()
+        defer { cleanup(directory) }
+        try requireFixtureInsideHome(directory)
+        let ancestor = directory.appendingPathComponent("alias-fixture", isDirectory: true)
+        let files = try seedInboxWithStage(under: ancestor, canonical: event(taskIdentifier: 91))
+        let paths = try #require(Self.varAliasPaths(for: nestedInbox(under: ancestor).standardizedFileURL.path))
+        let viaVar = URL(fileURLWithPath: paths.varPath, isDirectory: true)
+        let viaPrivateVar = URL(fileURLWithPath: paths.privatePath, isDirectory: true)
+        try #require(viaVar.path.hasPrefix("/var/") && viaPrivateVar.path.hasPrefix("/private/var/"))
+        let varInboxStatus = try fileStatus(at: viaVar)
+        let privateInboxStatus = try fileStatus(at: viaPrivateVar)
+        try #require(varInboxStatus.st_dev == privateInboxStatus.st_dev
+            && varInboxStatus.st_ino == privateInboxStatus.st_ino)
+        let varStage = viaVar.appendingPathComponent(files.stage.lastPathComponent)
+        let privateStage = viaPrivateVar.appendingPathComponent(files.stage.lastPathComponent)
+        let varStageStatus = try fileStatus(at: varStage)
+        let privateStageStatus = try fileStatus(at: privateStage)
+        try #require(varStageStatus.st_dev == files.stageStatus.st_dev
+            && varStageStatus.st_ino == files.stageStatus.st_ino)
+        try #require(privateStageStatus.st_dev == files.stageStatus.st_dev
+            && privateStageStatus.st_ino == files.stageStatus.st_ino)
+
+        // The namespace is stable: recovery remains path-based, and this checks
+        // ordinary compatibility with the actual system aliases, not swap safety.
+        var varOpens = 0
+        let varEvents = try OriginalUploadEventInbox(directory: viaVar, inventoryDidOpen: {
+            varOpens += 1
+        }).events()
+        #expect(varEvents == [files.canonicalEvent, files.stagedEvent])
+        #expect(varOpens == 2)
+        #expect(!itemExists(at: varStage))
+        #expect(!itemExists(at: privateStage))
+        let varPublished = canonicalURL(for: files.stagedEvent, in: viaVar)
+        let privatePublished = canonicalURL(for: files.stagedEvent, in: viaPrivateVar)
+        let varPublishedStatus = try fileStatus(at: varPublished)
+        let privatePublishedStatus = try fileStatus(at: privatePublished)
+        #expect(varPublishedStatus.st_dev == files.stageStatus.st_dev
+            && varPublishedStatus.st_ino == files.stageStatus.st_ino)
+        #expect(privatePublishedStatus.st_dev == varPublishedStatus.st_dev
+            && privatePublishedStatus.st_ino == varPublishedStatus.st_ino)
+        #expect(varPublishedStatus.st_mode & mode_t(0o7777) == mode_t(0o400))
+        #expect((try? Data(contentsOf: varPublished)) == files.stageBytes)
+        #expect((try? Data(contentsOf: privatePublished)) == files.stageBytes)
+
+        var privateOpens = 0
+        let privateEvents = try OriginalUploadEventInbox(directory: viaPrivateVar, inventoryDidOpen: {
+            privateOpens += 1
+        }).events()
+        #expect(privateEvents == [files.canonicalEvent, files.stagedEvent])
+        #expect(privateOpens == 2)
+        expectFixtureFileUnchanged(
+            files.canonicalBytes, status: files.canonicalStatus,
+            at: viaPrivateVar.appendingPathComponent(files.canonical.lastPathComponent))
+        let sentinel = nestedInbox(under: ancestor).deletingLastPathComponent()
+            .appendingPathComponent("sibling-sentinel.txt")
+        expectFixtureFileUnchanged(files.sentinelBytes, status: files.sentinelStatus, at: sentinel)
+    }
+
     @Test("Staged crash remnants recover in sequence order and remain idempotent")
     func stagedEventsRecoverInOrderAcrossInboxInstances() throws {
         let directory = try fixture()
@@ -290,8 +766,13 @@ struct OriginalUploadBackgroundTransportTests {
         try #require(try Data(contentsOf: staged) == bytes)
         try #require(!itemExists(at: canonical))
 
-        let recovered = try OriginalUploadEventInbox(directory: inboxDirectory).events()
+        // With no namespace swap, existing path-based recovery runs between the scans.
+        var inventoryOpens = 0
+        let recovered = try OriginalUploadEventInbox(directory: inboxDirectory, inventoryDidOpen: {
+            inventoryOpens += 1
+        }).events()
         #expect(recovered == [earlier, completion])
+        #expect(inventoryOpens == 2)
         #expect(!itemExists(at: staged))
         let after = try fileStatus(at: canonical)
         try #require(after.st_mode & mode_t(S_IFMT) == mode_t(S_IFREG))
