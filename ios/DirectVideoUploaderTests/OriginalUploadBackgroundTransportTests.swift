@@ -43,6 +43,15 @@ struct OriginalUploadBackgroundTransportTests {
         case events, persist, remove
     }
 
+    nonisolated enum ExternalLinkRecoveryLayout: String, Sendable {
+        case publication, stagedDuplicate, stagedDuplicateWritableCanonical
+        case canonicalDuplicate, writableCanonicalDuplicate
+    }
+
+    nonisolated enum ExternalLinkInjectionPoint: String, Sendable {
+        case afterInventory, afterStageRevalidation
+    }
+
     private enum AncestorReplacement {
         case symbolicLink, directory
     }
@@ -51,6 +60,12 @@ struct OriginalUploadBackgroundTransportTests {
         let url: URL
         let bytes: Data
         let status: stat
+    }
+
+    private struct FixtureFileObservations {
+        let file: FixtureFileSnapshot
+        let protection: String?
+        let excludedFromBackup: Bool?
     }
 
     private struct InboxDirectorySwap {
@@ -153,6 +168,15 @@ struct OriginalUploadBackgroundTransportTests {
         directory.appendingPathComponent("event-update-\(nonce.uuidString).tmp")
     }
 
+    private func orderedSiblingStages(in directory: URL) throws -> (first: URL, second: URL) {
+        let first = stagedURL(
+            in: directory, nonce: try #require(UUID(uuidString: "00000000-0000-4000-8000-000000000001")))
+        let second = stagedURL(
+            in: directory, nonce: try #require(UUID(uuidString: "FFFFFFFF-FFFF-4FFF-8FFF-FFFFFFFFFFFF")))
+        try #require(first.lastPathComponent < second.lastPathComponent)
+        return (first, second)
+    }
+
     private func recordBytes(_ event: OriginalBackgroundCompletion, sequence: UInt64) throws -> Data {
         try JSONEncoder().encode(StoredEventFixture(sequence: sequence, event: event))
     }
@@ -204,11 +228,57 @@ struct OriginalUploadBackgroundTransportTests {
         return FixtureFileSnapshot(url: url, bytes: bytes, status: try fileStatus(at: url))
     }
 
+    private func snapshotFixtureFileObservations(at url: URL) throws -> FixtureFileObservations {
+        let file = try snapshotFixtureFile(at: url)
+        let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+        let freshURL = URL(fileURLWithPath: url.path, isDirectory: false)
+        let excluded = try freshURL.resourceValues(forKeys: [.isExcludedFromBackupKey]).isExcludedFromBackup
+        return FixtureFileObservations(
+            file: file, protection: attributes[.protectionKey] as? String, excludedFromBackup: excluded)
+    }
+
+    private func expectFixtureFileObservationsUnchanged(_ original: FixtureFileObservations) throws {
+        let url = original.file.url
+        expectFixtureFileUnchanged(original.file.bytes, status: original.file.status, at: url)
+        let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+        #expect(attributes[.protectionKey] as? String == original.protection)
+        // Avoid reusing a URL that may have cached resource values.
+        let freshURL = URL(fileURLWithPath: url.path, isDirectory: false)
+        #expect(try freshURL.resourceValues(forKeys: [.isExcludedFromBackupKey]).isExcludedFromBackup
+            == original.excludedFromBackup)
+    }
+
     private func createFixtureFile(_ bytes: Data, at url: URL) throws -> FixtureFileSnapshot {
         try #require(!itemExists(at: url))
         try #require(FileManager.default.createFile(
             atPath: url.path, contents: bytes, attributes: [.posixPermissions: 0o600]))
         return try snapshotFixtureFile(at: url)
+    }
+
+    private func createHardLinkedSiblingStages(
+        _ bytes: Data, in directory: URL
+    ) throws -> (first: FixtureFileSnapshot, second: FixtureFileSnapshot) {
+        let (first, second) = try orderedSiblingStages(in: directory)
+        let created = try createFixtureFile(bytes, at: first)
+        try TemporaryVideoStorage.applyProtection(to: first)
+        try OriginalUploadFiles.excludeFromBackup(first)
+        let beforeLink = try snapshotFixtureFile(at: first)
+        try #require(beforeLink.status.st_dev == created.status.st_dev
+            && beforeLink.status.st_ino == created.status.st_ino)
+        try #require(beforeLink.status.st_mode & mode_t(S_IFMT) == mode_t(S_IFREG))
+        try #require(beforeLink.status.st_mode & mode_t(0o7777) == mode_t(0o600))
+        try #require(beforeLink.status.st_nlink == 1 && beforeLink.bytes == bytes)
+        try #require(!itemExists(at: second))
+        try FileManager.default.linkItem(at: first, to: second)
+        let linkedFirst = try snapshotFixtureFile(at: first)
+        let linkedSecond = try snapshotFixtureFile(at: second)
+        try #require(linkedFirst.status.st_dev == beforeLink.status.st_dev
+            && linkedFirst.status.st_ino == beforeLink.status.st_ino)
+        try #require(linkedSecond.status.st_dev == linkedFirst.status.st_dev
+            && linkedSecond.status.st_ino == linkedFirst.status.st_ino)
+        try #require(linkedFirst.status.st_nlink == 2 && linkedSecond.status.st_nlink == 2)
+        try #require(linkedFirst.bytes == bytes && linkedSecond.bytes == bytes)
+        return (linkedFirst, linkedSecond)
     }
 
     private func makeInboxDirectorySwap(in directory: URL) throws -> InboxDirectorySwap {
@@ -753,6 +823,153 @@ struct OriginalUploadBackgroundTransportTests {
         #expect(!itemExists(at: canonicalURL(for: completion, in: swap.active)))
     }
 
+    @Test("Post-inventory external hard links cannot redirect staged recovery", arguments: [
+        (ExternalLinkRecoveryLayout.publication, ExternalLinkInjectionPoint.afterInventory),
+        (.publication, .afterStageRevalidation),
+        (.stagedDuplicate, .afterInventory),
+        (.stagedDuplicate, .afterStageRevalidation),
+        (.stagedDuplicateWritableCanonical, .afterInventory),
+        (.stagedDuplicateWritableCanonical, .afterStageRevalidation),
+        (.canonicalDuplicate, .afterInventory),
+        (.canonicalDuplicate, .afterStageRevalidation),
+        (.writableCanonicalDuplicate, .afterInventory),
+        (.writableCanonicalDuplicate, .afterStageRevalidation),
+    ])
+    func postInventoryExternalHardLinkFailsClosed(
+        layout: ExternalLinkRecoveryLayout, injectionPoint: ExternalLinkInjectionPoint
+    ) throws {
+        let directory = try fixture()
+        defer { cleanup(directory) }
+        try requireFixtureInsideHome(directory)
+        let inboxDirectory = directory.appendingPathComponent("inbox", isDirectory: true)
+        try FileManager.default.createDirectory(at: inboxDirectory, withIntermediateDirectories: false)
+        let directoryBefore = try fileStatus(at: inboxDirectory)
+        try #require(directoryBefore.st_mode & mode_t(S_IFMT) == mode_t(S_IFDIR))
+
+        let completion = event(taskIdentifier: 42)
+        let bytes = try recordBytes(completion, sequence: 1)
+        let stage = stagedURL(in: inboxDirectory)
+        let canonical = canonicalURL(for: completion, in: inboxDirectory)
+        let sentinel = directory.appendingPathComponent("external-sentinel.json")
+        try #require(sentinel.deletingLastPathComponent().standardizedFileURL == directory.standardizedFileURL)
+        try #require(sentinel.deletingLastPathComponent().standardizedFileURL != inboxDirectory.standardizedFileURL)
+        try #require(!itemExists(at: sentinel))
+
+        let createdStage = try createFixtureFile(bytes, at: stage)
+        try TemporaryVideoStorage.applyProtection(to: stage)
+        try OriginalUploadFiles.excludeFromBackup(stage)
+        let stageBefore = try snapshotFixtureFile(at: stage)
+        try #require(stageBefore.status.st_dev == createdStage.status.st_dev
+            && stageBefore.status.st_ino == createdStage.status.st_ino)
+        try #require(stageBefore.status.st_mode & mode_t(S_IFMT) == mode_t(S_IFREG))
+        try #require(stageBefore.status.st_mode & mode_t(0o7777) == mode_t(0o600))
+        try #require(stageBefore.status.st_nlink == 1 && stageBefore.bytes == bytes)
+
+        let canonicalBefore: FixtureFileSnapshot?
+        if layout == .publication {
+            try #require(!itemExists(at: canonical))
+            canonicalBefore = nil
+        } else {
+            try OriginalUploadFiles.writeProtected(bytes, to: canonical)
+            let canonicalIsWritable = layout == .writableCanonicalDuplicate
+                || layout == .stagedDuplicateWritableCanonical
+            if canonicalIsWritable {
+                try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: canonical.path)
+            }
+            let saved = try snapshotFixtureFile(at: canonical)
+            let expectedMode: mode_t = canonicalIsWritable ? 0o600 : 0o400
+            try #require(saved.status.st_mode & mode_t(S_IFMT) == mode_t(S_IFREG))
+            try #require(saved.status.st_mode & mode_t(0o7777) == expectedMode)
+            try #require(saved.status.st_nlink == 1 && saved.bytes == bytes)
+            try #require(saved.status.st_dev != stageBefore.status.st_dev
+                || saved.status.st_ino != stageBefore.status.st_ino)
+            canonicalBefore = saved
+        }
+
+        let target: FixtureFileSnapshot
+        switch layout {
+        case .publication, .stagedDuplicate, .stagedDuplicateWritableCanonical:
+            target = stageBefore
+        case .canonicalDuplicate, .writableCanonicalDuplicate:
+            target = try #require(canonicalBefore)
+        }
+
+        var completedScans = 0
+        var revalidatedStages = 0
+        var injections = 0
+        var afterLink: FixtureFileObservations?
+        func addExternalLink() throws {
+            try #require(injections == 0 && !self.itemExists(at: sentinel))
+            let currentDirectory = try self.fileStatus(at: inboxDirectory)
+            try #require(currentDirectory.st_dev == directoryBefore.st_dev
+                && currentDirectory.st_ino == directoryBefore.st_ino)
+            let current = try self.fileStatus(at: target.url)
+            try #require(current.st_dev == target.status.st_dev && current.st_ino == target.status.st_ino)
+            try #require(current.st_nlink == 1)
+            try #require(current.st_mode == target.status.st_mode
+                && current.st_uid == target.status.st_uid && current.st_gid == target.status.st_gid)
+            try #require(current.st_size == target.status.st_size)
+            try #require(current.st_mtimespec.tv_sec == target.status.st_mtimespec.tv_sec
+                && current.st_mtimespec.tv_nsec == target.status.st_mtimespec.tv_nsec)
+            try #require(current.st_ctimespec.tv_sec == target.status.st_ctimespec.tv_sec
+                && current.st_ctimespec.tv_nsec == target.status.st_ctimespec.tv_nsec)
+            try #require(try Data(contentsOf: target.url) == bytes)
+
+            try FileManager.default.linkItem(at: target.url, to: sentinel)
+            let linked = try self.snapshotFixtureFileObservations(at: sentinel)
+            let targetAfterLink = try self.fileStatus(at: target.url)
+            try #require(linked.file.status.st_dev == current.st_dev && linked.file.status.st_ino == current.st_ino)
+            try #require(targetAfterLink.st_dev == current.st_dev && targetAfterLink.st_ino == current.st_ino)
+            try #require(linked.file.status.st_nlink == 2 && targetAfterLink.st_nlink == 2)
+            try #require(linked.file.bytes == bytes)
+            afterLink = linked
+            injections += 1
+        }
+
+        let inbox = OriginalUploadEventInbox(
+            directory: inboxDirectory,
+            initialInventoryDidScan: {
+                completedScans += 1
+                if injectionPoint == .afterInventory && completedScans == 1 {
+                    try addExternalLink()
+                }
+            },
+            stageDidRevalidate: {
+                revalidatedStages += 1
+                if injectionPoint == .afterStageRevalidation && revalidatedStages == 1 {
+                    try addExternalLink()
+                }
+            }
+        )
+        let failure = #expect(throws: POSIXError.self) { _ = try inbox.events() }
+        #expect(failure?.code == .ESTALE)
+        try #require(injections == 1)
+        #expect(completedScans == 1)
+        if injectionPoint == .afterStageRevalidation {
+            #expect(revalidatedStages == 1)
+        }
+        let linked = try #require(afterLink)
+
+        #expect(itemExists(at: sentinel))
+        if itemExists(at: sentinel) {
+            try expectFixtureFileObservationsUnchanged(linked)
+        }
+        expectFixtureFileUnchanged(linked.file.bytes, status: linked.file.status, at: target.url)
+        if target.url != stage {
+            expectFixtureFileUnchanged(stageBefore.bytes, status: stageBefore.status, at: stage)
+        }
+        let directoryAfter = try fileStatus(at: inboxDirectory)
+        #expect(directoryAfter.st_dev == directoryBefore.st_dev && directoryAfter.st_ino == directoryBefore.st_ino)
+        let expectedNames = layout == .publication
+            ? [stage.lastPathComponent] : [stage.lastPathComponent, canonical.lastPathComponent]
+        try expectInboxNames(expectedNames, in: inboxDirectory)
+        #expect(itemExists(at: stage))
+        #expect(itemExists(at: canonical) == (layout != .publication))
+        if target.url == stage, let saved = canonicalBefore {
+            expectFixtureFileUnchanged(saved.bytes, status: saved.status, at: canonical)
+        }
+    }
+
     @Test("A substituted second inventory is rejected before scanning its malformed record")
     func secondInventoryRejectsReplacementBeforeScanningDecoy() throws {
         let directory = try fixture()
@@ -1275,6 +1492,166 @@ struct OriginalUploadBackgroundTransportTests {
         #expect(after.st_mode & mode_t(0o7777) == mode_t(0o400))
         #expect(after.st_nlink == 1)
         #expect((try? Data(contentsOf: canonical)) == before.bytes)
+    }
+
+    @Test("Hard-linked staged siblings recover with or without a distinct canonical", arguments: [false, true])
+    func hardLinkedStagedSiblingsRecover(canonicalExists: Bool) throws {
+        let directory = try fixture()
+        defer { cleanup(directory) }
+        try requireFixtureInsideHome(directory)
+        let inboxDirectory = directory.appendingPathComponent("inbox", isDirectory: true)
+        try FileManager.default.createDirectory(at: inboxDirectory, withIntermediateDirectories: false)
+        let completion = event(taskIdentifier: 82)
+        let bytes = try recordBytes(completion, sequence: 1)
+        let canonical = canonicalURL(for: completion, in: inboxDirectory)
+
+        let canonicalBefore: FixtureFileSnapshot?
+        if canonicalExists {
+            try OriginalUploadFiles.writeProtected(bytes, to: canonical)
+            let saved = try snapshotFixtureFile(at: canonical)
+            try #require(saved.status.st_mode & mode_t(S_IFMT) == mode_t(S_IFREG))
+            try #require(saved.status.st_mode & mode_t(0o7777) == mode_t(0o400))
+            try #require(saved.status.st_nlink == 1 && saved.bytes == bytes)
+            canonicalBefore = saved
+        } else {
+            try #require(!itemExists(at: canonical))
+            canonicalBefore = nil
+        }
+        let stages = try createHardLinkedSiblingStages(bytes, in: inboxDirectory)
+        if let saved = canonicalBefore {
+            try #require(saved.status.st_dev != stages.first.status.st_dev
+                || saved.status.st_ino != stages.first.status.st_ino)
+        } else {
+            try #require(!itemExists(at: canonical))
+        }
+
+        var inventoryOpens = 0
+        var revalidatedStages = 0
+        let recovered = try OriginalUploadEventInbox(
+            directory: inboxDirectory,
+            inventoryDidOpen: { inventoryOpens += 1 },
+            stageDidRevalidate: { revalidatedStages += 1 }
+        ).events()
+        #expect(recovered == [completion])
+        #expect(inventoryOpens == 2 && revalidatedStages == 2)
+        #expect(!itemExists(at: stages.first.url) && !itemExists(at: stages.second.url))
+        try expectInboxNames([canonical.lastPathComponent], in: inboxDirectory)
+
+        let expectedIdentity = canonicalBefore?.status ?? stages.first.status
+        let after = try fileStatus(at: canonical)
+        #expect(after.st_dev == expectedIdentity.st_dev && after.st_ino == expectedIdentity.st_ino)
+        #expect(after.st_mode & mode_t(0o7777) == mode_t(0o400))
+        #expect(after.st_nlink == 1)
+        #expect((try? Data(contentsOf: canonical)) == bytes)
+        #expect(try OriginalUploadEventInbox(directory: inboxDirectory).events() == [completion])
+    }
+
+    @Test("An external link after a sibling unlink is not an expected link-count refresh")
+    func externalHardLinkAfterOwnSiblingUnlinkFailsClosed() throws {
+        let directory = try fixture()
+        defer { cleanup(directory) }
+        try requireFixtureInsideHome(directory)
+        let inboxDirectory = directory.appendingPathComponent("inbox", isDirectory: true)
+        try FileManager.default.createDirectory(at: inboxDirectory, withIntermediateDirectories: false)
+        let directoryBefore = try fileStatus(at: inboxDirectory)
+        try #require(directoryBefore.st_mode & mode_t(S_IFMT) == mode_t(S_IFDIR))
+        let resolvedInbox = inboxDirectory.resolvingSymlinksInPath().standardizedFileURL.path
+        let completion = event(taskIdentifier: 83)
+        let bytes = try recordBytes(completion, sequence: 1)
+        let canonical = canonicalURL(for: completion, in: inboxDirectory)
+        let sentinel = directory.appendingPathComponent("external-sentinel.json")
+        try #require(sentinel.deletingLastPathComponent().standardizedFileURL == directory.standardizedFileURL)
+        try #require(sentinel.deletingLastPathComponent().standardizedFileURL != inboxDirectory.standardizedFileURL)
+        try #require(!itemExists(at: sentinel))
+
+        try OriginalUploadFiles.writeProtected(bytes, to: canonical)
+        let canonicalBefore = try snapshotFixtureFile(at: canonical)
+        try #require(canonicalBefore.status.st_mode & mode_t(S_IFMT) == mode_t(S_IFREG))
+        try #require(canonicalBefore.status.st_mode & mode_t(0o7777) == mode_t(0o400))
+        try #require(canonicalBefore.status.st_nlink == 1 && canonicalBefore.bytes == bytes)
+        let stages = try createHardLinkedSiblingStages(bytes, in: inboxDirectory)
+        let first = stages.first.url
+        let second = stages.second.url
+        try #require(canonicalBefore.status.st_dev != stages.first.status.st_dev
+            || canonicalBefore.status.st_ino != stages.first.status.st_ino)
+
+        var completedScans = 0
+        var revalidatedStages = 0
+        var injections = 0
+        var afterOwnUnlink: FixtureFileSnapshot?
+        var afterLink: FixtureFileObservations?
+        let inbox = OriginalUploadEventInbox(
+            directory: inboxDirectory,
+            synchronizeDirectory: { url in
+                try DurableFile.synchronize(url, directory: true)
+                guard url.resolvingSymlinksInPath().standardizedFileURL.path == resolvedInbox,
+                      injections == 0, !self.itemExists(at: first) else { return }
+
+                // This hook runs only once the real first unlink is visible and synced.
+                try #require(completedScans == 1 && revalidatedStages >= 1)
+                try #require(self.itemExists(at: second) && !self.itemExists(at: sentinel))
+                let currentDirectory = try self.fileStatus(at: inboxDirectory)
+                try #require(currentDirectory.st_dev == directoryBefore.st_dev
+                    && currentDirectory.st_ino == directoryBefore.st_ino)
+                let currentCanonical = try self.fileStatus(at: canonical)
+                try #require(currentCanonical.st_dev == canonicalBefore.status.st_dev
+                    && currentCanonical.st_ino == canonicalBefore.status.st_ino
+                    && currentCanonical.st_nlink == 1)
+                let remaining = try self.snapshotFixtureFile(at: second)
+                try #require(remaining.status.st_dev == stages.second.status.st_dev
+                    && remaining.status.st_ino == stages.second.status.st_ino)
+                try #require(remaining.status.st_nlink == 1)
+                try #require(remaining.status.st_mode == stages.second.status.st_mode
+                    && remaining.status.st_uid == stages.second.status.st_uid
+                    && remaining.status.st_gid == stages.second.status.st_gid)
+                try #require(remaining.status.st_size == stages.second.status.st_size)
+                try #require(remaining.status.st_mtimespec.tv_sec == stages.second.status.st_mtimespec.tv_sec
+                    && remaining.status.st_mtimespec.tv_nsec == stages.second.status.st_mtimespec.tv_nsec)
+                try #require(remaining.bytes == bytes)
+
+                try FileManager.default.linkItem(at: second, to: sentinel)
+                let linked = try self.snapshotFixtureFileObservations(at: sentinel)
+                let secondAfterLink = try self.fileStatus(at: second)
+                try #require(linked.file.status.st_dev == remaining.status.st_dev
+                    && linked.file.status.st_ino == remaining.status.st_ino)
+                try #require(secondAfterLink.st_dev == remaining.status.st_dev
+                    && secondAfterLink.st_ino == remaining.status.st_ino)
+                // The attack restores the original inventory count, not the expected decremented count.
+                try #require(linked.file.status.st_nlink == stages.second.status.st_nlink
+                    && linked.file.status.st_nlink == 2 && secondAfterLink.st_nlink == 2)
+                try #require(linked.file.bytes == bytes)
+                afterOwnUnlink = remaining
+                afterLink = linked
+                injections += 1
+            },
+            initialInventoryDidScan: { completedScans += 1 },
+            stageDidRevalidate: { revalidatedStages += 1 }
+        )
+        let failure = #expect(throws: POSIXError.self) { _ = try inbox.events() }
+        #expect(failure?.code == .ESTALE)
+        try #require(injections == 1)
+        let afterUnlink = try #require(afterOwnUnlink)
+        let linked = try #require(afterLink)
+        #expect(afterUnlink.status.st_nlink == 1)
+        #expect(linked.file.status.st_nlink == stages.second.status.st_nlink)
+        #expect(completedScans == 1 && revalidatedStages >= 1)
+        #expect(!itemExists(at: first))
+        #expect(itemExists(at: second) && itemExists(at: canonical))
+        #expect(itemExists(at: sentinel))
+
+        if itemExists(at: sentinel) {
+            try expectFixtureFileObservationsUnchanged(linked)
+        }
+        expectFixtureFileUnchanged(linked.file.bytes, status: linked.file.status, at: second)
+        let directoryAfter = try fileStatus(at: inboxDirectory)
+        #expect(directoryAfter.st_dev == directoryBefore.st_dev && directoryAfter.st_ino == directoryBefore.st_ino)
+        try expectInboxNames([canonical.lastPathComponent, second.lastPathComponent], in: inboxDirectory)
+        let canonicalAfter = try fileStatus(at: canonical)
+        #expect(canonicalAfter.st_dev == canonicalBefore.status.st_dev
+            && canonicalAfter.st_ino == canonicalBefore.status.st_ino)
+        #expect(canonicalAfter.st_mode & mode_t(0o7777) == mode_t(0o400))
+        #expect(canonicalAfter.st_nlink == 1)
+        #expect((try? Data(contentsOf: canonical)) == bytes)
     }
 
     @Test("A recovered sequence participates in the next sequence assignment")

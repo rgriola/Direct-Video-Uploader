@@ -883,12 +883,16 @@ sequenceDiagram
     traverses descendants without following links, and retains its opened directory
     descriptor for staged-record rereads. It checks directory identity before
     recovery, before the second scan, and after that scan, rejecting observed
-    substitutions even when the records are identical. These checkpoints cannot
-    detect swaps between checks and do not secure path-based directory preparation,
-    recovery mutations, deletion, file-protection and backup metadata, or the
-    background `URLSession` file handoff. A hard link added after inventory can
-    still share recovery metadata changes, and an interrupted or failed reseal can
-    leave an event file writable; resolve both before enabling the transport.
+    substitutions even when the records are identical. During staged recovery it
+    also tracks inventoried inode versions and expected link counts across its own
+    renames and unlinks, checking staged and canonical records before metadata
+    updates or staged-file removal. These checkpoints do not establish exclusive
+    namespace ownership: later swaps, count-neutral substitutions after a rename
+    or unlink, and byte changes that decode to the same record can still escape
+    detection. They do not secure path-based directory preparation, recovery
+    mutations, deletion, file-protection and backup metadata, or the background
+    `URLSession` file handoff. An interrupted or failed reseal can still leave an
+    event file writable; resolve these issues before enabling the transport.
     A repair workflow and end-to-end ancestor-path safety, including namespace
     ownership, remain necessary. Verify the real `/var` alias and iOS 18.6 behavior
     on a physical device. Attachment changes must be resolved before trusting task

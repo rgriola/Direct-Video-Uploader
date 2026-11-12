@@ -75,6 +75,12 @@ final class OriginalUploadEventInbox {
         }
     }
 
+    private struct InodeExpectation {
+        var snapshot: ReadEvent
+        var linkCount: Int
+        var pendingNamespaceChange = false
+    }
+
     // Keep this allowlist in sync with the on-disk event schema.
     private static let recordKeys: [Set<String>] = [
         ["sequence", "event"],
@@ -173,26 +179,31 @@ final class OriginalUploadEventInbox {
             try recoveryPreflightDidComplete?()
 
             var canonical = snapshot.canonical
+            var inodes = snapshot.inodes
             let stages = snapshot.stages.sorted {
                 let left = $0.snapshot.record.sequence
                 let right = $1.snapshot.record.sequence
                 return left == right ? $0.url.lastPathComponent < $1.url.lastPathComponent : left < right
             }
             for stage in stages {
-                // Earlier hardlinked siblings may have changed metadata; refresh after checking
-                // identity and contents, relative to the original inventory descriptor.
+                let identity = FileIdentity(stage.snapshot.status)
                 let current = try read(stage.url.lastPathComponent, in: original)
-                guard sameIdentity(stage.snapshot.status, current.status),
-                      stage.snapshot.record == current.record else { throw POSIXError(.ESTALE) }
+                guard var expected = inodes[identity] else { throw POSIXError(.ESTALE) }
+                try requireExpected(current, expected: &expected)
+                inodes[identity] = expected
                 try stageDidRevalidate?()
                 let refreshed = StagedEvent(url: stage.url, snapshot: current)
                 let id = current.record.event.id
-                if canonical.contains(id) {
-                    try discardDuplicate(refreshed)
+                if let canonicalIdentity = canonical[id] {
+                    try discardDuplicate(
+                        refreshed, canonicalIdentity: canonicalIdentity, in: original, inodes: &inodes)
                 } else {
                     let synced = try protectAndSynchronize(stage.url, snapshot: current)
                     try publish(refreshed, expected: synced.status)
-                    canonical.insert(id)
+                    expected.snapshot = synced
+                    expected.pendingNamespaceChange = true
+                    inodes[identity] = expected
+                    canonical[id] = identity
                 }
             }
 
@@ -213,7 +224,8 @@ final class OriginalUploadEventInbox {
     }
 
     private func scanRecords(matching event: OriginalBackgroundCompletion?, in descriptor: Int32) throws -> (
-        records: [StoredEvent], canonical: Set<UUID>, stages: [StagedEvent]
+        records: [StoredEvent], canonical: [UUID: FileIdentity], stages: [StagedEvent],
+        inodes: [FileIdentity: InodeExpectation]
     ) {
         // The caller owns the descriptor for the whole scan.
         // Synchronous main-actor observation only; all scan I/O still uses the real descriptors.
@@ -221,7 +233,7 @@ final class OriginalUploadEventInbox {
         let names = try inventoryNames(in: descriptor)
         var records: [UUID: StoredEvent] = [:]
         var sequences: [UInt64: UUID] = [:]
-        var canonical: Set<UUID> = []
+        var canonical: [UUID: FileIdentity] = [:]
         var stages: [StagedEvent] = []
         var links: [FileIdentity: (found: Int, total: Int, snapshot: ReadEvent)] = [:]
 
@@ -244,10 +256,12 @@ final class OriginalUploadEventInbox {
             let snapshot = try read(name, in: descriptor)
             let record = snapshot.record
             let id = record.event.id
+            let identity = FileIdentity(snapshot.status)
             if let canonicalID {
-                guard canonicalID == id, canonical.insert(id).inserted else {
+                guard canonicalID == id, canonical[canonicalID] == nil else {
                     throw OriginalUploadStorageError.invalidRecord
                 }
+                canonical[canonicalID] = identity
             } else {
                 // This URL is for the existing path-based recovery, never for scan I/O.
                 let url = directory.appendingPathComponent(name, isDirectory: false)
@@ -262,7 +276,6 @@ final class OriginalUploadEventInbox {
             records[id] = record
             sequences[record.sequence] = id
 
-            let identity = FileIdentity(snapshot.status)
             let total = Int(snapshot.status.st_nlink)
             if let existing = links[identity] {
                 guard existing.total == total, sameVersion(existing.snapshot.status, snapshot.status),
@@ -280,7 +293,8 @@ final class OriginalUploadEventInbox {
         if let event, let existing = records[event.id], existing.event != event {
             throw OriginalUploadStorageError.invalidRecord
         }
-        return (records.values.sorted { $0.sequence < $1.sequence }, canonical, stages)
+        let inodes = links.mapValues { InodeExpectation(snapshot: $0.snapshot, linkCount: $0.found) }
+        return (records.values.sorted { $0.sequence < $1.sequence }, canonical, stages, inodes)
     }
 
     private func withInventoryDirectory<T>(_ body: (Int32) throws -> T) throws -> T {
@@ -594,12 +608,22 @@ final class OriginalUploadEventInbox {
         }
     }
 
-    private func discardDuplicate(_ stage: StagedEvent) throws {
+    private func discardDuplicate(
+        _ stage: StagedEvent, canonicalIdentity: FileIdentity, in descriptor: Int32,
+        inodes: inout [FileIdentity: InodeExpectation]
+    ) throws {
+        let beforeProtection = try read(stage.url.lastPathComponent, in: descriptor)
+        guard sameVersion(stage.snapshot.status, beforeProtection.status),
+              stage.snapshot.record == beforeProtection.record else { throw POSIXError(.ESTALE) }
         let destination = eventURL(stage.snapshot.record.event.id)
         let existing = try read(destination)
         guard existing.record == stage.snapshot.record else { throw OriginalUploadStorageError.invalidRecord }
+        guard var canonicalExpected = inodes[canonicalIdentity] else { throw POSIXError(.ESTALE) }
+        try requireExpected(existing, expected: &canonicalExpected)
         // Do not unlink the stage until the matching canonical copy and its directory entry are durable.
         let durable = try protectAndSynchronize(destination, snapshot: existing)
+        canonicalExpected.snapshot = durable
+        inodes[canonicalIdentity] = canonicalExpected
         try synchronizeDirectory(directory)
         let current = try read(destination)
         guard sameVersion(durable.status, current.status) else { throw POSIXError(.ESTALE) }
@@ -608,7 +632,16 @@ final class OriginalUploadEventInbox {
         guard current.record == stage.snapshot.record, staged.record == stage.snapshot.record else {
             throw OriginalUploadStorageError.invalidRecord
         }
+        let stageIdentity = FileIdentity(stage.snapshot.status)
+        guard var stageExpected = inodes[stageIdentity] else { throw POSIXError(.ESTALE) }
+        // A shared inode now has the durable canonical version; an independent stage
+        // must still have its exact pre-hook version.
+        try requireExpected(staged, expected: &stageExpected)
+        guard stageExpected.linkCount > 0 else { throw POSIXError(.ESTALE) }
         try unlinkFile(stage.url, expected: staged.status)
+        stageExpected.linkCount -= 1
+        stageExpected.pendingNamespaceChange = true
+        inodes[stageIdentity] = stageExpected
     }
 
     private func unlinkFile(_ url: URL, expected: stat) throws {
@@ -860,6 +893,21 @@ final class OriginalUploadEventInbox {
             && left.st_mtimespec.tv_nsec == right.st_mtimespec.tv_nsec
             && left.st_ctimespec.tv_sec == right.st_ctimespec.tv_sec
             && left.st_ctimespec.tv_nsec == right.st_ctimespec.tv_nsec
+    }
+
+    private func requireExpected(_ current: ReadEvent, expected: inout InodeExpectation) throws {
+        guard Int(current.status.st_nlink) == expected.linkCount else { throw POSIXError(.ESTALE) }
+        var previous = expected.snapshot.status
+        if expected.pendingNamespaceChange {
+            // After our rename or unlink, only the predicted count and change time may differ.
+            previous.st_nlink = current.status.st_nlink
+            previous.st_ctimespec = current.status.st_ctimespec
+        }
+        guard sameVersion(previous, current.status), expected.snapshot.record == current.record else {
+            throw POSIXError(.ESTALE)
+        }
+        expected.snapshot = current
+        expected.pendingNamespaceChange = false
     }
 
     private func posixError(_ code: Int32 = errno) -> POSIXError {
