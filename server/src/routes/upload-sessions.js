@@ -583,6 +583,7 @@ export default async function uploadSessionRoutes(fastify, {
         const session = await sessions.get({
             ownerId: request.user.id,
             uploadSessionId: request.params.sessionId,
+            requireUncancelledIntent: true,
         });
         if (session.status === 'EXPIRED') {
             throw new UploadSessionError('EXPIRED', 'Upload session has expired');
@@ -591,6 +592,7 @@ export default async function uploadSessionRoutes(fastify, {
             throw new UploadSessionError('INVALID_STATE', 'Upload session is not open');
         }
         assertAcceptingUploads(session);
+        await assertOriginalIntentNotCancelled(db, request.user.id, session.assetId);
         const sizeBytes = partSize(session, partNumber);
         if (sizeBytes == null) throw new UploadSessionError('INVALID_ARGUMENT', 'Part number is outside this upload');
         const expires = Math.floor(Math.min(now().getTime() + PART_URL_TTL_MS, session.expiresAt.getTime()) / 1000);
@@ -626,7 +628,12 @@ export default async function uploadSessionRoutes(fastify, {
                     expiresAt: true,
                     status: true,
                     owner: { select: { status: true } },
-                    asset: { select: { userId: true, moderation: true, status: true } },
+                    asset: {
+                        select: {
+                            userId: true, moderation: true, status: true,
+                            originalUploadIntent: { select: { userId: true, cancelledAt: true } },
+                        },
+                    },
                 },
             });
             const sizeBytes = session && partSize(session, partNumber);
@@ -641,6 +648,12 @@ export default async function uploadSessionRoutes(fastify, {
                 || !verifyUploadPart(signingSecret, claims, request.query?.signature)) {
                 return reject(403, 'Invalid or expired upload URL');
             }
+            const intent = session.asset.originalUploadIntent;
+            if (intent && intent.userId !== session.ownerId) {
+                request.log.error({ code: 'INTENT_INCONSISTENT' }, 'Original upload intent is inconsistent');
+                return reject(403, 'Invalid or expired upload URL');
+            }
+            if (intent?.cancelledAt) return reject(403, 'Invalid or expired upload URL');
             const length = request.headers['content-length'];
             if (typeof length !== 'string' || !/^\d+$/.test(length) || request.headers['transfer-encoding']) {
                 return reject(411, 'A Content-Length is required for upload parts');

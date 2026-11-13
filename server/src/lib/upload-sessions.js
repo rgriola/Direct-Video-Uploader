@@ -709,9 +709,12 @@ function createUploadSessionOperations({
     return session;
   }
 
-  async function get({ ownerId, uploadSessionId }) {
+  async function get({ ownerId, uploadSessionId, requireUncancelledIntent = false }) {
     let session = await loadSession(uploadSessionId, ownerId);
     assertVisibleSession(session);
+    if (requireUncancelledIntent) {
+      await assertOriginalIntentNotCancelled(db, ownerId, session.assetId);
+    }
     if (session.status === "OPEN" && session.expiresAt <= now()) {
       await expireSession(session);
       session = await loadSession(uploadSessionId, ownerId);
@@ -746,6 +749,7 @@ function createUploadSessionOperations({
     const session = await loadSession(uploadSessionId, ownerId);
     assertOpen(session, now());
     assertAcceptingUploads(session);
+    await assertOriginalIntentNotCancelled(db, ownerId, session.assetId);
     await storage.assertStorageLocation(session.storageKey);
     let committed = false;
     const writeSize = normalizeSize(expectedSizeBytes, "Expected part size");
@@ -758,8 +762,12 @@ function createUploadSessionOperations({
             await tx.$queryRaw`SELECT id FROM assets WHERE id = ${session.assetId} FOR UPDATE`;
             const current = await lockSession(tx, session.id);
             assertOwnedSession(current, ownerId);
+            if (current.assetId !== session.assetId) {
+              throw new UploadSessionError("INVALID_STATE", "Upload session asset changed");
+            }
             assertOpen(current, now());
             assertAcceptingUploads(current);
+            await assertOriginalIntentNotCancelled(tx, ownerId, current.assetId);
             await publish();
             await tx.uploadPart.upsert({
               where: {
@@ -779,7 +787,7 @@ function createUploadSessionOperations({
                 sha256: result.sha256,
               },
             });
-          });
+          }, { isolationLevel: "ReadCommitted" });
           committed = true;
         },
       }));

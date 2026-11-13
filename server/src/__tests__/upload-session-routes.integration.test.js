@@ -622,6 +622,225 @@ integration('upload session HTTP routes against PostgreSQL and local storage', (
         return { payload, session, reservedAssetId };
     }
 
+    it('rejects new signatures and previously signed PUTs after cancellation while preserving parts', async () => {
+        const content = Buffer.from('part published before cancellation');
+        const { payload, session } = await stagedReservedOriginal(content);
+        const signed = await sign(session.id);
+        const cancelled = await requestAs(
+            ownerId, 'POST', `/api/assets/original-uploads/${payload.clientRequestId}/cancel`);
+        expect(cancelled.statusCode, cancelled.body).toBe(200);
+
+        const deniedSign = await requestAs(ownerId, 'POST', `/api/upload-sessions/${session.id}/parts/1/sign`);
+        expect(deniedSign.statusCode, deniedSign.body).toBe(410);
+        const deniedPut = await put(signed.url, content);
+        expect(deniedPut.statusCode, deniedPut.body).toBe(403);
+        expect(deniedPut.headers.connection).toBe('close');
+        expect(deniedPut.json()).toEqual({ error: 'Invalid or expired upload URL' });
+        const earlyResponse = await new Promise((resolve, reject) => {
+            const request = httpRequest(new URL(signed.url, address), {
+                method: 'PUT',
+                headers: { 'content-type': 'application/octet-stream', 'content-length': String(content.length) },
+            }, incoming => {
+                incoming.resume();
+                incoming.on('end', () => resolve(incoming.statusCode));
+                incoming.on('error', reject);
+            });
+            request.on('error', reject);
+            request.setTimeout(3000, () => request.destroy(new Error('Early rejection timed out')));
+            request.flushHeaders();
+        });
+        expect(earlyResponse).toBe(403);
+        const resumed = await requestAs(ownerId, 'GET', `/api/upload-sessions/${session.id}`);
+        expect(resumed.statusCode, resumed.body).toBe(200);
+        expect(resumed.json().uploadSession.status).toBe('OPEN');
+        expect(resumed.json().uploadSession.parts).toHaveLength(1);
+        expect(await storage.listParts(session.id)).toMatchObject([{ partNumber: 1, sha256: sha256(content) }]);
+        const service = await handoffService();
+        await expect(service.uploadPart({
+            ownerId, uploadSessionId: session.id, partNumber: 1, body: content, expectedSizeBytes: content.length,
+        })).rejects.toMatchObject({ code: 'INTENT_CANCELLED' });
+    });
+
+    it('rechecks cancellation after signing recovery before returning a URL', async () => {
+        const content = Buffer.from('cancel during signing');
+        const payload = originalReservation(content);
+        const reserved = await requestAs(ownerId, 'POST', '/api/assets/original-uploads', payload);
+        expect(reserved.statusCode, reserved.body).toBe(201);
+        const session = await createSession(content, reserved.json().asset.id);
+        let signalEntered;
+        let releaseRecovery;
+        const entered = new Promise(resolve => { signalEntered = resolve; });
+        const recoveryGate = new Promise(resolve => { releaseRecovery = resolve; });
+        const originalRecover = storage.recoverUpload;
+        const spy = vi.spyOn(storage, 'recoverUpload').mockImplementation(async (...args) => {
+            signalEntered();
+            await recoveryGate;
+            return originalRecover.apply(storage, args);
+        });
+        let signing;
+        try {
+            signing = Promise.resolve(requestAs(ownerId, 'POST', `/api/upload-sessions/${session.id}/parts/1/sign`));
+            await entered;
+            const cancelled = await requestAs(
+                ownerId, 'POST', `/api/assets/original-uploads/${payload.clientRequestId}/cancel`);
+            expect(cancelled.statusCode, cancelled.body).toBe(200);
+        } finally {
+            releaseRecovery();
+            spy.mockRestore();
+        }
+        const response = await signing;
+        expect(response.statusCode, response.body).toBe(410);
+    });
+
+    it('fails closed on an inconsistent original intent without revealing it through signed PUTs', async () => {
+        const content = Buffer.from('inconsistent intent');
+        const payload = originalReservation(content);
+        const reserved = await requestAs(ownerId, 'POST', '/api/assets/original-uploads', payload);
+        expect(reserved.statusCode, reserved.body).toBe(201);
+        const session = await createSession(content, reserved.json().asset.id);
+        const signed = await sign(session.id);
+        await prisma.originalUploadIntent.update({
+            where: { assetId: reserved.json().asset.id }, data: { userId: otherId },
+        });
+        const deniedSign = await requestAs(ownerId, 'POST', `/api/upload-sessions/${session.id}/parts/1/sign`);
+        expect(deniedSign.statusCode, deniedSign.body).toBe(503);
+        const deniedPut = await put(signed.url, content);
+        expect(deniedPut.statusCode, deniedPut.body).toBe(403);
+        expect(deniedPut.json()).toEqual({ error: 'Invalid or expired upload URL' });
+        expect(await prisma.uploadPart.count({ where: { uploadSessionId: session.id } })).toBe(0);
+    });
+
+    it('does not publish a real PUT when cancellation commits during its stream', async () => {
+        const content = Buffer.alloc(512 * 1024, 0x65);
+        const payload = originalReservation(content);
+        const reserved = await requestAs(ownerId, 'POST', '/api/assets/original-uploads', payload);
+        expect(reserved.statusCode, reserved.body).toBe(201);
+        const session = await createSession(content, reserved.json().asset.id);
+        const signed = await sign(session.id);
+        const partsDirectory = path.join(storageRoot, '.uploads', session.id, 'parts');
+        let request;
+        const response = new Promise((resolve, reject) => {
+            request = httpRequest(new URL(signed.url, address), {
+                method: 'PUT',
+                headers: { 'content-type': 'application/octet-stream', 'content-length': String(content.length) },
+            }, incoming => {
+                let body = '';
+                incoming.setEncoding('utf8');
+                incoming.on('data', chunk => { body += chunk; });
+                incoming.on('end', () => resolve({ status: incoming.statusCode, body }));
+                incoming.on('error', reject);
+            });
+            request.on('error', reject);
+        });
+        try {
+            request.write(content.subarray(0, 64 * 1024));
+            await waitFor(async () => {
+                const entries = await readdir(partsDirectory).catch(error => {
+                    if (error.code === 'ENOENT') return [];
+                    throw error;
+                });
+                return entries.some(name => name.startsWith('.partial-'));
+            });
+            const cancelled = await requestAs(
+                ownerId, 'POST', `/api/assets/original-uploads/${payload.clientRequestId}/cancel`);
+            expect(cancelled.statusCode, cancelled.body).toBe(200);
+            request.end(content.subarray(64 * 1024));
+            const result = await response;
+            expect(result.status, result.body).toBe(410);
+        } finally {
+            if (!request.destroyed) request.destroy();
+        }
+        expect(await storage.listParts(session.id)).toEqual([]);
+        expect(await prisma.uploadPart.count({ where: { uploadSessionId: session.id } })).toBe(0);
+        expect((await prisma.uploadSession.findUnique({ where: { id: session.id } })).status).toBe('OPEN');
+        expect((await readdir(partsDirectory)).filter(name => name.startsWith('.partial-'))).toEqual([]);
+    });
+
+    it('allows publication that holds the cancellation locks first', async () => {
+        const content = Buffer.from('publication wins');
+        const payload = originalReservation(content);
+        const reserved = await requestAs(ownerId, 'POST', '/api/assets/original-uploads', payload);
+        expect(reserved.statusCode, reserved.body).toBe(201);
+        const session = await createSession(content, reserved.json().asset.id);
+        const signed = await sign(session.id);
+        let signalEntered;
+        let releasePublication;
+        const entered = new Promise(resolve => { signalEntered = resolve; });
+        const publicationGate = new Promise(resolve => { releasePublication = resolve; });
+        const originalUploadPart = storage.uploadPart;
+        const spy = vi.spyOn(storage, 'uploadPart').mockImplementation((id, part, body, options) =>
+            originalUploadPart.call(storage, id, part, body, {
+                ...options,
+                commitPart: (result, publish) => options.commitPart(result, async () => {
+                    signalEntered();
+                    await publicationGate;
+                    await publish();
+                }),
+            }));
+        let writing;
+        let cancelling;
+        try {
+            writing = put(signed.url, content);
+            await entered;
+            cancelling = Promise.resolve(requestAs(
+                ownerId, 'POST', `/api/assets/original-uploads/${payload.clientRequestId}/cancel`));
+            await waitFor(async () => {
+                const [{ blocked }] = await prisma.$queryRaw`
+                    SELECT EXISTS (
+                        SELECT 1 FROM pg_stat_activity
+                        WHERE datname = current_database() AND wait_event_type = 'Lock'
+                          AND query LIKE '%SELECT id, status FROM users WHERE id =%FOR UPDATE%'
+                    ) AS blocked`;
+                return blocked;
+            });
+        } finally {
+            releasePublication();
+            spy.mockRestore();
+        }
+        const uploaded = await writing;
+        expect(uploaded.statusCode, uploaded.body).toBe(200);
+        const cancelled = await cancelling;
+        expect(cancelled.statusCode, cancelled.body).toBe(200);
+        expect(await storage.listParts(session.id)).toMatchObject([{ partNumber: 1, sha256: sha256(content) }]);
+        expect(await prisma.uploadPart.count({ where: { uploadSessionId: session.id } })).toBe(1);
+    });
+
+    it('preserves and reconciles a published part when its transaction fails before cancellation', async () => {
+        const content = Buffer.from('publication survives rollback');
+        const payload = originalReservation(content);
+        const reserved = await requestAs(ownerId, 'POST', '/api/assets/original-uploads', payload);
+        expect(reserved.statusCode, reserved.body).toBe(201);
+        const session = await createSession(content, reserved.json().asset.id);
+        const signed = await sign(session.id);
+        const originalUploadPart = storage.uploadPart;
+        const spy = vi.spyOn(storage, 'uploadPart').mockImplementation((id, part, body, options) =>
+            originalUploadPart.call(storage, id, part, body, {
+                ...options,
+                commitPart: (result, publish) => options.commitPart(result, async () => {
+                    await publish();
+                    throw new Error('injected failure after part publication');
+                }),
+            }));
+        try {
+            const failed = await put(signed.url, content);
+            expect(failed.statusCode, failed.body).toBe(500);
+        } finally {
+            spy.mockRestore();
+        }
+        expect(await storage.listParts(session.id)).toMatchObject([{ partNumber: 1, sha256: sha256(content) }]);
+        expect(await prisma.uploadPart.count({ where: { uploadSessionId: session.id } })).toBe(0);
+        const cancelled = await requestAs(
+            ownerId, 'POST', `/api/assets/original-uploads/${payload.clientRequestId}/cancel`);
+        expect(cancelled.statusCode, cancelled.body).toBe(200);
+        const deniedSign = await requestAs(ownerId, 'POST', `/api/upload-sessions/${session.id}/parts/1/sign`);
+        expect(deniedSign.statusCode, deniedSign.body).toBe(410);
+        expect(await prisma.uploadPart.count({ where: { uploadSessionId: session.id } })).toBe(0);
+        const resumed = await requestAs(ownerId, 'GET', `/api/upload-sessions/${session.id}`);
+        expect(resumed.statusCode, resumed.body).toBe(200);
+        expect(resumed.json().uploadSession.parts).toMatchObject([{ partNumber: 1, sha256: sha256(content) }]);
+        expect(await prisma.uploadPart.count({ where: { uploadSessionId: session.id } })).toBe(1);
+    });
+
     async function handoffService() {
         const { createUploadSessionService } = await import('../lib/upload-sessions.js');
         const { enqueueMuxOriginal } = await import('../lib/mux-original-records.js');
