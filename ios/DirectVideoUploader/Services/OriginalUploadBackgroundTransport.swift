@@ -176,6 +176,9 @@ final class OriginalUploadEventInbox {
         let quarantinedRecords = try quarantineInbox.readRecords(matching: event)
         let activeEvent = activeRecords.first(where: { $0.event.id == event.id })?.event
         let quarantinedEvent = quarantinedRecords.first(where: { $0.event.id == event.id })?.event
+        guard quarantinedEvent == nil || quarantinedEvent == event else {
+            throw OriginalUploadStorageError.invalidRecord
+        }
 
         if activeEvent == nil {
             guard quarantinedEvent == event else { throw OriginalUploadStorageError.invalidRecord }

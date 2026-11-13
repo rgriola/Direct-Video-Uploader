@@ -2122,6 +2122,26 @@ struct OriginalUploadBackgroundTransportTests {
     }
 
     @Test
+    func quarantineRejectsConflictingQuarantinedEventWithSameID() throws {
+        let directory = try fixture()
+        defer { cleanup(directory) }
+        let inbox = OriginalUploadEventInbox(directory: directory.appendingPathComponent("inbox"))
+        let event = unidentifiedEvent()
+        let conflictingEvent = unidentifiedEvent(id: event.id, taskIdentifier: event.taskIdentifier + 1)
+        try inbox.persist(event)
+
+        let quarantine = OriginalUploadEventInbox(directory: inbox.quarantineDirectory)
+        try quarantine.persist(conflictingEvent)
+        let pump = OriginalBackgroundEventPump(inbox: inbox, quarantineInbox: quarantine)
+
+        #expect(throws: OriginalUploadStorageError.invalidRecord) {
+            try pump.quarantineUnidentifiedEvent(event)
+        }
+        #expect(try inbox.events() == [event])
+        #expect(try quarantine.events() == [conflictingEvent])
+    }
+
+    @Test
     func failedQuarantineWriteLeavesActiveCompletionUntouched() throws {
         let directory = try fixture()
         defer { cleanup(directory) }
