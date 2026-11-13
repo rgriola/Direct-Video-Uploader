@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createMonitoringService } from '../lib/monitoring.js';
+import { createMonitoringService, retiredMuxReferenceCheck } from '../lib/monitoring.js';
 import {
     createMonitoringAlerts,
     getMonitoringAlertConfig,
@@ -30,6 +30,31 @@ function harness({ send = vi.fn(async () => ({ ok: true })), repeatMs = 6 * HOUR
 }
 
 describe('monitoring alerts', () => {
+    it('alerts on retained Mux references without exposing identifiers and fails visibly on database errors', async () => {
+        const findFirst = vi.fn().mockResolvedValue(null);
+        const send = vi.fn(async () => ({ ok: true }));
+        const monitoring = createMonitoringService({
+            checks: [retiredMuxReferenceCheck({ muxRetiredIngestEvent: { findFirst } })],
+        });
+        const alerts = createMonitoringAlerts({ send, repeatMs: HOUR });
+        monitoring.subscribe(alerts.notify);
+        await monitoring.runOnce();
+        expect(send).not.toHaveBeenCalled();
+
+        findFirst.mockResolvedValue({ operationId: 'private-operation-id' });
+        await monitoring.runOnce();
+        expect(monitoring.snapshot().checks[0]).toMatchObject({ status: 'critical' });
+        expect(send).toHaveBeenCalledTimes(1);
+        expect(send.mock.calls[0][0]).toContain('retained Mux reference requires investigation');
+        expect(send.mock.calls[0][0]).not.toContain('private-operation-id');
+
+        findFirst.mockRejectedValue(new Error('database unavailable'));
+        await monitoring.runOnce();
+        expect(monitoring.snapshot().checks[0]).toMatchObject({ status: 'unknown' });
+        expect(send).toHaveBeenCalledTimes(2);
+        expect(send.mock.calls[1][0]).not.toContain('database unavailable');
+    });
+
     it('alerts on transitions, repeats unresolved problems, and reports recovery', async () => {
         const h = harness();
         await h.monitoring.runOnce();

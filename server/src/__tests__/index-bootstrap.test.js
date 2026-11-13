@@ -18,6 +18,7 @@ const stopMuxSyncMock = vi.fn();
 const startMuxOriginalIngestMock = vi.fn();
 const stopMuxOriginalIngestMock = vi.fn();
 const countMuxAttemptsMock = vi.fn();
+const findRetiredMuxEventMock = vi.fn();
 const startUploadCleanupMock = vi.fn();
 const stopUploadCleanupMock = vi.fn();
 
@@ -118,6 +119,7 @@ vi.mock('../lib/prisma.js', () => ({
         },
         $queryRaw: vi.fn().mockResolvedValue([{ ok: 1 }]),
         muxIngestAttempt: { count: countMuxAttemptsMock },
+        muxRetiredIngestEvent: { findFirst: findRetiredMuxEventMock },
     },
 }));
 
@@ -158,6 +160,7 @@ beforeEach(() => {
     stopMuxOriginalIngestMock.mockReset();
     startMuxOriginalIngestMock.mockReset().mockReturnValue(stopMuxOriginalIngestMock);
     countMuxAttemptsMock.mockReset().mockResolvedValue(0);
+    findRetiredMuxEventMock.mockReset().mockResolvedValue(null);
     startUploadCleanupMock.mockReset();
     stopUploadCleanupMock.mockReset();
 
@@ -212,6 +215,18 @@ describe('server index bootstrap coverage', () => {
         const fastify = fastifyState.instances[0];
         expect(fastify.log.error).toHaveBeenCalledWith(expect.any(Error));
         expect(processExitSpy).toHaveBeenCalledWith(1);
+    });
+
+    it('registers the retired Mux check with application monitoring', async () => {
+        process.env.DVU_MONITORING_ENABLED = 'true';
+        delete process.env.DVU_MONITOR_STATE_DIR;
+        findRetiredMuxEventMock.mockResolvedValue({ operationId: 'private-operation-id' });
+        await importIndexModule();
+        const fastify = fastifyState.instances[0];
+        await vi.waitFor(() => expect(
+            fastify.monitoring.snapshot().checks.find(check => check.id === 'retired-mux-references'),
+        ).toMatchObject({ status: 'critical' }));
+        await processHandlers.SIGTERM();
     });
 
     it('refuses SDK debug logging when old original ingest attempts exist', async () => {

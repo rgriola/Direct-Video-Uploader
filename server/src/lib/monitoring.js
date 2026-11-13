@@ -346,6 +346,20 @@ export function createMonitoringChecks(config, clock = () => new Date(), { inspe
     ];
 }
 
+export function retiredMuxReferenceCheck(db) {
+    return {
+        id: 'retired-mux-references',
+        label: 'Mux references after account deletion',
+        category: 'service',
+        async collect() {
+            const event = await db.muxRetiredIngestEvent.findFirst({ select: { operationId: true } });
+            return event
+                ? { status: 'critical', message: 'A retained Mux reference requires investigation' }
+                : { status: 'ok', message: 'No retained Mux references have been reported' };
+        },
+    };
+}
+
 export function createMonitoringService({
     enabled = true, checks = [], log, clock = () => new Date(), intervalMs = INTERVAL_MS,
     timeoutMs = CHECK_TIMEOUT_MS,

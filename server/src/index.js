@@ -35,7 +35,7 @@ import { CORS_ORIGINS, WS_CORS_ORIGINS } from './lib/config.js';
 import prisma from './lib/prisma.js';
 import { authenticate } from './lib/authentication.js';
 import { requireRole } from './lib/authorization.js';
-import { monitoringFromEnvironment } from './lib/monitoring.js';
+import { monitoringFromEnvironment, retiredMuxReferenceCheck } from './lib/monitoring.js';
 import { monitoringAlertsFromEnvironment } from './lib/monitoring-alerts.js';
 import * as slack from './lib/slack.js';
 import { withAssetMediaLock } from './lib/media-lock.js';
@@ -374,6 +374,7 @@ fastify.decorate('io', io);
 
 // ─── Routes ──────────────────────────────────────────────
 const monitoring = monitoringFromEnvironment({ log: fastify.log });
+monitoring.registerCheck(retiredMuxReferenceCheck(prisma));
 monitoringAlertsFromEnvironment({ monitoring, slack, log: fastify.log });
 fastify.decorate('monitoring', monitoring);
 const muxOriginalConfig = await registerApplicationRoutes(fastify);
