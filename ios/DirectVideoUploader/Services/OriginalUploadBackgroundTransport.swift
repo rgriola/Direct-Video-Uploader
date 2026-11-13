@@ -929,9 +929,72 @@ nonisolated struct OriginalBackgroundCancellationResult: Sendable {
     let hasUnidentifiedTasks: Bool
 }
 
-nonisolated struct OriginalBackgroundTaskSnapshot: Sendable {
+nonisolated struct OriginalBackgroundTaskSnapshot: Equatable, Sendable {
     let identifier: Int
     let tag: OriginalBackgroundTaskTag?
+}
+
+nonisolated struct OriginalBackgroundScopeStopResult: Sendable {
+    let requestedTaskIdentifiers: Set<Int>
+    let hasUnidentifiedTasks: Bool
+    let hasDuplicateIdentifiers: Bool
+    let hasDuplicateAttempts: Bool
+    // The fence changed, scheduling was in progress, or a target snapshot changed.
+    let inventoryStale: Bool
+}
+
+@MainActor
+enum OriginalBackgroundScopeStop {
+    // This is a best-effort request, not proof of terminal tasks or a complete
+    // OS inventory. It deliberately does not consult or mutate the journal.
+    static func request<TaskHandle>(
+        permit: OriginalUploadTaskFence.StopPermit, fence: OriginalUploadTaskFence,
+        tasks: @MainActor () async -> [TaskHandle],
+        snapshot: @MainActor (TaskHandle) -> OriginalBackgroundTaskSnapshot,
+        cancel: @MainActor (TaskHandle) -> Void
+    ) async throws -> OriginalBackgroundScopeStopResult {
+        let scope = try fence.stoppedScope(for: permit)
+        let generation = fence.beginSnapshot()
+        let handles = await tasks()
+        let entries = handles.map { (handle: $0, snapshot: snapshot($0)) }
+        var identifiers: [Int: Int] = [:]
+        var attempts: [UUID: Int] = [:]
+        var unknown = false
+        for entry in entries {
+            let item = entry.snapshot
+            identifiers[item.identifier, default: 0] += 1
+            if let tag = item.tag {
+                attempts[tag.attemptId, default: 0] += 1
+                if !tag.isValid { unknown = true }
+            } else {
+                unknown = true
+            }
+            if item.identifier <= 0 { unknown = true }
+        }
+        let duplicateIDs = identifiers.values.contains { $0 > 1 }
+        let duplicateAttempts = attempts.values.contains { $0 > 1 }
+        var stale = !fence.isSnapshotCurrent(generation)
+        var requested: Set<Int> = []
+        for entry in entries {
+            guard !stale else { break }
+            let item = entry.snapshot
+            guard item.identifier > 0, identifiers[item.identifier] == 1,
+                  let tag = item.tag, tag.isValid, tag.scope == scope,
+                  attempts[tag.attemptId] == 1 else { continue }
+            // Recheck the individual handle immediately before invoking cancel.
+            guard snapshot(entry.handle) == item, fence.isSnapshotCurrent(generation) else {
+                stale = true
+                break
+            }
+            cancel(entry.handle)
+            requested.insert(item.identifier)
+            if !fence.isSnapshotCurrent(generation) { stale = true }
+        }
+        return OriginalBackgroundScopeStopResult(
+            requestedTaskIdentifiers: requested, hasUnidentifiedTasks: unknown,
+            hasDuplicateIdentifiers: duplicateIDs, hasDuplicateAttempts: duplicateAttempts,
+            inventoryStale: stale)
+    }
 }
 
 nonisolated struct OriginalBackgroundTaskIndex: Sendable {
