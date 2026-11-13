@@ -339,6 +339,25 @@ model MuxIngestAttempt {
   @@map("mux_ingest_attempts")
 }
 
+model MuxRetiredIngestAttempt {
+  operationId        String   @id @map("operation_id")
+  originalMuxAssetId String?  @map("original_mux_asset_id")
+  retiredAt          DateTime @default(now()) @map("retired_at")
+  events             MuxRetiredIngestEvent[]
+
+  @@map("mux_retired_ingest_attempts")
+}
+
+model MuxRetiredIngestEvent {
+  operationId String   @map("operation_id")
+  muxAssetId  String   @map("mux_asset_id")
+  firstSeenAt DateTime @default(now()) @map("first_seen_at")
+  attempt MuxRetiredIngestAttempt @relation(fields: [operationId], references: [operationId], onDelete: Restrict)
+
+  @@id([operationId, muxAssetId])
+  @@map("mux_retired_ingest_events")
+}
+
 model MuxOriginalReadLease {
   id               String   @id
   assetId          String   @map("asset_id")
