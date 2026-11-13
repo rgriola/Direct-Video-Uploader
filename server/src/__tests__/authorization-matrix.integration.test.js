@@ -328,6 +328,11 @@ integration('role and organization endpoint matrix', () => {
             },
         },
         {
+            route: 'GET /api/original-upload-recovery/:clientRequestId', method: 'GET',
+            url: '/api/original-upload-recovery/00000000-0000-4000-8000-000000000001',
+            statuses: [401, 404, 404, 404, 404, 404, 404, 404],
+        },
+        {
             route: 'POST /api/assets', method: 'POST', url: '/api/assets', statuses: ALL,
             payload: () => ({ fileName: 'matrix.mov' }),
             check: async (response, actor) => {

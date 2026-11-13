@@ -243,6 +243,18 @@ recorded but the response is 404 without asset or session IDs. The route is also
 unavailable when upload intake is disabled, so a 404 never confirms that a
 fence was recorded or that cleanup completed.
 
+An active owner can inspect a known request ID with
+`GET /api/original-upload-recovery/:clientRequestId`, including while upload
+intake is disabled. The read-only response contains the intent `state`
+(`ACTIVE`, `CANCELLED`, or `REMOVED`), its visible `assetId` or `null`, up to
+100 session IDs and statuses, and `truncated` when more sessions exist. A
+missing intent or hidden asset returns 404; inconsistent references return
+503 without identifiers. This endpoint neither changes the intent nor
+recovers, aborts, signs, or deletes work. An absent intent, null asset, empty
+list, or untruncated response does not prove that earlier work or storage did
+not exist, or that background work is terminal. The snapshot can change after
+the response. It is not an enrollment or authorization to resume uploads.
+
 For an unknown request ID, at most 100 unreserved cancellation fences per
 owner are admitted in a rolling 24-hour window. A 429
 `INTENT_CANCELLATION_QUOTA` includes `Retry-After` in seconds and does not
