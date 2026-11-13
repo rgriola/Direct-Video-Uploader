@@ -900,6 +900,10 @@ sequenceDiagram
     This unreleased journal format includes a job-incarnation identifier; if any
     earlier experimental installation created older records or tasks, migrate and
     reconcile them before enabling recovery rather than deleting staged files.
+    A missing durable cancellation gate is not proof of a fresh installation:
+    older builds may have made ungated requests or lost retry information.
+    Recovery requires a trusted migration or enrollment procedure; restarting or
+    waiting an arbitrary interval cannot reconstruct a hidden retry delay.
   - Finish scope-wide sign-out fencing, safe cancellation when credentials have
     already changed, recovery of reservations or sessions created during a
     cancellation race without creating new work, and terminal local cleanup that
@@ -941,13 +945,19 @@ sequenceDiagram
     sessions before aborting eligible ones. Completed and already-terminal sessions
     are not sent DELETE; the original, attempts, events, and cancellation flag
     remain in place.
-    In-memory job tombstones and shared fence/page gates prevent default coordinator
-    scans from bypassing a known delay or an uncertain response in the same process.
-    The Debug-only isolated state initializer is for tests, not app integration.
+    In-memory job tombstones prevent default coordinators from restarting the same
+    job in one process. A shared, process-wide gate also serializes cancellation
+    fence and page requests from raw APIs, traversals, and coordinators. A validated
+    429 delays both request types; an invalid delay or unknown dispatched response
+    parks the gate. Failures before transport handoff do not park it. Local
+    cancellation checks temporarily block requests and park the gate if an earlier
+    cancellation is uncertain. Debug-only isolated gates are for tests, not app
+    integration.
     This isolated coordinator parks rather than resuming after a delay or failure;
     its job tombstone remains even when local cancellation persistence is uncertain.
-    It releases its API and access references when finished or parked. Raw API
-    calls do not use those gates, and no retry marker or gate survives restart.
+    It releases its API and access references when finished or parked. The shared
+    gate and retry delays do not survive restart or coordinate across processes or
+    devices; raw API calls do not use coordinator job tombstones.
     Do not wire this coordinator into the app until all relevant callers use a
     durable, scope-wide retry and sign-out policy, in-flight work is invalidated,
     and background task and event reconciliation can prove safe cleanup. Neither
