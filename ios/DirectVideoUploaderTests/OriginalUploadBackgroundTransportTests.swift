@@ -639,6 +639,34 @@ struct OriginalUploadBackgroundTransportTests {
     }
 
     @Test
+    func stableParseableNoncanonicalTaskAttachmentIsUnidentified() throws {
+        let tag = try #require(event().tag)
+        let rewritten = tag.taskDescription.lowercased()
+        #expect(UUID(uuidString: tag.jobId.uuidString.lowercased()) == tag.jobId)
+        #expect(OriginalBackgroundTaskTag(taskDescription: rewritten) == nil)
+
+        let observations = [
+            OriginalBackgroundTaskSnapshot(
+                identifier: 17,
+                tag: OriginalBackgroundTaskTag(taskDescription: rewritten),
+                attachment: rewritten),
+        ]
+        try OriginalBackgroundTaskIndex.requireStableAttachments(observations, observations)
+        let index = OriginalBackgroundTaskIndex(observations)
+        #expect(index.hasUnidentifiedTasks)
+        #expect(index.jobIDs.isEmpty && index.attemptIDs.isEmpty)
+        #expect(index.cancellationTargets(
+            scope: tag.scope, jobId: tag.jobId, incarnation: tag.jobIncarnation).isEmpty)
+
+        // Even a caller-supplied parsed tag cannot override a non-canonical OS attachment.
+        let mismatched = OriginalBackgroundTaskSnapshot(
+            identifier: 18, tag: tag, attachment: rewritten)
+        let mismatchedIndex = OriginalBackgroundTaskIndex([mismatched])
+        #expect(mismatchedIndex.hasUnidentifiedTasks)
+        #expect(mismatchedIndex.jobIDs.isEmpty && mismatchedIndex.attemptIDs.isEmpty)
+    }
+
+    @Test
     func inboxPersistsAndRemovesEventsIdempotently() throws {
         let directory = try fixture()
         defer { cleanup(directory) }
