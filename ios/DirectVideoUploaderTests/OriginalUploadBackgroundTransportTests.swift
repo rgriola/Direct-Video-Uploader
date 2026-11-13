@@ -1088,7 +1088,7 @@ struct OriginalUploadBackgroundTransportTests {
             createdAt: base.createdAt, revision: base.revision + 1, assetId: base.assetId,
             sessionId: base.sessionId, state: base.state, attempts: attempts)
         try JSONEncoder().encode(job).write(to: fixture.jobFile, options: .atomic)
-        #expect(try fixture.journal.readCurrentJob(id: job.id, access: fixture.access) == job)
+        try #require(fixture.journal.readCurrentJob(id: job.id, access: fixture.access) == job)
         return job
     }
 
@@ -1130,17 +1130,19 @@ struct OriginalUploadBackgroundTransportTests {
             tasks: inventory, inspection: inspection(evidence), access: access ?? fixture.access)
     }
 
-    /// Runs `body` and verifies that the journal job directory and the inbox are byte-for-byte unchanged.
+    /// Runs `body` and verifies that the journal job directory is byte-for-byte unchanged. A valid
+    /// `job-update-<UUID>.tmp` staging file is planted first; the mutating `read(id:)` path would remove it
+    /// via journal staging cleanup, so its survival proves the reconciler used the read-only journal path.
     private func expectReadOnly<T>(
         _ fixture: CorrelationFixture, _ body: () throws -> T
     ) throws -> Result<T, any Error> {
-        let inbox = OriginalUploadEventInbox(directory: fixture.inboxDirectory)
-        try inbox.persist(try taggedCompletion(for: fixture))
+        let staged = fixture.jobDirectory.appendingPathComponent("job-update-\(UUID().uuidString).tmp")
+        let stagedBytes = try JSONEncoder().encode(fixture.job)
+        try stagedBytes.write(to: staged, options: .withoutOverwriting)
         let journalFiles = try directFileBytes(in: fixture.jobDirectory)
-        let inboxFiles = try directFileBytes(in: fixture.inboxDirectory)
         let result = Result { try body() }
+        #expect(try Data(contentsOf: staged) == stagedBytes)
         #expect(try directFileBytes(in: fixture.jobDirectory) == journalFiles)
-        #expect(try directFileBytes(in: fixture.inboxDirectory) == inboxFiles)
         return result
     }
 
@@ -1162,12 +1164,18 @@ struct OriginalUploadBackgroundTransportTests {
             try reconciliationEvidence(fixture, attemptID: unobserved.id, taskIdentifier: 23, incarnation: UUID()),
             try reconciliationEvidence(
                 fixture, attemptID: unobserved.id, taskIdentifier: 23, scope: String(repeating: "c", count: 64)),
+            try reconciliationEvidence(fixture, attemptID: UUID(), taskIdentifier: 24, jobID: UUID()),
+            try reconciliationEvidence(fixture, attemptID: UUID(), taskIdentifier: 25, incarnation: UUID()),
+            try reconciliationEvidence(
+                fixture, attemptID: UUID(), taskIdentifier: 26, scope: String(repeating: "d", count: 64)),
         ]
 
         let report = try expectReadOnly(fixture) {
             try reconcile(
                 fixture, tasks: [21, 99], jobs: [job.id, UUID()], attempts: [live.id, UUID()],
-                evidence: [nil, ignored[0], evidence, ignored[1], nil, ignored[2]])
+                evidence: [
+                    nil, ignored[0], evidence, ignored[1], nil, ignored[2], ignored[3], ignored[4], ignored[5],
+                ])
         }.get()
 
         #expect(report.jobID == job.id)
@@ -1226,11 +1234,12 @@ struct OriginalUploadBackgroundTransportTests {
         let identifierOnly = OriginalUploadAttempt(id: UUID(), number: 6, state: .retiring, taskIdentifier: 36)
         let liveObserved = OriginalUploadAttempt(id: UUID(), number: 7, state: .scheduled, taskIdentifier: 37)
         let taggedRetiring = OriginalUploadAttempt(id: UUID(), number: 8, state: .retiring)
+        let untaskedObserved = OriginalUploadAttempt(id: UUID(), number: 9, state: .retiring)
         let attempts = [
             duplicated, readyLive, preparingObserved, mismatched, taggedOnly, identifierOnly,
-            liveObserved, taggedRetiring,
+            liveObserved, taggedRetiring, untaskedObserved,
         ]
-        _ = try writeReconciliationJob(fixture, attempts: attempts)
+        _ = try writeReconciliationJob(fixture, partCount: 9, attempts: attempts)
         let first = try reconciliationEvidence(fixture, attemptID: duplicated.id, taskIdentifier: 31)
         let second = try reconciliationEvidence(fixture, attemptID: duplicated.id, taskIdentifier: 31)
         let unknownFirst = try reconciliationEvidence(fixture, attemptID: UUID(), taskIdentifier: 41)
@@ -1242,6 +1251,7 @@ struct OriginalUploadBackgroundTransportTests {
             second,
             try reconciliationEvidence(fixture, attemptID: liveObserved.id, taskIdentifier: 37),
             unknownSecond,
+            try reconciliationEvidence(fixture, attemptID: untaskedObserved.id, taskIdentifier: 39),
         ]
 
         let report = try expectReadOnly(fixture) {
@@ -1261,6 +1271,7 @@ struct OriginalUploadBackgroundTransportTests {
             .ambiguous(.recordedIdentifierWithoutTaggedTask),
             .ambiguous(.liveTaskWithCompletionEvidence),
             .ambiguous(.taggedTaskWithoutRecordedIdentifier),
+            .ambiguous(.completionEvidenceTaskMismatch),
         ])
         #expect(report.attempts[0].evidence == [first, second])
         #expect(report.unknownAttemptEvidence == [unknownFirst, unknownSecond])
@@ -1355,6 +1366,12 @@ struct OriginalUploadBackgroundTransportTests {
         }
         #expect(throws: OriginalBackgroundCompletionInspectionError.tooManyEvents(
             maximum: OriginalBackgroundCompletionInspectionReport.maximumEventCount)) { try tooMany.get() }
+
+        let atMaximum = try expectReadOnly(fixture) {
+            try reconcile(fixture, evidence: [evidence] + Array(
+                repeating: nil, count: OriginalBackgroundCompletionInspectionReport.maximumEventCount - 1))
+        }.get()
+        #expect(atMaximum.attempts.map(\.observation) == [.completionObserved(evidence)])
 
         try Data("invalid journal data".utf8).write(to: fixture.jobFile, options: .atomic)
         let unreadable = try expectReadOnly(fixture) {
