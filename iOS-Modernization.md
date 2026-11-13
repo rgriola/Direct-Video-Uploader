@@ -911,6 +911,9 @@ sequenceDiagram
     not be treated as proof that a background task is terminal. The server-side
     cancellation fence returns the complete bounded session list on success;
     quota, overflow, and unavailable responses must leave cancellation pending.
+    Once deployed on every server instance, the fence also prevents a new
+    `OPEN`-to-`COMPLETING` transition. A completion that transitioned first may
+    still publish the original and enqueue a Mux handoff after cancellation.
     A read-only, owner-scoped endpoint pages over-limit histories after fencing.
     The iOS API validates identifiers in receipts and individual pages and binds
     continuations to the saved job and authenticated session, preserving

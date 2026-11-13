@@ -263,10 +263,43 @@ do not skip pages or count a repeated page as progress. Asset and session IDs
 are case-sensitive; only the client request UUID is normalized. The route
 requires the same active owner, an existing cancelled intent, and a visible
 asset, and is IP-rate-limited. Missing or uncancelled intents and hidden assets
-return 404 without identifiers; inconsistent session ownership or identifiers
-return an ID-free 503. If the asset disappears after a cursor has been issued,
-the next page also returns an ID-free 503. Each page is read-only and does not
-create, abort, or delete anything.
+return 404 without identifiers. Session ownership and identifier validation
+cover the fetched page and lookahead entry; an inconsistency there returns an
+ID-free 503. If the asset disappears after a cursor has been issued, the next
+page also returns an ID-free 503. Each page is read-only and does not create,
+abort, or delete anything.
+
+Cancellation and every page also check for session/clip asset mismatches in
+either direction across the whole history, not just the page. A mismatch
+returns an ID-free 503; cancellation still records the fence. Preserve the
+staged data and seek operator reconciliation before retrying. These checks
+coordinate with the supported upload paths, not arbitrary database changes
+or a transaction that fails or rolls back.
+
+For a pre-existing session/clip asset mismatch, an authorized individual
+session GET, completion, or abort returns an ID-free 409 with
+`{"error":"Upload session clip does not belong to its asset"}`. Recovery
+that detects the mismatch preserves staged data for reconciliation.
+
+For a pre-existing non-null clip `storageKey` that conflicts with the expected
+key or has a mismatched `storageDriver` (which is not checked when `storageKey`
+is null), or a non-null `storageUrl`, `muxUploadId`, or `muxAssetId`,
+an `OPEN` completion checks the locked clip before transitioning or publishing,
+and `COMPLETING` recovery checks before removing staged data. A conflict returns
+an ID-free 503; capacity validation can return an earlier 503. Repair the
+reference before retrying. For an already matching key, a new transition also
+requires a recorded clip size and SHA-256 matching both session expectations;
+missing evidence fails closed. Recovery requires complete clip metadata and
+compares any available session expectations; when a legacy expected SHA is
+missing, a published object's digest is independently checked against the clip
+before staged cleanup. A mismatch found by hashing returns 422. Finalization
+rechecks the locked clip's key, driver, digest, size, URL, and Mux references
+before accepting an existing same-key reference. A clip reassignment observed
+between the completion snapshot and the locked transition returns 409; a
+changed session storage key, driver, expected size, or hash returns 503.
+These checks do not protect against arbitrary database rewrites after the
+transition or guarantee staged data survives late reference changes or other
+finalization failures.
 
 An empty page or `assetId: null` does not prove that earlier sessions or
 storage were cleaned up: an asset can have been deleted, taking its session
@@ -277,11 +310,24 @@ session IDs still require individual reconciliation.
 
 Cancellation is serialized with reservation and session creation. After it
 commits, further creation requests for that intent return 410; a session that
-won the race is included in a successful `sessionIds` response. Deploy the
-migrations and cancellation-aware code to every server instance before clients
-rely on this guarantee; older instances ignore the fence. The fence does
-**not** abort sessions, stop in-flight transfers, revoke already issued part
-URLs, or delete stored originals. Stop local tasks and inspect and abort each
+won the race is included in a successful `sessionIds` response. It is also
+serialized with the transition of an `OPEN` session to `COMPLETING`: if the
+fence commits first, an otherwise eligible attempt reaching that transition
+returns 410, leaving the session and staged parts for later reconciliation and
+abort. Earlier validation or capacity errors can still take precedence.
+An inconsistent session/clip asset reference prevents a new transition with
+409 and leaves staged content untouched for investigation.
+Sessions without an intent are not blocked by the cancellation fence, but
+still undergo the completion and reference checks above.
+A transition that commits first can still publish its original and enqueue an
+enabled Mux handoff after the fence.
+Recovery can also finalize a previously `COMPLETING` session; if it instead
+reopens the session, a new completion is fenced. Retrying an already completed
+session remains idempotent. Deploy the migrations and cancellation-aware code
+to every server instance before clients rely on these guarantees; older
+instances ignore the fence. The fence does **not** abort sessions, stop
+in-flight transfers, revoke already issued part URLs, or delete stored
+originals. Stop local tasks and inspect and abort each
 unfinished session with the same owner's current credentials; retry cleanup if
 needed.
 An earlier creation response or notification may still arrive after the fence,
@@ -424,6 +470,8 @@ outstanding background tasks until the user reopens it.
   total byte count, and whole-file SHA-256 before attaching the private original
   to the clip. A successful retry returns the same completed session. Missing
   parts or an in-progress operation return 409; integrity mismatch returns 422.
+  A cancelled intent prevents a new `OPEN` to `COMPLETING` transition (410),
+  but does not stop or undo an earlier transition.
 - `DELETE /api/upload-sessions/:sessionId` aborts an unfinished session.
   A successful HTTP 200 returns `{"uploadSession":{"id":"...","status":"ABORTED"}}`;
   an already expired session reports `EXPIRED`. Retrying is safe. If cleanup is
