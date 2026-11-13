@@ -22,6 +22,7 @@ const prismaMock = {
         update: vi.fn(),
         updateMany: vi.fn(),
     },
+    muxRetiredIngestEvent: { findMany: vi.fn() },
     auditLog: {
         create: vi.fn(),
         findMany: vi.fn(),
@@ -66,6 +67,7 @@ beforeEach(async () => {
     prismaMock.clip.findMany.mockResolvedValue([]);
     prismaMock.clip.update.mockResolvedValue({});
     prismaMock.clip.updateMany.mockResolvedValue({ count: 1 });
+    prismaMock.muxRetiredIngestEvent.findMany.mockResolvedValue([]);
     prismaMock.auditLog.create.mockResolvedValue({});
     prismaMock.auditLog.findMany.mockResolvedValue([]);
     reconcileAssetMedia.mockResolvedValue({ state: 'SYNCED', message: 'Media reconciliation completed' });
@@ -85,6 +87,44 @@ beforeEach(async () => {
 
 afterEach(async () => {
     await app.close();
+});
+
+describe('GET /api/admin/retired-mux-events', () => {
+    const url = '/api/admin/retired-mux-events';
+
+    it('restricts retained references to Super Admins and rejects partial cursors', async () => {
+        expect((await app.inject({ method: 'GET', url })).statusCode).toBe(403);
+        expect(prismaMock.muxRetiredIngestEvent.findMany).not.toHaveBeenCalled();
+        actor = SUPER_ADMIN;
+        expect((await app.inject({ method: 'GET', url: `${url}?afterOperationId=operation` })).statusCode).toBe(400);
+        expect(prismaMock.muxRetiredIngestEvent.findMany).not.toHaveBeenCalled();
+    });
+
+    it('returns a bounded page and uses exact identifiers for continuation', async () => {
+        actor = SUPER_ADMIN;
+        prismaMock.muxRetiredIngestEvent.findMany.mockResolvedValueOnce(
+            Array.from({ length: 51 }, (_, index) => ({
+                operationId: 'operation',
+                muxAssetId: `Mux-${String(index).padStart(2, '0')}`,
+                firstSeenAt: new Date('2026-01-01T00:00:00Z'),
+                attempt: { originalMuxAssetId: null },
+            })),
+        );
+        const first = await app.inject({ method: 'GET', url });
+        expect(first.json().events).toHaveLength(50);
+        expect(first.json().nextCursor).toEqual({ operationId: 'operation', muxAssetId: 'Mux-49' });
+        const next = await app.inject({
+            method: 'GET', url: `${url}?afterOperationId=operation&afterMuxAssetId=Mux-49`,
+        });
+        expect(next.json().nextCursor).toBeNull();
+        expect(prismaMock.muxRetiredIngestEvent.findMany).toHaveBeenLastCalledWith(expect.objectContaining({
+            take: 51,
+            where: { OR: [
+                { operationId: { gt: 'operation' } },
+                { operationId: 'operation', muxAssetId: { gt: 'Mux-49' } },
+            ] },
+        }));
+    });
 });
 
 describe('PATCH /api/admin/users/:id/status', () => {

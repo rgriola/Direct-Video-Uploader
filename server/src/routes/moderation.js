@@ -477,6 +477,41 @@ export default async function moderationRoutes(fastify) {
         return { issues: issues.slice(0, 100), hasMore: issues.length > 100 };
     });
 
+    fastify.get('/api/admin/retired-mux-events', {
+        preHandler: [fastify.authenticate, fastify.requireRole(ROLES.SUPER_ADMIN)],
+    }, async (request, reply) => {
+        const { afterOperationId, afterMuxAssetId } = request.query || {};
+        const hasCursor = afterOperationId !== undefined || afterMuxAssetId !== undefined;
+        if (hasCursor && (typeof afterOperationId !== 'string' || !afterOperationId
+            || typeof afterMuxAssetId !== 'string' || !afterMuxAssetId)) {
+            return reply.status(400).send({ error: 'Both retired Mux cursor identifiers are required' });
+        }
+        const events = await prisma.muxRetiredIngestEvent.findMany({
+            where: hasCursor ? {
+                OR: [
+                    { operationId: { gt: afterOperationId } },
+                    { operationId: afterOperationId, muxAssetId: { gt: afterMuxAssetId } },
+                ],
+            } : {},
+            select: {
+                operationId: true,
+                muxAssetId: true,
+                firstSeenAt: true,
+                attempt: { select: { originalMuxAssetId: true } },
+            },
+            orderBy: [{ operationId: 'asc' }, { muxAssetId: 'asc' }],
+            take: 51,
+        });
+        const page = events.slice(0, 50);
+        const last = page.at(-1);
+        return {
+            events: page,
+            nextCursor: events.length > 50
+                ? { operationId: last.operationId, muxAssetId: last.muxAssetId }
+                : null,
+        };
+    });
+
     fastify.get('/api/admin/audit-logs', {
         preHandler: [fastify.authenticate, fastify.requireRole(ROLES.SUPER_ADMIN)],
     }, async (request, reply) => {
