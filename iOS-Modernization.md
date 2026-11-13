@@ -987,8 +987,8 @@ sequenceDiagram
     complete file protection, separately review the minimized background-event
     inbox, and verify locked-device persistence and unlock reconciliation.
     Verify production API pinning and key rotation. The original-upload control
-    session excludes shared HTTP credentials; the existing general bearer transport
-    still uses the shared credential store and needs separate review.
+    session and redirect-safe bearer HTTP and WebSocket sessions exclude shared
+    HTTP credentials and cookies.
   - The owner reported that closing the current app mid-upload caused a failure and that
     manual retry succeeded. This does not demonstrate uninterrupted background transfer
     or test the new store-first path.
