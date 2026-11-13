@@ -1280,3 +1280,151 @@ enum OriginalBackgroundCompletionMatcher {
             taskIdentifier: taskIdentifier)
     }
 }
+
+/// Why a journal attempt could not be classified conclusively from local observations.
+nonisolated enum OriginalUploadAttemptAmbiguity: Equatable, Sendable {
+    /// More than one completion evidence entry names this attempt; none is preferred.
+    case multipleCompletionEvidence
+    /// A preparing or ready attempt has a live task tagged with its attempt ID.
+    case unscheduledAttemptWithLiveTask
+    /// A preparing or ready attempt has completion evidence.
+    case unscheduledAttemptWithCompletionEvidence
+    /// Completion evidence names a task identifier other than the journal's recorded identifier.
+    case completionEvidenceTaskMismatch
+    /// A live task is tagged with this attempt ID, but the recorded task identifier is absent or not live.
+    case taggedTaskWithoutRecordedIdentifier
+    /// The recorded task identifier is live, but no live task is tagged with this attempt ID.
+    case recordedIdentifierWithoutTaggedTask
+    /// The attempt's task is live and completion evidence also names it.
+    case liveTaskWithCompletionEvidence
+    /// No identified task or evidence was observed, but unidentified tasks could belong to this attempt.
+    case unidentifiedTasksPresent
+}
+
+nonisolated enum OriginalUploadAttemptObservation: Equatable, Sendable {
+    /// A preparing or ready attempt with no tagged live task or evidence in a fully identified inventory.
+    case notScheduled
+    /// The attempt ID is tagged on a live task whose identifier matches the journal record.
+    /// This does not prove the task is non-terminal by the time the report is read.
+    case liveTask
+    /// One matching local completion evidence entry and no live task for the attempt.
+    case completionObserved(OriginalBackgroundCompletionEvidence)
+    case ambiguous(OriginalUploadAttemptAmbiguity)
+    /// A scheduled or retiring attempt with no live task and no evidence in a fully identified
+    /// inventory. Server part reconciliation is required; this proves neither failure nor completion.
+    case unobserved
+}
+
+nonisolated struct OriginalUploadAttemptReconciliationEntry: Equatable, Sendable {
+    /// The journal attempt record, verbatim.
+    let attempt: OriginalUploadAttempt
+    /// Evidence for this job incarnation naming this attempt, in inspection order.
+    let evidence: [OriginalBackgroundCompletionEvidence]
+    let observation: OriginalUploadAttemptObservation
+}
+
+/// A point-in-time, per-job snapshot correlating journal attempts with a fence-current local task
+/// inventory and local completion evidence.
+///
+/// Evidence is local correlation only: it is not server part receipt, session completion, original
+/// publication, or Mux ingest. The inventory cannot pair task identifiers with attempt IDs, so
+/// disagreements are reported as ambiguous rather than resolved. `.liveTask` and `.unobserved` do not
+/// prove that a task is non-terminal or terminal. When the inventory has unidentified tasks, every
+/// absence-based classification (`.notScheduled`, `.unobserved`) becomes
+/// `.ambiguous(.unidentifiedTasksPresent)`. This report must not authorize retirement, event
+/// acknowledgement, completion, or publication.
+nonisolated struct OriginalUploadAttemptReconciliationReport: Equatable, Sendable {
+    let jobID: UUID
+    let jobIncarnation: UUID
+    let jobRevision: UInt64
+    let jobState: OriginalUploadState
+    /// Entries in journal attempt order.
+    let attempts: [OriginalUploadAttemptReconciliationEntry]
+    /// Evidence for this job incarnation naming an attempt absent from the journal, in inspection order.
+    let unknownAttemptEvidence: [OriginalBackgroundCompletionEvidence]
+    let hasUnidentifiedTasks: Bool
+    /// A live task is tagged with this job ID but none of the journal's attempt IDs is live.
+    let liveTaskForJobWithoutAttempt: Bool
+}
+
+@MainActor
+enum OriginalUploadAttemptReconciler {
+    /// Classifies one current journal job's attempts. Purely read-only: it does not write the journal,
+    /// read or acknowledge inbox events, retire or cancel tasks, remove files, or use the network.
+    /// Access and journal-read failures propagate; a stale or foreign inventory throws `.busy`.
+    /// Inspection evidence for another scope, job, or incarnation is ignored.
+    static func reconcile(
+        jobID: UUID,
+        journal: OriginalUploadJournal,
+        fence: OriginalUploadTaskFence,
+        tasks: OriginalUploadTaskInventory,
+        inspection: OriginalBackgroundCompletionInspectionReport,
+        access: OriginalUploadAccess
+    ) throws -> OriginalUploadAttemptReconciliationReport {
+        try access.require(access.scope)
+        guard inspection.entries.count <= OriginalBackgroundCompletionInspectionReport.maximumEventCount else {
+            throw OriginalBackgroundCompletionInspectionError.tooManyEvents(
+                maximum: OriginalBackgroundCompletionInspectionReport.maximumEventCount)
+        }
+        try requireCurrent(fence: fence, journal: journal, tasks: tasks)
+        let job = try journal.readCurrentJob(id: jobID, access: access)
+        let scope = try OriginalUploadJournal.scopeIdentifier(job.scope)
+
+        let jobEvidence = inspection.entries.compactMap(\.evidence).filter {
+            $0.scopeDigest == scope && $0.jobID == job.id && $0.jobIncarnation == job.incarnation
+        }
+        let attemptIDs = Set(job.attempts.map(\.id))
+        let entries = job.attempts.map { attempt in
+            let evidence = jobEvidence.filter { $0.attemptID == attempt.id }
+            return OriginalUploadAttemptReconciliationEntry(
+                attempt: attempt, evidence: evidence,
+                observation: classify(attempt, evidence: evidence, tasks: tasks))
+        }
+        let report = OriginalUploadAttemptReconciliationReport(
+            jobID: job.id, jobIncarnation: job.incarnation, jobRevision: job.revision,
+            jobState: job.state, attempts: entries,
+            unknownAttemptEvidence: jobEvidence.filter { !attemptIDs.contains($0.attemptID) },
+            hasUnidentifiedTasks: tasks.hasUnidentifiedTasks,
+            liveTaskForJobWithoutAttempt: tasks.jobIDs.contains(job.id)
+                && tasks.attemptIDs.isDisjoint(with: attemptIDs))
+
+        try access.require(job.scope)
+        try requireCurrent(fence: fence, journal: journal, tasks: tasks)
+        return report
+    }
+
+    private static func requireCurrent(
+        fence: OriginalUploadTaskFence, journal: OriginalUploadJournal, tasks: OriginalUploadTaskInventory
+    ) throws {
+        guard journal.usesTaskFence(fence), fence.isCurrent(tasks) else {
+            throw OriginalUploadStorageError.busy
+        }
+    }
+
+    private static func classify(
+        _ attempt: OriginalUploadAttempt,
+        evidence: [OriginalBackgroundCompletionEvidence],
+        tasks: OriginalUploadTaskInventory
+    ) -> OriginalUploadAttemptObservation {
+        guard evidence.count <= 1 else { return .ambiguous(.multipleCompletionEvidence) }
+        let tagged = tasks.attemptIDs.contains(attempt.id)
+        let recordedLive = attempt.taskIdentifier.map(tasks.taskIdentifiers.contains) ?? false
+        let single = evidence.first
+
+        switch attempt.state {
+        case .preparing, .ready:
+            if tagged || recordedLive { return .ambiguous(.unscheduledAttemptWithLiveTask) }
+            if single != nil { return .ambiguous(.unscheduledAttemptWithCompletionEvidence) }
+            return tasks.hasUnidentifiedTasks ? .ambiguous(.unidentifiedTasksPresent) : .notScheduled
+        case .scheduled, .retiring:
+            if let single, single.taskIdentifier != attempt.taskIdentifier {
+                return .ambiguous(.completionEvidenceTaskMismatch)
+            }
+            if tagged && !recordedLive { return .ambiguous(.taggedTaskWithoutRecordedIdentifier) }
+            if recordedLive && !tagged { return .ambiguous(.recordedIdentifierWithoutTaggedTask) }
+            if tagged { return single == nil ? .liveTask : .ambiguous(.liveTaskWithCompletionEvidence) }
+            if let single { return .completionObserved(single) }
+            return tasks.hasUnidentifiedTasks ? .ambiguous(.unidentifiedTasksPresent) : .unobserved
+        }
+    }
+}

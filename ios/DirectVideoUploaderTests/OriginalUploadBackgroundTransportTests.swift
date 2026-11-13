@@ -1071,6 +1071,323 @@ struct OriginalUploadBackgroundTransportTests {
         }
     }
 
+    private func writeReconciliationJob(
+        _ fixture: CorrelationFixture, partCount: Int = 8, attempts: [OriginalUploadAttempt]
+    ) throws -> OriginalUploadJob {
+        let base = fixture.job
+        let partSize = OriginalUploadFiles.maximumPartSize
+        let part = VideoContentFingerprint(sha256: String(repeating: "a", count: 64), byteCount: partSize)
+        let manifest = OriginalUploadManifest(
+            fingerprint: VideoContentFingerprint(
+                sha256: String(repeating: "b", count: 64), byteCount: partSize * Int64(partCount)),
+            partSize: partSize, parts: Array(repeating: part, count: partCount))
+        let job = OriginalUploadJob(
+            id: base.id, incarnation: base.incarnation, scope: base.scope, mode: base.mode,
+            fileName: base.fileName, manifest: manifest, metadata: base.metadata,
+            photoIdentifier: base.photoIdentifier, transcribe: base.transcribe,
+            createdAt: base.createdAt, revision: base.revision + 1, assetId: base.assetId,
+            sessionId: base.sessionId, state: base.state, attempts: attempts)
+        try JSONEncoder().encode(job).write(to: fixture.jobFile, options: .atomic)
+        try #require(fixture.journal.readCurrentJob(id: job.id, access: fixture.access) == job)
+        return job
+    }
+
+    private func reconciliationEvidence(
+        _ fixture: CorrelationFixture, attemptID: UUID, taskIdentifier: Int,
+        jobID: UUID? = nil, incarnation: UUID? = nil, scope: String? = nil
+    ) throws -> OriginalBackgroundCompletionEvidence {
+        OriginalBackgroundCompletionEvidence(
+            eventID: UUID(),
+            scopeDigest: try scope ?? OriginalUploadJournal.scopeIdentifier(fixture.access.scope),
+            jobID: jobID ?? fixture.job.id, jobIncarnation: incarnation ?? fixture.job.incarnation,
+            attemptID: attemptID, taskIdentifier: taskIdentifier)
+    }
+
+    private func inspection(
+        _ evidence: [OriginalBackgroundCompletionEvidence?]
+    ) -> OriginalBackgroundCompletionInspectionReport {
+        OriginalBackgroundCompletionInspectionReport(entries: evidence.map {
+            OriginalBackgroundCompletionInspectionEntry(
+                event: unidentifiedEvent(id: $0?.eventID ?? UUID()), evidence: $0)
+        })
+    }
+
+    private func reconcile(
+        _ fixture: CorrelationFixture, jobID: UUID? = nil, journal: OriginalUploadJournal? = nil,
+        fence: OriginalUploadTaskFence = .shared, inventoryFence: OriginalUploadTaskFence? = nil,
+        tasks: Set<Int> = [], jobs: Set<UUID> = [], attempts: Set<UUID> = [],
+        unidentified: Bool = false, evidence: [OriginalBackgroundCompletionEvidence?] = [],
+        access: OriginalUploadAccess? = nil,
+        afterInventory: () throws -> Void = {}
+    ) throws -> OriginalUploadAttemptReconciliationReport {
+        let source = inventoryFence ?? fence
+        let inventory = try source.inventory(
+            snapshot: source.beginSnapshot(), taskIdentifiers: tasks, jobIDs: jobs,
+            attemptIDs: attempts, hasUnidentifiedTasks: unidentified)
+        try afterInventory()
+        return try OriginalUploadAttemptReconciler.reconcile(
+            jobID: jobID ?? fixture.job.id, journal: journal ?? fixture.journal, fence: fence,
+            tasks: inventory, inspection: inspection(evidence), access: access ?? fixture.access)
+    }
+
+    /// Runs `body` and verifies that the journal job directory is byte-for-byte unchanged. A valid
+    /// `job-update-<UUID>.tmp` staging file is planted first; the mutating `read(id:)` path would remove it
+    /// via journal staging cleanup, so its survival proves the reconciler used the read-only journal path.
+    private func expectReadOnly<T>(
+        _ fixture: CorrelationFixture, _ body: () throws -> T
+    ) throws -> Result<T, any Error> {
+        let staged = fixture.jobDirectory.appendingPathComponent("job-update-\(UUID().uuidString).tmp")
+        let stagedBytes = try JSONEncoder().encode(fixture.job)
+        try stagedBytes.write(to: staged, options: .withoutOverwriting)
+        let journalFiles = try directFileBytes(in: fixture.jobDirectory)
+        let result = Result { try body() }
+        #expect(try Data(contentsOf: staged) == stagedBytes)
+        #expect(try directFileBytes(in: fixture.jobDirectory) == journalFiles)
+        return result
+    }
+
+    @Test
+    func attemptReconciliationClassifiesConclusiveObservationsInJournalOrder() async throws {
+        let fixture = try await correlationFixture()
+        defer { cleanup(fixture.directory) }
+        let live = OriginalUploadAttempt(id: UUID(), number: 3, state: .scheduled, taskIdentifier: 21)
+        let observed = OriginalUploadAttempt(id: UUID(), number: 1, state: .retiring, taskIdentifier: 22)
+        let unobserved = OriginalUploadAttempt(id: UUID(), number: 5, state: .scheduled, taskIdentifier: 23)
+        let retiringWithoutTask = OriginalUploadAttempt(id: UUID(), number: 6, state: .retiring)
+        let ready = OriginalUploadAttempt(id: UUID(), number: 2, state: .ready)
+        let preparing = OriginalUploadAttempt(id: UUID(), number: 4, state: .preparing)
+        let attempts = [live, observed, unobserved, retiringWithoutTask, ready, preparing]
+        let job = try writeReconciliationJob(fixture, attempts: attempts)
+        let evidence = try reconciliationEvidence(fixture, attemptID: observed.id, taskIdentifier: 22)
+        let ignored = [
+            try reconciliationEvidence(fixture, attemptID: unobserved.id, taskIdentifier: 23, jobID: UUID()),
+            try reconciliationEvidence(fixture, attemptID: unobserved.id, taskIdentifier: 23, incarnation: UUID()),
+            try reconciliationEvidence(
+                fixture, attemptID: unobserved.id, taskIdentifier: 23, scope: String(repeating: "c", count: 64)),
+            try reconciliationEvidence(fixture, attemptID: UUID(), taskIdentifier: 24, jobID: UUID()),
+            try reconciliationEvidence(fixture, attemptID: UUID(), taskIdentifier: 25, incarnation: UUID()),
+            try reconciliationEvidence(
+                fixture, attemptID: UUID(), taskIdentifier: 26, scope: String(repeating: "d", count: 64)),
+        ]
+
+        let report = try expectReadOnly(fixture) {
+            try reconcile(
+                fixture, tasks: [21, 99], jobs: [job.id, UUID()], attempts: [live.id, UUID()],
+                evidence: [
+                    nil, ignored[0], evidence, ignored[1], nil, ignored[2], ignored[3], ignored[4], ignored[5],
+                ])
+        }.get()
+
+        #expect(report.jobID == job.id)
+        #expect(report.jobIncarnation == job.incarnation)
+        #expect(report.jobRevision == job.revision)
+        #expect(report.jobState == .uploading)
+        #expect(report.attempts.map(\.attempt) == attempts)
+        #expect(report.attempts.map(\.observation) == [
+            .liveTask, .completionObserved(evidence), .unobserved, .unobserved, .notScheduled, .notScheduled,
+        ])
+        #expect(report.attempts.map(\.evidence) == [[], [evidence], [], [], [], []])
+        #expect(report.unknownAttemptEvidence.isEmpty)
+        #expect(!report.hasUnidentifiedTasks)
+        #expect(!report.liveTaskForJobWithoutAttempt)
+    }
+
+    @Test
+    func attemptReconciliationUsesInspectorEvidenceAndFlagsLiveTaskWithEvidence() async throws {
+        let fixture = try await correlationFixture()
+        defer { cleanup(fixture.directory) }
+        let event = try taggedCompletion(for: fixture)
+        let inspected = try OriginalBackgroundCompletionInspector.inspect(
+            [unidentifiedEvent(), event], journal: fixture.journal, access: fixture.access)
+        let evidence = try #require(inspected.entries[1].evidence)
+        let taskIdentifier = try #require(fixture.attempt.taskIdentifier)
+
+        try expectReadOnly(fixture) {
+            let inventory = try OriginalUploadTaskFence.shared.inventory(
+                snapshot: OriginalUploadTaskFence.shared.beginSnapshot(), taskIdentifiers: [],
+                jobIDs: [], attemptIDs: [], hasUnidentifiedTasks: false)
+            let report = try OriginalUploadAttemptReconciler.reconcile(
+                jobID: fixture.job.id, journal: fixture.journal, fence: .shared,
+                tasks: inventory, inspection: inspected, access: fixture.access)
+            #expect(report.attempts.map(\.attempt) == [fixture.attempt])
+            #expect(report.attempts.map(\.observation) == [.completionObserved(evidence)])
+
+            let liveInventory = try OriginalUploadTaskFence.shared.inventory(
+                snapshot: OriginalUploadTaskFence.shared.beginSnapshot(), taskIdentifiers: [taskIdentifier],
+                jobIDs: [fixture.job.id], attemptIDs: [fixture.attempt.id], hasUnidentifiedTasks: false)
+            let liveReport = try OriginalUploadAttemptReconciler.reconcile(
+                jobID: fixture.job.id, journal: fixture.journal, fence: .shared,
+                tasks: liveInventory, inspection: inspected, access: fixture.access)
+            #expect(liveReport.attempts.map(\.observation) == [.ambiguous(.liveTaskWithCompletionEvidence)])
+        }.get()
+    }
+
+    @Test
+    func attemptReconciliationReportsDisagreementsAsAmbiguousAndKeepsUnknownAttemptEvidence() async throws {
+        let fixture = try await correlationFixture()
+        defer { cleanup(fixture.directory) }
+        let duplicated = OriginalUploadAttempt(id: UUID(), number: 1, state: .scheduled, taskIdentifier: 31)
+        let readyLive = OriginalUploadAttempt(id: UUID(), number: 2, state: .ready)
+        let preparingObserved = OriginalUploadAttempt(id: UUID(), number: 3, state: .preparing)
+        let mismatched = OriginalUploadAttempt(id: UUID(), number: 4, state: .scheduled, taskIdentifier: 34)
+        let taggedOnly = OriginalUploadAttempt(id: UUID(), number: 5, state: .scheduled, taskIdentifier: 35)
+        let identifierOnly = OriginalUploadAttempt(id: UUID(), number: 6, state: .retiring, taskIdentifier: 36)
+        let liveObserved = OriginalUploadAttempt(id: UUID(), number: 7, state: .scheduled, taskIdentifier: 37)
+        let taggedRetiring = OriginalUploadAttempt(id: UUID(), number: 8, state: .retiring)
+        let untaskedObserved = OriginalUploadAttempt(id: UUID(), number: 9, state: .retiring)
+        let attempts = [
+            duplicated, readyLive, preparingObserved, mismatched, taggedOnly, identifierOnly,
+            liveObserved, taggedRetiring, untaskedObserved,
+        ]
+        _ = try writeReconciliationJob(fixture, partCount: 9, attempts: attempts)
+        let first = try reconciliationEvidence(fixture, attemptID: duplicated.id, taskIdentifier: 31)
+        let second = try reconciliationEvidence(fixture, attemptID: duplicated.id, taskIdentifier: 31)
+        let unknownFirst = try reconciliationEvidence(fixture, attemptID: UUID(), taskIdentifier: 41)
+        let unknownSecond = try reconciliationEvidence(fixture, attemptID: UUID(), taskIdentifier: 42)
+        let evidence = [
+            first, unknownFirst,
+            try reconciliationEvidence(fixture, attemptID: preparingObserved.id, taskIdentifier: 33),
+            try reconciliationEvidence(fixture, attemptID: mismatched.id, taskIdentifier: 99),
+            second,
+            try reconciliationEvidence(fixture, attemptID: liveObserved.id, taskIdentifier: 37),
+            unknownSecond,
+            try reconciliationEvidence(fixture, attemptID: untaskedObserved.id, taskIdentifier: 39),
+        ]
+
+        let report = try expectReadOnly(fixture) {
+            try reconcile(
+                fixture, tasks: [36, 37], jobs: [fixture.job.id],
+                attempts: [readyLive.id, taggedOnly.id, liveObserved.id, taggedRetiring.id],
+                evidence: evidence)
+        }.get()
+
+        #expect(report.attempts.map(\.attempt) == attempts)
+        #expect(report.attempts.map(\.observation) == [
+            .ambiguous(.multipleCompletionEvidence),
+            .ambiguous(.unscheduledAttemptWithLiveTask),
+            .ambiguous(.unscheduledAttemptWithCompletionEvidence),
+            .ambiguous(.completionEvidenceTaskMismatch),
+            .ambiguous(.taggedTaskWithoutRecordedIdentifier),
+            .ambiguous(.recordedIdentifierWithoutTaggedTask),
+            .ambiguous(.liveTaskWithCompletionEvidence),
+            .ambiguous(.taggedTaskWithoutRecordedIdentifier),
+            .ambiguous(.completionEvidenceTaskMismatch),
+        ])
+        #expect(report.attempts[0].evidence == [first, second])
+        #expect(report.unknownAttemptEvidence == [unknownFirst, unknownSecond])
+        #expect(!report.liveTaskForJobWithoutAttempt)
+    }
+
+    @Test
+    func attemptReconciliationTreatsAbsenceAsAmbiguousWhenTasksAreUnidentified() async throws {
+        let fixture = try await correlationFixture()
+        defer { cleanup(fixture.directory) }
+        let unobserved = OriginalUploadAttempt(id: UUID(), number: 1, state: .scheduled, taskIdentifier: 51)
+        let retiring = OriginalUploadAttempt(id: UUID(), number: 2, state: .retiring)
+        let ready = OriginalUploadAttempt(id: UUID(), number: 3, state: .ready)
+        let live = OriginalUploadAttempt(id: UUID(), number: 4, state: .scheduled, taskIdentifier: 54)
+        let observed = OriginalUploadAttempt(id: UUID(), number: 5, state: .retiring, taskIdentifier: 55)
+        _ = try writeReconciliationJob(fixture, attempts: [unobserved, retiring, ready, live, observed])
+        let evidence = try reconciliationEvidence(fixture, attemptID: observed.id, taskIdentifier: 55)
+
+        let report = try expectReadOnly(fixture) {
+            try reconcile(
+                fixture, tasks: [54, 77], jobs: [fixture.job.id], attempts: [live.id],
+                unidentified: true, evidence: [evidence])
+        }.get()
+
+        #expect(report.hasUnidentifiedTasks)
+        #expect(report.attempts.map(\.observation) == [
+            .ambiguous(.unidentifiedTasksPresent), .ambiguous(.unidentifiedTasksPresent),
+            .ambiguous(.unidentifiedTasksPresent), .liveTask, .completionObserved(evidence),
+        ])
+    }
+
+    @Test
+    func attemptReconciliationFlagsLiveJobTaskWithoutLiveJournalAttempt() async throws {
+        let fixture = try await correlationFixture()
+        defer { cleanup(fixture.directory) }
+        let report = try expectReadOnly(fixture) {
+            try reconcile(fixture, jobs: [fixture.job.id], attempts: [UUID()])
+        }.get()
+        #expect(report.liveTaskForJobWithoutAttempt)
+        #expect(report.attempts.map(\.observation) == [.unobserved])
+
+        let otherJob = try expectReadOnly(fixture) {
+            try reconcile(fixture, jobs: [UUID()], attempts: [UUID()])
+        }.get()
+        #expect(!otherJob.liveTaskForJobWithoutAttempt)
+    }
+
+    @Test
+    func attemptReconciliationRejectsStaleOrForeignInventoriesWithoutMutation() async throws {
+        let fixture = try await correlationFixture()
+        defer { cleanup(fixture.directory) }
+        let fence = OriginalUploadTaskFence()
+        let journal = OriginalUploadJournal(
+            directory: fixture.directory.appendingPathComponent("journal", isDirectory: true), taskFence: fence)
+        _ = try expectReadOnly(fixture) {
+            try reconcile(fixture, journal: journal, fence: fence)
+        }.get()
+
+        let stale = try expectReadOnly(fixture) {
+            try reconcile(fixture, journal: journal, fence: fence) {
+                _ = try fence.stopScope(access: fixture.access)
+            }
+        }
+        #expect(throws: OriginalUploadStorageError.busy) { try stale.get() }
+
+        let foreignInventory = try expectReadOnly(fixture) {
+            try reconcile(fixture, inventoryFence: OriginalUploadTaskFence())
+        }
+        #expect(throws: OriginalUploadStorageError.busy) { try foreignInventory.get() }
+
+        let foreignJournal = try expectReadOnly(fixture) {
+            try reconcile(fixture, fence: OriginalUploadTaskFence())
+        }
+        #expect(throws: OriginalUploadStorageError.busy) { try foreignJournal.get() }
+    }
+
+    @Test
+    func attemptReconciliationPropagatesAccessAndJournalFailuresWithoutMutation() async throws {
+        let fixture = try await correlationFixture()
+        defer { cleanup(fixture.directory) }
+        let evidence = try reconciliationEvidence(
+            fixture, attemptID: fixture.attempt.id, taskIdentifier: 17)
+
+        let missing = try expectReadOnly(fixture) {
+            try reconcile(fixture, jobID: UUID(), evidence: [evidence])
+        }
+        #expect(throws: OriginalUploadStorageError.invalidFile) { try missing.get() }
+
+        let tooMany = try expectReadOnly(fixture) {
+            try reconcile(fixture, evidence: Array(
+                repeating: nil, count: OriginalBackgroundCompletionInspectionReport.maximumEventCount + 1))
+        }
+        #expect(throws: OriginalBackgroundCompletionInspectionError.tooManyEvents(
+            maximum: OriginalBackgroundCompletionInspectionReport.maximumEventCount)) { try tooMany.get() }
+
+        let atMaximum = try expectReadOnly(fixture) {
+            try reconcile(fixture, evidence: [evidence] + Array(
+                repeating: nil, count: OriginalBackgroundCompletionInspectionReport.maximumEventCount - 1))
+        }.get()
+        #expect(atMaximum.attempts.map(\.observation) == [.completionObserved(evidence)])
+
+        try Data("invalid journal data".utf8).write(to: fixture.jobFile, options: .atomic)
+        let unreadable = try expectReadOnly(fixture) {
+            try reconcile(fixture, evidence: [evidence])
+        }
+        #expect(throws: DecodingError.self) { try unreadable.get() }
+
+        let unauthorized = try await correlationFixture()
+        defer { cleanup(unauthorized.directory) }
+        unauthorized.auth.token = "rotated-session-token"
+        let rejected = try expectReadOnly(unauthorized) {
+            try reconcile(unauthorized, evidence: [evidence])
+        }
+        #expect(throws: OriginalUploadStorageError.invalidScope) { try rejected.get() }
+    }
+
     @Test
     func stableParseableNoncanonicalTaskAttachmentIsUnidentified() throws {
         let tag = try #require(event().tag)
