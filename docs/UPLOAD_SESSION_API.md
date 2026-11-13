@@ -608,15 +608,17 @@ Hard-deleting the owner retains each ingest operation ID and its previously
 linked Mux asset ID, but no account or local asset identifiers, in
 `mux_retired_ingest_attempts`. A signed webhook for that operation records its
 Mux asset ID in `mux_retired_ingest_events`, logs an error, and returns 503.
-Repeated deliveries of the same reference are deduplicated. Operators must
-investigate the logged operation and Mux asset IDs with Mux; these records are
-not yet included in the media-issues API and do not automatically remove remote
-media. Unknown operations still return 503 without creating records.
+Repeated deliveries of the same reference are deduplicated. Super Admins can
+inspect these references in the dashboard or through the paginated
+`GET /api/admin/retired-mux-events` endpoint. Operators must investigate the
+operation and Mux asset IDs with Mux; the records are not automatically cleared
+and do not remove remote media. Unknown operations still return 503 without
+creating records.
 
 These minimal identifiers are retained without an automatic expiry until a
 safe retention policy is established. They cannot recover correlations for
 accounts deleted before every server handling deletion was upgraded.
-Post-deletion cleanup and alerting remain rollout blockers, and absence
+Post-deletion cleanup and proactive alerting remain rollout blockers, and absence
 confirmation must not be treated as proof that a remote request is finished.
 
 Each new local original key is bound to the `.dvu-storage-id` marker in its

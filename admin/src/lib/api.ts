@@ -187,6 +187,25 @@ export async function fetchMediaIssues() {
   return api<{ issues: MediaIssue[]; hasMore: boolean }>("GET", "/api/admin/media-issues");
 }
 
+export interface RetiredMuxCursor {
+  operationId: string;
+  muxAssetId: string;
+}
+
+export interface RetiredMuxEvent extends RetiredMuxCursor {
+  firstSeenAt: string;
+  attempt: { originalMuxAssetId: string | null };
+}
+
+export async function fetchRetiredMuxEvents(cursor: RetiredMuxCursor | null) {
+  const query = cursor
+    ? `?${new URLSearchParams({ afterOperationId: cursor.operationId, afterMuxAssetId: cursor.muxAssetId })}`
+    : "";
+  return api<{ events: RetiredMuxEvent[]; nextCursor: RetiredMuxCursor | null }>(
+    "GET", `/api/admin/retired-mux-events${query}`,
+  );
+}
+
 export interface AuditLog {
   id: string;
   actorUserId: string;

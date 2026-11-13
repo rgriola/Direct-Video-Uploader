@@ -981,4 +981,31 @@ integration('Mux original handoff against PostgreSQL and HTTP', () => {
             }
         }
     }, 15000);
+
+    it('pages retained Mux references without losing case-sensitive identifiers', async () => {
+        const operationId = randomUUID();
+        await prisma.muxRetiredIngestAttempt.create({ data: { operationId } });
+        try {
+            await prisma.muxRetiredIngestEvent.createMany({
+                data: Array.from({ length: 51 }, (_, index) => ({
+                    operationId,
+                    muxAssetId: `Mux-${String(index).padStart(2, '0')}`,
+                })),
+            });
+            const first = await requestAs(
+                adminId, 'GET', `/api/admin/retired-mux-events?afterOperationId=${operationId}&afterMuxAssetId=0`,
+            );
+            expect(first.statusCode).toBe(200);
+            expect(first.json().events).toHaveLength(50);
+            expect(first.json().nextCursor).toEqual({ operationId, muxAssetId: 'Mux-49' });
+            const next = await requestAs(
+                adminId, 'GET', `/api/admin/retired-mux-events?afterOperationId=${operationId}&afterMuxAssetId=Mux-49`,
+            );
+            expect(next.statusCode).toBe(200);
+            expect(next.json().events[0]).toMatchObject({ operationId, muxAssetId: 'Mux-50' });
+        } finally {
+            await prisma.muxRetiredIngestEvent.deleteMany({ where: { operationId } });
+            await prisma.muxRetiredIngestAttempt.delete({ where: { operationId } });
+        }
+    });
 });

@@ -550,6 +550,7 @@ integration('role and organization endpoint matrix', () => {
             },
         },
         { route: 'GET /api/admin/media-issues', method: 'GET', url: '/api/admin/media-issues', statuses: SUPER },
+        { route: 'GET /api/admin/retired-mux-events', method: 'GET', url: '/api/admin/retired-mux-events', statuses: SUPER },
         { route: 'GET /api/admin/audit-logs', method: 'GET', url: '/api/admin/audit-logs', statuses: SUPER },
         { route: 'GET /api/admin/errors', method: 'GET', url: '/api/admin/errors', statuses: SUPER },
     ];
