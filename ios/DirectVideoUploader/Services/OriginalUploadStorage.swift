@@ -1190,6 +1190,60 @@ nonisolated struct OriginalBackgroundCompletionEvidence: Equatable, Sendable {
     let taskIdentifier: Int
 }
 
+nonisolated enum OriginalBackgroundCompletionInspectionError: Error, Equatable {
+    case tooManyEvents(maximum: Int)
+    case duplicateEventID(UUID)
+}
+
+nonisolated struct OriginalBackgroundCompletionInspectionEntry: Equatable, Sendable {
+    let event: OriginalBackgroundCompletion
+    let evidence: OriginalBackgroundCompletionEvidence?
+}
+
+/// A bounded, ordered snapshot of selected completion events and optional local correlation evidence.
+///
+/// The evidence is local correlation only; it does not prove server part receipt, session completion,
+/// or Mux publication. Obtaining input through `OriginalUploadEventInbox.events()` can recover staged
+/// files, so only this report computation is read-only.
+nonisolated struct OriginalBackgroundCompletionInspectionReport: Equatable, Sendable {
+    static let maximumEventCount = 32
+
+    let entries: [OriginalBackgroundCompletionInspectionEntry]
+}
+
+@MainActor
+enum OriginalBackgroundCompletionInspector {
+    /// Inspects only the supplied events. It does not read the inbox or mutate journals or event state.
+    /// Evidence is local correlation only, not server part receipt, session completion, or Mux publication.
+    /// Callers must account for `OriginalUploadEventInbox.events()` recovering staged files while
+    /// obtaining input; only this report computation is read-only.
+    static func inspect(
+        _ events: [OriginalBackgroundCompletion],
+        journal: OriginalUploadJournal,
+        access: OriginalUploadAccess
+    ) throws -> OriginalBackgroundCompletionInspectionReport {
+        try access.require(access.scope)
+        guard events.count <= OriginalBackgroundCompletionInspectionReport.maximumEventCount else {
+            throw OriginalBackgroundCompletionInspectionError.tooManyEvents(
+                maximum: OriginalBackgroundCompletionInspectionReport.maximumEventCount)
+        }
+
+        var seenIDs = Set<UUID>()
+        for event in events where !seenIDs.insert(event.id).inserted {
+            throw OriginalBackgroundCompletionInspectionError.duplicateEventID(event.id)
+        }
+
+        var entries: [OriginalBackgroundCompletionInspectionEntry] = []
+        entries.reserveCapacity(events.count)
+        for event in events {
+            let evidence = try OriginalBackgroundCompletionMatcher.match(
+                event, journal: journal, access: access)
+            entries.append(OriginalBackgroundCompletionInspectionEntry(event: event, evidence: evidence))
+        }
+        return OriginalBackgroundCompletionInspectionReport(entries: entries)
+    }
+}
+
 @MainActor
 enum OriginalBackgroundCompletionMatcher {
     // Correlates only this event with the current authorized journal job; callers must ensure

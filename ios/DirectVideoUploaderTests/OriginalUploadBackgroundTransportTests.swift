@@ -824,6 +824,96 @@ struct OriginalUploadBackgroundTransportTests {
     }
 
     @Test
+    func completionInspectionPreservesOrderAndOriginalEventsWithOptionalLocalEvidence() async throws {
+        let fixture = try await correlationFixture()
+        defer { cleanup(fixture.directory) }
+        let tagged = try taggedCompletion(for: fixture)
+        let httpFailure = OriginalBackgroundCompletion(
+            id: UUID(), taskIdentifier: tagged.taskIdentifier, tag: tagged.tag,
+            httpStatus: 503, transportErrorCode: nil)
+        let transportFailure = OriginalBackgroundCompletion(
+            id: UUID(), taskIdentifier: tagged.taskIdentifier, tag: tagged.tag,
+            httpStatus: nil, transportErrorCode: -1009)
+        let untagged = unidentifiedEvent()
+        let unmatched = OriginalBackgroundCompletion(
+            id: UUID(), taskIdentifier: tagged.taskIdentifier + 1, tag: tagged.tag,
+            httpStatus: 200, transportErrorCode: nil)
+        let events = [untagged, httpFailure, unmatched, transportFailure]
+
+        let empty = try OriginalBackgroundCompletionInspector.inspect(
+            [], journal: fixture.journal, access: fixture.access)
+        #expect(empty.entries.isEmpty)
+
+        let report = try OriginalBackgroundCompletionInspector.inspect(
+            events, journal: fixture.journal, access: fixture.access)
+        #expect(report.entries.map(\.event) == events)
+        #expect(report.entries.map(\.event.id) == events.map(\.id))
+        #expect(report.entries.map { $0.evidence != nil } == [false, true, false, true])
+        #expect(report.entries[1].evidence?.eventID == httpFailure.id)
+        #expect(report.entries[3].evidence?.eventID == transportFailure.id)
+        #expect(report.entries[1].event.httpStatus == 503)
+        #expect(report.entries[1].event.transportErrorCode == nil)
+        #expect(report.entries[3].event.httpStatus == nil)
+        #expect(report.entries[3].event.transportErrorCode == -1009)
+    }
+
+    @Test
+    func completionInspectionEnforcesDuplicateAndCountBoundsWithoutMutation() async throws {
+        let fixture = try await correlationFixture()
+        defer { cleanup(fixture.directory) }
+        let inbox = OriginalUploadEventInbox(directory: fixture.inboxDirectory)
+        try inbox.persist(unidentifiedEvent())
+        let journalFiles = try directFileBytes(in: fixture.jobDirectory)
+        let inboxFiles = try directFileBytes(in: fixture.inboxDirectory)
+
+        let duplicateID = UUID()
+        let duplicate = unidentifiedEvent(id: duplicateID)
+        #expect(throws: OriginalBackgroundCompletionInspectionError.duplicateEventID(duplicateID)) {
+            try OriginalBackgroundCompletionInspector.inspect(
+                [duplicate, duplicate], journal: fixture.journal, access: fixture.access)
+        }
+
+        let tooMany = (0...OriginalBackgroundCompletionInspectionReport.maximumEventCount)
+            .map { _ in unidentifiedEvent() }
+        #expect(throws: OriginalBackgroundCompletionInspectionError.tooManyEvents(
+            maximum: OriginalBackgroundCompletionInspectionReport.maximumEventCount)) {
+                try OriginalBackgroundCompletionInspector.inspect(
+                    tooMany, journal: fixture.journal, access: fixture.access)
+            }
+
+        let maximumEvents = (0..<OriginalBackgroundCompletionInspectionReport.maximumEventCount)
+            .map { _ in unidentifiedEvent() }
+        let report = try OriginalBackgroundCompletionInspector.inspect(
+            maximumEvents, journal: fixture.journal, access: fixture.access)
+        #expect(report.entries.map(\.event) == maximumEvents)
+
+        #expect(try directFileBytes(in: fixture.jobDirectory) == journalFiles)
+        #expect(try directFileBytes(in: fixture.inboxDirectory) == inboxFiles)
+    }
+
+    @Test
+    func completionInspectionChecksEmptyInputAccessAndPropagatesJournalReadFailures() async throws {
+        let unauthorized = try await correlationFixture()
+        defer { cleanup(unauthorized.directory) }
+        unauthorized.auth.token = "rotated-session-token"
+        #expect(throws: OriginalUploadStorageError.invalidScope) {
+            try OriginalBackgroundCompletionInspector.inspect(
+                [], journal: unauthorized.journal, access: unauthorized.access)
+        }
+
+        let unreadable = try await correlationFixture()
+        defer { cleanup(unreadable.directory) }
+        let event = try taggedCompletion(for: unreadable)
+        try Data("invalid journal data".utf8).write(to: unreadable.jobFile, options: .atomic)
+        let journalFiles = try directFileBytes(in: unreadable.jobDirectory)
+        #expect(throws: DecodingError.self) {
+            try OriginalBackgroundCompletionInspector.inspect(
+                [event], journal: unreadable.journal, access: unreadable.access)
+        }
+        #expect(try directFileBytes(in: unreadable.jobDirectory) == journalFiles)
+    }
+
+    @Test
     func synchronousMatcherRejectsEveryIdentityMismatchWithoutMutation() async throws {
         let fixture = try await correlationFixture()
         defer { cleanup(fixture.directory) }
