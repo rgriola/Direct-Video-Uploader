@@ -30,7 +30,7 @@ nonisolated struct OriginalBackgroundTaskTag: Codable, Equatable, Sendable {
               let incarnation = UUID(uuidString: String(fields[3])),
               let attempt = UUID(uuidString: String(fields[4])) else { return nil }
         self.init(scope: String(fields[1]), jobId: job, jobIncarnation: incarnation, attemptId: attempt)
-        guard isValid else { return nil }
+        guard isValid, taskDescription == self.taskDescription else { return nil }
     }
 }
 
@@ -932,6 +932,20 @@ nonisolated struct OriginalBackgroundCancellationResult: Sendable {
 nonisolated struct OriginalBackgroundTaskSnapshot: Equatable, Sendable {
     let identifier: Int
     let tag: OriginalBackgroundTaskTag?
+    // Keep the exact OS attachment string as well as its parsed form. Parsing
+    // alone would hide changes such as a rewritten, non-canonical description.
+    let attachment: String?
+
+    init(identifier: Int, tag: OriginalBackgroundTaskTag?, attachment: String? = nil) {
+        self.identifier = identifier
+        self.tag = tag
+        self.attachment = attachment ?? tag?.taskDescription
+    }
+
+    var hasCanonicalTag: Bool {
+        guard let tag, tag.isValid else { return false }
+        return attachment == tag.taskDescription
+    }
 }
 
 nonisolated struct OriginalBackgroundScopeStopResult: Sendable {
@@ -965,7 +979,7 @@ enum OriginalBackgroundScopeStop {
             identifiers[item.identifier, default: 0] += 1
             if let tag = item.tag {
                 attempts[tag.attemptId, default: 0] += 1
-                if !tag.isValid { unknown = true }
+                if !item.hasCanonicalTag { unknown = true }
             } else {
                 unknown = true
             }
@@ -979,7 +993,7 @@ enum OriginalBackgroundScopeStop {
             guard !stale else { break }
             let item = entry.snapshot
             guard item.identifier > 0, identifiers[item.identifier] == 1,
-                  let tag = item.tag, tag.isValid, tag.scope == scope,
+                  let tag = item.tag, item.hasCanonicalTag, tag.scope == scope,
                   attempts[tag.attemptId] == 1 else { continue }
             // Recheck the individual handle immediately before invoking cancel.
             guard snapshot(entry.handle) == item, fence.isSnapshotCurrent(generation) else {
@@ -1004,23 +1018,49 @@ nonisolated struct OriginalBackgroundTaskIndex: Sendable {
     let hasUnidentifiedTasks: Bool
     private let tags: [Int: OriginalBackgroundTaskTag]
 
+    static func requireStableAttachments(
+        _ initial: [OriginalBackgroundTaskSnapshot],
+        _ confirmed: [OriginalBackgroundTaskSnapshot]
+    ) throws {
+        struct Observation: Hashable {
+            let identifier: Int
+            let attachment: String?
+        }
+        func counts(_ snapshots: [OriginalBackgroundTaskSnapshot]) -> [Observation: Int] {
+            snapshots.reduce(into: [:]) { result, snapshot in
+                result[Observation(identifier: snapshot.identifier, attachment: snapshot.attachment), default: 0] += 1
+            }
+        }
+        guard counts(initial) == counts(confirmed) else { throw OriginalUploadStorageError.busy }
+    }
+
     init(_ tasks: [OriginalBackgroundTaskSnapshot]) {
         var identifiers: Set<Int> = []
         var jobs: Set<UUID> = []
         var attempts: Set<UUID> = []
         var known: [Int: OriginalBackgroundTaskTag] = [:]
         var unidentified = false
+        let identifierCounts = tasks.reduce(into: [Int: Int]()) { $0[$1.identifier, default: 0] += 1 }
+        let attemptCounts = tasks.reduce(into: [UUID: Int]()) { result, task in
+            if task.hasCanonicalTag, let attempt = task.tag?.attemptId {
+                result[attempt, default: 0] += 1
+            }
+        }
         for task in tasks {
-            guard task.identifier > 0, identifiers.insert(task.identifier).inserted else {
+            guard task.identifier > 0, identifierCounts[task.identifier] == 1,
+                  identifiers.insert(task.identifier).inserted else {
                 unidentified = true
                 known.removeValue(forKey: task.identifier)
                 continue
             }
-            guard let tag = task.tag, tag.isValid else {
+            guard let tag = task.tag, task.hasCanonicalTag else {
                 unidentified = true
                 continue
             }
-            if !attempts.insert(tag.attemptId).inserted { unidentified = true }
+            guard attemptCounts[tag.attemptId] == 1, attempts.insert(tag.attemptId).inserted else {
+                unidentified = true
+                continue
+            }
             jobs.insert(tag.jobId)
             known[task.identifier] = tag
         }
@@ -1068,10 +1108,18 @@ enum OriginalBackgroundCancellation {
         let revision = fence.beginSnapshot()
         let handles = await tasks()
         let entries = handles.map { (handle: $0, snapshot: snapshot($0)) }
+        let confirmation = entries.map { (handle: $0.handle, snapshot: snapshot($0.handle)) }
+        try OriginalBackgroundTaskIndex.requireStableAttachments(
+            entries.map(\.snapshot), confirmation.map(\.snapshot))
         let index = OriginalBackgroundTaskIndex(entries.map(\.snapshot))
         let targets = index.cancellationTargets(
             scope: scope, jobId: supplied.id, incarnation: supplied.incarnation)
-        for entry in entries where targets.contains(entry.snapshot.identifier) {
+        // Check the whole attachment set before cancelling any task. A partial
+        // scan must not turn a changed attachment into an inventory assertion.
+        let finalSnapshots = entries.map { (handle: $0.handle, snapshot: snapshot($0.handle)) }
+        try OriginalBackgroundTaskIndex.requireStableAttachments(
+            entries.map(\.snapshot), finalSnapshots.map(\.snapshot))
+        for entry in finalSnapshots where targets.contains(entry.snapshot.identifier) {
             cancel(entry.handle)
         }
         do {
@@ -1280,11 +1328,22 @@ final class OriginalUploadBackgroundTransport {
         let snapshot = taskFence.beginSnapshot()
         let tasks = await session.allTasks
         try Task.checkCancellation()
-        let index = OriginalBackgroundTaskIndex(tasks.map {
+        let observations = tasks.map {
             OriginalBackgroundTaskSnapshot(
                 identifier: $0.taskIdentifier,
-                tag: OriginalBackgroundTaskTag(taskDescription: $0.taskDescription))
-        })
+                tag: OriginalBackgroundTaskTag(taskDescription: $0.taskDescription),
+                attachment: $0.taskDescription)
+        }
+        let confirmedTasks = await session.allTasks
+        try Task.checkCancellation()
+        let confirmed = confirmedTasks.map {
+            OriginalBackgroundTaskSnapshot(
+                identifier: $0.taskIdentifier,
+                tag: OriginalBackgroundTaskTag(taskDescription: $0.taskDescription),
+                attachment: $0.taskDescription)
+        }
+        try OriginalBackgroundTaskIndex.requireStableAttachments(observations, confirmed)
+        let index = OriginalBackgroundTaskIndex(confirmed)
         return try taskFence.inventory(
             snapshot: snapshot, taskIdentifiers: index.taskIdentifiers, jobIDs: index.jobIDs,
             attemptIDs: index.attemptIDs, hasUnidentifiedTasks: index.hasUnidentifiedTasks)
@@ -1299,7 +1358,8 @@ final class OriginalUploadBackgroundTransport {
             snapshot: {
                 OriginalBackgroundTaskSnapshot(
                     identifier: $0.taskIdentifier,
-                    tag: OriginalBackgroundTaskTag(taskDescription: $0.taskDescription))
+                    tag: OriginalBackgroundTaskTag(taskDescription: $0.taskDescription),
+                    attachment: $0.taskDescription)
             },
             cancel: { $0.cancel() })
     }

@@ -284,6 +284,37 @@ struct OriginalUploadStorageTests {
     }
 
     @Test
+    func changedMissingOrAmbiguousTaskAttachmentsCannotBeTrusted() throws {
+        let scope = try OriginalUploadJournal.scopeIdentifier(access().scope)
+        let attempt = UUID()
+        let tag = OriginalBackgroundTaskTag(
+            scope: scope, jobId: UUID(), jobIncarnation: UUID(), attemptId: attempt)
+        let attached = OriginalBackgroundTaskSnapshot(
+            identifier: 41, tag: tag, attachment: tag.taskDescription)
+
+        // A stable pair is usable, but comparing parsed tags alone would miss
+        // changes to the exact OS taskDescription.
+        try OriginalBackgroundTaskIndex.requireStableAttachments([attached], [attached])
+        let rewritten = OriginalBackgroundTaskSnapshot(
+            identifier: 41, tag: tag, attachment: "rewritten:\(tag.taskDescription)")
+        #expect(throws: OriginalUploadStorageError.busy) {
+            try OriginalBackgroundTaskIndex.requireStableAttachments([attached], [rewritten])
+        }
+        let detached = OriginalBackgroundTaskSnapshot(identifier: 41, tag: nil, attachment: nil)
+        #expect(throws: OriginalUploadStorageError.busy) {
+            try OriginalBackgroundTaskIndex.requireStableAttachments([attached], [detached])
+        }
+
+        // A duplicate attempt is ambiguous even if both descriptions stay
+        // unchanged; neither task may become a cancellation target.
+        let duplicate = OriginalBackgroundTaskSnapshot(
+            identifier: 42, tag: tag, attachment: tag.taskDescription)
+        let index = OriginalBackgroundTaskIndex([attached, duplicate])
+        #expect(index.hasUnidentifiedTasks)
+        #expect(index.cancellationTargets(scope: scope, jobId: tag.jobId, incarnation: tag.jobIncarnation).isEmpty)
+    }
+
+    @Test
     func stagesExactBytesAndPersistsAccountScopedIdentity() async throws {
         let directory = try fixture()
         defer { cleanup(directory) }
