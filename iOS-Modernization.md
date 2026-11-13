@@ -881,6 +881,15 @@ migrations and update every server instance before relying on the fence.
   bounded file-backed background `URLSession` parts. Preserve the existing
   direct-to-Mux path as the default; the selected mode must not change for an
   existing job.
+  - [x] Bounded late tagged-completion correlation: a synchronous, read-only
+    matcher checks the current authorized journal job and returns immutable
+    local correlation evidence only, not server completion. Valid untagged
+    events and genuine identity/state mismatches are unmatched; access and
+    journal-read failures throw and are never reported as unmatched (`nil`).
+    Invalid events and tags throw as invalid records; malformed or unreadable
+    journal data throws. It does not mutate the journal or inbox, acknowledge
+    events, or perform reconciliation. Only this matcher slice is complete;
+    broader Step 4.3a and enablement blockers remain open.
   - Persist a same-install, account- and server-scoped nonsecret journal and use
     content-bound, owner-scoped server reservations for recovery. Reinstall and
     cross-device recovery are out of scope.
@@ -893,8 +902,9 @@ migrations and update every server instance before relying on the fence.
     background transport cannot be instantiated. Before enabling it, protect live
     and orphaned legacy Mux sessions from premature background-event acknowledgement,
     reconcile scheduled attempts against live tasks and server parts at startup,
-    quarantine unidentified completions, and safely reconcile late tagged
-    completions. Local callback ordering alone does not identify an OS wake. Intact
+    quarantine unidentified completions, and complete safe late tagged-completion
+    reconciliation beyond the local matcher above. Local callback ordering alone
+    does not identify an OS wake. Intact
     staged inbox records now recover after a crash; ambiguous records remain in
     place and block inbox progress. An explicit, idempotent operation copies an
     exact durable completion with no tag to a separate durable quarantine inbox,

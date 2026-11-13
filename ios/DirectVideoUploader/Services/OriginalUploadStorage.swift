@@ -768,6 +768,27 @@ final class OriginalUploadJournal {
         return job
     }
 
+    func readCurrentJob(id: UUID, access: OriginalUploadAccess) throws -> OriginalUploadJob {
+        try access.require(access.scope)
+        let scope = try Self.scopeIdentifier(access.scope)
+        let scopeDirectory = directory.appendingPathComponent("scope-\(scope)", isDirectory: true)
+        let targetDirectory = jobDirectory(id, in: scopeDirectory)
+        let directories = [directory, scopeDirectory, targetDirectory]
+        let identities = try directories.map(Self.readOnlyDirectoryIdentity)
+        let data = try OriginalUploadFiles.readJournal(targetDirectory.appendingPathComponent("job.json"))
+        let job = try JSONDecoder().decode(OriginalUploadJob.self, from: data)
+        guard job.id == id, job.scope == access.scope, job.isValid,
+              try Self.scopeIdentifier(job.scope) == scope else {
+            throw OriginalUploadStorageError.invalidRecord
+        }
+        try access.require(job.scope)
+        guard try directories.map(Self.readOnlyDirectoryIdentity) == identities else {
+            throw OriginalUploadStorageError.invalidRecord
+        }
+        try access.require(access.scope)
+        return job
+    }
+
     @discardableResult
     func update(_ job: OriginalUploadJob, access: OriginalUploadAccess) throws -> OriginalUploadJob {
         try commit(job, access: access, allowAttemptChanges: false)
@@ -1143,5 +1164,65 @@ final class OriginalUploadJournal {
 
     private func partURL(_ attempt: OriginalUploadAttempt, in directory: URL) -> URL {
         directory.appendingPathComponent("part-\(attempt.number)-\(attempt.id.uuidString)")
+    }
+
+    private struct DirectoryIdentity: Equatable {
+        let device: dev_t
+        let inode: ino_t
+    }
+
+    private static func readOnlyDirectoryIdentity(_ url: URL) throws -> DirectoryIdentity {
+        var info = stat()
+        guard url.path.withCString({ Darwin.lstat($0, &info) }) == 0,
+              info.st_mode & mode_t(S_IFMT) == mode_t(S_IFDIR) else {
+            throw OriginalUploadStorageError.invalidFile
+        }
+        return DirectoryIdentity(device: info.st_dev, inode: info.st_ino)
+    }
+}
+
+nonisolated struct OriginalBackgroundCompletionEvidence: Equatable, Sendable {
+    let eventID: UUID
+    let scopeDigest: String
+    let jobID: UUID
+    let jobIncarnation: UUID
+    let attemptID: UUID
+    let taskIdentifier: Int
+}
+
+@MainActor
+enum OriginalBackgroundCompletionMatcher {
+    // Correlates only this event with the current authorized journal job; callers must ensure
+    // it is already durable when required (the inbox is not inspected), and nil does not rule out
+    // another completion.
+    static func match(
+        _ event: OriginalBackgroundCompletion,
+        journal: OriginalUploadJournal,
+        access: OriginalUploadAccess
+    ) throws -> OriginalBackgroundCompletionEvidence? {
+        guard event.isValid else { throw OriginalUploadStorageError.invalidRecord }
+        guard let tag = event.tag else { return nil }
+        guard tag.isValid else { throw OriginalUploadStorageError.invalidRecord }
+
+        try access.require(access.scope)
+        let scope = try OriginalUploadJournal.scopeIdentifier(access.scope)
+        guard tag.scope == scope else { return nil }
+        let job = try journal.readCurrentJob(id: tag.jobId, access: access)
+        guard job.scope == access.scope, job.id == tag.jobId,
+              job.incarnation == tag.jobIncarnation,
+              try OriginalUploadJournal.scopeIdentifier(job.scope) == tag.scope else {
+            return nil
+        }
+        let candidates = job.attempts.filter { $0.id == tag.attemptId }
+        guard candidates.count == 1, let attempt = candidates.first,
+              [.scheduled, .retiring].contains(attempt.state),
+              let taskIdentifier = attempt.taskIdentifier,
+              taskIdentifier > 0, taskIdentifier == event.taskIdentifier else {
+            return nil
+        }
+        return OriginalBackgroundCompletionEvidence(
+            eventID: event.id, scopeDigest: tag.scope, jobID: job.id,
+            jobIncarnation: job.incarnation, attemptID: attempt.id,
+            taskIdentifier: taskIdentifier)
     }
 }
