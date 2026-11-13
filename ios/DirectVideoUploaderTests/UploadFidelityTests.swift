@@ -5700,6 +5700,7 @@ nonisolated final class LoopbackRedirectServer: @unchecked Sendable {
     private let receivedCookie = Mutex(false)
     private let receivedRequests = Mutex(0)
     private let receivedBasicCredential = Mutex(false)
+    private let receivedBearerCredential = Mutex(false)
     private let redirectTarget = Mutex<String?>(nil)
     private let pendingUpload = Mutex<NWConnection?>(nil)
     private let pendingExtraChunk = Mutex<NWConnection?>(nil)
@@ -5719,13 +5720,15 @@ nonisolated final class LoopbackRedirectServer: @unchecked Sendable {
     var didReceiveCookie: Bool { receivedCookie.withLock { $0 } }
     var requestCount: Int { receivedRequests.withLock { $0 } }
     var didReceiveBasicCredential: Bool { receivedBasicCredential.withLock { $0 } }
+    var didReceiveBearerCredential: Bool { receivedBearerCredential.withLock { $0 } }
 
     func redirect(to url: URL) {
         redirectTarget.withLock { $0 = url.absoluteString }
     }
 
-    func resetBasicCredentialObservation() {
+    func resetCredentialObservation() {
         receivedBasicCredential.withLock { $0 = false }
+        receivedBearerCredential.withLock { $0 = false }
     }
 
     func start() async throws -> URL {
@@ -5999,6 +6002,9 @@ nonisolated final class LoopbackRedirectServer: @unchecked Sendable {
                 self.receivedBasicCredential.withLock {
                     $0 = $0 || request.lowercased().contains("\r\nauthorization: basic ")
                 }
+                self.receivedBearerCredential.withLock {
+                    $0 = $0 || request.lowercased().contains("\r\nauthorization: bearer synthetic")
+                }
                 status = "401 Unauthorized"
                 headers = "WWW-Authenticate: Basic realm=\"dvu-synthetic\"\r\n"
             } else {
@@ -6185,9 +6191,13 @@ struct RedirectTransportTests {
         let configuration = RedirectSafeTransport.configuration()
         #expect(configuration.httpCookieStorage == nil)
         #expect(!configuration.httpShouldSetCookies)
+        #expect(configuration.urlCredentialStorage == nil)
         #expect(configuration.urlCache == nil)
         #expect(configuration.requestCachePolicy == .reloadIgnoringLocalCacheData)
         #expect(configuration.timeoutIntervalForResource == RedirectSafeTransport.resourceTimeout)
+        let webSocketSession = RedirectSafeTransport.webSocketSession()
+        defer { webSocketSession.invalidateAndCancel() }
+        #expect(webSocketSession.configuration.urlCredentialStorage == nil)
 
         let server = try LoopbackRedirectServer()
         defer { server.stop() }
@@ -6202,7 +6212,7 @@ struct RedirectTransportTests {
     }
 
     @Test(.timeLimit(.minutes(1)))
-    func boundedBearerTransportDoesNotUseStoredChallengeCredentials() async throws {
+    func bearerTransportsDoNotUseStoredChallengeCredentials() async throws {
         let configuration = RedirectSafeTransport.boundedConfiguration()
         #expect(configuration.urlCredentialStorage == nil)
 
@@ -6230,12 +6240,33 @@ struct RedirectTransportTests {
         let (_, controlResponse) = try await controlSession.data(for: controlRequest)
         #expect((controlResponse as? HTTPURLResponse)?.statusCode == 401)
         #expect(server.didReceiveBasicCredential)
-        server.resetBasicCredentialObservation()
+        server.resetCredentialObservation()
 
         var request = URLRequest(url: url)
         request.setValue("Bearer synthetic", forHTTPHeaderField: "Authorization")
+        let (_, generalResponse) = try await RedirectSafeTransport.data(for: request)
+        #expect((generalResponse as? HTTPURLResponse)?.statusCode == 401)
+        #expect(server.didReceiveBearerCredential)
+        #expect(!server.didReceiveBasicCredential)
+        server.resetCredentialObservation()
+
         let (_, response) = try await RedirectSafeTransport.boundedData(for: request, maximumBytes: 1_024)
         #expect((response as? HTTPURLResponse)?.statusCode == 401)
+        #expect(server.didReceiveBearerCredential)
+        #expect(!server.didReceiveBasicCredential)
+        server.resetCredentialObservation()
+
+        var socketURL = try #require(URLComponents(url: url, resolvingAgainstBaseURL: false))
+        socketURL.scheme = "ws"
+        var socketRequest = URLRequest(url: try #require(socketURL.url))
+        socketRequest.setValue("Bearer synthetic", forHTTPHeaderField: "Authorization")
+        let socketSession = RedirectSafeTransport.webSocketSession()
+        defer { socketSession.invalidateAndCancel() }
+        let socket = socketSession.webSocketTask(with: socketRequest)
+        defer { socket.cancel(with: .goingAway, reason: nil) }
+        socket.resume()
+        await #expect(throws: (any Error).self) { try await socket.receive() }
+        #expect(server.didReceiveBearerCredential)
         #expect(!server.didReceiveBasicCredential)
     }
 

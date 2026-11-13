@@ -43,6 +43,7 @@ nonisolated enum RedirectSafeTransport {
         let configuration = URLSessionConfiguration.default
         configuration.httpCookieStorage = nil
         configuration.httpShouldSetCookies = false
+        configuration.urlCredentialStorage = nil
         configuration.urlCache = nil
         configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
         return configuration
@@ -55,9 +56,7 @@ nonisolated enum RedirectSafeTransport {
     }
 
     static func boundedConfiguration() -> URLSessionConfiguration {
-        let configuration = configuration()
-        configuration.urlCredentialStorage = nil
-        return configuration
+        configuration()
     }
 
     private static let session = URLSession(
