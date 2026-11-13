@@ -953,18 +953,19 @@ sequenceDiagram
     are not sent DELETE; the original, attempts, events, and cancellation flag
     remain in place.
     In-memory job tombstones prevent default coordinators from restarting the same
-    job in one process. A shared, process-wide gate also serializes cancellation
-    fence and page requests from raw APIs, traversals, and coordinators. A validated
-    429 delays both request types; an invalid delay or unknown dispatched response
-    parks the gate. Failures before transport handoff do not park it. Local
-    cancellation checks temporarily block requests and park the gate if an earlier
-    cancellation is uncertain. Debug-only isolated gates are for tests, not app
-    integration.
+    job in one process. The default shared cancellation gate starts parked on every
+    process launch: fence and page requests fail before callbacks or transport
+    because prior retry state cannot be trusted. The coordinator can still save
+    cancellation and request cancellation of matching local tasks, but it retains
+    the original and pending state. There is no automatic way to reopen the default
+    gate. Debug-only isolated gates exercise serialized requests, validated 429
+    delays, and parking after an invalid delay or unknown dispatched response;
+    they are for tests, not app integration.
     This isolated coordinator parks rather than resuming after a delay or failure;
     its job tombstone remains even when local cancellation persistence is uncertain.
-    It releases its API and access references when finished or parked. The shared
-    gate and retry delays do not survive restart or coordinate across processes or
-    devices; raw API calls do not use coordinator job tombstones.
+    It releases its API and access references when finished or parked. Retry delays
+    are not persisted or coordinated across processes or devices; raw API calls do
+    not use coordinator job tombstones.
     Do not wire this coordinator into the app until all relevant callers use a
     durable, scope-wide retry and sign-out policy, in-flight work is invalidated,
     and background task and event reconciliation can prove safe cleanup. Neither
