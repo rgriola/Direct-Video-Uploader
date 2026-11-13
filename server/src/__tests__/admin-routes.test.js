@@ -21,7 +21,8 @@ const prismaMock = {
         findMany: vi.fn(),
         deleteMany: vi.fn(),
     },
-    muxIngestAttempt: { count: vi.fn() },
+    muxIngestAttempt: { count: vi.fn(), findMany: vi.fn() },
+    muxRetiredIngestAttempt: { createMany: vi.fn() },
     muxOriginalReadLease: { count: vi.fn() },
     errorLog: {
         deleteMany: vi.fn(),
@@ -105,6 +106,7 @@ beforeEach(async () => {
     prismaMock.clip.count.mockResolvedValue(0);
     prismaMock.clip.deleteMany.mockResolvedValue({ count: 0 });
     prismaMock.muxIngestAttempt.count.mockResolvedValue(0);
+    prismaMock.muxIngestAttempt.findMany.mockResolvedValue([]);
     prismaMock.muxOriginalReadLease.count.mockResolvedValue(0);
 
     prismaMock.errorLog.deleteMany.mockResolvedValue({ count: 0 });

@@ -33,6 +33,16 @@ export async function lockMuxOriginalRows(tx, session) {
     `;
 }
 
+export async function retainRetiredMuxOriginalAsset(tx, { operationId, muxAssetId }) {
+    const retired = await tx.muxRetiredIngestAttempt.findUnique({ where: { operationId } });
+    if (!retired) return false;
+    await tx.muxRetiredIngestEvent.createMany({
+        data: [{ operationId, muxAssetId }],
+        skipDuplicates: true,
+    });
+    return true;
+}
+
 export async function retainMuxOriginalAsset(tx, {
     operationId, muxAssetId, expectedAssetId, expectedClipId, now = new Date(),
 }) {

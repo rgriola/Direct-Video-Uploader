@@ -511,6 +511,18 @@ export default async function adminRoutes(fastify) {
             const originalReads = await tx.muxOriginalReadLease.count({ where: { asset: { userId: id } } });
             if (unresolvedIngests || originalReads) return { status: 'needs-cleanup' };
 
+            const attempts = await tx.muxIngestAttempt.findMany({
+                where: { job: { uploadSession: { asset: { userId: id } } } },
+                select: { id: true, muxAssetId: true },
+            });
+            if (attempts.length) {
+                await tx.muxRetiredIngestAttempt.createMany({
+                    data: attempts.map(attempt => ({
+                        operationId: attempt.id,
+                        originalMuxAssetId: attempt.muxAssetId,
+                    })),
+                });
+            }
             const clips = await tx.clip.count({ where: { asset: { userId: id } } });
             const chatDeleted = await tx.chatMessage.deleteMany({ where: { userId: id } });
             const errorDeleted = await tx.errorLog.deleteMany({ where: { userId: id } });

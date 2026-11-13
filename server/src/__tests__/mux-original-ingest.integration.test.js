@@ -879,4 +879,106 @@ integration('Mux original handoff against PostgreSQL and HTTP', () => {
         await prisma.muxOriginalReadLease.delete({ where: { id: leaseId } });
         expect(await prisma.user.findUnique({ where: { id: ownerId } })).not.toBeNull();
     });
+
+    it('retains minimal correlation atomically and records late webhooks after hard deletion', async () => {
+        const fixture = await completeOriginal(Buffer.from('late webhook after account deletion'));
+        const owner = await prisma.user.findUniqueOrThrow({ where: { id: ownerId } });
+        let operation;
+        muxApi.createMuxOriginalAsset.mockImplementation(async value => {
+            operation = value;
+            remoteAssets.set('mux-before-delete', { status: 'preparing', playback_ids: [] });
+            return { ok: true, muxAssetId: 'mux-before-delete' };
+        });
+        await worker.runOnce(app);
+        const moderationUrl = `/api/admin/assets/${fixture.assetId}/moderation`;
+        expect((await requestAs(adminId, 'PATCH', moderationUrl, {
+            moderation: 'FLAGGED_FOR_REMOVAL', reason: 'Remove original',
+        })).statusCode).toBe(202);
+        expect((await requestAs(adminId, 'PATCH', moderationUrl, {
+            moderation: 'REMOVED', reason: 'Remove original',
+        })).statusCode).toBe(200);
+
+        try {
+            // A failed correlation write must roll back the account deletion.
+            await prisma.muxRetiredIngestAttempt.create({
+                data: { operationId: operation.operationId },
+            });
+            expect((await requestAs(adminId, 'DELETE', `/api/admin/users/${ownerId}`)).statusCode).toBe(500);
+            expect(await prisma.user.findUnique({ where: { id: ownerId } })).not.toBeNull();
+            expect(await prisma.muxIngestAttempt.findUnique({ where: { id: operation.operationId } })).not.toBeNull();
+            await prisma.muxRetiredIngestAttempt.delete({ where: { operationId: operation.operationId } });
+
+            let unlock;
+            let locked;
+            const acquired = new Promise(resolve => { locked = resolve; });
+            const release = new Promise(resolve => { unlock = resolve; });
+            const holder = prisma.$transaction(async tx => {
+                await tx.$queryRaw`SELECT id FROM users WHERE id = ${ownerId} FOR UPDATE`;
+                locked();
+                await release;
+            }, { timeout: 10000 });
+            let deleted;
+            let concurrentWebhook;
+            try {
+                await acquired;
+                const deleting = requestAs(adminId, 'DELETE', `/api/admin/users/${ownerId}`);
+                await waitFor(async () => {
+                    const rows = await prisma.$queryRaw`
+                        SELECT count(*)::int AS count FROM pg_stat_activity
+                        WHERE datname = current_database() AND wait_event_type = 'Lock'
+                            AND query LIKE '%SELECT role FROM users%'
+                    `;
+                    return rows[0].count > 0;
+                });
+                const late = originalWebhook('video.asset.created', operation, 'mux-after-delete');
+                await waitFor(async () => {
+                    const rows = await prisma.$queryRaw`
+                        SELECT count(*)::int AS count FROM pg_stat_activity
+                        WHERE datname = current_database() AND wait_event_type = 'Lock'
+                            AND query LIKE '%SELECT id FROM users%'
+                    `;
+                    return rows[0].count > 0;
+                });
+                unlock();
+                [deleted, concurrentWebhook] = await Promise.all([deleting, late]);
+            } finally {
+                unlock();
+                await holder;
+            }
+            expect(deleted.statusCode, deleted.body).toBe(200);
+            expect(concurrentWebhook.statusCode).toBe(503);
+            expect(concurrentWebhook.json().error).toBe('Mux reference retained; manual reconciliation required');
+            expect(await prisma.user.findUnique({ where: { id: ownerId } })).toBeNull();
+            expect(await prisma.muxIngestAttempt.findUnique({ where: { id: operation.operationId } })).toBeNull();
+            const retired = await prisma.muxRetiredIngestAttempt.findUniqueOrThrow({
+                where: { operationId: operation.operationId },
+            });
+            expect(Object.keys(retired).sort()).toEqual(['operationId', 'originalMuxAssetId', 'retiredAt']);
+            expect(retired.originalMuxAssetId).toBe('mux-before-delete');
+
+            for (const type of ['video.asset.created', 'video.asset.ready']) {
+                expect((await originalWebhook(type, operation, 'mux-after-delete')).statusCode).toBe(503);
+            }
+            expect(await prisma.muxRetiredIngestEvent.findMany({
+                where: { operationId: operation.operationId },
+            })).toMatchObject([{ operationId: operation.operationId, muxAssetId: 'mux-after-delete' }]);
+            const unknownOperation = randomUUID();
+            const unknown = await originalWebhook('video.asset.created', {
+                ...operation, operationId: unknownOperation,
+            }, 'mux-unknown');
+            expect(unknown.statusCode).toBe(503);
+            expect(unknown.json().error).toBe('Could not retain Mux ingest reference');
+            expect(await prisma.muxRetiredIngestEvent.count({
+                where: { operationId: unknownOperation },
+            })).toBe(0);
+        } finally {
+            if (operation) {
+                await prisma.muxRetiredIngestEvent.deleteMany({ where: { operationId: operation.operationId } });
+                await prisma.muxRetiredIngestAttempt.deleteMany({ where: { operationId: operation.operationId } });
+            }
+            if (!await prisma.user.findUnique({ where: { id: ownerId } })) {
+                await prisma.user.create({ data: owner });
+            }
+        }
+    }, 15000);
 });

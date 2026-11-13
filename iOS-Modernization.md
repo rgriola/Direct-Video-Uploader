@@ -779,8 +779,11 @@ sequenceDiagram
   server's dev hostname shares production and is not isolated.
 - [ ] Design and verify recovery for an already-linked Mux asset that fails processing
   or outlives its source URL; the original is retained, but re-ingest is not yet supported.
-- [ ] Preserve correlation for contradictory late webhooks after an owner's hard deletion;
-  unmatched events currently return 503 and are logged, but cannot be retained locally.
+- [x] Preserve minimal operation and Mux asset identifiers across owner hard deletion;
+  signed late events are retained and return 503 for manual reconciliation.
+- [ ] Add monitoring and a recovery workflow for post-deletion references, establish
+  their retention policy, and account for accounts deleted before all deletion
+  handlers were upgraded.
 - [ ] Keep both flags off on the shared home server until that validation and the storage
   and client rollout prerequisites are complete. See [the API guide](docs/UPLOAD_SESSION_API.md).
 
