@@ -985,7 +985,9 @@ final class OriginalUploadAPI {
 
     private func ensureCurrent(_ job: OriginalUploadJob, allowsCancellation: Bool = false) throws {
         guard access.isCurrent, job.scope == access.scope else { throw OriginalUploadAPIError.sessionChanged }
+        try journal.requireActiveScope(for: job, access: access)
         let current = try journal.read(id: job.id, access: access)
+        try journal.requireActiveScope(for: job, access: access)
         guard current == job else { throw OriginalUploadStorageError.staleJob }
         if !allowsCancellation {
             guard !current.cancellationRequested, try !journal.isCancellationBlocked(for: job) else {
@@ -1052,15 +1054,13 @@ final class OriginalUploadAPI {
         let data: Data
         let response: URLResponse
         onDispatch?()
-        if gated {
-            do {
-                try Task.checkCancellation()
-                try ensureCurrent(job, allowsCancellation: allowsCancellation)
-                try cancellationGate.validateHeld()
-            } catch {
-                cancellationGate.releaseUndispatched()
-                throw error
-            }
+        do {
+            try Task.checkCancellation()
+            try ensureCurrent(job, allowsCancellation: allowsCancellation)
+            if gated { try cancellationGate.validateHeld() }
+        } catch {
+            if gated { cancellationGate.releaseUndispatched() }
+            throw error
         }
         // No caller code or suspension may intervene between this marker and transport handoff.
         handoff?.invoked = true

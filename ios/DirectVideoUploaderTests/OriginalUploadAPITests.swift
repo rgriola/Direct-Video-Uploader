@@ -8,6 +8,162 @@ struct OriginalUploadAPITests {
     private let signature = String(repeating: "a", count: 64)
     private let expires: Int64 = 2_000_000_000
 
+    @Test(.timeLimit(.minutes(1)))
+    @MainActor
+    func scopeStopSuppressesLateOrdinaryResponseAndBlocksNewRequests() async throws {
+        let directory = try fixture()
+        defer { cleanup(directory) }
+        let server = URL(string: "https://isolated.example.test")!
+        let auth = AuthService(storage: .memory, serverURL: { server })
+        auth.token = "test-token"
+        auth.currentUser = User(
+            id: "user-1", phoneNumber: "5550100", name: "Reporter", email: nil, team: nil,
+            status: "ACTIVE", companyCode: nil, companyName: nil)
+        let access = try OriginalUploadAccess(auth: auth, allowedOrigins: ["https://isolated.example.test"])
+        let fence = OriginalUploadTaskFence()
+        let (journal, job) = try await prepareJob(access: access, directory: directory, taskFence: fence)
+        let entered = AsyncStream<Void>.makeStream()
+        let release = AsyncStream<Void>.makeStream()
+        defer { entered.continuation.finish(); release.continuation.finish() }
+        let calls = Mutex(0)
+        let api = try OriginalUploadAPI(access: access, journal: journal, transport: { request in
+            calls.withLock { $0 += 1 }
+            entered.continuation.yield()
+            var iterator = release.stream.makeAsyncIterator()
+            _ = await iterator.next()
+            return (Data("{}".utf8), HTTPURLResponse(
+                url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+        })
+        let pending = Task { try await api.reserve(job) }
+        var iterator = entered.stream.makeAsyncIterator()
+        try #require(await iterator.next() != nil)
+        _ = try fence.stopScope(access: access)
+        release.continuation.yield()
+        await #expect(throws: OriginalUploadStorageError.scopeStopped) { try await pending.value }
+        await #expect(throws: OriginalUploadStorageError.scopeStopped) { try await api.reserve(job) }
+        #expect(calls.withLock { $0 } == 1)
+        #expect(try journal.read(id: job.id, access: access) == job)
+        let absent = OriginalUploadJournal(directory: directory.appendingPathComponent("absent"), taskFence: fence)
+        let blocked = try OriginalUploadAPI(access: access, journal: absent, transport: { _ in
+            throw URLError(.badServerResponse)
+        })
+        await #expect(throws: OriginalUploadStorageError.scopeStopped) { try await blocked.reserve(job) }
+        #expect(!FileManager.default.fileExists(atPath: directory.appendingPathComponent("absent").path))
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    @MainActor
+    func scopeStopSuppressesLateCancellationResponsesButPreservesGateOutcomes() async throws {
+        for (outcome, page) in [(200, false), (429, false), (0, false),
+                                (200, true), (429, true), (0, true)] {
+            let directory = try fixture()
+            defer { cleanup(directory) }
+            let server = URL(string: "https://isolated.example.test")!
+            let auth = AuthService(storage: .memory, serverURL: { server })
+            auth.token = "test-token"
+            auth.currentUser = User(
+                id: "user-1", phoneNumber: "5550100", name: "Reporter", email: nil, team: nil,
+                status: "ACTIVE", companyCode: nil, companyName: nil)
+            let access = try OriginalUploadAccess(auth: auth, allowedOrigins: ["https://isolated.example.test"])
+            let fence = OriginalUploadTaskFence()
+            let (journal, original) = try await prepareJob(access: access, directory: directory, taskFence: fence)
+            let job = try journal.requestCancellation(for: original, access: access)
+            let fixedNow = ContinuousClock.now
+            let gate = OriginalUploadCancellationGate(testingNow: { fixedNow })
+            let entered = AsyncStream<Void>.makeStream()
+            let release = AsyncStream<Void>.makeStream()
+            defer { entered.continuation.finish(); release.continuation.finish() }
+            let calls = Mutex(0)
+            let transport: @Sendable (URLRequest) async throws -> (Data, URLResponse) = { request in
+                let count = calls.withLock { value in value += 1; return value }
+                if count == 1 {
+                    entered.continuation.yield()
+                    var iterator = release.stream.makeAsyncIterator()
+                    _ = await iterator.next()
+                    if outcome == 0 { throw URLError(.networkConnectionLost) }
+                }
+                let status = count == 1 ? outcome : 200
+                let body = request.httpMethod == "GET"
+                    ? Data(#"{"assetId":null,"sessionIds":[],"nextCursor":null}"#.utf8)
+                    : Data(#"{"assetId":null,"sessionIds":[]}"#.utf8)
+                return (body, HTTPURLResponse(
+                    url: request.url!, statusCode: status, httpVersion: nil,
+                    headerFields: status == 429 ? ["Retry-After": "60"] : nil)!)
+            }
+            let api = try OriginalUploadAPI(access: access, journal: journal, testingGate: gate, transport: transport)
+            var observed = 0
+            let pending = Task {
+                if page {
+                    _ = try await api.cancellationSessions(for: job, onResponse: { _, _ in observed += 1 })
+                } else {
+                    _ = try await api.cancelIntent(for: job, onResponse: { _, _ in observed += 1 })
+                }
+            }
+            var iterator = entered.stream.makeAsyncIterator()
+            try #require(await iterator.next() != nil)
+            _ = try fence.stopScope(access: access)
+            release.continuation.yield()
+            await #expect(throws: OriginalUploadStorageError.scopeStopped) { try await pending.value }
+            #expect(observed == (outcome == 0 ? 0 : 1))
+
+            // A separate fence permits checking the shared gate without reopening
+            // the stopped scope or changing the saved job.
+            let otherJournal = OriginalUploadJournal(
+                directory: directory.appendingPathComponent("journal"), taskFence: OriginalUploadTaskFence())
+            let other = try OriginalUploadAPI(
+                access: access, journal: otherJournal, testingGate: gate, transport: transport)
+            if outcome == 200 {
+                #expect(try await other.cancelIntent(for: job).sessionIds.isEmpty)
+                #expect(calls.withLock { $0 } == 2)
+            } else if outcome == 429 {
+                await #expect(throws: OriginalUploadCancellationCoordinatorError.rateLimited(retryAfterSeconds: 60)) {
+                    try await other.cancelIntent(for: job)
+                }
+                #expect(calls.withLock { $0 } == 1)
+            } else {
+                await #expect(throws: OriginalUploadCancellationCoordinatorError.reconciliationRequired) {
+                    try await other.cancelIntent(for: job)
+                }
+                #expect(calls.withLock { $0 } == 1)
+            }
+        }
+    }
+
+    @Test
+    @MainActor
+    func scopeStopInDispatchCallbackPreventsHandoffAndReleasesGate() async throws {
+        let directory = try fixture()
+        defer { cleanup(directory) }
+        let server = URL(string: "https://isolated.example.test")!
+        let auth = AuthService(storage: .memory, serverURL: { server })
+        auth.token = "test-token"
+        auth.currentUser = User(
+            id: "user-1", phoneNumber: "5550100", name: "Reporter", email: nil, team: nil,
+            status: "ACTIVE", companyCode: nil, companyName: nil)
+        let access = try OriginalUploadAccess(auth: auth, allowedOrigins: ["https://isolated.example.test"])
+        let fence = OriginalUploadTaskFence()
+        let (journal, original) = try await prepareJob(access: access, directory: directory, taskFence: fence)
+        let job = try journal.requestCancellation(for: original, access: access)
+        let gate = isolatedGate()
+        let calls = Mutex(0)
+        let transport: @Sendable (URLRequest) async throws -> (Data, URLResponse) = { request in
+            calls.withLock { $0 += 1 }
+            return (Data(#"{"assetId":null,"sessionIds":[]}"#.utf8), HTTPURLResponse(
+                url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+        }
+        let api = try OriginalUploadAPI(access: access, journal: journal, testingGate: gate, transport: transport)
+        await #expect(throws: OriginalUploadStorageError.scopeStopped) {
+            try await api.cancelIntent(for: job, onDispatch: { _ = try? fence.stopScope(access: access) })
+        }
+        #expect(calls.withLock { $0 } == 0)
+        let otherJournal = OriginalUploadJournal(
+            directory: directory.appendingPathComponent("journal"), taskFence: OriginalUploadTaskFence())
+        let other = try OriginalUploadAPI(access: access, journal: otherJournal, testingGate: gate, transport: transport)
+        #expect(try await other.cancelIntent(for: job).sessionIds.isEmpty)
+        #expect(calls.withLock { $0 } == 1)
+        await #expect(throws: OriginalUploadStorageError.scopeStopped) { try await api.cancelIntent(for: job) }
+    }
+
     @MainActor
     private func isolatedGate() -> OriginalUploadCancellationGate {
         OriginalUploadCancellationGate(testingNow: { ContinuousClock.now })

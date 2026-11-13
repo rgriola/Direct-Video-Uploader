@@ -127,6 +127,163 @@ struct OriginalUploadStorageTests {
     }
 
     @Test
+    func scopeStopIsStickyScopedAndRequiresCurrentAccess() async throws {
+        let service = auth()
+        let current = try access(service)
+        let otherUser = try access("other-user")
+        let otherServer = try access("user-1", "https://other.example.test")
+        let fence = OriginalUploadTaskFence()
+        let oldSnapshot = fence.beginSnapshot()
+        let permit = try fence.stopScope(access: current)
+        #expect(throws: OriginalUploadStorageError.busy) {
+            try fence.inventory(snapshot: oldSnapshot, taskIdentifiers: [], jobIDs: [], attemptIDs: [],
+                                hasUnidentifiedTasks: false)
+        }
+        #expect(throws: OriginalUploadStorageError.scopeStopped) {
+            try fence.requireActive(scope: current.scope, access: current)
+        }
+        try fence.requireActive(scope: otherUser.scope, access: otherUser)
+        try fence.requireActive(scope: otherServer.scope, access: otherServer)
+        #expect(throws: OriginalUploadStorageError.invalidScope) {
+            try OriginalUploadTaskFence().stoppedScope(for: permit)
+        }
+        let user = try #require(service.currentUser)
+        service.logout()
+        #expect(throws: OriginalUploadStorageError.invalidScope) { try fence.stopScope(access: current) }
+        service.token = "new-token"
+        service.currentUser = user
+        let relogged = try access(service)
+        #expect(throws: OriginalUploadStorageError.scopeStopped) {
+            try fence.requireActive(scope: relogged.scope, access: relogged)
+        }
+        // The permit remains usable without the former credentials.
+        let orphan = OriginalBackgroundTaskSnapshot(
+            identifier: 41, tag: OriginalBackgroundTaskTag(
+                scope: try OriginalUploadJournal.scopeIdentifier(current.scope),
+                jobId: UUID(), jobIncarnation: UUID(), attemptId: UUID()))
+        var cancelled = false
+        let result = try await OriginalBackgroundScopeStop.request(
+            permit: permit, fence: fence, tasks: { [orphan] },
+            snapshot: { $0 }, cancel: { _ in cancelled = true })
+        #expect(cancelled && result.requestedTaskIdentifiers == [41])
+        #expect(!result.inventoryStale)
+    }
+
+    @Test
+    func reentrantScopeStopAtSchedulingBoundariesCancelsAndRetainsRecordedAttempt() async throws {
+        for boundary in 0...2 {
+            let directory = try fixture()
+            defer { cleanup(directory) }
+            let current = try access()
+            let (initialJournal, initial) = try await prepare(directory: directory, access: current)
+            let running = try uploading(initial, journal: initialJournal, access: current)
+            let prepared = try await initialJournal.preparePart(for: running, number: 1, access: current)
+            let attempt = try #require(prepared.job.attempts.first)
+            let fence = OriginalUploadTaskFence()
+            var injected = false
+            let journal = OriginalUploadJournal(
+                directory: directory.appendingPathComponent("journal"),
+                synchronizeDirectory: { directory in
+                    try DurableFile.synchronize(directory, directory: true)
+                    guard boundary == 2, !injected,
+                          let data = try? Data(contentsOf: directory.appendingPathComponent("job.json")),
+                          let job = try? JSONDecoder().decode(OriginalUploadJob.self, from: data),
+                          job.attempts.contains(where: { $0.state == .scheduled }) else { return }
+                    injected = true
+                    _ = try fence.stopScope(access: current)
+                }, taskFence: fence)
+            if boundary == 0 { _ = try fence.stopScope(access: current) }
+            var created = false
+            var started = false
+            var cancelled = false
+            #expect(throws: OriginalUploadStorageError.scopeStopped) {
+                try journal.scheduleReadyPart(
+                    for: prepared.job, attemptId: attempt.id, verifiedPart: prepared.part, access: current,
+                    createTask: { _ in
+                        created = true
+                        if boundary == 1 { _ = try fence.stopScope(access: current) }
+                        return (handle: 17, identifier: 17)
+                    },
+                    startTask: { _ in started = true }, cancelTask: { _ in cancelled = true })
+            }
+            #expect(created == (boundary != 0))
+            #expect(cancelled == created)
+            #expect(!started)
+            let saved = try journal.read(id: prepared.job.id, access: current)
+            #expect(saved.attempts.first?.state == (boundary == 2 ? .scheduled : .ready))
+            #expect(saved.attempts.first?.taskIdentifier == (boundary == 2 ? 17 : nil))
+            #expect(FileManager.default.fileExists(atPath: prepared.part.url.path))
+        }
+    }
+
+    @Test
+    func scopeStopCancelsOnlyUnambiguousScopedTasksAndReportsStaleInventory() async throws {
+        let current = try access()
+        let fence = OriginalUploadTaskFence()
+        let permit = try fence.stopScope(access: current)
+        let scope = try OriginalUploadJournal.scopeIdentifier(current.scope)
+        func tag(_ scope: String, _ attempt: UUID = UUID()) -> OriginalBackgroundTaskTag {
+            OriginalBackgroundTaskTag(scope: scope, jobId: UUID(), jobIncarnation: UUID(), attemptId: attempt)
+        }
+        let duplicate = UUID()
+        let items = [
+            OriginalBackgroundTaskSnapshot(identifier: 1, tag: tag(scope)),
+            OriginalBackgroundTaskSnapshot(identifier: 2, tag: nil),
+            OriginalBackgroundTaskSnapshot(identifier: 3, tag: tag(String(repeating: "b", count: 64))),
+            OriginalBackgroundTaskSnapshot(identifier: 4, tag: tag(scope)),
+            OriginalBackgroundTaskSnapshot(identifier: 4, tag: tag(scope)),
+            OriginalBackgroundTaskSnapshot(identifier: 5, tag: tag(scope, duplicate)),
+            OriginalBackgroundTaskSnapshot(identifier: 6, tag: tag(scope, duplicate)),
+            OriginalBackgroundTaskSnapshot(identifier: 7, tag: tag(scope)),
+        ]
+        var cancelled: [Int] = []
+        let result = try await OriginalBackgroundScopeStop.request(
+            permit: permit, fence: fence, tasks: { items }, snapshot: { $0 },
+            cancel: { cancelled.append($0.identifier) })
+        #expect(Set(cancelled) == [1, 7])
+        #expect(result.requestedTaskIdentifiers == [1, 7])
+        #expect(result.hasUnidentifiedTasks && result.hasDuplicateIdentifiers && result.hasDuplicateAttempts)
+        #expect(!result.inventoryStale)
+
+        var enumerated = false
+        await #expect(throws: OriginalUploadStorageError.invalidScope) {
+            try await OriginalBackgroundScopeStop.request(
+                permit: permit, fence: OriginalUploadTaskFence(), tasks: { enumerated = true; return items },
+                snapshot: { $0 }, cancel: { _ in })
+        }
+        #expect(!enumerated)
+        cancelled.removeAll()
+        let stale = try await OriginalBackgroundScopeStop.request(
+            permit: permit, fence: fence,
+            tasks: {
+                _ = try? fence.stopScope(access: access("different-user"))
+                return items
+            }, snapshot: { $0 }, cancel: { cancelled.append($0.identifier) })
+        #expect(stale.inventoryStale)
+        #expect(stale.requestedTaskIdentifiers.isEmpty && cancelled.isEmpty)
+
+        var snapshots = 0
+        let changed = try await OriginalBackgroundScopeStop.request(
+            permit: permit, fence: fence, tasks: { [items[0]] },
+            snapshot: { item in
+                snapshots += 1
+                return snapshots == 1 ? item : OriginalBackgroundTaskSnapshot(identifier: item.identifier, tag: nil)
+            }, cancel: { cancelled.append($0.identifier) })
+        #expect(changed.inventoryStale && changed.requestedTaskIdentifiers.isEmpty)
+        #expect(cancelled.isEmpty)
+
+        let interrupted = try await OriginalBackgroundScopeStop.request(
+            permit: permit, fence: fence, tasks: { [items[0], items[7]] }, snapshot: { $0 },
+            cancel: {
+                cancelled.append($0.identifier)
+                _ = try? fence.stopScope(access: access("third-user"))
+            })
+        #expect(interrupted.inventoryStale)
+        #expect(interrupted.requestedTaskIdentifiers == [1])
+        #expect(cancelled == [1])
+    }
+
+    @Test
     func stagesExactBytesAndPersistsAccountScopedIdentity() async throws {
         let directory = try fixture()
         defer { cleanup(directory) }

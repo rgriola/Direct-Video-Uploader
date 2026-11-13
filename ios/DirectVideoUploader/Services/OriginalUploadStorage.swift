@@ -16,6 +16,7 @@ nonisolated enum OriginalUploadStorageError: LocalizedError, Equatable {
     case staleJob
     case busy
     case cancellationRequested
+    case scopeStopped
     case cleanupFailed
     case durabilityUncertain
     case preparationDiscarded
@@ -35,6 +36,7 @@ nonisolated enum OriginalUploadStorageError: LocalizedError, Equatable {
         case .staleJob: "The saved upload changed. Refresh its state and try again."
         case .busy: "Another operation is using this upload."
         case .cancellationRequested: "Cancellation was requested for this upload."
+        case .scopeStopped: "Original uploads are stopped for this account and server."
         case .cleanupFailed: "An upload file could not be removed. Reopen the app to retry cleanup."
         case .durabilityUncertain: "The upload state could not be confirmed. Reopen the app to recover it."
         case .preparationDiscarded: "The upload could not be prepared. Select the video and try again."
@@ -80,6 +82,15 @@ nonisolated struct OriginalUploadTaskInventory: Sendable {
 final class OriginalUploadTaskFence {
     static let shared = OriginalUploadTaskFence()
 
+    struct StopPermit {
+        fileprivate let fenceID: UUID
+        fileprivate let scope: String
+        fileprivate init(fenceID: UUID, scope: String) {
+            self.fenceID = fenceID
+            self.scope = scope
+        }
+    }
+
     private struct JobKey: Hashable {
         let scope: String
         let id: UUID
@@ -90,8 +101,36 @@ final class OriginalUploadTaskFence {
     private var generation = UUID()
     private var scheduling = false
     private var blockedJobs: Set<JobKey> = []
+    private var stoppedScopes: Set<String> = []
 
     func beginSnapshot() -> UUID { generation }
+
+    // Must be called while the old authenticated access is still current. The
+    // permit carries only the scope digest and issuing fence identity.
+    func stopScope(access: OriginalUploadAccess) throws -> StopPermit {
+        try access.require(access.scope)
+        let scope = try OriginalUploadJournal.scopeIdentifier(access.scope)
+        if stoppedScopes.insert(scope).inserted { generation = UUID() }
+        return StopPermit(fenceID: id, scope: scope)
+    }
+
+    func stoppedScope(for permit: StopPermit) throws -> String {
+        guard permit.fenceID == id, stoppedScopes.contains(permit.scope) else {
+            throw OriginalUploadStorageError.invalidScope
+        }
+        return permit.scope
+    }
+
+    func requireActive(scope: PendingFormScope, access: OriginalUploadAccess) throws {
+        try access.require(scope)
+        guard try !stoppedScopes.contains(OriginalUploadJournal.scopeIdentifier(scope)) else {
+            throw OriginalUploadStorageError.scopeStopped
+        }
+    }
+
+    func isSnapshotCurrent(_ snapshot: UUID) -> Bool {
+        !scheduling && snapshot == generation
+    }
 
     func inventory(
         snapshot: UUID, taskIdentifiers: Set<Int>, jobIDs: Set<UUID>,
@@ -115,7 +154,10 @@ final class OriginalUploadTaskFence {
         return blockedJobs.contains(key)
     }
 
-    fileprivate func withScheduling<T>(job: OriginalUploadJob, _ body: () throws -> T) throws -> T {
+    fileprivate func withScheduling<T>(
+        job: OriginalUploadJob, access: OriginalUploadAccess, _ body: () throws -> T
+    ) throws -> T {
+        try requireActive(scope: job.scope, access: access)
         guard try !isCancellationBlocked(for: job) else { throw OriginalUploadStorageError.cancellationRequested }
         guard !scheduling else { throw OriginalUploadStorageError.busy }
         scheduling = true
@@ -617,6 +659,10 @@ final class OriginalUploadJournal {
         try taskFence.isCancellationBlocked(for: job)
     }
 
+    func requireActiveScope(for job: OriginalUploadJob, access: OriginalUploadAccess) throws {
+        try taskFence.requireActive(scope: job.scope, access: access)
+    }
+
     func prepare(
         id: UUID, source: URL, fileName: String?, metadata: VideoMetadata, photoIdentifier: String?,
         transcribe: Bool, access: OriginalUploadAccess
@@ -849,7 +895,7 @@ final class OriginalUploadJournal {
         access: OriginalUploadAccess, createTask: (URL) throws -> (handle: TaskHandle, identifier: Int),
         startTask: (TaskHandle) -> Void, cancelTask: (TaskHandle) -> Void
     ) throws -> OriginalUploadJob {
-        try taskFence.withScheduling(job: supplied) {
+        try taskFence.withScheduling(job: supplied, access: access) {
             try Task.checkCancellation()
             let job = try read(id: supplied.id, access: access)
             guard job.hasSameIdentity(as: supplied), job.revision == supplied.revision else {
@@ -876,10 +922,18 @@ final class OriginalUploadJournal {
             try Task.checkCancellation()
             let task = try createTask(url)
             do {
+                try taskFence.requireActive(scope: job.scope, access: access)
+                guard try !taskFence.isCancellationBlocked(for: job) else {
+                    throw OriginalUploadStorageError.cancellationRequested
+                }
                 try Task.checkCancellation()
                 let scheduled = try recordScheduledTask(
                     for: job, attemptId: attemptId, taskIdentifier: task.identifier, access: access)
                 try Task.checkCancellation()
+                try taskFence.requireActive(scope: job.scope, access: access)
+                guard try !taskFence.isCancellationBlocked(for: job) else {
+                    throw OriginalUploadStorageError.cancellationRequested
+                }
                 startTask(task.handle)
                 return scheduled
             } catch {
