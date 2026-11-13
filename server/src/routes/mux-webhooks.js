@@ -8,7 +8,7 @@ import Mux from '@mux/mux-node';
 import prisma from '../lib/prisma.js';
 import { MUX_ENV_KEY } from '../lib/mux.js';
 import { queueAssetMediaSync, recordMuxAssetReference, reconcileAssetMedia } from '../lib/media-reconciliation.js';
-import { retainMuxOriginalAsset } from '../lib/mux-original-records.js';
+import { retainMuxOriginalAsset, retainRetiredMuxOriginalAsset } from '../lib/mux-original-records.js';
 import { dbRetry } from '../lib/utils.js';
 import { teamScope } from '../lib/authorization.js';
 
@@ -112,18 +112,32 @@ export default async function muxWebhookRoutes(fastify) {
                     || (meta.clipId !== undefined && typeof meta.clipId !== 'string')) {
                     return reply.status(400).send({ error: 'Invalid Mux original ingest event' });
                 }
-                const retained = await dbRetry(() => prisma.$transaction(tx => retainMuxOriginalAsset(tx, {
-                    operationId: meta.ingestOperationId,
-                    muxAssetId: eventData.id,
-                    expectedAssetId: meta.assetId,
-                    expectedClipId: meta.clipId,
-                })));
+                const retained = await dbRetry(() => prisma.$transaction(async tx => {
+                    const result = await retainMuxOriginalAsset(tx, {
+                        operationId: meta.ingestOperationId,
+                        muxAssetId: eventData.id,
+                        expectedAssetId: meta.assetId,
+                        expectedClipId: meta.clipId,
+                    });
+                    if (result.matched) return result;
+                    const retired = await retainRetiredMuxOriginalAsset(tx, {
+                        operationId: meta.ingestOperationId,
+                        muxAssetId: eventData.id,
+                    });
+                    return { matched: false, retired };
+                }));
                 if (!retained.matched) {
                     request.log.error(
                         { operationId: meta.ingestOperationId, muxAssetId: eventData.id },
-                        'Mux original event has no matching ingest attempt',
+                        retained.retired
+                            ? 'Mux original event after account deletion requires manual reconciliation'
+                            : 'Mux original event has no matching ingest attempt',
                     );
-                    return reply.status(503).send({ error: 'Could not retain Mux ingest reference' });
+                    return reply.status(503).send({
+                        error: retained.retired
+                            ? 'Mux reference retained; manual reconciliation required'
+                            : 'Could not retain Mux ingest reference',
+                    });
                 }
                 if (retained.conflict) {
                     request.log.error(
