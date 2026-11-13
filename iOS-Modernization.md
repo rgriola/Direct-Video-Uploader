@@ -898,6 +898,26 @@ migrations and update every server instance before relying on the fence.
     publication. Only report computation is read-only: obtaining inputs through
     `inbox.events()` can recover staged files. This is not complete late-tagged-
     event reconciliation and does not enable transport.
+  - [x] Bounded read-only per-job attempt reconciliation report: a synchronous
+    reconciler reads one current authorized journal job and requires a
+    fence-current task inventory (stale or foreign inventories throw `busy`;
+    access and fence currency are rechecked afterward). It classifies each
+    attempt, in journal order with its record verbatim, as not scheduled, live
+    task, completion observed, unobserved, or ambiguous. Only inspection evidence
+    for the same scope, job, and incarnation is considered; evidence for other
+    jobs is ignored, evidence naming an unknown attempt is listed separately, and
+    duplicate evidence, live task plus evidence, task-identifier disagreements, or
+    a live/evidenced preparing or ready attempt are ambiguous. Because the
+    inventory cannot pair task identifiers with attempt IDs, unidentified tasks
+    make every absence-based result ambiguous. The report also flags a live task
+    tagged with the job but none of its attempts. Access and journal errors
+    propagate. It is a point-in-time local snapshot: evidence is local correlation
+    only, not server part receipt, session completion, original publication, or
+    Mux ingest; `unobserved` requires server part reconciliation and proves
+    neither failure nor completion. It performs no journal writes, inbox reads or
+    acknowledgements, retirement, cancellation, file removal, or networking, and
+    must not authorize any of them. Server part reconciliation, event
+    acknowledgement, attempt retirement, and transport enablement remain open.
   - Persist a same-install, account- and server-scoped nonsecret journal and use
     content-bound, owner-scoped server reservations for recovery. Reinstall and
     cross-device recovery are out of scope.
