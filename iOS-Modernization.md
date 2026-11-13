@@ -892,12 +892,19 @@ migrations and update every server instance before relying on the fence.
     progress; the opt-in upload flow is not yet wired or available, and the
     background transport cannot be instantiated. Before enabling it, protect live
     and orphaned legacy Mux sessions from premature background-event acknowledgement,
-    reconcile scheduled attempts against live tasks and server parts at startup, and
-    provide a durable resolution for unidentified or late completion events.
-    Local callback ordering alone does not identify an OS wake. Intact staged inbox
-    records now recover after a crash; ambiguous records remain in place and block
-    inbox progress. The event pump also blocks acknowledgement of its pending
-    persistence retries. The inbox inventory verifies trusted app-home aliases,
+    reconcile scheduled attempts against live tasks and server parts at startup,
+    quarantine unidentified completions, and safely reconcile late tagged
+    completions. Local callback ordering alone does not identify an OS wake. Intact
+    staged inbox records now recover after a crash; ambiguous records remain in
+    place and block inbox progress. An explicit, idempotent operation copies an
+    exact durable completion with no tag to a separate durable quarantine inbox,
+    syncing the copy before removing the active record. Failed moves preserve
+    active and/or quarantined evidence; retrieval is read-only, and quarantined
+    records are not scoped pending events. Quarantine does not attribute, resolve,
+    or delete events; late tagged-event reconciliation and the wider enablement
+    blockers remain open. The event pump also blocks acknowledgement and
+    quarantine of its pending persistence retries. The inbox inventory verifies
+    trusted app-home aliases,
     traverses descendants without following links, and retains its opened directory
     descriptor for staged-record rereads. It checks directory identity before
     recovery, before the second scan, and after that scan, rejecting observed
