@@ -890,6 +890,14 @@ migrations and update every server instance before relying on the fence.
     journal data throws. It does not mutate the journal or inbox, acknowledge
     events, or perform reconciliation. Only this matcher slice is complete;
     broader Step 4.3a and enablement blockers remain open.
+  - [x] Bounded read-only completion inspection report: accepts only an already
+    selected list of at most 32 events, rejects duplicate event IDs without
+    truncation, and preserves each original event and order with optional
+    matcher evidence. Access and journal errors propagate; evidence is local
+    correlation only, not server part receipt, session completion, or Mux
+    publication. Only report computation is read-only: obtaining inputs through
+    `inbox.events()` can recover staged files. This is not complete late-tagged-
+    event reconciliation and does not enable transport.
   - Persist a same-install, account- and server-scoped nonsecret journal and use
     content-bound, owner-scoped server reservations for recovery. Reinstall and
     cross-device recovery are out of scope.
