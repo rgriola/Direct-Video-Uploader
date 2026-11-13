@@ -615,11 +615,18 @@ operation and Mux asset IDs with Mux; the records are not automatically cleared
 and do not remove remote media. Unknown operations still return 503 without
 creating records.
 
+When monitoring is enabled, any retained post-deletion reference makes the
+`retired-mux-references` check critical. Configured Slack alerts repeat while
+the reference remains; no identifiers are included in the alert. A database
+failure reports an unknown check instead of an all-clear. This check and its
+alerts do not run while monitoring or the server is stopped.
+
 These minimal identifiers are retained without an automatic expiry until a
 safe retention policy is established. They cannot recover correlations for
 accounts deleted before every server handling deletion was upgraded.
-Post-deletion cleanup and proactive alerting remain rollout blockers, and absence
-confirmation must not be treated as proof that a remote request is finished.
+Post-deletion cleanup and independent host-down alerting remain rollout
+blockers, and absence confirmation must not be treated as proof that a remote
+request is finished.
 
 Each new local original key is bound to the `.dvu-storage-id` marker in its
 storage root. A missing or different marker prevents cleanup from being

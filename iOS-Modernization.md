@@ -783,7 +783,9 @@ sequenceDiagram
   signed late events are retained and return 503 for manual reconciliation.
 - [x] Show paginated post-deletion references to Super Admins without exposing account
   details or claiming that remote media has been removed.
-- [ ] Add proactive alerts and a recovery workflow for post-deletion references, establish
+- [x] Alert on retained references when monitoring and Slack delivery are configured;
+  database-check failures report unknown rather than healthy.
+- [ ] Add a recovery workflow for post-deletion references, establish
   their retention policy, and account for accounts deleted before all deletion
   handlers were upgraded.
 - [ ] Keep both flags off on the shared home server until that validation and the storage
