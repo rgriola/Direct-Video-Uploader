@@ -904,8 +904,26 @@ sequenceDiagram
     older builds may have made ungated requests or lost retry information.
     Recovery requires a trusted migration or enrollment procedure; restarting or
     waiting an arbitrary interval cannot reconstruct a hidden retry delay.
-  - Finish scope-wide sign-out fencing, safe cancellation when credentials have
-    already changed, recovery of reservations or sessions created during a
+  - An unwired process-local fence can now stop an account/server scope while its
+    access is current. The stop is sticky across re-login in that process, has no
+    reopen, and invalidates earlier task inventories of that fence. The default
+    components share a fence; separately constructed fences do not coordinate.
+    Scheduling checks it at
+    admission, after task creation, and before start; a recorded attempt remains
+    recorded if start is prevented. The original-upload API checks it before
+    journal reads, at handoff, and after responses; cancellation-gate response
+    bookkeeping still precedes rejection of a late result. A handed-off request
+    is already in flight for this fence, even if its network operation starts
+    after the stop; it may still change server state. An opaque permit from
+    that same fence permits best-effort cancellation of individually unambiguous
+    tagged tasks in the stopped scope, including orphaned jobs, even after access
+    changes. Unknown and duplicate entries and observed stale inventories are
+    reported; task enumeration and cancellation do not prove tasks are terminal,
+    inventory is complete, or a changing OS attachment was observed. This helper
+    does not read or change the journal or remove files.
+    This is not wired to production sign-out and is not durable across process
+    restart. Finish sign-out integration and trusted recovery after restart,
+    recovery of reservations or sessions created during a
     cancellation race without creating new work, and terminal local cleanup that
     cannot lose queued delegate events. Cancellation or an expired URL alone must
     not be treated as proof that a background task is terminal. The server-side
