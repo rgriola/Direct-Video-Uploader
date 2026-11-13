@@ -1,5 +1,5 @@
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { fetchAuditLogs, fetchMediaIssues, updateAssetModeration } from "@/lib/api";
+import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
+import { fetchAuditLogs, fetchMediaIssues, fetchRetiredMuxEvents, updateAssetModeration, type RetiredMuxCursor } from "@/lib/api";
 import { panelHeader, subTextPanelHeader, type AssetModeration } from "@/lib/types";
 import { Icon } from "./Icon";
 import { toast } from "sonner";
@@ -19,6 +19,14 @@ export function AuditLog() {
     queryFn: fetchMediaIssues,
     refetchInterval: 30_000,
   });
+  const retiredMux = useInfiniteQuery({
+    queryKey: ["retired-mux-events"],
+    queryFn: ({ pageParam }) => fetchRetiredMuxEvents(pageParam),
+    initialPageParam: null as RetiredMuxCursor | null,
+    getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
+    refetchInterval: 30_000,
+  });
+  const retiredEvents = retiredMux.data?.pages.flatMap((page) => page.events);
 
   async function retryMedia(targetId: string, moderation: AssetModeration, reason?: string | null) {
     setRetryingId(targetId);
@@ -78,6 +86,45 @@ export function AuditLog() {
         )}
         {issues.data?.hasMore && (
           <p role="status" className="mt-2 text-(--accent-amber)">More than 100 media issues exist. Resolve these to see the rest.</p>
+        )}
+      </div>
+      <div className="border-b border-(--border-subtle) px-4 py-3">
+        <h3 className="font-semibold text-(length:--text-sm)">Mux references after account deletion</h3>
+        <p className="mt-1 text-(--muted-foreground)">
+          Investigate these references with Mux. They are retained for review and are not automatically cleared.
+        </p>
+        {retiredMux.error && (
+          <p role="alert" className="mt-2 text-(--accent-red)">
+            {retiredMux.error instanceof Error ? retiredMux.error.message : "Could not load retired Mux references"}
+          </p>
+        )}
+        {retiredMux.isLoading ? (
+          <p className="mt-2 text-(--muted-foreground)">Loading retired Mux references...</p>
+        ) : retiredEvents?.length === 0 ? (
+          <p className="mt-2 text-(--muted-foreground)">No retired Mux references have been reported.</p>
+        ) : retiredEvents && (
+          <ul className="mt-2 max-h-80 overflow-y-auto divide-y divide-(--border-subtle)">
+            {retiredEvents.map((event) => (
+              <li key={`${event.operationId}:${event.muxAssetId}`} className="py-2 text-(length:--text-xs)">
+                <p>Operation: <code>{event.operationId}</code></p>
+                <p>Mux asset: <code>{event.muxAssetId}</code></p>
+                {event.attempt.originalMuxAssetId && (
+                  <p>Previously linked Mux asset: <code>{event.attempt.originalMuxAssetId}</code></p>
+                )}
+                <time dateTime={event.firstSeenAt}>{new Date(event.firstSeenAt).toLocaleString()}</time>
+              </li>
+            ))}
+          </ul>
+        )}
+        {retiredMux.hasNextPage && (
+          <button
+            type="button"
+            disabled={retiredMux.isFetchingNextPage}
+            onClick={() => void retiredMux.fetchNextPage()}
+            className="mt-2 px-2 py-1 rounded-(--radius-md) border border-(--border-subtle) text-(--foreground) disabled:opacity-50"
+          >
+            {retiredMux.isFetchingNextPage ? "Loading..." : "Load more Mux references"}
+          </button>
         )}
       </div>
       {error ? (
