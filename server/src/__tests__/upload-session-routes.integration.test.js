@@ -266,13 +266,23 @@ integration('upload session HTTP routes against PostgreSQL and local storage', (
         });
     }
 
-    it('registers the real routes only when enabled and serves an upload through the application registry', async () => {
+    async function withRegistryServers(run) {
         const { authenticate } = await import('../lib/authentication.js');
         const { requireRole } = await import('../lib/authorization.js');
         const { registerApplicationRoutes } = await import('../routes/index.js');
         const servers = [];
+        const unusedRoot = path.join(os.tmpdir(), `dvu-disabled-${randomUUID()}`);
         async function buildServer(enabled) {
             vi.stubEnv('UPLOAD_SESSIONS_ENABLED', String(enabled));
+            vi.stubEnv('MUX_ORIGINAL_INGEST_ENABLED', 'false');
+            vi.stubEnv('STORAGE_LOCAL_ROOT', enabled ? storageRoot : unusedRoot);
+            vi.stubEnv('STORAGE_DRIVER', enabled ? 'local' : undefined);
+            vi.stubEnv('JWT_SECRET', 'integration-jwt-secret');
+            vi.stubEnv('UPLOAD_SESSION_SIGNING_SECRET', enabled ? signingSecret : undefined);
+            vi.stubEnv('UPLOAD_STORAGE_MAX_BYTES', enabled ? '10737418240' : undefined);
+            vi.stubEnv('UPLOAD_STORAGE_MIN_FREE_BYTES', enabled ? '1048576' : undefined);
+            vi.stubEnv('MUX_ORIGINAL_READ_SIGNING_SECRET', undefined);
+            vi.stubEnv('MUX_ORIGINAL_READ_BASE_URL', undefined);
             const server = Fastify({ logger: false, bodyLimit: 2 * 1024 * 1024 });
             servers.push(server);
             await server.register(cookie);
@@ -285,16 +295,65 @@ integration('upload session HTTP routes against PostgreSQL and local storage', (
             await registerApplicationRoutes(server);
             return server;
         }
+        try {
+            return await run(buildServer);
+        } finally {
+            try {
+                await Promise.all(servers.map(server => server.close()));
+                await expect(readdir(unusedRoot)).rejects.toMatchObject({ code: 'ENOENT' });
+            } finally {
+                vi.unstubAllEnvs();
+                await rm(unusedRoot, { recursive: true, force: true });
+            }
+        }
+    }
 
-        vi.stubEnv('STORAGE_DRIVER', 'local');
-        vi.stubEnv('JWT_SECRET', 'integration-jwt-secret');
-        vi.stubEnv('UPLOAD_SESSION_SIGNING_SECRET', signingSecret);
-        vi.stubEnv('UPLOAD_STORAGE_MAX_BYTES', '10737418240');
-        vi.stubEnv('UPLOAD_STORAGE_MIN_FREE_BYTES', '1048576');
+    function registryRequest(server, userId, method, url, payload, remoteAddress = '127.0.0.1') {
+        return server.inject({
+            method, url, payload, remoteAddress,
+            headers: {
+                ...(userId ? { authorization: `Bearer ${tokens[userId]}` } : {}),
+                ...(Buffer.isBuffer(payload) ? { 'content-type': 'application/octet-stream' } : {}),
+            },
+        });
+    }
+
+    function intentWhere(userId, clientRequestId) {
+        return { userId_clientRequestId: { userId, clientRequestId } };
+    }
+
+    async function filesystemInventory(directory = storageRoot) {
+        const inventory = [];
+        for (const entry of (await readdir(directory, { withFileTypes: true })).sort((a, b) =>
+            a.name.localeCompare(b.name))) {
+            const fullPath = path.join(directory, entry.name);
+            inventory.push([
+                path.relative(storageRoot, fullPath),
+                entry.isDirectory() ? await filesystemInventory(fullPath) : sha256(await readFile(fullPath)),
+            ]);
+        }
+        return inventory;
+    }
+
+    async function originalSnapshot(id) {
+        return {
+            asset: await prisma.asset.findUniqueOrThrow({ where: { id } }),
+            clips: await prisma.clip.findMany({ where: { assetId: id }, orderBy: { id: 'asc' } }),
+            sessions: await prisma.uploadSession.findMany({ where: { assetId: id }, orderBy: { id: 'asc' } }),
+            parts: await prisma.uploadPart.findMany({
+                where: { uploadSession: { assetId: id } },
+                orderBy: [{ uploadSessionId: 'asc' }, { partNumber: 'asc' }],
+            }),
+            jobs: await prisma.muxIngestJob.findMany({ where: { uploadSession: { assetId: id } } }),
+            files: await filesystemInventory(),
+        };
+    }
+
+    it('gates intake while retaining recovery and serves an enabled upload through the application registry', async () => {
         const content = Buffer.from('registered upload');
         const url = `/api/assets/${assetId}/upload-sessions`;
         const payload = { expectedSizeBytes: content.length, expectedSha256: sha256(content) };
-        try {
+        await withRegistryServers(async buildServer => {
             const disabled = await buildServer(false);
             expect((await disabled.inject({ method: 'POST', url, payload })).statusCode).toBe(404);
             expect((await disabled.inject({
@@ -302,7 +361,7 @@ integration('upload session HTTP routes against PostgreSQL and local storage', (
                 payload: { clientRequestId: randomUUID(), fileName: 'video.mp4' },
             })).statusCode).toBe(404);
             const pageUrl = `/api/assets/original-uploads/${randomUUID()}/sessions`;
-            expect((await disabled.inject({ method: 'GET', url: pageUrl })).statusCode).toBe(404);
+            expect((await disabled.inject({ method: 'GET', url: pageUrl })).statusCode).toBe(401);
             const enabled = await buildServer(true);
             expect((await enabled.inject({ method: 'POST', url, payload })).statusCode).toBe(401);
             expect((await enabled.inject({ method: 'GET', url: pageUrl })).statusCode).toBe(401);
@@ -358,9 +417,322 @@ integration('upload session HTTP routes against PostgreSQL and local storage', (
             });
             expect(completed.statusCode, completed.body).toBe(200);
             expect(completed.json().uploadSession.status).toBe('COMPLETED');
+        });
+    });
+
+    it('preserves direct-to-Mux uploads through the registry while original intake and ingest are disabled', async () => {
+        await withRegistryServers(async buildServer => {
+            const disabled = await buildServer(false);
+            const created = await registryRequest(disabled, ownerId, 'POST', '/api/assets', {
+                fileName: 'direct-disabled.mov',
+                uploadMode: 'MUX',
+            });
+            expect(created.statusCode, created.body).toBe(200);
+            const asset = created.json().asset;
+            const id = asset.id;
+            expect(asset.uploadMode).toBe('MUX');
+
+            const uploaded = await registryRequest(disabled, ownerId, 'POST',
+                `/api/assets/${id}/mux-upload`, {});
+            expect(uploaded.statusCode, uploaded.body).toBe(200);
+            expect(muxApi.createDirectUpload).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ assetId: id }));
+            expect(await prisma.originalUploadIntent.findUnique({ where: { assetId: id } })).toBeNull();
+            expect(await prisma.uploadSession.count({ where: { assetId: id } })).toBe(0);
+
+            const capabilities = await registryRequest(disabled, ownerId, 'GET', '/api/upload-capabilities');
+            expect(capabilities.statusCode, capabilities.body).toBe(200);
+            expect(capabilities.json().originalUploads).toBe(false);
+        });
+    });
+
+    it('cancels and recovers an OPEN original across disabled registry restarts without intake or side effects', async () => {
+        const content = Buffer.from('disabled registry original');
+        const payload = originalReservation(content);
+        const reserved = await requestAs(ownerId, 'POST', '/api/assets/original-uploads', payload);
+        expect(reserved.statusCode, reserved.body).toBe(201);
+        const id = reserved.json().asset.id;
+        const session = await createSession(content, id);
+        const signed = await sign(session.id);
+        const where = intentWhere(ownerId, payload.clientRequestId);
+        const intentBefore = await prisma.originalUploadIntent.findUniqueOrThrow({ where });
+        const before = await originalSnapshot(id);
+        const muxCalls = Object.values(muxApi).map(mock => mock.mock.calls.length);
+        const notifications = socketEmit.mock.calls.length;
+        await withRegistryServers(async buildServer => {
+            let disabled = await buildServer(false);
+            const cancelUrl = `/api/assets/original-uploads/${payload.clientRequestId}/cancel`;
+            const cancelled = await registryRequest(disabled, ownerId, 'POST', cancelUrl);
+            expect(cancelled.statusCode, cancelled.body).toBe(200);
+            expect(cancelled.headers['cache-control']).toBe('no-store');
+            expect(cancelled.json()).toEqual({ assetId: id, sessionIds: [session.id] });
+            const fenced = await prisma.originalUploadIntent.findUniqueOrThrow({ where });
+            expect(fenced.cancelledAt).toBeInstanceOf(Date);
+            expect(fenced).toEqual({ ...intentBefore, cancelledAt: fenced.cancelledAt });
+            await disabled.close();
+            disabled = await buildServer(false);
+            const retry = await registryRequest(disabled, ownerId, 'POST', cancelUrl);
+            expect(retry.statusCode, retry.body).toBe(200);
+            expect(retry.json()).toEqual(cancelled.json());
+            expect(await prisma.originalUploadIntent.findUniqueOrThrow({ where })).toEqual(fenced);
+            const page = await registryRequest(disabled, ownerId, 'GET',
+                `/api/assets/original-uploads/${payload.clientRequestId}/sessions`);
+            expect(page.statusCode, page.body).toBe(200);
+            expect(page.headers['cache-control']).toBe('no-store');
+            expect(page.json()).toEqual({ assetId: id, sessionIds: [session.id], nextCursor: null });
+            const inspected = await registryRequest(disabled, ownerId, 'GET',
+                `/api/original-upload-recovery/${payload.clientRequestId}`);
+            expect(inspected.statusCode, inspected.body).toBe(200);
+            expect(inspected.json()).toEqual({
+                state: 'CANCELLED', assetId: id, sessions: [{ id: session.id, status: 'OPEN' }], truncated: false,
+            });
+            for (const [method, url, body] of [
+                ['POST', '/api/assets/original-uploads', payload],
+                ['POST', `/api/assets/${id}/upload-sessions`, payload],
+                ['GET', `/api/upload-sessions/${session.id}`],
+                ['POST', `/api/upload-sessions/${session.id}/parts/1/sign`],
+                ['PUT', signed.url, content],
+                ['POST', `/api/upload-sessions/${session.id}/complete`],
+                ['DELETE', `/api/upload-sessions/${session.id}`],
+                ['POST', `/api/upload-sessions/${session.id}/mux-ingest`],
+                ['GET', `/api/mux-originals/${randomUUID()}`],
+            ]) {
+                const response = await registryRequest(disabled, ownerId, method, url, body);
+                expect(response.statusCode, `${method} ${url}: ${response.body}`).toBe(404);
+            }
+        });
+        expect((await requestAs(ownerId, 'POST', '/api/assets/original-uploads', payload)).statusCode).toBe(410);
+        expect((await requestAs(ownerId, 'POST', `/api/assets/${id}/upload-sessions`, payload)).statusCode).toBe(410);
+        expect((await requestAs(ownerId, 'POST', `/api/upload-sessions/${session.id}/parts/1/sign`)).statusCode)
+            .toBe(410);
+        expect((await put(signed.url, content)).statusCode).toBe(403);
+        expect((await requestAs(ownerId, 'POST', `/api/upload-sessions/${session.id}/complete`)).statusCode).toBe(410);
+        expect(await originalSnapshot(id)).toEqual(before);
+        expect(Object.values(muxApi).map(mock => mock.mock.calls.length)).toEqual(muxCalls);
+        expect(socketEmit.mock.calls.length).toBe(notifications);
+    });
+
+    it('keeps disabled cancellation tombstones owner-only and rejects guests and suspended owners', async () => {
+        const payload = originalReservation(Buffer.from('disabled owner scope'));
+        const reserved = await requestAs(ownerId, 'POST', '/api/assets/original-uploads', payload);
+        expect(reserved.statusCode, reserved.body).toBe(201);
+        const id = reserved.json().asset.id;
+        const session = await createSession(Buffer.from('disabled owner scope'), id);
+        const before = await originalSnapshot(id);
+        const ownerIntent = await prisma.originalUploadIntent.findUniqueOrThrow({
+            where: intentWhere(ownerId, payload.clientRequestId),
+        });
+        await withRegistryServers(async buildServer => {
+            const disabled = await buildServer(false);
+            const missing = originalReservation(Buffer.from('never arrived'));
+            const counts = async () => ({
+                assets: await prisma.asset.count({ where: { userId: ownerId } }),
+                sessions: await prisma.uploadSession.count({ where: { ownerId } }),
+                clips: await prisma.clip.count({ where: { asset: { userId: ownerId } } }),
+                intents: await prisma.originalUploadIntent.count({ where: { userId: ownerId } }),
+            });
+            const beforeCounts = await counts();
+            const cancelUrl = `/api/assets/original-uploads/${missing.clientRequestId}/cancel`;
+            const cancelled = await registryRequest(disabled, ownerId, 'POST', cancelUrl);
+            expect(cancelled.statusCode, cancelled.body).toBe(200);
+            expect(cancelled.json()).toEqual({ assetId: null, sessionIds: [] });
+            expect(await prisma.originalUploadIntent.findUniqueOrThrow({
+                where: intentWhere(ownerId, missing.clientRequestId),
+            })).toMatchObject({ assetId: null, cancelledAt: expect.any(Date) });
+            expect(await counts()).toEqual({ ...beforeCounts, intents: beforeCounts.intents + 1 });
+            expect((await requestAs(ownerId, 'POST', '/api/assets/original-uploads', missing)).statusCode).toBe(410);
+
+            for (const foreignId of [otherId, teamAdminId, adminId]) {
+                const foreign = await registryRequest(disabled, foreignId, 'POST',
+                    `/api/assets/original-uploads/${payload.clientRequestId}/cancel`);
+                expect(foreign.statusCode, foreign.body).toBe(200);
+                expect(foreign.json()).toEqual({ assetId: null, sessionIds: [] });
+                expect(await prisma.originalUploadIntent.findUniqueOrThrow({
+                    where: intentWhere(foreignId, payload.clientRequestId),
+                })).toMatchObject({ assetId: null, cancelledAt: expect.any(Date) });
+                const page = await registryRequest(disabled, foreignId, 'GET',
+                    `/api/assets/original-uploads/${payload.clientRequestId}/sessions`);
+                expect(page.statusCode, page.body).toBe(200);
+                expect(page.json()).toEqual({ assetId: null, sessionIds: [], nextCursor: null });
+                expect(page.body).not.toContain(id);
+                expect(page.body).not.toContain(session.id);
+            }
+            const rejectedId = randomUUID();
+            for (const [userId, status] of [[null, 401], [ownerId, 403]]) {
+                if (userId) await prisma.user.update({ where: { id: userId }, data: { status: 'SUSPENDED' } });
+                for (const [method, url] of [
+                    ['POST', `/api/assets/original-uploads/${rejectedId}/cancel`],
+                    ['GET', `/api/assets/original-uploads/${missing.clientRequestId}/sessions`],
+                    ['GET', `/api/original-upload-recovery/${missing.clientRequestId}`],
+                ]) {
+                    expect((await registryRequest(disabled, userId, method, url)).statusCode).toBe(status);
+                }
+            }
+            expect(await prisma.originalUploadIntent.findUnique({
+                where: intentWhere(ownerId, rejectedId),
+            })).toBeNull();
+        });
+        expect(await prisma.originalUploadIntent.findUniqueOrThrow({
+            where: intentWhere(ownerId, payload.clientRequestId),
+        })).toEqual(ownerIntent);
+        expect(await originalSnapshot(id)).toEqual(before);
+    });
+
+    it.each(['hidden', 'inconsistent'])('commits disabled %s cancellation fences without exposing IDs', async mode => {
+        const content = Buffer.from(`disabled ${mode}`);
+        const payload = originalReservation(content);
+        const reserved = await requestAs(ownerId, 'POST', '/api/assets/original-uploads', payload);
+        expect(reserved.statusCode, reserved.body).toBe(201);
+        const id = reserved.json().asset.id;
+        const session = await createSession(content, id);
+        const conflictingAssetId = randomUUID();
+        const conflictingClipId = randomUUID();
+        if (mode === 'hidden') {
+            await prisma.asset.update({ where: { id }, data: { moderation: 'FLAGGED_FOR_REMOVAL' } });
+        } else {
+            await prisma.asset.create({
+                data: {
+                    id: conflictingAssetId, userId: otherId, status: 'UPLOADING',
+                    clips: { create: { id: conflictingClipId, status: 'UPLOADING' } },
+                },
+            });
+            await prisma.uploadSession.update({
+                where: { id: session.id }, data: { clipId: conflictingClipId },
+            });
+        }
+        const before = await originalSnapshot(id);
+        await withRegistryServers(async buildServer => {
+            const disabled = await buildServer(false);
+            for (const [method, url] of [
+                ['POST', `/api/assets/original-uploads/${payload.clientRequestId}/cancel`],
+                ['GET', `/api/assets/original-uploads/${payload.clientRequestId}/sessions`],
+                ['GET', `/api/original-upload-recovery/${payload.clientRequestId}`],
+            ]) {
+                const response = await registryRequest(disabled, ownerId, method, url);
+                expect(response.statusCode, response.body).toBe(mode === 'hidden' ? 404 : 503);
+                for (const secret of [
+                    id, session.id, session.clipId, conflictingAssetId, conflictingClipId, ownerId, otherId,
+                ]) {
+                    expect(response.body).not.toContain(secret);
+                }
+            }
+            expect(await prisma.originalUploadIntent.findUniqueOrThrow({
+                where: intentWhere(ownerId, payload.clientRequestId),
+            })).toMatchObject({ cancelledAt: expect.any(Date) });
+        });
+        expect((await requestAs(ownerId, 'POST', '/api/assets/original-uploads', payload)).statusCode).toBe(410);
+        expect(await originalSnapshot(id)).toEqual(before);
+    });
+
+    it('commits disabled overflow fences and pages all 102 sessions without mutation', async () => {
+        const content = Buffer.from('disabled overflow history');
+        const payload = originalReservation(content);
+        const reserved = await requestAs(ownerId, 'POST', '/api/assets/original-uploads', payload);
+        expect(reserved.statusCode, reserved.body).toBe(201);
+        const id = reserved.json().asset.id;
+        const session = await createSession(content, id);
+        const historicalIds = Array.from({ length: 101 }, () => randomUUID());
+        await prisma.uploadSession.createMany({
+            data: historicalIds.map(idValue => ({
+                id: idValue, ownerId, assetId: id, clipId: session.clipId, status: 'ABORTED',
+                storageKey: `disabled-history-${idValue}`, expiresAt: new Date(),
+            })),
+        });
+        const before = await originalSnapshot(id);
+        await withRegistryServers(async buildServer => {
+            const disabled = await buildServer(false);
+            const response = await registryRequest(disabled, ownerId, 'POST',
+                `/api/assets/original-uploads/${payload.clientRequestId}/cancel`);
+            expect(response.statusCode, response.body).toBe(503);
+            expect(response.headers['cache-control']).toBe('no-store');
+            expect(response.json()).toMatchObject({ code: 'INTENT_SESSION_LIMIT' });
+            for (const secret of [id, session.id, ...historicalIds]) expect(response.body).not.toContain(secret);
+            expect(await prisma.originalUploadIntent.findUniqueOrThrow({
+                where: intentWhere(ownerId, payload.clientRequestId),
+            })).toMatchObject({ cancelledAt: expect.any(Date) });
+            const ids = [];
+            let after;
+            // A hard bound prevents a broken cursor from hanging the suite.
+            for (let pageNumber = 0; pageNumber < 3; pageNumber += 1) {
+                const page = await registryRequest(disabled, ownerId, 'GET',
+                    `/api/assets/original-uploads/${payload.clientRequestId}/sessions${after ? `?after=${after}` : ''}`);
+                expect(page.statusCode, page.body).toBe(200);
+                expect(page.headers['cache-control']).toBe('no-store');
+                const body = page.json();
+                expect(body.assetId).toBe(id);
+                expect(body.sessionIds.length).toBeLessThanOrEqual(100);
+                expect(body.sessionIds.length).toBe(pageNumber === 0 ? 100 : 2);
+                expect(body.sessionIds).toEqual([...body.sessionIds].sort());
+                ids.push(...body.sessionIds);
+                after = body.nextCursor;
+                if (!after) break;
+                expect(after).toBe(body.sessionIds.at(-1));
+            }
+            expect(after).toBeNull();
+            expect(new Set(ids).size).toBe(102);
+            expect(ids).toEqual([session.id, ...historicalIds].sort());
+        });
+        expect((await requestAs(ownerId, 'POST', '/api/assets/original-uploads', payload)).statusCode).toBe(410);
+        expect(await originalSnapshot(id)).toEqual(before);
+    });
+
+    it('enforces disabled owner quota without persisting rejection and rate limits cancellation at 10 per minute', async () => {
+        const quotaOwner = `disabled-quota-${randomUUID()}`;
+        await prisma.user.create({
+            data: {
+                id: quotaOwner, name: 'Synthetic Disabled Quota', phoneNumber: `disabled-quota-${randomUUID()}`,
+                pinHash: 'integration-test', role: 'USER',
+            },
+        });
+        tokens[quotaOwner] = app.jwt.sign({ id: quotaOwner });
+        try {
+            const recentIds = Array.from({ length: 100 }, () => randomUUID());
+            const [{ epochMilliseconds }] = await prisma.$queryRaw`
+                SELECT floor(extract(epoch FROM clock_timestamp()) * 1000)::bigint AS "epochMilliseconds"`;
+            await prisma.originalUploadIntent.createMany({
+                data: recentIds.map(clientRequestId => ({
+                    userId: quotaOwner, clientRequestId,
+                    cancelledAt: new Date(Number(epochMilliseconds) - 60_000),
+                })),
+            });
+            const before = await prisma.originalUploadIntent.findMany({
+                where: { userId: quotaOwner }, orderBy: { clientRequestId: 'asc' },
+            });
+            await withRegistryServers(async buildServer => {
+                const disabled = await buildServer(false);
+                const rejectedId = randomUUID();
+                const rejected = await registryRequest(disabled, quotaOwner, 'POST',
+                    `/api/assets/original-uploads/${rejectedId}/cancel`);
+                expect(rejected.statusCode, rejected.body).toBe(429);
+                expect(rejected.json()).toMatchObject({ code: 'INTENT_CANCELLATION_QUOTA' });
+                expect(rejected.headers['cache-control']).toBe('no-store');
+                expect(Number(rejected.headers['retry-after'])).toBeGreaterThan(0);
+                expect(Number(rejected.headers['retry-after'])).toBeLessThanOrEqual(86400);
+                expect(await prisma.originalUploadIntent.findUnique({
+                    where: intentWhere(quotaOwner, rejectedId),
+                })).toBeNull();
+                const url = `/api/assets/original-uploads/${recentIds[0]}/cancel`;
+                const replay = await registryRequest(disabled, quotaOwner, 'POST', url);
+                expect(replay.statusCode, replay.body).toBe(200);
+                expect(replay.json()).toEqual({ assetId: null, sessionIds: [] });
+                // Fresh server and IP isolate the HTTP limit from quota and prior requests.
+                const limited = await buildServer(false);
+                for (let attempt = 0; attempt < 10; attempt += 1) {
+                    const response = await registryRequest(limited, quotaOwner, 'POST', url, undefined, '127.0.0.42');
+                    expect(response.statusCode, response.body).toBe(200);
+                }
+                const throttled = await registryRequest(limited, quotaOwner, 'POST', url, undefined, '127.0.0.42');
+                expect(throttled.statusCode, throttled.body).toBe(429);
+                expect(Number(throttled.headers['retry-after'])).toBeGreaterThan(0);
+                expect(throttled.headers['cache-control']).toBe('no-store');
+            });
+            expect(await prisma.originalUploadIntent.findMany({
+                where: { userId: quotaOwner }, orderBy: { clientRequestId: 'asc' },
+            })).toEqual(before);
+            expect(await prisma.asset.count({ where: { userId: quotaOwner } })).toBe(0);
+            expect(await prisma.uploadSession.count({ where: { ownerId: quotaOwner } })).toBe(0);
         } finally {
-            await Promise.all(servers.map(server => server.close()));
-            vi.unstubAllEnvs();
+            delete tokens[quotaOwner];
+            await prisma.user.delete({ where: { id: quotaOwner } });
         }
     });
 

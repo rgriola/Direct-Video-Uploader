@@ -10,6 +10,7 @@ vi.mock('../routes/clips.js', () => ({ default: vi.fn() }));
 vi.mock('../routes/errors.js', () => ({ default: vi.fn() }));
 vi.mock('../routes/mux-webhooks.js', () => ({ default: vi.fn() }));
 vi.mock('../routes/upload-sessions.js', () => ({ default: vi.fn() }));
+vi.mock('../routes/original-upload-recovery.js', () => ({ default: vi.fn() }));
 vi.mock('../routes/mux-originals.js', () => ({ default: vi.fn() }));
 vi.mock('../lib/mux-original-records.js', () => ({ enqueueMuxOriginal: vi.fn() }));
 vi.mock('../lib/mux-original-enqueue.js', () => ({ requestMuxOriginalIngest: vi.fn() }));
@@ -58,13 +59,30 @@ describe('upload session configuration', () => {
         });
     });
 
-    it('does not register upload routes unless explicitly enabled', async () => {
+    it('always registers recovery but gates intake and storage initialization on explicit enablement', async () => {
         const { registerApplicationRoutes } = await import('../routes/index.js');
         const { default: uploadSessionRoutes } = await import('../routes/upload-sessions.js');
+        const { default: recoveryRoutes } = await import('../routes/original-upload-recovery.js');
+        const { default: muxOriginalRoutes } = await import('../routes/mux-originals.js');
+        const { createStorageDriver } = await import('../lib/storage/driver.js');
         const fastify = { register: vi.fn(async () => {}) };
         delete process.env.UPLOAD_SESSIONS_ENABLED;
+        process.env.MUX_ORIGINAL_INGEST_ENABLED = 'false';
+        delete process.env.UPLOAD_SESSION_SIGNING_SECRET;
+        delete process.env.UPLOAD_STORAGE_MAX_BYTES;
+        delete process.env.UPLOAD_STORAGE_MIN_FREE_BYTES;
+        delete process.env.STORAGE_DRIVER;
         await registerApplicationRoutes(fastify);
+        expect(fastify.register).toHaveBeenCalledWith(recoveryRoutes);
         expect(fastify.register).not.toHaveBeenCalledWith(uploadSessionRoutes, expect.anything());
+        expect(fastify.register).not.toHaveBeenCalledWith(muxOriginalRoutes, expect.anything());
+        expect(createStorageDriver).not.toHaveBeenCalled();
+
+        process.env.UPLOAD_SESSIONS_ENABLED = 'false';
+        await registerApplicationRoutes(fastify);
+        expect(fastify.register.mock.calls.filter(([route]) => route === recoveryRoutes)).toHaveLength(2);
+        expect(fastify.register).not.toHaveBeenCalledWith(uploadSessionRoutes, expect.anything());
+        expect(createStorageDriver).not.toHaveBeenCalled();
 
         process.env.UPLOAD_SESSIONS_ENABLED = 'true';
         process.env.UPLOAD_SESSION_SIGNING_SECRET = 'x'.repeat(32);
@@ -76,6 +94,8 @@ describe('upload session configuration', () => {
             storageDriver: 'local',
             capacityLimits: { maxStorageBytes: 10737418240n, minFreeBytes: 1073741824n },
         }));
+        expect(fastify.register.mock.calls.filter(([route]) => route === recoveryRoutes)).toHaveLength(3);
+        expect(createStorageDriver).toHaveBeenCalledTimes(1);
     });
 
     it('registers signed original reads and the completion handoff only when enabled', async () => {
