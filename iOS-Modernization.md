@@ -757,6 +757,8 @@ sequenceDiagram
 - [x] Exercise authentication, signed URLs, real HTTP streaming, concurrency, retries,
   expiry, storage-location failures, and moderation cleanup with an isolated PostgreSQL
   database. See [upload-session API](docs/UPLOAD_SESSION_API.md) for the contract.
+- [x] Permit read-only inspection of a known original-upload intent while intake is off;
+  absence and bounded results do not establish freshness or authorize resumption.
 - [ ] Keep the feature **off on production and the shared home server** until backups,
   proactive monitoring, cleanup validation, and isolated real-Mux validation are complete.
 - [ ] Add client integration.
