@@ -781,7 +781,9 @@ sequenceDiagram
   or outlives its source URL; the original is retained, but re-ingest is not yet supported.
 - [x] Preserve minimal operation and Mux asset identifiers across owner hard deletion;
   signed late events are retained and return 503 for manual reconciliation.
-- [ ] Add monitoring and a recovery workflow for post-deletion references, establish
+- [x] Show paginated post-deletion references to Super Admins without exposing account
+  details or claiming that remote media has been removed.
+- [ ] Add proactive alerts and a recovery workflow for post-deletion references, establish
   their retention policy, and account for accounts deleted before all deletion
   handlers were upgraded.
 - [ ] Keep both flags off on the shared home server until that validation and the storage
