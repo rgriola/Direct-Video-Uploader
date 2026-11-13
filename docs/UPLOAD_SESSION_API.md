@@ -310,11 +310,22 @@ session IDs still require individual reconciliation.
 
 Cancellation is serialized with reservation and session creation. After it
 commits, further creation requests for that intent return 410; a session that
-won the race is included in a successful `sessionIds` response. It is also
-serialized with the transition of an `OPEN` session to `COMPLETING`: if the
-fence commits first, an otherwise eligible attempt reaching that transition
-returns 410, leaving the session and staged parts for later reconciliation and
-abort. Earlier validation or capacity errors can still take precedence.
+won the race is included in a successful `sessionIds` response. Signing checks
+the fence before recovery and again before issuing a URL; a signing response
+that passed its last check may nevertheless arrive after cancellation.
+Previously signed PUTs that observe the fence at request start are rejected
+with a generic 403. Publication rechecks the fence while holding the owner and
+asset locks shared with cancellation, followed by the session lock: if
+cancellation commits first, an in-flight part cannot be published, though
+bytes may already have arrived.
+If publication acquires the locks first, the part may be published before the
+fence. A filesystem publication can survive a failed or uncertain database
+transaction; preserve it for authenticated session recovery and reconciliation.
+The fence is also serialized with the transition of an `OPEN` session to
+`COMPLETING`: if the fence commits first, an otherwise eligible attempt
+reaching that transition returns 410, leaving the session and staged parts for
+later reconciliation and abort. Earlier validation or capacity errors can
+still take precedence.
 An inconsistent session/clip asset reference prevents a new transition with
 409 and leaves staged content untouched for investigation.
 Sessions without an intent are not blocked by the cancellation fence, but
@@ -326,10 +337,9 @@ reopens the session, a new completion is fenced. Retrying an already completed
 session remains idempotent. Deploy the migrations and cancellation-aware code
 to every server instance before clients rely on these guarantees; older
 instances ignore the fence. The fence does **not** abort sessions, stop
-in-flight transfers, revoke already issued part URLs, or delete stored
-originals. Stop local tasks and inspect and abort each
-unfinished session with the same owner's current credentials; retry cleanup if
-needed.
+in-flight transfers, cryptographically revoke already issued part URLs, or
+delete stored originals. Stop local tasks and inspect and abort each unfinished
+session with the same owner's current credentials; retry cleanup if needed.
 An earlier creation response or notification may still arrive after the fence,
 so clients must reject stale results and reconcile the returned IDs. Inspecting
 or aborting a session already `COMPLETING` can recover and finalize its
@@ -436,8 +446,11 @@ handoff has been requested, or an object containing `status`, `attemptCount`,
 Resolve the relative URL against the same server origin. It is valid for at
 most five minutes and never beyond the session expiry. The signature binds
 the owner, session, part number, required part size, and expiry. The server
-checks the URL when the request starts and rechecks the account, asset, session
-state, and session expiry before publishing the part.
+checks the URL and cancellation fence when the request starts and rechecks the
+account, asset, session state, session expiry, and cancellation fence under
+locks before publishing the part. Signing after a committed cancellation
+returns 410; a signed PUT rejected at request start returns a generic 403, and
+an in-flight PUT fenced before publication returns 410.
 
 `PUT` the raw bytes to that URL with `Content-Type: application/octet-stream`
 and an exact `Content-Length`. The signed URL is the authorization for the
@@ -449,8 +462,9 @@ Parts are numbered from 1 through `partCount`. Every part except the last is
 exactly 50 MiB; the last contains the remaining bytes. Parts may arrive out of
 order. A successful response contains `part` with `partNumber`, `sizeBytes`
 (decimal string), and `sha256`. Retrying an identical completed part is
-idempotent. Concurrent writes to the same part, or retrying it with different
-bytes, return 409; abort and start a fresh session if a stored part is wrong.
+idempotent while uploads remain permitted. Concurrent writes to the same part,
+or retrying it with different bytes, return 409; abort and start a fresh session
+if a stored part is wrong.
 Interrupted streams do not publish partial parts.
 
 For experimental iOS background uploads, use file-backed tasks and a trusted,
@@ -477,7 +491,8 @@ outstanding background tasks until the user reopens it.
   an already expired session reports `EXPIRED`. Retrying is safe. If cleanup is
   busy, retry until it succeeds. A completed original cannot be aborted (409).
 
-Invalid, expired, suspended-account, or moderated-asset signed PUTs return 403.
+Invalid, expired, suspended-account, moderated-asset, or already-cancelled
+signed PUTs return 403 at request start.
 An expired session is reported as 410 when an operation requires it to be
 open. A missing or mismatched storage location, an unknown reservation, or a
 missing completed file is reported as 503 instead of claiming the original is
