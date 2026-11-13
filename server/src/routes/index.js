@@ -7,6 +7,7 @@ import errorRoutes from './errors.js';
 import muxWebhookRoutes from './mux-webhooks.js';
 import uploadSessionRoutes from './upload-sessions.js';
 import uploadCapabilityRoutes from './upload-capabilities.js';
+import originalUploadRecoveryRoutes from './original-upload-recovery.js';
 import { getUploadSessionConfig } from '../lib/upload-session-config.js';
 import { getMuxOriginalConfig } from '../lib/mux-original-config.js';
 import { createStorageDriver } from '../lib/storage/driver.js';
@@ -22,6 +23,7 @@ export async function registerApplicationRoutes(fastify) {
     const uploadConfig = getUploadSessionConfig();
     const muxOriginalConfig = getMuxOriginalConfig();
     await fastify.register(uploadCapabilityRoutes, { originalUploads: uploadConfig.enabled });
+    await fastify.register(originalUploadRecoveryRoutes);
     if (uploadConfig.enabled) {
         let handoff;
         if (muxOriginalConfig.enabled) {

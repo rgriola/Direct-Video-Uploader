@@ -87,6 +87,7 @@ integration('upload session HTTP routes against PostgreSQL and local storage', (
         const { default: assetRoutes } = await import('../routes/assets.js');
         const { default: moderationRoutes } = await import('../routes/moderation.js');
         const { default: uploadSessionRoutes } = await import('../routes/upload-sessions.js');
+        const { default: originalUploadRecoveryRoutes } = await import('../routes/original-upload-recovery.js');
         ({ cleanupOrphanedUploads } = await import('../jobs/upload-cleanup.js'));
         ({ reconcileAssetMedia, createMediaReconciler } = await import('../lib/media-reconciliation.js'));
         ({ withAssetMediaLock } = await import('../lib/media-lock.js'));
@@ -134,6 +135,7 @@ integration('upload session HTTP routes against PostgreSQL and local storage', (
         await app.register(assetRoutes);
         await app.register(adminRoutes);
         await app.register(moderationRoutes);
+        await app.register(originalUploadRecoveryRoutes, { db: uploadDb });
         await app.register(uploadSessionRoutes, {
             db: uploadDb,
             storage,
@@ -309,15 +311,24 @@ integration('upload session HTTP routes against PostgreSQL and local storage', (
                 expect((await enabled.inject({ method: 'GET', url: pageUrl, headers })).statusCode).toBe(404);
             }
             expect((await enabled.inject({ method: 'GET', url: pageUrl, headers })).statusCode).toBe(429);
+            const clientRequestId = randomUUID();
             const intent = await enabled.inject({
                 method: 'POST',
                 url: '/api/assets/original-uploads',
                 headers,
-                payload: { clientRequestId: randomUUID(), fileName: 'video.mp4', ...payload },
+                payload: { clientRequestId, fileName: 'video.mp4', ...payload },
             });
             expect(intent.statusCode, intent.body).toBe(201);
             const pendingId = intent.json().asset.id;
             expect(await prisma.uploadSession.count({ where: { assetId: pendingId } })).toBe(0);
+            const inspectionUrl = `/api/original-upload-recovery/${clientRequestId}`;
+            expect((await disabled.inject({ method: 'GET', url: inspectionUrl })).statusCode).toBe(401);
+            const inspection = await disabled.inject({ method: 'GET', url: inspectionUrl, headers });
+            expect(inspection.statusCode, inspection.body).toBe(200);
+            expect(inspection.headers['cache-control']).toBe('no-store');
+            expect(inspection.json()).toEqual({ state: 'ACTIVE', assetId: pendingId, sessions: [], truncated: false });
+            const capabilities = await disabled.inject({ method: 'GET', url: '/api/upload-capabilities', headers });
+            expect(capabilities.json()).toEqual({ originalUploads: false });
             const disabledReservation = await disabled.inject({
                 method: 'GET', url: `/api/assets/${pendingId}`, headers,
             });
@@ -2271,6 +2282,138 @@ integration('upload session HTTP routes against PostgreSQL and local storage', (
             expect((await requestAs(ownerId, 'POST', '/api/assets/original-uploads', payload)).statusCode).toBe(410);
             expect((await requestAs(ownerId, 'DELETE', `/api/upload-sessions/${session.id}`)).statusCode).toBe(200);
         }
+    });
+
+    it('inspects bounded intent history without mutating uploads', async () => {
+        const content = Buffer.from('read-only recovery');
+        const payload = originalReservation(content);
+        const reserved = await requestAs(ownerId, 'POST', '/api/assets/original-uploads', payload);
+        expect(reserved.statusCode, reserved.body).toBe(201);
+        const reservedAssetId = reserved.json().asset.id;
+        const session = await createSession(content, reservedAssetId);
+        const history = Array.from({ length: 99 }, () => randomUUID());
+        await prisma.uploadSession.createMany({
+            data: history.map(id => ({
+                id, ownerId, assetId: reservedAssetId, clipId: session.clipId,
+                status: 'ABORTED', storageKey: `historical-${id}`, expiresAt: new Date(),
+            })),
+        });
+        const url = `/api/original-upload-recovery/${payload.clientRequestId}`;
+        const beforeIntent = await prisma.originalUploadIntent.findUniqueOrThrow({
+            where: { userId_clientRequestId: { userId: ownerId, clientRequestId: payload.clientRequestId } },
+        });
+        const beforeSessions = await prisma.uploadSession.findMany({
+            where: { assetId: reservedAssetId }, orderBy: { id: 'asc' },
+        });
+        const response = await requestAs(ownerId, 'GET', url);
+        expect(response.statusCode, response.body).toBe(200);
+        expect(response.headers['cache-control']).toBe('no-store');
+        expect(response.json()).toEqual({
+            state: 'ACTIVE',
+            assetId: reservedAssetId,
+            sessions: beforeSessions.map(({ id, status }) => ({ id, status })),
+            truncated: false,
+        });
+        expect(await prisma.originalUploadIntent.findUniqueOrThrow({
+            where: { userId_clientRequestId: { userId: ownerId, clientRequestId: payload.clientRequestId } },
+        })).toEqual(beforeIntent);
+        expect(await prisma.uploadSession.findMany({
+            where: { assetId: reservedAssetId }, orderBy: { id: 'asc' },
+        })).toEqual(beforeSessions);
+
+        const extraId = randomUUID();
+        await prisma.uploadSession.create({
+            data: {
+                id: extraId, ownerId, assetId: reservedAssetId, clipId: session.clipId,
+                status: 'EXPIRED', storageKey: `historical-${extraId}`, expiresAt: new Date(),
+            },
+        });
+        const truncated = await requestAs(ownerId, 'GET', url);
+        expect(truncated.statusCode, truncated.body).toBe(200);
+        expect(truncated.json().sessions).toHaveLength(100);
+        expect(truncated.json().truncated).toBe(true);
+
+        const cancelled = await requestAs(
+            ownerId, 'POST', `/api/assets/original-uploads/${payload.clientRequestId}/cancel`);
+        expect(cancelled.statusCode).toBe(503);
+        expect((await requestAs(ownerId, 'GET', url)).json().state).toBe('CANCELLED');
+        await prisma.asset.delete({ where: { id: reservedAssetId } });
+        const removed = await requestAs(ownerId, 'GET', url);
+        expect(removed.json()).toEqual({ state: 'CANCELLED', assetId: null, sessions: [], truncated: false });
+    });
+
+    it('protects recovery inspection from unauthorized and inconsistent references', async () => {
+        const payload = originalReservation(Buffer.from('private recovery'));
+        const reserved = await requestAs(ownerId, 'POST', '/api/assets/original-uploads', payload);
+        const reservedAssetId = reserved.json().asset.id;
+        const session = await createSession(Buffer.from('private recovery'), reservedAssetId);
+        const url = `/api/original-upload-recovery/${payload.clientRequestId}`;
+        expect((await requestAs(null, 'GET', url)).statusCode).toBe(401);
+        await prisma.user.update({ where: { id: ownerId }, data: { status: 'SUSPENDED' } });
+        expect((await requestAs(ownerId, 'GET', url)).statusCode).toBe(403);
+        await prisma.user.update({ where: { id: ownerId }, data: { status: 'ACTIVE' } });
+        for (const response of [
+            await requestAs(otherId, 'GET', url),
+            await requestAs(ownerId, 'GET', `/api/original-upload-recovery/${randomUUID()}`),
+        ]) {
+            expect(response.statusCode).toBe(404);
+            expect(response.body).not.toContain(reservedAssetId);
+            expect(response.body).not.toContain(session.id);
+        }
+        expect((await requestAs(ownerId, 'GET', '/api/original-upload-recovery/not-a-uuid')).statusCode).toBe(400);
+        expect((await requestAs(ownerId, 'GET', `${url}?unexpected=1`)).statusCode).toBe(400);
+        await prisma.asset.update({ where: { id: reservedAssetId }, data: { moderation: 'FLAGGED_FOR_REMOVAL' } });
+        const hidden = await requestAs(ownerId, 'GET', url);
+        expect(hidden.statusCode).toBe(404);
+        expect(hidden.body).not.toContain(reservedAssetId);
+        await prisma.asset.update({ where: { id: reservedAssetId }, data: { moderation: 'ACTIVE' } });
+        await prisma.uploadSession.update({ where: { id: session.id }, data: { ownerId: otherId } });
+        const inconsistent = await requestAs(ownerId, 'GET', url);
+        expect(inconsistent.statusCode).toBe(503);
+        expect(inconsistent.body).not.toContain(reservedAssetId);
+        expect(inconsistent.body).not.toContain(session.id);
+        await prisma.uploadSession.update({ where: { id: session.id }, data: { ownerId } });
+        await prisma.clip.update({ where: { id: session.clipId }, data: { assetId } });
+        const mismatchedClip = await requestAs(ownerId, 'GET', url);
+        expect(mismatchedClip.statusCode).toBe(503);
+        expect(mismatchedClip.body).not.toContain(reservedAssetId);
+        expect(mismatchedClip.body).not.toContain(session.id);
+    });
+
+    it('inspects the retained tombstone if deletion wins the asset lock', async () => {
+        const payload = originalReservation(Buffer.from('recovery deletion race'));
+        const reserved = await requestAs(ownerId, 'POST', '/api/assets/original-uploads', payload);
+        const reservedAssetId = reserved.json().asset.id;
+        const url = `/api/original-upload-recovery/${payload.clientRequestId}`;
+        let reportLocked;
+        let releaseDeletion;
+        const locked = new Promise(resolve => { reportLocked = resolve; });
+        const release = new Promise(resolve => { releaseDeletion = resolve; });
+        const deletion = prisma.$transaction(async tx => {
+            await tx.asset.delete({ where: { id: reservedAssetId } });
+            reportLocked();
+            await release;
+        }, { timeout: 15_000 });
+        let inspection;
+        try {
+            await locked;
+            inspection = requestAs(ownerId, 'GET', url);
+            await waitFor(async () => {
+                const rows = await prisma.$queryRaw`
+                    SELECT count(*)::int AS count FROM pg_stat_activity
+                    WHERE datname = current_database() AND wait_event_type = 'Lock'
+                        AND query LIKE '%SELECT id FROM assets%'
+                `;
+                return rows[0].count > 0;
+            });
+        } finally {
+            releaseDeletion();
+            await deletion;
+        }
+        const response = await inspection;
+        expect(response.statusCode, response.body).toBe(200);
+        expect(response.json()).toEqual({ state: 'REMOVED', assetId: null, sessions: [], truncated: false });
+        expect(response.body).not.toContain(reservedAssetId);
     });
 
     it('pages only fenced, owner-visible sessions without creating or changing work', async () => {

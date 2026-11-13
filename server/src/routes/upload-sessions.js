@@ -5,7 +5,11 @@ import { signUploadPart, verifyUploadPart } from '../lib/upload-part-signing.js'
 import {
     assertAcceptingUploads, assertOriginalIntentNotCancelled, createUploadSessionService, UploadSessionError,
 } from '../lib/upload-sessions.js';
-import { MAX_PART_SIZE_BYTES, StorageError } from '../lib/storage/local-driver.js';
+import {
+    SESSION_ID_PATTERN, lockCancellationIntent, cancellationAssetVisibility, hasInconsistentSessionReferences,
+} from '../lib/original-upload-inspection.js';
+import { MAX_PART_SIZE_BYTES } from '../lib/storage/local-driver.js';
+import { handleErrors } from '../lib/upload-route-errors.js';
 import { createStorageCapacity } from '../lib/storage/capacity.js';
 import { getAssetUploadMode, serializeCreatedAsset } from '../lib/asset-serialization.js';
 import { generateMediasourceId, notifyUserSockets, parseClientMetadata } from '../lib/utils.js';
@@ -13,7 +17,6 @@ import { notifyDashboardAssetChange } from '../ws/dashboard-notifications.js';
 
 const MAX_UPLOAD_SIZE_BYTES = 500 * 1024 * 1024;
 const PART_URL_TTL_MS = 5 * 60 * 1000;
-const SESSION_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const METADATA_FIELDS = [
     'gpsLat', 'gpsLon', 'gpsAltitude', 'capturedAt', 'deviceModel', 'osVersion',
     'codec', 'resolution', 'orientation', 'duration',
@@ -22,30 +25,6 @@ const MAX_UNRESERVED_CANCELLATIONS = 100;
 const CANCELLATION_QUOTA_WINDOW_MS = 24 * 60 * 60 * 1000;
 const MAX_CANCELLATION_SESSIONS = 100;
 const UPLOAD_SOURCES = new Set(['IOS', 'WEB']);
-
-const ERROR_STATUS = {
-    INVALID_ARGUMENT: 400,
-    NOT_FOUND: 404,
-    EXPIRED: 410,
-    ACCOUNT_SUSPENDED: 403,
-    ASSET_NOT_ACTIVE: 409,
-    INVALID_STATE: 409,
-    CLIP_CHANGED: 409,
-    SESSION_EXISTS: 409,
-    SESSION_BUSY: 409,
-    INCOMPLETE_UPLOAD: 409,
-    INTEGRITY_MISMATCH: 422,
-    STORAGE_UNAVAILABLE: 503,
-    STORAGE_CHANGED: 503,
-    STORAGE_CAPACITY_EXCEEDED: 507,
-    PART_CONFLICT: 409,
-    PART_SIZE_MISMATCH: 400,
-    PART_TOO_LARGE: 413,
-    IDEMPOTENCY_CONFLICT: 409,
-    INTENT_CANCELLED: 410,
-    INTENT_REMOVED: 410,
-    INTENT_INCONSISTENT: 503,
-};
 
 function validateOriginalAssetInput(body) {
     if (!body || typeof body !== 'object' || Array.isArray(body)
@@ -161,73 +140,6 @@ function assertVisibleSession(session, ownerId) {
     if (session.asset.userId !== ownerId || !['ACTIVE', 'PAUSED'].includes(session.asset.moderation)) {
         throw new UploadSessionError('NOT_FOUND', 'Upload session not found');
     }
-}
-
-async function handleErrors(reply, work, { closeConnection = false } = {}) {
-    try {
-        return await work();
-    } catch (error) {
-        if ((error instanceof UploadSessionError || error instanceof StorageError) && ERROR_STATUS[error.code]) {
-            if (error.code === 'STORAGE_UNAVAILABLE' || error.code === 'STORAGE_CHANGED') {
-                reply.request.log.error({ err: { message: error.message } }, 'Original storage is unavailable');
-            }
-            if (error.code === 'STORAGE_CAPACITY_EXCEEDED') {
-                reply.request.log.warn({ code: error.code }, 'Original storage capacity is insufficient');
-            }
-            if (error.code === 'INTENT_INCONSISTENT') {
-                reply.request.log.error({ code: error.code }, 'Original upload intent is inconsistent');
-            }
-            if (closeConnection) reply.header('Connection', 'close');
-            return reply.status(ERROR_STATUS[error.code]).send({ error: error.message });
-        }
-        if (error?.code === 'ENOSPC' || error?.code === 'EDQUOT') {
-            reply.request.log.error({ code: error.code }, 'Original storage write failed for lack of space');
-            if (closeConnection) reply.header('Connection', 'close');
-            return reply.status(507).send({ error: 'Original storage has insufficient free space' });
-        }
-        throw error;
-    }
-}
-
-async function lockCancellationIntent(tx, ownerId, clientRequestId) {
-    const users = await tx.$queryRaw`SELECT id, status FROM users WHERE id = ${ownerId} FOR UPDATE`;
-    if (!users.length || users[0].status !== 'ACTIVE') {
-        throw new UploadSessionError('ACCOUNT_SUSPENDED', 'Account is suspended');
-    }
-    const key = { userId: ownerId, clientRequestId };
-    const where = { userId_clientRequestId: key };
-    let intent = await tx.originalUploadIntent.findUnique({ where });
-    if (intent?.assetId) {
-        // Asset deletion clears the intent under the asset lock.
-        const assetId = intent.assetId;
-        await tx.$queryRaw`SELECT id FROM assets WHERE id = ${assetId} FOR UPDATE`;
-        intent = await tx.originalUploadIntent.findUnique({ where });
-        if (!intent || (intent.assetId && intent.assetId !== assetId)) {
-            throw new UploadSessionError('INTENT_INCONSISTENT', 'Original upload intent cannot be verified');
-        }
-    }
-    return { key, where, intent };
-}
-
-async function cancellationAssetVisibility(tx, assetId, ownerId) {
-    const asset = await tx.asset.findUnique({
-        where: { id: assetId },
-        select: { userId: true, moderation: true },
-    });
-    if (!asset || asset.userId !== ownerId) return 'inconsistent';
-    return ['ACTIVE', 'PAUSED'].includes(asset.moderation) ? 'visible' : 'hidden';
-}
-
-async function hasInconsistentSessionReferences(tx, assetId) {
-    // Both branches can use asset/clip indexes and cover all sessions, not just the requested page.
-    const rows = await tx.$queryRaw`
-        SELECT 1 FROM upload_sessions s JOIN clips c ON c.id = s.clip_id
-        WHERE s.asset_id = ${assetId} AND c.asset_id <> ${assetId}
-        UNION ALL
-        SELECT 1 FROM clips c JOIN upload_sessions s ON s.clip_id = c.id
-        WHERE c.asset_id = ${assetId} AND s.asset_id <> ${assetId}
-        LIMIT 1`;
-    return rows.length !== 0;
 }
 
 export default async function uploadSessionRoutes(fastify, {
