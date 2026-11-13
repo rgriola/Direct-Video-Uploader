@@ -91,6 +91,18 @@ struct OriginalUploadBackgroundTransportTests {
         let sentinelStatus: stat
     }
 
+    private struct CorrelationFixture {
+        let directory: URL
+        let journal: OriginalUploadJournal
+        let auth: AuthService
+        let access: OriginalUploadAccess
+        let job: OriginalUploadJob
+        let attempt: OriginalUploadAttempt
+        let jobDirectory: URL
+        let jobFile: URL
+        let inboxDirectory: URL
+    }
+
     nonisolated private static func varAliasPaths(for path: String) -> (varPath: String, privatePath: String)? {
         if path == "/var" || path.hasPrefix("/var/") {
             return (path, "/private" + path)
@@ -152,7 +164,7 @@ struct OriginalUploadBackgroundTransportTests {
     }
 
     private func event(id: UUID = UUID(), taskIdentifier: Int = 17) -> OriginalBackgroundCompletion {
-        OriginalBackgroundCompletion(
+        return OriginalBackgroundCompletion(
             id: id, taskIdentifier: taskIdentifier,
             tag: OriginalBackgroundTaskTag(
                 scope: String(repeating: "a", count: 64), jobId: UUID(),
@@ -166,6 +178,141 @@ struct OriginalUploadBackgroundTransportTests {
         OriginalBackgroundCompletion(
             id: id, taskIdentifier: taskIdentifier, tag: nil,
             httpStatus: nil, transportErrorCode: -1)
+    }
+
+    private func correlationFixture(scheduled: Bool = true) async throws -> CorrelationFixture {
+        let directory = try fixture()
+        let server = URL(string: "https://isolated.example.test")!
+        let auth = AuthService(storage: .memory, serverURL: { server })
+        auth.token = "test-session-token"
+        auth.currentUser = User(
+            id: "correlation-user", phoneNumber: "5550100", name: "Reporter",
+            email: nil, team: nil, status: "ACTIVE", companyCode: nil, companyName: nil)
+        let access = try OriginalUploadAccess(
+            auth: auth, allowedOrigins: ["https://isolated.example.test"])
+        let journalDirectory = directory.appendingPathComponent("journal", isDirectory: true)
+        let journal = OriginalUploadJournal(directory: journalDirectory)
+        let source = directory.appendingPathComponent("selected.mov")
+        try Data("native original for completion correlation".utf8).write(to: source)
+        let metadata = VideoMetadata(
+            duration: 12, resolution: "1920x1080", codec: "HEVC", orientation: "landscape",
+            deviceModel: "iPhone", osVersion: "iOS", capturedAt: nil,
+            gpsLat: 0, gpsLon: 0, gpsAltitude: nil)
+        var job = try await journal.prepare(
+            id: UUID(), source: source, fileName: "selected.mov", metadata: metadata,
+            photoIdentifier: "photo-1", transcribe: true, access: access)
+        job.state = .reserving
+        job = try journal.update(job, access: access)
+        job.assetId = UUID().uuidString
+        job = try journal.update(job, access: access)
+        job.sessionId = UUID().uuidString
+        job.state = .uploading
+        job = try journal.update(job, access: access)
+        let prepared = try await journal.preparePart(for: job, number: 1, access: access)
+        var attempt = try #require(prepared.job.attempts.first)
+        if scheduled {
+            let verifiedPart = try await journal.readyPart(
+                for: prepared.job, attemptId: attempt.id, access: access)
+            job = try journal.scheduleReadyPart(
+                for: prepared.job, attemptId: attempt.id, verifiedPart: verifiedPart,
+                access: access, createTask: { _ in (handle: true, identifier: 17) },
+                startTask: { _ in }, cancelTask: { _ in })
+            attempt = try #require(job.attempts.first)
+        } else {
+            job = prepared.job
+        }
+        let scope = try OriginalUploadJournal.scopeIdentifier(access.scope)
+        let scopeDirectory = journalDirectory.appendingPathComponent("scope-\(scope)", isDirectory: true)
+        let jobDirectory = scopeDirectory.appendingPathComponent("job-\(job.id.uuidString)", isDirectory: true)
+        return CorrelationFixture(
+            directory: directory, journal: journal, auth: auth, access: access, job: job, attempt: attempt,
+            jobDirectory: jobDirectory, jobFile: jobDirectory.appendingPathComponent("job.json"),
+            inboxDirectory: directory.appendingPathComponent("inbox", isDirectory: true))
+    }
+
+    private func taggedCompletion(
+        for fixture: CorrelationFixture, taskIdentifier: Int = 17,
+        tag: OriginalBackgroundTaskTag? = nil
+    ) throws -> OriginalBackgroundCompletion {
+        let resolvedTag: OriginalBackgroundTaskTag
+        if let tag {
+            resolvedTag = tag
+        } else {
+            resolvedTag = OriginalBackgroundTaskTag(
+                scope: try OriginalUploadJournal.scopeIdentifier(fixture.access.scope),
+                jobId: fixture.job.id, jobIncarnation: fixture.job.incarnation,
+                attemptId: fixture.attempt.id)
+        }
+        return OriginalBackgroundCompletion(
+            id: UUID(), taskIdentifier: taskIdentifier,
+            tag: resolvedTag,
+            httpStatus: 200, transportErrorCode: nil)
+    }
+
+    private func directFileBytes(in directory: URL) throws -> [String: Data] {
+        let files = try FileManager.default.contentsOfDirectory(
+            at: directory, includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey])
+        return try Dictionary(uniqueKeysWithValues: files.map { file in
+            (file.lastPathComponent, try Data(contentsOf: file))
+        })
+    }
+
+    private func verifyCorrelation(
+        _ event: OriginalBackgroundCompletion,
+        fixture: CorrelationFixture,
+        access: OriginalUploadAccess? = nil,
+        expected: OriginalBackgroundCompletionEvidence?,
+        expectedRecord: OriginalUploadJob? = nil,
+        recordMustBeReadable: Bool = true
+    ) throws {
+        let inbox = OriginalUploadEventInbox(directory: fixture.inboxDirectory)
+        try inbox.persist(event.isValid ? event : taggedCompletion(for: fixture))
+        let journalFiles = try directFileBytes(in: fixture.jobDirectory)
+        let inboxFiles = try directFileBytes(in: fixture.inboxDirectory)
+        let recordBytes = try Data(contentsOf: fixture.jobFile)
+
+        let result = try OriginalBackgroundCompletionMatcher.match(
+            event, journal: fixture.journal, access: access ?? fixture.access)
+        #expect(result == expected)
+        #expect(try directFileBytes(in: fixture.jobDirectory) == journalFiles)
+        #expect(try directFileBytes(in: fixture.inboxDirectory) == inboxFiles)
+        #expect(try Data(contentsOf: fixture.jobFile) == recordBytes)
+        if recordMustBeReadable {
+            let decoded = try JSONDecoder().decode(OriginalUploadJob.self, from: recordBytes)
+            if let expectedRecord { #expect(decoded == expectedRecord) }
+        } else {
+            #expect(throws: (any Error).self) {
+                try JSONDecoder().decode(OriginalUploadJob.self, from: recordBytes)
+            }
+        }
+    }
+
+    private func verifyCorrelationFailure(
+        _ event: OriginalBackgroundCompletion,
+        fixture: CorrelationFixture,
+        expectedRecord: OriginalUploadJob? = nil,
+        recordMustBeReadable: Bool = true,
+        assertFailure: () -> Void
+    ) throws {
+        let inbox = OriginalUploadEventInbox(directory: fixture.inboxDirectory)
+        try inbox.persist(event.isValid ? event : taggedCompletion(for: fixture))
+        let journalFiles = try directFileBytes(in: fixture.jobDirectory)
+        let inboxFiles = try directFileBytes(in: fixture.inboxDirectory)
+        let recordBytes = try Data(contentsOf: fixture.jobFile)
+
+        assertFailure()
+
+        #expect(try directFileBytes(in: fixture.jobDirectory) == journalFiles)
+        #expect(try directFileBytes(in: fixture.inboxDirectory) == inboxFiles)
+        #expect(try Data(contentsOf: fixture.jobFile) == recordBytes)
+        if recordMustBeReadable {
+            let decoded = try JSONDecoder().decode(OriginalUploadJob.self, from: recordBytes)
+            if let expectedRecord { #expect(decoded == expectedRecord) }
+        } else {
+            #expect(throws: DecodingError.self) {
+                try JSONDecoder().decode(OriginalUploadJob.self, from: recordBytes)
+            }
+        }
     }
 
     private func canonicalURL(for event: OriginalBackgroundCompletion, in directory: URL) -> URL {
@@ -643,6 +790,194 @@ struct OriginalUploadBackgroundTransportTests {
             String(repeating: "x", count: 221),
         ] {
             #expect(OriginalBackgroundTaskTag(taskDescription: value) == nil)
+        }
+    }
+
+    @Test
+    func synchronousMatcherReturnsLocalEvidenceForScheduledAndRetiringAttempts() async throws {
+        let scheduled = try await correlationFixture()
+        defer { cleanup(scheduled.directory) }
+        let scheduledEvent = try taggedCompletion(for: scheduled)
+        let scope = try OriginalUploadJournal.scopeIdentifier(scheduled.access.scope)
+        try verifyCorrelation(
+            scheduledEvent, fixture: scheduled,
+            expected: OriginalBackgroundCompletionEvidence(
+                eventID: scheduledEvent.id, scopeDigest: scope, jobID: scheduled.job.id,
+                jobIncarnation: scheduled.job.incarnation, attemptID: scheduled.attempt.id,
+                taskIdentifier: scheduledEvent.taskIdentifier),
+            expectedRecord: scheduled.job)
+
+        let retiring = try await correlationFixture()
+        defer { cleanup(retiring.directory) }
+        var retiringJob = retiring.job
+        let index = try #require(retiringJob.attempts.firstIndex { $0.id == retiring.attempt.id })
+        retiringJob.attempts[index].state = .retiring
+        try JSONEncoder().encode(retiringJob).write(to: retiring.jobFile, options: .atomic)
+        let retiringEvent = try taggedCompletion(for: retiring)
+        try verifyCorrelation(
+            retiringEvent, fixture: retiring,
+            expected: OriginalBackgroundCompletionEvidence(
+                eventID: retiringEvent.id, scopeDigest: scope, jobID: retiringJob.id,
+                jobIncarnation: retiringJob.incarnation, attemptID: retiring.attempt.id,
+                taskIdentifier: retiringEvent.taskIdentifier),
+            expectedRecord: retiringJob)
+    }
+
+    @Test
+    func synchronousMatcherRejectsEveryIdentityMismatchWithoutMutation() async throws {
+        let fixture = try await correlationFixture()
+        defer { cleanup(fixture.directory) }
+        let matching = try taggedCompletion(for: fixture)
+        let originalTag = try #require(matching.tag)
+        let mismatchedTags = [
+            OriginalBackgroundTaskTag(
+                scope: String(repeating: "b", count: 64), jobId: originalTag.jobId,
+                jobIncarnation: originalTag.jobIncarnation, attemptId: originalTag.attemptId),
+            OriginalBackgroundTaskTag(
+                scope: originalTag.scope, jobId: originalTag.jobId,
+                jobIncarnation: UUID(), attemptId: originalTag.attemptId),
+            OriginalBackgroundTaskTag(
+                scope: originalTag.scope, jobId: originalTag.jobId,
+                jobIncarnation: originalTag.jobIncarnation, attemptId: UUID()),
+        ]
+        for tag in mismatchedTags {
+            let mismatch = OriginalBackgroundCompletion(
+                id: UUID(), taskIdentifier: matching.taskIdentifier, tag: tag,
+                httpStatus: matching.httpStatus, transportErrorCode: matching.transportErrorCode)
+            try verifyCorrelation(
+                mismatch, fixture: fixture, expected: nil, expectedRecord: fixture.job)
+        }
+        let wrongTask = OriginalBackgroundCompletion(
+            id: UUID(), taskIdentifier: matching.taskIdentifier + 1, tag: matching.tag,
+            httpStatus: matching.httpStatus, transportErrorCode: matching.transportErrorCode)
+        try verifyCorrelation(
+            wrongTask, fixture: fixture, expected: nil, expectedRecord: fixture.job)
+
+        let otherServer = URL(string: "https://isolated.example.test")!
+        let otherAuth = AuthService(storage: .memory, serverURL: { otherServer })
+        otherAuth.token = "other-session-token"
+        otherAuth.currentUser = User(
+            id: "another-user", phoneNumber: "5550101", name: "Reporter",
+            email: nil, team: nil, status: "ACTIVE", companyCode: nil, companyName: nil)
+        let otherAccess = try OriginalUploadAccess(
+            auth: otherAuth, allowedOrigins: ["https://isolated.example.test"])
+        try verifyCorrelation(
+            matching, fixture: fixture, access: otherAccess, expected: nil,
+            expectedRecord: fixture.job)
+    }
+
+    @Test
+    func synchronousMatcherReturnsNilForUntaggedAndIneligibleAttemptsAndRejectsInvalidInputs() async throws {
+        let fixture = try await correlationFixture()
+        defer { cleanup(fixture.directory) }
+        let matching = try taggedCompletion(for: fixture)
+        let nilTag = OriginalBackgroundCompletion(
+            id: UUID(), taskIdentifier: matching.taskIdentifier, tag: nil,
+            httpStatus: 200, transportErrorCode: nil)
+        try verifyCorrelation(
+            nilTag, fixture: fixture, expected: nil, expectedRecord: fixture.job)
+
+        let invalidCompletion = OriginalBackgroundCompletion(
+            id: UUID(), taskIdentifier: 0, tag: matching.tag,
+            httpStatus: 200, transportErrorCode: nil)
+        try verifyCorrelationFailure(invalidCompletion, fixture: fixture) {
+            #expect(throws: OriginalUploadStorageError.invalidRecord) {
+                try OriginalBackgroundCompletionMatcher.match(
+                    invalidCompletion, journal: fixture.journal, access: fixture.access)
+            }
+        }
+        let invalidTag = OriginalBackgroundTaskTag(
+            scope: "not-a-canonical-digest", jobId: fixture.job.id,
+            jobIncarnation: fixture.job.incarnation, attemptId: fixture.attempt.id)
+        let invalidTagEvent = OriginalBackgroundCompletion(
+            id: UUID(), taskIdentifier: matching.taskIdentifier, tag: invalidTag,
+            httpStatus: 200, transportErrorCode: nil)
+        try verifyCorrelationFailure(invalidTagEvent, fixture: fixture) {
+            #expect(throws: OriginalUploadStorageError.invalidRecord) {
+                try OriginalBackgroundCompletionMatcher.match(
+                    invalidTagEvent, journal: fixture.journal, access: fixture.access)
+            }
+        }
+
+        var readyJob = fixture.job
+        let attemptIndex = try #require(readyJob.attempts.firstIndex { $0.id == fixture.attempt.id })
+        readyJob.attempts[attemptIndex].state = .ready
+        readyJob.attempts[attemptIndex].taskIdentifier = nil
+        try JSONEncoder().encode(readyJob).write(to: fixture.jobFile, options: .atomic)
+        try verifyCorrelation(
+            matching, fixture: fixture, expected: nil, expectedRecord: readyJob)
+    }
+
+    @Test
+    func synchronousMatcherPropagatesReadFailuresAndRejectsInvalidJournalRecordsWithoutMutation() async throws {
+        let malformed = try await correlationFixture()
+        defer { cleanup(malformed.directory) }
+        let event = try taggedCompletion(for: malformed)
+        try Data("invalid journal data".utf8).write(to: malformed.jobFile, options: .atomic)
+        try verifyCorrelationFailure(
+            event, fixture: malformed, recordMustBeReadable: false
+        ) {
+            #expect(throws: DecodingError.self) {
+                try OriginalBackgroundCompletionMatcher.match(
+                    event, journal: malformed.journal, access: malformed.access)
+            }
+        }
+
+        let invalid = try await correlationFixture()
+        defer { cleanup(invalid.directory) }
+        var invalidJob = invalid.job
+        let invalidIndex = try #require(invalidJob.attempts.firstIndex { $0.id == invalid.attempt.id })
+        invalidJob.attempts[invalidIndex].taskIdentifier = 0
+        try JSONEncoder().encode(invalidJob).write(to: invalid.jobFile, options: .atomic)
+        let invalidEvent = try taggedCompletion(for: invalid)
+        try verifyCorrelationFailure(invalidEvent, fixture: invalid, expectedRecord: invalidJob) {
+            #expect(throws: OriginalUploadStorageError.invalidRecord) {
+                try OriginalBackgroundCompletionMatcher.match(
+                    invalidEvent, journal: invalid.journal, access: invalid.access)
+            }
+        }
+
+        let duplicate = try await correlationFixture()
+        defer { cleanup(duplicate.directory) }
+        var duplicateJob = duplicate.job
+        duplicateJob.attempts.append(OriginalUploadAttempt(
+            id: duplicate.attempt.id, number: duplicate.attempt.number,
+            state: .scheduled, taskIdentifier: duplicate.attempt.taskIdentifier))
+        try JSONEncoder().encode(duplicateJob).write(to: duplicate.jobFile, options: .atomic)
+        let duplicateEvent = try taggedCompletion(for: duplicate)
+        try verifyCorrelationFailure(duplicateEvent, fixture: duplicate, expectedRecord: duplicateJob) {
+            #expect(throws: OriginalUploadStorageError.invalidRecord) {
+                try OriginalBackgroundCompletionMatcher.match(
+                    duplicateEvent, journal: duplicate.journal, access: duplicate.access)
+            }
+        }
+    }
+
+    @Test
+    func synchronousMatcherPropagatesAccessAndMissingJobFailuresWithoutMutation() async throws {
+        let unauthorized = try await correlationFixture()
+        defer { cleanup(unauthorized.directory) }
+        let event = try taggedCompletion(for: unauthorized)
+        unauthorized.auth.token = "rotated-session-token"
+        try verifyCorrelationFailure(event, fixture: unauthorized) {
+            #expect(throws: OriginalUploadStorageError.invalidScope) {
+                try OriginalBackgroundCompletionMatcher.match(
+                    event, journal: unauthorized.journal, access: unauthorized.access)
+            }
+        }
+
+        let missingJob = try await correlationFixture()
+        defer { cleanup(missingJob.directory) }
+        let missingTag = try taggedCompletion(
+            for: missingJob,
+            tag: OriginalBackgroundTaskTag(
+                scope: try OriginalUploadJournal.scopeIdentifier(missingJob.access.scope),
+                jobId: UUID(), jobIncarnation: UUID(), attemptId: UUID()))
+        try verifyCorrelationFailure(missingTag, fixture: missingJob) {
+            #expect(throws: OriginalUploadStorageError.invalidFile) {
+                try OriginalBackgroundCompletionMatcher.match(
+                    missingTag, journal: missingJob.journal, access: missingJob.access)
+            }
         }
     }
 
