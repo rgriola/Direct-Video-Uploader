@@ -5,7 +5,7 @@ import csrfProtection from '@fastify/csrf-protection';
 import rateLimit from '@fastify/rate-limit';
 import { createHash, randomUUID } from 'node:crypto';
 import { request as httpRequest } from 'node:http';
-import { mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
+import { link, mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { Readable } from 'node:stream';
@@ -222,6 +222,19 @@ integration('upload session HTTP routes against PostgreSQL and local storage', (
                 ) AS blocked`;
             expect(result.blocked).toBe(true);
         }, { timeout: 5_000, interval: 10 });
+    }
+
+    async function blockedQueryBy(pid, fragment) {
+        let blockedPid;
+        await vi.waitFor(async () => {
+            const rows = await prisma.$queryRaw`
+                SELECT pid FROM pg_stat_activity
+                WHERE ${pid} = ANY(pg_blocking_pids(pid))
+                  AND query LIKE ${`%${fragment}%`}`;
+            expect(rows).toHaveLength(1);
+            blockedPid = rows[0].pid;
+        }, { timeout: 5_000, interval: 10 });
+        return blockedPid;
     }
 
     async function sign(sessionId, partNumber = 1, userId = ownerId) {
@@ -592,6 +605,1262 @@ integration('upload session HTTP routes against PostgreSQL and local storage', (
         const existing = await requestAs(ownerId, 'GET', `/api/upload-sessions/${session.id}`);
         expect(existing.statusCode, existing.body).toBe(200);
         expect(existing.json().uploadSession.status).toBe('COMPLETED');
+        const completeRetry = await requestAs(ownerId, 'POST', `/api/upload-sessions/${session.id}/complete`);
+        expect(completeRetry.statusCode, completeRetry.body).toBe(200);
+        expect(completeRetry.json().uploadSession.status).toBe('COMPLETED');
+    });
+
+    async function stagedReservedOriginal(content) {
+        const payload = originalReservation(content);
+        const reserved = await requestAs(ownerId, 'POST', '/api/assets/original-uploads', payload);
+        expect(reserved.statusCode, reserved.body).toBe(201);
+        const reservedAssetId = reserved.json().asset.id;
+        const session = await createSession(content, reservedAssetId);
+        const signed = await sign(session.id);
+        const uploaded = await put(signed.url, content);
+        expect(uploaded.statusCode, uploaded.body).toBe(200);
+        return { payload, session, reservedAssetId };
+    }
+
+    async function handoffService() {
+        const { createUploadSessionService } = await import('../lib/upload-sessions.js');
+        const { enqueueMuxOriginal } = await import('../lib/mux-original-records.js');
+        return createUploadSessionService({
+            db: prisma, storage, capacity: unrestrictedTestCapacity, now: () => new Date(currentTime),
+            onCompleted: enqueueMuxOriginal,
+        });
+    }
+
+    async function stagedOpenWithHandoff(content) {
+        const payload = originalReservation(content);
+        const reserved = await requestAs(ownerId, 'POST', '/api/assets/original-uploads', payload);
+        expect(reserved.statusCode, reserved.body).toBe(201);
+        const reservedAssetId = reserved.json().asset.id;
+        const { createStorageCapacity } = await import('../lib/storage/capacity.js');
+        const { createUploadSessionService } = await import('../lib/upload-sessions.js');
+        const { enqueueMuxOriginal } = await import('../lib/mux-original-records.js');
+        const { default: uploadSessionRoutes } = await import('../routes/upload-sessions.js');
+        const { authenticate } = await import('../lib/authentication.js');
+        const { requireRole } = await import('../lib/authorization.js');
+        const capacity = createStorageCapacity({
+            db: prisma, storage, maxStorageBytes: 10n * 1024n * 1024n * 1024n, minFreeBytes: 1n,
+        });
+        const service = createUploadSessionService({ db: prisma, storage, capacity, now: () => new Date(currentTime) });
+        const session = await service.create({
+            ownerId, assetId: reservedAssetId, clipId: randomUUID(), initializeClip: true,
+            expectedSizeBytes: content.length, expectedSha256: sha256(content),
+        });
+        await service.uploadPart({
+            ownerId, uploadSessionId: session.id, partNumber: 1, body: content, expectedSizeBytes: content.length,
+        });
+        const row = await prisma.uploadSession.findUnique({ where: { id: session.id } });
+        expect(row.storageReservationBytes).toBeGreaterThan(0n);
+        const parts = await prisma.uploadPart.findMany({ where: { uploadSessionId: session.id } });
+        expect(parts).toHaveLength(1);
+        const sessionPath = path.join(storageRoot, '.uploads', session.id);
+        const manifest = await readFile(path.join(sessionPath, 'manifest.json'));
+        const handoffApp = Fastify({ logger: false });
+        await handoffApp.register(fastifyJwt, { secret: 'integration-jwt-secret' });
+        handoffApp.decorate('authenticate', authenticate);
+        handoffApp.decorate('requireRole', requireRole);
+        await handoffApp.register(uploadSessionRoutes, {
+            db: prisma, storage, capacity, signingSecret, now: () => new Date(currentTime),
+            handoff: { onCompleted: enqueueMuxOriginal },
+        });
+        const complete = () => handoffApp.inject({
+            method: 'POST', url: `/api/upload-sessions/${session.id}/complete`,
+            headers: { authorization: `Bearer ${tokens[ownerId]}` },
+        });
+        const assertRetained = async expectedRow => {
+            expect(await readFile(path.join(sessionPath, 'parts', '00001'))).toEqual(content);
+            expect(await readFile(path.join(sessionPath, 'manifest.json'))).toEqual(manifest);
+            expect(await prisma.uploadPart.findMany({ where: { uploadSessionId: session.id } })).toEqual(parts);
+            expect(await prisma.uploadSession.findUnique({ where: { id: session.id } })).toEqual(expectedRow);
+            expect(await storage.stat(row.storageKey)).toBeNull();
+            expect(await prisma.muxIngestJob.findUnique({ where: { uploadSessionId: session.id } })).toBeNull();
+            expect(await prisma.storageWriteLease.count({ where: { uploadSessionId: session.id } })).toBe(0);
+        };
+        return { payload, session, row, complete, assertRetained, handoffApp };
+    }
+
+    async function allowLegacyMissingClipSha(clipId, enabled) {
+        if (!enabled) return async () => {};
+        // Simulate legacy or corrupted rows that the current schema rejects.
+        await prisma.$executeRaw`ALTER TABLE clips DROP CONSTRAINT clips_storage_metadata_check`;
+        return async () => {
+            await prisma.clip.updateMany({ where: { id: clipId, sha256: null }, data: { storageKey: null } });
+            await prisma.$executeRaw`ALTER TABLE clips ADD CONSTRAINT clips_storage_metadata_check
+                CHECK (storage_key IS NULL OR (storage_driver IS NOT NULL AND sha256 IS NOT NULL))`;
+        };
+    }
+
+    it.each([
+        ['storage key', row => ({
+            storageKey: `${row.storageKey.slice(0, row.storageKey.lastIndexOf('.') + 1)}${randomUUID()}`,
+            storageDriver: row.storageDriver, sha256: row.expectedSha256,
+        })],
+        ['storage driver', row => ({
+            storageKey: row.storageKey, storageDriver: 'other', sha256: row.expectedSha256,
+        })],
+        ['storage URL', () => ({ storageUrl: 'https://example.test/other-original' })],
+        ['Mux upload', () => ({ muxUploadId: 'other-upload' })],
+        ['Mux asset', () => ({ muxAssetId: 'other-asset' })],
+        ['empty storage key', row => ({ storageKey: '', storageDriver: row.storageDriver, sha256: row.expectedSha256 })],
+        ['empty storage driver', row => ({ storageKey: row.storageKey, storageDriver: '', sha256: row.expectedSha256 })],
+        ['empty storage URL', () => ({ storageUrl: '' })],
+        ['empty Mux upload', () => ({ muxUploadId: '' })],
+        ['empty Mux asset', () => ({ muxAssetId: '' })],
+    ])('retains an OPEN upload before publication on a %s conflict', async (label, conflict) => {
+        const content = Buffer.from(`open reference conflict: ${label}`);
+        const { session, row, complete, assertRetained, handoffApp } = await stagedOpenWithHandoff(content);
+        try {
+            const conflictingClip = await prisma.clip.update({
+                where: { id: session.clipId }, data: conflict(row),
+            });
+            const response = await complete();
+            expect(response.statusCode, response.body).toBe(503);
+            expect(response.json()).toEqual({
+                error: ['storage driver', 'empty storage key', 'empty storage driver'].includes(label)
+                    ? 'Original storage references require recovery'
+                    : 'Upload completion references require manual review',
+            });
+            await assertRetained(row);
+            expect(await prisma.clip.findUnique({ where: { id: session.clipId } })).toEqual(conflictingClip);
+
+            await prisma.clip.update({
+                where: { id: session.clipId },
+                data: {
+                    storageKey: null, storageDriver: null, sha256: null, storageUrl: null,
+                    muxUploadId: null, muxAssetId: null,
+                },
+            });
+            const repaired = await complete();
+            expect(repaired.statusCode, repaired.body).toBe(200);
+            expect(repaired.json().uploadSession.status).toBe('COMPLETED');
+            expect(await readFile(path.join(storageRoot, row.storageKey))).toEqual(content);
+            expect(await storage.hasUpload(session.id)).toBe(false);
+            expect(await prisma.uploadSession.findUnique({ where: { id: session.id } })).toMatchObject({
+                status: 'COMPLETED', storageReservationBytes: 0n,
+            });
+            expect(await prisma.muxIngestJob.findUnique({ where: { uploadSessionId: session.id } }))
+                .toMatchObject({ status: 'QUEUED' });
+            expect((await complete()).statusCode).toBe(200);
+            expect(await prisma.muxIngestJob.count({ where: { uploadSessionId: session.id } })).toBe(1);
+        } finally {
+            await handoffApp.close();
+        }
+    });
+
+    it('preserves cancellation precedence over an OPEN clip reference conflict', async () => {
+        const content = Buffer.from('cancelled clip conflict');
+        const { payload, session, row, complete, assertRetained, handoffApp } = await stagedOpenWithHandoff(content);
+        try {
+            await prisma.clip.update({ where: { id: session.clipId }, data: { muxUploadId: 'other-upload' } });
+            const cancelled = await requestAs(
+                ownerId, 'POST', `/api/assets/original-uploads/${payload.clientRequestId}/cancel`);
+            expect(cancelled.statusCode, cancelled.body).toBe(200);
+            const response = await complete();
+            expect(response.statusCode, response.body).toBe(410);
+            await assertRetained(row);
+        } finally {
+            await handoffApp.close();
+        }
+    });
+
+    it.each(['matching reference', 'null key with driver'])(
+        'allows an OPEN completion with %s and a completed retry', async mode => {
+            const content = Buffer.from(`legitimate ${mode}`);
+            const { session, row, complete, handoffApp } = await stagedOpenWithHandoff(content);
+            try {
+                await prisma.clip.update({
+                    where: { id: session.clipId },
+                    data: mode === 'matching reference'
+                        ? { storageKey: row.storageKey, storageDriver: row.storageDriver,
+                            sha256: sha256(content), fileSize: BigInt(content.length) }
+                        : { storageDriver: 'other' },
+                });
+                const response = await complete();
+                expect(response.statusCode, response.body).toBe(200);
+                expect(response.json().uploadSession.status).toBe('COMPLETED');
+                expect(await readFile(path.join(storageRoot, row.storageKey))).toEqual(content);
+                expect(await storage.hasUpload(session.id)).toBe(false);
+                expect(await prisma.clip.findUnique({ where: { id: session.clipId } })).toMatchObject({
+                    storageKey: row.storageKey, storageDriver: row.storageDriver,
+                    sha256: sha256(content), fileSize: BigInt(content.length),
+                });
+                expect((await complete()).statusCode).toBe(200);
+                expect(await prisma.muxIngestJob.count({ where: { uploadSessionId: session.id } })).toBe(1);
+            } finally {
+                await handoffApp.close();
+            }
+        },
+    );
+
+    it.each([
+        ['wrong SHA', { sha256: 'a'.repeat(64) }],
+        ['missing SHA', { sha256: null }],
+        ['wrong size', { fileSize: 1n }],
+        ['missing size', { fileSize: null }],
+        ['missing expected SHA', {}, { expectedSha256: null }],
+        ['missing expected size', {}, { expectedSizeBytes: null }],
+    ])('retains an OPEN same-key upload with %s before publication', async (label, conflict, sessionChange) => {
+        const content = Buffer.from(`same-key integrity ${label}`);
+        const { session, row, complete, assertRetained, handoffApp } = await stagedOpenWithHandoff(content);
+        const restoreConstraint = await allowLegacyMissingClipSha(session.clipId, label === 'missing SHA');
+        try {
+            const clip = await prisma.clip.update({
+                where: { id: session.clipId },
+                data: { storageKey: row.storageKey, storageDriver: row.storageDriver,
+                    sha256: sha256(content), fileSize: BigInt(content.length), ...conflict },
+            });
+            const expected = sessionChange
+                ? await prisma.uploadSession.update({ where: { id: session.id }, data: sessionChange })
+                : row;
+            if (sessionChange?.expectedSizeBytes === null) {
+                const { createUploadSessionService } = await import('../lib/upload-sessions.js');
+                const service = createUploadSessionService({
+                    db: prisma, storage, capacity: unrestrictedTestCapacity, now: () => new Date(currentTime),
+                });
+                await expect(service.complete({ ownerId, uploadSessionId: session.id })).rejects.toMatchObject({
+                    code: 'STORAGE_UNAVAILABLE', message: 'Upload completion references require manual review',
+                });
+            } else {
+                const response = await complete();
+                expect(response.statusCode, response.body).toBe(503);
+                expect(response.json()).toEqual({ error: 'Upload completion references require manual review' });
+            }
+            await assertRetained(expected);
+            expect(await prisma.clip.findUnique({ where: { id: session.clipId } })).toEqual(clip);
+            await prisma.uploadSession.update({
+                where: { id: session.id },
+                data: { expectedSha256: row.expectedSha256, expectedSizeBytes: row.expectedSizeBytes },
+            });
+            await prisma.clip.update({
+                where: { id: session.clipId }, data: { sha256: sha256(content), fileSize: BigInt(content.length) },
+            });
+            expect((await complete()).statusCode).toBe(200);
+            expect((await complete()).statusCode).toBe(200);
+            expect(await prisma.muxIngestJob.count({ where: { uploadSessionId: session.id } })).toBe(1);
+        } finally {
+            await restoreConstraint();
+            await handoffApp.close();
+        }
+    });
+
+    it.each(['clipId', 'storageKey', 'storageDriver', 'expectedSizeBytes', 'expectedSha256'])(
+        'rejects an OPEN completion when locked session %s changed after its snapshot', async field => {
+            const content = Buffer.from(`changed session ${field}`);
+            const { session, row, complete, assertRetained, handoffApp } = await stagedOpenWithHandoff(content);
+            const replacementClipId = randomUUID();
+            if (field === 'clipId') await prisma.clip.create({
+                data: { id: replacementClipId, assetId: row.assetId, status: 'UPLOADING' },
+            });
+            const value = {
+                clipId: replacementClipId, storageKey: `${row.storageKey}-other`, storageDriver: 'other',
+                expectedSizeBytes: row.expectedSizeBytes + 1n, expectedSha256: 'a'.repeat(64),
+            }[field];
+            let reportLocked;
+            let releaseChange;
+            const locked = new Promise(resolve => { reportLocked = resolve; });
+            const release = new Promise(resolve => { releaseChange = resolve; });
+            const changing = prisma.$transaction(async tx => {
+                const [backend] = await tx.$queryRaw`SELECT pg_backend_pid() AS pid`;
+                await tx.$queryRaw`SELECT id FROM upload_sessions WHERE id = ${session.id} FOR UPDATE`;
+                reportLocked(backend.pid);
+                await release;
+                return tx.uploadSession.update({ where: { id: session.id }, data: { [field]: value } });
+            }, { timeout: 15_000 });
+            let completion;
+            try {
+                const pid = await Promise.race([
+                    locked, changing.then(() => { throw new Error('Session lock did not pause'); }),
+                ]);
+                completion = complete();
+                await blockedQueryBy(pid, 'SELECT id FROM upload_sessions');
+                releaseChange();
+                const response = await completion;
+                expect(response.statusCode, response.body).toBe(field === 'clipId' ? 409 : 503);
+                const changed = await changing;
+                expect(changed).toEqual({ ...row, [field]: value, updatedAt: expect.any(Date) });
+                await assertRetained(changed);
+                expect((await prisma.clip.findUnique({ where: { id: session.clipId } })).storageKey).toBeNull();
+                if (field === 'clipId') {
+                    expect((await prisma.clip.findUnique({ where: { id: replacementClipId } })).storageKey).toBeNull();
+                }
+                await prisma.uploadSession.update({ where: { id: session.id }, data: { [field]: row[field] } });
+                const repaired = await complete();
+                expect(repaired.statusCode, repaired.body).toBe(200);
+                expect(await readFile(path.join(storageRoot, row.storageKey))).toEqual(content);
+            } finally {
+                releaseChange();
+                await Promise.allSettled([changing, completion].filter(Boolean));
+                await handoffApp.close();
+            }
+        }, 20_000,
+    );
+
+    it.each(['storage key', 'storage driver', 'Mux upload', 'SHA', 'missing SHA', 'size', 'missing size'])(
+        'rechecks locked clip %s after waiting for a conflicting update', async field => {
+            const content = Buffer.from(`locked clip ${field} changed`);
+            const { session, row, complete, assertRetained, handoffApp } = await stagedOpenWithHandoff(content);
+            const restoreConstraint = await allowLegacyMissingClipSha(session.clipId, field === 'missing SHA');
+            if (['SHA', 'missing SHA', 'size', 'missing size'].includes(field)) {
+                await prisma.clip.update({ where: { id: session.clipId }, data: {
+                    storageKey: row.storageKey, storageDriver: row.storageDriver,
+                    sha256: sha256(content), fileSize: BigInt(content.length),
+                } });
+            }
+            const conflict = field === 'storage key'
+                ? { storageKey: `${row.storageKey.slice(0, row.storageKey.lastIndexOf('.') + 1)}${randomUUID()}`,
+                    storageDriver: row.storageDriver, sha256: row.expectedSha256 }
+                : field === 'storage driver'
+                    ? { storageKey: row.storageKey, storageDriver: 'other', sha256: row.expectedSha256 }
+                    : field === 'Mux upload' ? { muxUploadId: 'changed-upload' }
+                        : field === 'SHA' ? { sha256: 'a'.repeat(64) }
+                            : field === 'missing SHA' ? { sha256: null }
+                                : field === 'size' ? { fileSize: 1n } : { fileSize: null };
+            let reportLocked;
+            let releaseChange;
+            const locked = new Promise(resolve => { reportLocked = resolve; });
+            const release = new Promise(resolve => { releaseChange = resolve; });
+            const changing = prisma.$transaction(async tx => {
+                const [backend] = await tx.$queryRaw`SELECT pg_backend_pid() AS pid`;
+                await tx.$queryRaw`SELECT id FROM clips WHERE id = ${session.clipId} FOR UPDATE`;
+                reportLocked(backend.pid);
+                await release;
+                return tx.clip.update({ where: { id: session.clipId }, data: conflict });
+            }, { timeout: 15_000 });
+            let completion;
+            try {
+                const pid = await Promise.race([
+                    locked, changing.then(() => { throw new Error('Clip lock did not pause'); }),
+                ]);
+                completion = complete();
+                await blockedQueryBy(pid, 'SELECT id FROM clips');
+                releaseChange();
+                const response = await completion;
+                expect(response.statusCode, response.body).toBe(503);
+                expect(response.json()).toEqual({ error: 'Upload completion references require manual review' });
+                const changed = await changing;
+                await assertRetained(row);
+                expect(await prisma.clip.findUnique({ where: { id: session.clipId } })).toEqual(changed);
+                await prisma.clip.update({
+                    where: { id: session.clipId },
+                    data: { storageKey: null, storageDriver: null, sha256: null, muxUploadId: null },
+                });
+                const repaired = await complete();
+                expect(repaired.statusCode, repaired.body).toBe(200);
+                expect(await readFile(path.join(storageRoot, row.storageKey))).toEqual(content);
+            } finally {
+                releaseChange();
+                await Promise.allSettled([changing, completion].filter(Boolean));
+                await restoreConstraint();
+                await handoffApp.close();
+            }
+        }, 20_000,
+    );
+
+    it('does not expose a foreign clip through an inconsistent session', async () => {
+        const content = Buffer.from('foreign clip reference');
+        const { session, reservedAssetId } = await stagedReservedOriginal(content);
+        const foreignAssetId = randomUUID();
+        const foreignClipId = randomUUID();
+        await prisma.asset.create({
+            data: {
+                id: foreignAssetId, userId: otherId, status: 'UPLOADING',
+                clips: { create: { id: foreignClipId, status: 'UPLOADING' } },
+            },
+        });
+        await prisma.uploadSession.update({ where: { id: session.id }, data: { clipId: foreignClipId } });
+        const url = `/api/upload-sessions/${session.id}`;
+        const response = await requestAs(ownerId, 'GET', url);
+        expect(response.statusCode, response.body).toBe(409);
+        expect(response.json()).toEqual({ error: 'Upload session clip does not belong to its asset' });
+        for (const id of [session.id, session.clipId, reservedAssetId, foreignAssetId, foreignClipId]) {
+            expect(response.body).not.toContain(id);
+        }
+        expect((await requestAs(otherId, 'GET', url)).statusCode).toBe(404);
+        await prisma.asset.update({
+            where: { id: reservedAssetId }, data: { moderation: 'FLAGGED_FOR_REMOVAL' },
+        });
+        expect((await requestAs(ownerId, 'GET', url)).statusCode).toBe(404);
+        await prisma.asset.update({ where: { id: reservedAssetId }, data: { moderation: 'ACTIVE' } });
+        await prisma.uploadSession.update({ where: { id: session.id }, data: { clipId: session.clipId } });
+        const repaired = await requestAs(ownerId, 'GET', url);
+        expect(repaired.statusCode, repaired.body).toBe(200);
+        expect(repaired.json().uploadSession.clipId).toBe(session.clipId);
+        expect(await readFile(path.join(storageRoot, '.uploads', session.id, 'parts', '00001'))).toEqual(content);
+    });
+
+    it.each([true, false])('preserves staged evidence during inconsistent recovery (published: %s)', async published => {
+        const content = Buffer.from('published before crash with staged evidence');
+        const { session, reservedAssetId } = await stagedReservedOriginal(content);
+        const row = await prisma.uploadSession.findUnique({ where: { id: session.id } });
+        const stagedPath = path.join(storageRoot, '.uploads', session.id, 'parts', '00001');
+        const publishedPath = path.join(storageRoot, row.storageKey);
+        if (published) {
+            await mkdir(path.dirname(publishedPath), { recursive: true });
+            await link(stagedPath, publishedPath);
+        }
+        await prisma.uploadSession.update({ where: { id: session.id }, data: { status: 'COMPLETING' } });
+        const otherAssetId = randomUUID();
+        await prisma.asset.create({ data: { id: otherAssetId, userId: ownerId, status: 'UPLOADING' } });
+        await prisma.clip.update({ where: { id: session.clipId }, data: { assetId: otherAssetId } });
+
+        const url = `/api/upload-sessions/${session.id}`;
+        for (const [method, target] of [['GET', url], ['POST', `${url}/complete`], ['DELETE', url]]) {
+            const response = await requestAs(ownerId, method, target);
+            expect(response.statusCode, response.body).toBe(409);
+            expect(response.json()).toEqual({ error: 'Upload session clip does not belong to its asset' });
+            for (const id of [session.id, session.clipId, reservedAssetId, otherAssetId]) {
+                expect(response.body).not.toContain(id);
+            }
+        }
+        expect((await requestAs(otherId, 'GET', url)).statusCode).toBe(404);
+
+        const { createUploadSessionRecovery } = await import('../lib/upload-sessions.js');
+        const recovery = createUploadSessionRecovery({ db: prisma, storage, now: () => new Date(currentTime) });
+        await expect(withAssetMediaLock(reservedAssetId, assertLocked => recovery.recoverForSweep({
+            ownerId, assetId: reservedAssetId, uploadSessionId: session.id, assertLocked,
+        }))).rejects.toMatchObject({ code: 'STORAGE_UNAVAILABLE' });
+
+        // Simulate stale outer snapshots while the recovery's own reload sees the pre-existing mismatch.
+        let reads = 0;
+        const dbWithStaleSnapshots = new Proxy(prisma, {
+            get(target, property) {
+                if (property !== 'uploadSession') return Reflect.get(target, property, target);
+                return new Proxy(target.uploadSession, {
+                    get(delegate, method) {
+                        if (method !== 'findFirst') return Reflect.get(delegate, method, delegate);
+                        return async (...args) => {
+                            const result = await delegate.findFirst(...args);
+                            reads += 1;
+                            if (reads <= 2 && result) return { ...result, clip: { ...result.clip, assetId: reservedAssetId } };
+                            return result;
+                        };
+                    },
+                });
+            },
+        });
+        const recoveryWithStaleSnapshots = createUploadSessionRecovery({
+            db: dbWithStaleSnapshots, storage, now: () => new Date(currentTime),
+        });
+        await expect(withAssetMediaLock(reservedAssetId, assertLocked => recoveryWithStaleSnapshots.recoverForSweep({
+            ownerId, assetId: reservedAssetId, uploadSessionId: session.id, assertLocked,
+        }))).rejects.toMatchObject({ code: 'INVALID_STATE' });
+        expect(reads).toBe(3);
+
+        expect(await readFile(stagedPath)).toEqual(content);
+        if (published) expect(await readFile(publishedPath)).toEqual(content);
+        else expect(await storage.stat(row.storageKey)).toBeNull();
+        expect(await prisma.uploadSession.findUnique({ where: { id: session.id } })).toMatchObject({
+            status: 'COMPLETING', storageReservationBytes: row.storageReservationBytes,
+        });
+        expect(await prisma.uploadPart.count({ where: { uploadSessionId: session.id } })).toBe(1);
+        expect((await prisma.clip.findUnique({ where: { id: session.clipId } })).storageKey).toBeNull();
+
+        await prisma.clip.update({ where: { id: session.clipId }, data: { assetId: reservedAssetId } });
+        const recovered = await requestAs(ownerId, 'GET', url);
+        expect(recovered.statusCode, recovered.body).toBe(200);
+        expect(recovered.json().uploadSession.status).toBe(published ? 'COMPLETED' : 'OPEN');
+        const retry = await requestAs(ownerId, 'POST', `${url}/complete`);
+        expect(retry.statusCode, retry.body).toBe(200);
+        expect(retry.json().uploadSession.status).toBe('COMPLETED');
+        expect(await storage.hasUpload(session.id)).toBe(false);
+        expect(await readFile(publishedPath)).toEqual(content);
+        expect(await prisma.clip.findUnique({ where: { id: session.clipId } })).toMatchObject({
+            storageKey: row.storageKey, sha256: sha256(content), fileSize: BigInt(content.length),
+        });
+    });
+
+    it.each([
+        ['storage key', row => ({
+            storageKey: `${row.storageKey}-other`, storageDriver: row.storageDriver, sha256: row.expectedSha256,
+        }), false, 'GET'],
+        ['storage driver', row => ({
+            storageKey: row.storageKey, storageDriver: 'other', sha256: row.expectedSha256,
+        }), true, 'POST'],
+        ['storage URL', row => ({
+            storageKey: row.storageKey, storageDriver: row.storageDriver, sha256: row.expectedSha256,
+            storageUrl: 'https://example.test/other-original',
+        }), false, 'DELETE'],
+        ['Mux upload', row => ({
+            storageKey: row.storageKey, storageDriver: row.storageDriver, sha256: row.expectedSha256,
+            muxUploadId: 'conflicting-mux-upload',
+        }), true, 'GET'],
+        ['Mux asset', () => ({ muxAssetId: 'conflicting-mux-asset' }), false, 'POST'],
+        ['empty storage key', row => ({
+            storageKey: '', storageDriver: row.storageDriver, sha256: row.expectedSha256,
+        }), false, 'GET'],
+        ['empty storage driver', row => ({
+            storageKey: row.storageKey, storageDriver: '', sha256: row.expectedSha256,
+        }), true, 'POST'],
+        ['empty storage URL', () => ({ storageUrl: '' }), false, 'GET'],
+        ['empty Mux upload', () => ({ muxUploadId: '' }), false, 'GET'],
+        ['empty Mux asset', () => ({ muxAssetId: '' }), false, 'GET'],
+    ])('retains published and staged originals on a static %s conflict', async (_label, conflict, alreadyReferenced, retryMethod) => {
+        const content = Buffer.from(`published and staged ${_label}`);
+        const reserved = await requestAs(ownerId, 'POST', '/api/assets/original-uploads', originalReservation(content));
+        expect(reserved.statusCode, reserved.body).toBe(201);
+        const reservedAssetId = reserved.json().asset.id;
+        const { createStorageCapacity } = await import('../lib/storage/capacity.js');
+        const { createUploadSessionService, createUploadSessionRecovery } = await import('../lib/upload-sessions.js');
+        const { enqueueMuxOriginal } = await import('../lib/mux-original-records.js');
+        const { default: uploadSessionRoutes } = await import('../routes/upload-sessions.js');
+        const { authenticate } = await import('../lib/authentication.js');
+        const { requireRole } = await import('../lib/authorization.js');
+        const capacity = createStorageCapacity({
+            db: prisma, storage, maxStorageBytes: 10n * 1024n * 1024n * 1024n, minFreeBytes: 1n,
+        });
+        const service = createUploadSessionService({ db: prisma, storage, capacity, now: () => new Date(currentTime) });
+        const session = await service.create({
+            ownerId, assetId: reservedAssetId, clipId: randomUUID(), initializeClip: true,
+            expectedSizeBytes: content.length, expectedSha256: sha256(content),
+        });
+        await service.uploadPart({
+            ownerId, uploadSessionId: session.id, partNumber: 1, body: content, expectedSizeBytes: content.length,
+        });
+        const row = await prisma.uploadSession.findUnique({ where: { id: session.id } });
+        expect(row.storageReservationBytes).toBeGreaterThan(0n);
+        const parts = await prisma.uploadPart.findMany({ where: { uploadSessionId: session.id } });
+        expect(parts).toHaveLength(1);
+        const stagedPath = path.join(storageRoot, '.uploads', session.id, 'parts', '00001');
+        const publishedPath = path.join(storageRoot, row.storageKey);
+        await mkdir(path.dirname(publishedPath), { recursive: true });
+        await writeFile(publishedPath, content);
+        await prisma.uploadSession.update({ where: { id: session.id }, data: { status: 'COMPLETING' } });
+        await prisma.clip.update({ where: { id: session.clipId }, data: conflict(row) });
+        const completing = await prisma.uploadSession.findUnique({ where: { id: session.id } });
+        const conflictingClip = await prisma.clip.findUnique({ where: { id: session.clipId } });
+
+        const handoffApp = Fastify({ logger: false });
+        try {
+            await handoffApp.register(fastifyJwt, { secret: 'integration-jwt-secret' });
+            handoffApp.decorate('authenticate', authenticate);
+            handoffApp.decorate('requireRole', requireRole);
+            await handoffApp.register(uploadSessionRoutes, {
+                db: prisma, storage, capacity, signingSecret, now: () => new Date(currentTime),
+                handoff: { onCompleted: enqueueMuxOriginal },
+            });
+            const url = `/api/upload-sessions/${session.id}`;
+            const request = (method, target) => handoffApp.inject({
+                method, url: target, headers: { authorization: `Bearer ${tokens[ownerId]}` },
+            });
+            const assertRetained = async () => {
+                expect(await readFile(stagedPath)).toEqual(content);
+                expect(await readFile(publishedPath)).toEqual(content);
+                expect(await prisma.uploadPart.findMany({ where: { uploadSessionId: session.id } })).toEqual(parts);
+                expect(await prisma.uploadSession.findUnique({ where: { id: session.id } })).toEqual(completing);
+                expect(await prisma.clip.findUnique({ where: { id: session.clipId } })).toEqual(conflictingClip);
+                expect(await prisma.muxIngestJob.findUnique({ where: { uploadSessionId: session.id } })).toBeNull();
+            };
+            for (const [method, target] of [['GET', url], ['POST', `${url}/complete`], ['DELETE', url]]) {
+                const response = await request(method, target);
+                if (response.statusCode !== 503) await assertRetained();
+                expect(response.statusCode, response.body).toBe(503);
+                expect(response.json()).toEqual({ error: 'Upload completion references require manual review' });
+                for (const id of [
+                    ownerId, reservedAssetId, session.id, session.clipId, row.storageKey,
+                    conflictingClip.storageKey, conflictingClip.storageUrl,
+                    conflictingClip.muxUploadId, conflictingClip.muxAssetId,
+                ].filter(Boolean)) {
+                    expect(response.body).not.toContain(id);
+                }
+                await assertRetained();
+            }
+            const recovery = createUploadSessionRecovery({ db: prisma, storage, now: () => new Date(currentTime) });
+            await expect(withAssetMediaLock(reservedAssetId, assertLocked => recovery.recoverForSweep({
+                ownerId, assetId: reservedAssetId, uploadSessionId: session.id, assertLocked,
+            }))).rejects.toMatchObject({ code: 'STORAGE_UNAVAILABLE' });
+            await assertRetained();
+
+            await prisma.clip.update({
+                where: { id: session.clipId },
+                data: {
+                    storageKey: alreadyReferenced ? row.storageKey : null,
+                    storageDriver: alreadyReferenced ? row.storageDriver : null,
+                    sha256: alreadyReferenced ? sha256(content) : null,
+                    fileSize: alreadyReferenced ? BigInt(content.length) : null,
+                    storageUrl: null, muxUploadId: null, muxAssetId: null,
+                },
+            });
+            const recovered = await request(retryMethod, retryMethod === 'POST' ? `${url}/complete` : url);
+            if (retryMethod === 'DELETE') {
+                expect(recovered.statusCode, recovered.body).toBe(409);
+                expect(recovered.json()).toEqual({ error: 'Completed originals cannot be aborted' });
+            } else {
+                expect(recovered.statusCode, recovered.body).toBe(200);
+                expect(recovered.json().uploadSession.status).toBe('COMPLETED');
+            }
+            expect(await storage.hasUpload(session.id)).toBe(false);
+            expect(await readFile(publishedPath)).toEqual(content);
+            expect(await prisma.uploadSession.findUnique({ where: { id: session.id } })).toMatchObject({
+                status: 'COMPLETED', storageReservationBytes: 0n,
+            });
+            expect(await prisma.clip.findUnique({ where: { id: session.clipId } })).toMatchObject({
+                storageKey: row.storageKey, storageDriver: row.storageDriver,
+                sha256: sha256(content), fileSize: BigInt(content.length),
+            });
+            expect(await prisma.muxIngestJob.findUnique({ where: { uploadSessionId: session.id } })).not.toBeNull();
+        } finally {
+            await handoffApp.close();
+        }
+    });
+
+    it.each([
+        ['wrong SHA', { sha256: 'a'.repeat(64) }, false],
+        ['missing SHA', { sha256: null }, false],
+        ['wrong size', { fileSize: 1n }, false],
+        ['missing size', { fileSize: null }, false],
+        ['legacy wrong SHA', { sha256: 'a'.repeat(64) }, true],
+        ['legacy missing SHA', { sha256: null }, true],
+        ['legacy missing size', { fileSize: null }, true],
+    ])('retains same-key staged evidence during recovery with %s', async (label, conflict, legacy) => {
+        const content = Buffer.from(`recovery integrity ${label}`);
+        const { session, row, complete, handoffApp } = await stagedOpenWithHandoff(content);
+        const stagedPath = path.join(storageRoot, '.uploads', session.id, 'parts', '00001');
+        const publishedPath = path.join(storageRoot, row.storageKey);
+        const restoreConstraint = await allowLegacyMissingClipSha(session.clipId, label.includes('missing SHA'));
+        try {
+            await mkdir(path.dirname(publishedPath), { recursive: true });
+            await link(stagedPath, publishedPath);
+            const completing = await prisma.uploadSession.update({
+                where: { id: session.id },
+                data: { status: 'COMPLETING', ...(legacy ? { expectedSha256: null } : {}) },
+            });
+            const clip = await prisma.clip.update({ where: { id: session.clipId }, data: {
+                storageKey: row.storageKey, storageDriver: row.storageDriver,
+                sha256: sha256(content), fileSize: BigInt(content.length), ...conflict,
+            } });
+            const { createUploadSessionRecovery } = await import('../lib/upload-sessions.js');
+            const recovery = createUploadSessionRecovery({ db: prisma, storage, now: () => new Date(currentTime) });
+            const response = await complete();
+            expect(response.statusCode, response.body).toBe(label === 'legacy wrong SHA' ? 422 : 503);
+            await expect(withAssetMediaLock(row.assetId, assertLocked => recovery.recoverForSweep({
+                ownerId, assetId: row.assetId, uploadSessionId: session.id, assertLocked,
+            }))).rejects.toMatchObject({
+                code: label === 'legacy wrong SHA' ? 'INTEGRITY_MISMATCH' : 'STORAGE_UNAVAILABLE',
+            });
+            expect(await readFile(stagedPath)).toEqual(content);
+            expect(await readFile(publishedPath)).toEqual(content);
+            expect(await prisma.uploadSession.findUnique({ where: { id: session.id } })).toEqual(completing);
+            expect(await prisma.clip.findUnique({ where: { id: session.clipId } })).toEqual(clip);
+            expect(await prisma.muxIngestJob.findUnique({ where: { uploadSessionId: session.id } })).toBeNull();
+            await prisma.clip.update({ where: { id: session.clipId }, data: {
+                sha256: sha256(content), fileSize: BigInt(content.length),
+            } });
+            expect((await complete()).statusCode).toBe(200);
+            expect((await complete()).statusCode).toBe(200);
+            expect(await storage.hasUpload(session.id)).toBe(false);
+        } finally {
+            await restoreConstraint();
+            await handoffApp.close();
+        }
+    });
+
+    it.each([
+        ['wrong SHA', { sha256: 'a'.repeat(64) }],
+        ['missing size', { fileSize: null }],
+    ])('retains unpublished same-key staging during recovery with %s', async (label, conflict) => {
+        const content = Buffer.from(`unpublished recovery ${label}`);
+        const { session, row, complete, assertRetained, handoffApp } = await stagedOpenWithHandoff(content);
+        try {
+            const completing = await prisma.uploadSession.update({
+                where: { id: session.id }, data: { status: 'COMPLETING' },
+            });
+            await prisma.clip.update({ where: { id: session.clipId }, data: {
+                storageKey: row.storageKey, storageDriver: row.storageDriver,
+                sha256: sha256(content), fileSize: BigInt(content.length), ...conflict,
+            } });
+            const response = await complete();
+            expect(response.statusCode, response.body).toBe(503);
+            await assertRetained(completing);
+            await prisma.clip.update({ where: { id: session.clipId }, data: {
+                sha256: sha256(content), fileSize: BigInt(content.length),
+            } });
+            expect((await complete()).statusCode).toBe(200);
+        } finally {
+            await handoffApp.close();
+        }
+    });
+
+    it('recovers a verified same-key legacy clip without expected size or SHA', async () => {
+        const content = Buffer.from('legacy verified clip');
+        const { session, row, complete, handoffApp } = await stagedOpenWithHandoff(content);
+        const stagedPath = path.join(storageRoot, '.uploads', session.id, 'parts', '00001');
+        const publishedPath = path.join(storageRoot, row.storageKey);
+        try {
+            await mkdir(path.dirname(publishedPath), { recursive: true });
+            await link(stagedPath, publishedPath);
+            await prisma.uploadSession.update({ where: { id: session.id }, data: {
+                status: 'COMPLETING', expectedSizeBytes: null, expectedSha256: null,
+            } });
+            await prisma.clip.update({ where: { id: session.clipId }, data: {
+                storageKey: row.storageKey, storageDriver: row.storageDriver,
+                sha256: sha256(content), fileSize: BigInt(content.length),
+            } });
+            const response = await complete();
+            expect(response.statusCode, response.body).toBe(200);
+            expect((await complete()).statusCode).toBe(200);
+            expect(await storage.hasUpload(session.id)).toBe(false);
+            expect(await readFile(publishedPath)).toEqual(content);
+            expect(await prisma.clip.findUnique({ where: { id: session.clipId } })).toMatchObject({
+                sha256: sha256(content), fileSize: BigInt(content.length),
+            });
+            expect(await prisma.muxIngestJob.count({ where: { uploadSessionId: session.id } })).toBe(1);
+        } finally {
+            await handoffApp.close();
+        }
+    });
+
+    it.each([
+        ['a conflicting SHA is repaired', { sha256: 'a'.repeat(64) }, true],
+        ['a conflicting size is repaired', { fileSize: 1n }, true],
+        ['a correct SHA becomes conflicting', { sha256: 'a'.repeat(64) }, false],
+        ['a correct size becomes conflicting', { fileSize: 1n }, false],
+    ])('uses the locked clip when %s while completion waits', async (label, conflict, repaired) => {
+        const content = Buffer.from(`locked integrity ${label} ${repaired}`);
+        const { session, row, complete, assertRetained, handoffApp } = await stagedOpenWithHandoff(content);
+        const correct = {
+            storageKey: row.storageKey, storageDriver: row.storageDriver,
+            sha256: sha256(content), fileSize: BigInt(content.length),
+        };
+        let releaseClip;
+        const release = new Promise(resolve => { releaseClip = resolve; });
+        let reportLocked;
+        const locked = new Promise(resolve => { reportLocked = resolve; });
+        let changing;
+        let completion;
+        try {
+            await prisma.clip.update({
+                where: { id: session.clipId },
+                data: repaired ? { ...correct, ...conflict } : correct,
+            });
+            changing = prisma.$transaction(async tx => {
+                const [backend] = await tx.$queryRaw`SELECT pg_backend_pid() AS pid`;
+                await tx.$queryRaw`SELECT id FROM clips WHERE id = ${session.clipId} FOR UPDATE`;
+                reportLocked(backend.pid);
+                await release;
+                await tx.clip.update({
+                    where: { id: session.clipId },
+                    data: repaired ? correct : conflict,
+                });
+            }, { timeout: 15_000 });
+            const pid = await Promise.race([
+                locked, changing.then(() => { throw new Error('Clip lock did not pause'); }),
+            ]);
+            completion = complete();
+            await blockedQueryBy(pid, 'SELECT id FROM clips');
+            releaseClip();
+            await changing;
+            const response = await completion;
+            if (repaired) {
+                expect(response.statusCode, response.body).toBe(200);
+                expect(response.json().uploadSession.status).toBe('COMPLETED');
+                expect(await readFile(path.join(storageRoot, row.storageKey))).toEqual(content);
+                expect(await storage.hasUpload(session.id)).toBe(false);
+                expect(await prisma.uploadSession.findUnique({ where: { id: session.id } })).toMatchObject({
+                    status: 'COMPLETED', completedAt: expect.any(Date), storageReservationBytes: 0n,
+                });
+                expect(await prisma.clip.findUnique({ where: { id: session.clipId } })).toMatchObject(correct);
+                expect(await prisma.muxIngestJob.count({ where: { uploadSessionId: session.id } })).toBe(1);
+                const retry = await complete();
+                expect(retry.statusCode, retry.body).toBe(200);
+                expect(retry.json().uploadSession.status).toBe('COMPLETED');
+                expect(await readFile(path.join(storageRoot, row.storageKey))).toEqual(content);
+                expect(await prisma.muxIngestJob.count({ where: { uploadSessionId: session.id } })).toBe(1);
+            } else {
+                expect(response.statusCode, response.body).toBe(503);
+                expect(response.json()).toEqual({ error: 'Upload completion references require manual review' });
+                for (const id of [ownerId, row.assetId, session.id, session.clipId, row.storageKey]) {
+                    expect(response.body).not.toContain(id);
+                }
+                await assertRetained(row);
+                expect(await prisma.clip.findUnique({ where: { id: session.clipId } })).toMatchObject(conflict);
+            }
+        } finally {
+            releaseClip();
+            await Promise.allSettled([changing, completion].filter(Boolean));
+            await handoffApp.close();
+        }
+    });
+
+    it.each([
+        ['missing size', { fileSize: null }],
+        ['wrong size', { fileSize: 1n }],
+        ['SHA', { sha256: 'a'.repeat(64) }],
+        ['missing SHA', { sha256: null }],
+        ['key', { storageKey: 'other' }],
+        ['driver', { storageDriver: 'other' }],
+        ['URL', { storageUrl: 'https://example.test/other' }],
+        ['Mux upload', { muxUploadId: 'other' }],
+        ['Mux asset', { muxAssetId: 'other' }],
+    ])('does not falsely finalize a late same-key %s change', async (label, change) => {
+        const content = Buffer.from(`late clip update ${label}`);
+        const { session, row, handoffApp } = await stagedOpenWithHandoff(content);
+        const restoreConstraint = await allowLegacyMissingClipSha(session.clipId, label === 'missing SHA');
+        try {
+            await prisma.clip.update({ where: { id: session.clipId }, data: {
+                storageKey: row.storageKey, storageDriver: row.storageDriver,
+                sha256: sha256(content), fileSize: BigInt(content.length),
+            } });
+            const changedStorage = new Proxy(storage, {
+                get(target, property) {
+                    if (property === 'completeUpload') return async (...args) => {
+                        const result = await target.completeUpload(...args);
+                        await prisma.clip.update({ where: { id: session.clipId }, data: change });
+                        return result;
+                    };
+                    return Reflect.get(target, property, target);
+                },
+            });
+            const { createUploadSessionService } = await import('../lib/upload-sessions.js');
+            const service = createUploadSessionService({
+                db: prisma, storage: changedStorage, capacity: unrestrictedTestCapacity,
+                now: () => new Date(currentTime),
+            });
+            const result = expect(service.complete({ ownerId, uploadSessionId: session.id })).rejects;
+            if (label === 'SHA' || label === 'wrong size') {
+                await result.toMatchObject({ code: 'INTEGRITY_MISMATCH' });
+            } else {
+                await result.toBeDefined();
+            }
+            expect((await prisma.uploadSession.findUnique({ where: { id: session.id } })).status).toBe('COMPLETING');
+            expect(await readFile(path.join(storageRoot, row.storageKey))).toEqual(content);
+            expect(await storage.hasUpload(session.id)).toBe(false);
+            expect(await prisma.clip.findUnique({ where: { id: session.clipId } })).toMatchObject(change);
+            expect(await prisma.muxIngestJob.findUnique({ where: { uploadSessionId: session.id } })).toBeNull();
+        } finally {
+            await restoreConstraint();
+            await handoffApp.close();
+        }
+    });
+
+    it.each([
+        ['size', { sizeBytes: '1' }, 'Completed upload size does not match the session'],
+        ['SHA', { sha256: 'a'.repeat(64) }, 'Completed upload SHA-256 does not match the session'],
+        ['malformed SHA', { sha256: 'invalid' }, 'Completed upload SHA-256 must contain 64 hexadecimal characters'],
+    ])('still validates a completion with a %s mismatch against the session', async (label, change, message) => {
+        const content = Buffer.from(`completion result ${label}`);
+        const { session, row, handoffApp } = await stagedOpenWithHandoff(content);
+        try {
+            const changedStorage = new Proxy(storage, {
+                get(target, property) {
+                    if (property === 'completeUpload') return async (...args) => ({
+                        ...await target.completeUpload(...args), ...change,
+                    });
+                    return Reflect.get(target, property, target);
+                },
+            });
+            const { createUploadSessionService } = await import('../lib/upload-sessions.js');
+            const { enqueueMuxOriginal } = await import('../lib/mux-original-records.js');
+            const service = createUploadSessionService({
+                db: prisma, storage: changedStorage, capacity: unrestrictedTestCapacity,
+                now: () => new Date(currentTime), onCompleted: enqueueMuxOriginal,
+            });
+            await expect(service.complete({ ownerId, uploadSessionId: session.id })).rejects.toMatchObject({
+                code: label === 'malformed SHA' ? 'INVALID_ARGUMENT' : 'INTEGRITY_MISMATCH', message,
+            });
+            expect(await readFile(path.join(storageRoot, row.storageKey))).toEqual(content);
+            expect(await prisma.uploadSession.findUnique({ where: { id: session.id } })).toMatchObject({
+                status: 'COMPLETING', storageReservationBytes: row.storageReservationBytes,
+            });
+            expect((await prisma.clip.findUnique({ where: { id: session.clipId } })).storageKey).toBeNull();
+            expect(await prisma.muxIngestJob.count({ where: { uploadSessionId: session.id } })).toBe(0);
+        } finally {
+            await handoffApp.close();
+        }
+    });
+
+    it.each(['session-asset', 'clip-asset'])(
+        'fences and withholds every page for an inconsistent %s cross-reference',
+        async direction => {
+            const content = Buffer.from(`inconsistent ${direction}`);
+            const { payload, session, reservedAssetId } = await stagedReservedOriginal(content);
+            const original = await prisma.uploadSession.findUnique({ where: { id: session.id } });
+            const otherAssetId = randomUUID();
+            const otherClipId = randomUUID();
+            await prisma.asset.create({
+                data: {
+                    id: otherAssetId, userId: direction === 'session-asset' ? otherId : ownerId, status: 'UPLOADING',
+                    clips: { create: { id: otherClipId, status: 'UPLOADING' } },
+                },
+            });
+            await prisma.uploadSession.update({
+                where: { id: session.id },
+                data: direction === 'session-asset' ? { clipId: otherClipId } : { assetId: otherAssetId },
+            });
+            const serviceWithHandoff = await handoffService();
+            await expect(serviceWithHandoff.complete({ ownerId, uploadSessionId: session.id }))
+                .rejects.toMatchObject({ code: 'INVALID_STATE' });
+            expect((await requestAs(ownerId, 'POST', `/api/upload-sessions/${session.id}/complete`)).statusCode)
+                .toBe(409);
+            const cancelled = await requestAs(
+                ownerId, 'POST', `/api/assets/original-uploads/${payload.clientRequestId}/cancel`);
+            expect(cancelled.statusCode, cancelled.body).toBe(503);
+            expect(cancelled.json()).toEqual({ error: 'Original upload intent cannot be verified' });
+            const intent = await prisma.originalUploadIntent.findUnique({
+                where: { userId_clientRequestId: { userId: ownerId, clientRequestId: payload.clientRequestId } },
+            });
+            expect(intent.cancelledAt).toBeInstanceOf(Date);
+            const url = `/api/assets/original-uploads/${payload.clientRequestId}/sessions`;
+            for (const suffix of ['', `?after=${session.id}`]) {
+                const page = await requestAs(ownerId, 'GET', `${url}${suffix}`);
+                expect(page.statusCode, page.body).toBe(503);
+                expect(page.json()).toEqual({ error: 'Original upload intent cannot be verified' });
+                for (const id of [reservedAssetId, otherAssetId, session.id, session.clipId, otherClipId]) {
+                    expect(page.body).not.toContain(id);
+                    expect(cancelled.body).not.toContain(id);
+                }
+            }
+            const foreign = await requestAs(otherId, 'GET', url);
+            expect(foreign.statusCode).toBe(404);
+            expect(foreign.body).not.toContain(reservedAssetId);
+            expect(foreign.body).not.toContain(session.id);
+            await prisma.asset.update({
+                where: { id: reservedAssetId }, data: { moderation: 'FLAGGED_FOR_REMOVAL' },
+            });
+            const hiddenCancel = await requestAs(
+                ownerId, 'POST', `/api/assets/original-uploads/${payload.clientRequestId}/cancel`);
+            const hiddenPage = await requestAs(ownerId, 'GET', url);
+            for (const hidden of [hiddenCancel, hiddenPage]) {
+                expect(hidden.statusCode).toBe(404);
+                expect(hidden.body).not.toContain(reservedAssetId);
+                expect(hidden.body).not.toContain(session.id);
+            }
+            await prisma.asset.update({ where: { id: reservedAssetId }, data: { moderation: 'ACTIVE' } });
+
+            expect(await prisma.uploadSession.findUnique({ where: { id: session.id } })).toMatchObject({
+                status: 'OPEN', storageReservationBytes: original.storageReservationBytes,
+            });
+            expect(await readFile(path.join(storageRoot, '.uploads', session.id, 'parts', '00001'))).toEqual(content);
+            expect(await prisma.uploadPart.count({ where: { uploadSessionId: session.id } })).toBe(1);
+            expect(await storage.stat(original.storageKey)).toBeNull();
+            expect((await prisma.clip.findUnique({ where: { id: session.clipId } })).storageKey).toBeNull();
+            expect((await prisma.clip.findUnique({ where: { id: otherClipId } })).storageKey).toBeNull();
+            expect(await prisma.muxIngestJob.findUnique({ where: { uploadSessionId: session.id } })).toBeNull();
+
+            await prisma.uploadSession.update({
+                where: { id: session.id }, data: { assetId: reservedAssetId, clipId: session.clipId },
+            });
+            const retry = await requestAs(
+                ownerId, 'POST', `/api/assets/original-uploads/${payload.clientRequestId}/cancel`);
+            expect(retry.statusCode, retry.body).toBe(200);
+            expect(retry.json()).toEqual({ assetId: reservedAssetId, sessionIds: [session.id] });
+            const page = await requestAs(ownerId, 'GET', url);
+            expect(page.statusCode, page.body).toBe(200);
+            expect(page.json()).toEqual({ assetId: reservedAssetId, sessionIds: [session.id], nextCursor: null });
+            await expect(serviceWithHandoff.complete({ ownerId, uploadSessionId: session.id }))
+                .rejects.toMatchObject({ code: 'INTENT_CANCELLED' });
+            expect(await readFile(path.join(storageRoot, '.uploads', session.id, 'parts', '00001'))).toEqual(content);
+            expect((await requestAs(ownerId, 'DELETE', `/api/upload-sessions/${session.id}`)).statusCode).toBe(200);
+        },
+    );
+
+    it('rechecks the locked clip after completion waits for a concurrent reference change', async () => {
+        const content = Buffer.from('clip changes during completion');
+        const { session } = await stagedReservedOriginal(content);
+        const original = await prisma.uploadSession.findUnique({ where: { id: session.id } });
+        const otherAssetId = randomUUID();
+        await prisma.asset.create({ data: { id: otherAssetId, userId: ownerId, status: 'UPLOADING' } });
+        let reportLocked;
+        let releaseClip;
+        const locked = new Promise(resolve => { reportLocked = resolve; });
+        const release = new Promise(resolve => { releaseClip = resolve; });
+        const changing = prisma.$transaction(async tx => {
+            const [backend] = await tx.$queryRaw`SELECT pg_backend_pid() AS pid`;
+            await tx.$queryRaw`SELECT id FROM clips WHERE id = ${session.clipId} FOR UPDATE`;
+            reportLocked(backend.pid);
+            await release;
+            await tx.clip.update({ where: { id: session.clipId }, data: { assetId: otherAssetId } });
+        }, { timeout: 15_000 });
+        let completion;
+        try {
+            const pid = await Promise.race([
+                locked, changing.then(() => { throw new Error('Clip lock did not pause'); }),
+            ]);
+            completion = requestAs(ownerId, 'POST', `/api/upload-sessions/${session.id}/complete`);
+            await blockedQueryBy(pid, 'SELECT id FROM clips');
+            releaseClip();
+            const result = await completion;
+            expect(result.statusCode, result.body).toBe(409);
+        } finally {
+            releaseClip();
+            await Promise.allSettled([changing, completion].filter(Boolean));
+        }
+        expect((await prisma.uploadSession.findUnique({ where: { id: session.id } })).status).toBe('OPEN');
+        expect(await storage.stat(original.storageKey)).toBeNull();
+        expect(await readFile(path.join(storageRoot, '.uploads', session.id, 'parts', '00001'))).toEqual(content);
+        await prisma.clip.update({ where: { id: session.clipId }, data: { assetId: original.assetId } });
+        const recovered = await requestAs(ownerId, 'POST', `/api/upload-sessions/${session.id}/complete`);
+        expect(recovered.statusCode, recovered.body).toBe(200);
+        expect(recovered.json().uploadSession.status).toBe('COMPLETED');
+    }, 20_000);
+
+    it('serializes cancellation first against completion and retains the staged original for abort', async () => {
+        const content = Buffer.from('cancel wins completion');
+        const { payload, session, reservedAssetId } = await stagedReservedOriginal(content);
+        const row = await prisma.uploadSession.findUnique({ where: { id: session.id } });
+        let reportLocked;
+        let releaseAsset;
+        const locked = new Promise(resolve => { reportLocked = resolve; });
+        const release = new Promise(resolve => { releaseAsset = resolve; });
+        const holding = prisma.$transaction(async tx => {
+            const [backend] = await tx.$queryRaw`SELECT pg_backend_pid() AS pid`;
+            await tx.$queryRaw`SELECT id FROM assets WHERE id = ${reservedAssetId} FOR UPDATE`;
+            reportLocked(backend.pid);
+            await release;
+        }, { timeout: 15_000 });
+        let cancellation;
+        let completion;
+        try {
+            const pid = await Promise.race([
+                locked, holding.then(() => { throw new Error('Asset lock did not pause'); }),
+            ]);
+            cancellation = requestAs(ownerId, 'POST', `/api/assets/original-uploads/${payload.clientRequestId}/cancel`);
+            const cancelPid = await blockedQueryBy(pid, 'SELECT id FROM assets');
+            completion = requestAs(ownerId, 'POST', `/api/upload-sessions/${session.id}/complete`);
+            await blockedQueryBy(cancelPid, 'SELECT id FROM users');
+            releaseAsset();
+            const cancelled = await cancellation;
+            const completed = await completion;
+            expect(cancelled.statusCode, cancelled.body).toBe(200);
+            expect(cancelled.json()).toEqual({ assetId: reservedAssetId, sessionIds: [session.id] });
+            expect(completed.statusCode, completed.body).toBe(410);
+        } finally {
+            releaseAsset();
+            await Promise.allSettled([holding, cancellation, completion].filter(Boolean));
+        }
+        const serviceWithHandoff = await handoffService();
+        await expect(serviceWithHandoff.complete({ ownerId, uploadSessionId: session.id }))
+            .rejects.toMatchObject({ code: 'INTENT_CANCELLED' });
+        expect(await prisma.uploadSession.findUnique({ where: { id: session.id } })).toMatchObject({ status: 'OPEN' });
+        expect(await prisma.uploadPart.count({ where: { uploadSessionId: session.id } })).toBe(1);
+        expect(await storage.listParts(session.id)).toMatchObject([{ partNumber: 1, sizeBytes: String(content.length) }]);
+        expect(await readFile(path.join(storageRoot, '.uploads', session.id, 'parts', '00001'))).toEqual(content);
+        expect(await storage.stat(row.storageKey)).toBeNull();
+        expect((await prisma.clip.findUnique({ where: { id: session.clipId } })).storageKey).toBeNull();
+        expect(await prisma.muxIngestJob.findUnique({ where: { uploadSessionId: session.id } })).toBeNull();
+        const aborted = await requestAs(ownerId, 'DELETE', `/api/upload-sessions/${session.id}`);
+        expect(aborted.statusCode, aborted.body).toBe(200);
+        expect(aborted.json().uploadSession.status).toBe('ABORTED');
+        expect(await storage.hasUpload(session.id)).toBe(false);
+    }, 20_000);
+
+    it('retains the real storage reservation after fenced completion until abort', async () => {
+        const content = Buffer.from('cancel with real storage reservation');
+        const payload = originalReservation(content);
+        const reserved = await requestAs(ownerId, 'POST', '/api/assets/original-uploads', payload);
+        expect(reserved.statusCode, reserved.body).toBe(201);
+        const reservedAssetId = reserved.json().asset.id;
+        const { createStorageCapacity } = await import('../lib/storage/capacity.js');
+        const { createUploadSessionService } = await import('../lib/upload-sessions.js');
+        const { enqueueMuxOriginal } = await import('../lib/mux-original-records.js');
+        const capacity = createStorageCapacity({
+            db: prisma, storage, maxStorageBytes: 10n * 1024n * 1024n * 1024n, minFreeBytes: 1n,
+        });
+        const guardedService = createUploadSessionService({
+            db: prisma, storage, capacity, now: () => new Date(currentTime), onCompleted: enqueueMuxOriginal,
+        });
+        const session = await guardedService.create({
+            ownerId, assetId: reservedAssetId, clipId: randomUUID(), initializeClip: true,
+            expectedSizeBytes: content.length, expectedSha256: sha256(content),
+        });
+        await guardedService.uploadPart({
+            ownerId, uploadSessionId: session.id, partNumber: 1, body: content, expectedSizeBytes: content.length,
+        });
+        const before = await prisma.uploadSession.findUnique({ where: { id: session.id } });
+        expect(before.storageReservationBytes).toBeGreaterThan(0n);
+        const cancelled = await requestAs(
+            ownerId, 'POST', `/api/assets/original-uploads/${payload.clientRequestId}/cancel`);
+        expect(cancelled.statusCode, cancelled.body).toBe(200);
+        await expect(guardedService.complete({ ownerId, uploadSessionId: session.id }))
+            .rejects.toMatchObject({ code: 'INTENT_CANCELLED' });
+        expect(await prisma.uploadSession.findUnique({ where: { id: session.id } })).toMatchObject({
+            status: 'OPEN', storageReservationBytes: before.storageReservationBytes,
+        });
+        expect(await prisma.storageWriteLease.count({ where: { uploadSessionId: session.id } })).toBe(0);
+        expect(await storage.listParts(session.id)).toHaveLength(1);
+        expect(await storage.stat(session.storageKey)).toBeNull();
+        expect(await prisma.muxIngestJob.findUnique({ where: { uploadSessionId: session.id } })).toBeNull();
+        await expect(guardedService.abort({ ownerId, uploadSessionId: session.id }))
+            .resolves.toMatchObject({ status: 'ABORTED' });
+        expect((await prisma.uploadSession.findUnique({ where: { id: session.id } })).storageReservationBytes).toBe(0n);
+        expect(await storage.hasUpload(session.id)).toBe(false);
+    });
+
+    it('allows a completion that transitioned first to finish and enqueue after cancellation', async () => {
+        const content = Buffer.from('completion wins cancellation');
+        const { payload, session, reservedAssetId } = await stagedReservedOriginal(content);
+        const serviceWithHandoff = await handoffService();
+        const listParts = storage.listParts.bind(storage);
+        let reportStarted;
+        let releaseCompletion;
+        const started = new Promise(resolve => { reportStarted = resolve; });
+        const release = new Promise(resolve => { releaseCompletion = resolve; });
+        storage.listParts = async (...args) => {
+            reportStarted();
+            await release;
+            return listParts(...args);
+        };
+        const completion = serviceWithHandoff.complete({ ownerId, uploadSessionId: session.id });
+        try {
+            await Promise.race([
+                started, completion.then(() => { throw new Error('Completion did not pause'); }),
+            ]);
+            expect((await prisma.uploadSession.findUnique({ where: { id: session.id } })).status).toBe('COMPLETING');
+            const cancelled = await requestAs(
+                ownerId, 'POST', `/api/assets/original-uploads/${payload.clientRequestId}/cancel`);
+            expect(cancelled.statusCode, cancelled.body).toBe(200);
+            expect(cancelled.json()).toEqual({ assetId: reservedAssetId, sessionIds: [session.id] });
+        } finally {
+            releaseCompletion();
+            try {
+                await completion;
+            } finally {
+                storage.listParts = listParts;
+            }
+        }
+        expect((await completion).status).toBe('COMPLETED');
+        expect(await prisma.muxIngestJob.findUnique({ where: { uploadSessionId: session.id } }))
+            .toMatchObject({ status: 'QUEUED' });
+        const retry = await requestAs(ownerId, 'POST', `/api/upload-sessions/${session.id}/complete`);
+        expect(retry.statusCode, retry.body).toBe(200);
+        expect(retry.json().uploadSession.status).toBe('COMPLETED');
+    }, 20_000);
+
+    it.each(['published', 'unpublished'])(
+        'recovers a previously completing %s original after cancellation',
+        async state => {
+            const content = Buffer.from(`recover ${state} after cancellation`);
+            const { payload, session } = await stagedReservedOriginal(content);
+            if (state === 'published') await storage.completeUpload(session.id);
+            await prisma.uploadSession.update({ where: { id: session.id }, data: { status: 'COMPLETING' } });
+            const cancelled = await requestAs(
+                ownerId, 'POST', `/api/assets/original-uploads/${payload.clientRequestId}/cancel`);
+            expect(cancelled.statusCode, cancelled.body).toBe(200);
+            const serviceWithHandoff = await handoffService();
+            if (state === 'published') {
+                const recovered = await serviceWithHandoff.complete({ ownerId, uploadSessionId: session.id });
+                expect(recovered.status).toBe('COMPLETED');
+                expect(await prisma.muxIngestJob.findUnique({ where: { uploadSessionId: session.id } }))
+                    .toMatchObject({ status: 'QUEUED' });
+                const retry = await requestAs(ownerId, 'POST', `/api/upload-sessions/${session.id}/complete`);
+                expect(retry.statusCode, retry.body).toBe(200);
+            } else {
+                await expect(serviceWithHandoff.complete({ ownerId, uploadSessionId: session.id }))
+                    .rejects.toMatchObject({ code: 'INTENT_CANCELLED' });
+                expect((await prisma.uploadSession.findUnique({ where: { id: session.id } })).status).toBe('OPEN');
+                expect(await storage.listParts(session.id)).toHaveLength(1);
+                expect(await prisma.muxIngestJob.findUnique({ where: { uploadSessionId: session.id } })).toBeNull();
+                const retry = await requestAs(ownerId, 'POST', `/api/upload-sessions/${session.id}/complete`);
+                expect(retry.statusCode, retry.body).toBe(410);
+                expect((await requestAs(ownerId, 'DELETE', `/api/upload-sessions/${session.id}`)).statusCode).toBe(200);
+            }
+        },
+    );
+
+    it('rechecks the intent after completion waits for the asset lock', async () => {
+        const content = Buffer.from('intent changes before completion');
+        const { payload, session, reservedAssetId } = await stagedReservedOriginal(content);
+        let reportLocked;
+        let releaseIntent;
+        const locked = new Promise(resolve => { reportLocked = resolve; });
+        const release = new Promise(resolve => { releaseIntent = resolve; });
+        const intentChange = prisma.$transaction(async tx => {
+            const [backend] = await tx.$queryRaw`SELECT pg_backend_pid() AS pid`;
+            await tx.$queryRaw`SELECT id FROM assets WHERE id = ${reservedAssetId} FOR UPDATE`;
+            reportLocked(backend.pid);
+            await release;
+            await tx.originalUploadIntent.update({
+                where: { userId_clientRequestId: { userId: ownerId, clientRequestId: payload.clientRequestId } },
+                data: { cancelledAt: new Date() },
+            });
+        }, { timeout: 15_000 });
+        let completion;
+        try {
+            const pid = await Promise.race([
+                locked, intentChange.then(() => { throw new Error('Intent change did not pause'); }),
+            ]);
+            completion = requestAs(ownerId, 'POST', `/api/upload-sessions/${session.id}/complete`);
+            await blockedQueryBy(pid, 'SELECT id FROM assets');
+            releaseIntent();
+            const response = await completion;
+            expect(response.statusCode, response.body).toBe(410);
+        } finally {
+            releaseIntent();
+            await Promise.allSettled([intentChange, completion].filter(Boolean));
+        }
+        expect((await prisma.uploadSession.findUnique({ where: { id: session.id } })).status).toBe('OPEN');
+        expect(await storage.listParts(session.id)).toHaveLength(1);
+    }, 20_000);
+
+    it('rejects completion when the asset intent belongs to a different owner', async () => {
+        const content = Buffer.from('inconsistent intent owner');
+        const session = await createSession(content);
+        const signed = await sign(session.id);
+        expect((await put(signed.url, content)).statusCode).toBe(200);
+        await prisma.originalUploadIntent.create({
+            data: { userId: otherId, clientRequestId: randomUUID(), assetId, cancelledAt: new Date() },
+        });
+        const response = await requestAs(ownerId, 'POST', `/api/upload-sessions/${session.id}/complete`);
+        expect(response.statusCode, response.body).toBe(503);
+        expect((await prisma.uploadSession.findUnique({ where: { id: session.id } })).status).toBe('OPEN');
+        expect(await storage.listParts(session.id)).toHaveLength(1);
+    });
+
+    it('rejects completion if the session asset changes while its row is locked', async () => {
+        const content = Buffer.from('session asset changed');
+        const session = await createSession(content);
+        const signed = await sign(session.id);
+        expect((await put(signed.url, content)).statusCode).toBe(200);
+        const otherAssetId = randomUUID();
+        await prisma.asset.create({ data: { id: otherAssetId, userId: ownerId, status: 'UPLOADING' } });
+        let reportLocked;
+        let releaseChange;
+        const locked = new Promise(resolve => { reportLocked = resolve; });
+        const release = new Promise(resolve => { releaseChange = resolve; });
+        const changing = prisma.$transaction(async tx => {
+            const [backend] = await tx.$queryRaw`SELECT pg_backend_pid() AS pid`;
+            await tx.$queryRaw`SELECT id FROM upload_sessions WHERE id = ${session.id} FOR UPDATE`;
+            reportLocked(backend.pid);
+            await release;
+            await tx.uploadSession.update({ where: { id: session.id }, data: { assetId: otherAssetId } });
+        }, { timeout: 15_000 });
+        let completion;
+        try {
+            const pid = await Promise.race([
+                locked, changing.then(() => { throw new Error('Session change did not pause'); }),
+            ]);
+            completion = requestAs(ownerId, 'POST', `/api/upload-sessions/${session.id}/complete`);
+            await blockedQueryBy(pid, 'SELECT id FROM upload_sessions');
+            releaseChange();
+            const response = await completion;
+            expect(response.statusCode, response.body).toBe(409);
+        } finally {
+            releaseChange();
+            await Promise.allSettled([changing, completion].filter(Boolean));
+        }
+        const row = await prisma.uploadSession.findUnique({ where: { id: session.id } });
+        expect(row).toMatchObject({ status: 'OPEN', assetId: otherAssetId });
+        expect(await storage.stat(row.storageKey)).toBeNull();
+        expect(await storage.listParts(session.id)).toHaveLength(1);
+    }, 20_000);
+
+    it('does not fence another owner with the same request ID', async () => {
+        const content = Buffer.from('independent owner completion');
+        const payload = originalReservation(content);
+        const cancelled = await requestAs(
+            ownerId, 'POST', `/api/assets/original-uploads/${payload.clientRequestId}/cancel`);
+        expect(cancelled.statusCode, cancelled.body).toBe(200);
+        const reserved = await requestAs(otherId, 'POST', '/api/assets/original-uploads', payload);
+        expect(reserved.statusCode, reserved.body).toBe(201);
+        const session = await createSession(content, reserved.json().asset.id, otherId);
+        const signed = await sign(session.id, 1, otherId);
+        expect((await put(signed.url, content)).statusCode).toBe(200);
+        const completed = await requestAs(otherId, 'POST', `/api/upload-sessions/${session.id}/complete`);
+        expect(completed.statusCode, completed.body).toBe(200);
+        expect(completed.json().uploadSession.status).toBe('COMPLETED');
     });
 
     it('fences hidden assets without revealing their asset or session IDs', async () => {
@@ -1371,6 +2640,7 @@ integration('upload session HTTP routes against PostgreSQL and local storage', (
         expect(retry.json().uploadSession.id).toBe(session.id);
         expect((await requestAs(otherId, 'GET', `/api/upload-sessions/${session.id}`)).statusCode).toBe(404);
         expect((await requestAs(otherId, 'POST', `/api/upload-sessions/${session.id}/parts/1/sign`)).statusCode).toBe(404);
+        expect((await requestAs(otherId, 'POST', `/api/upload-sessions/${session.id}/complete`)).statusCode).toBe(404);
         expect((await requestAs(ownerId, 'POST', `/api/upload-sessions/${session.id}/complete`)).statusCode).toBe(409);
 
         const signed = await sign(session.id);

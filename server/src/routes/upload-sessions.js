@@ -218,6 +218,18 @@ async function cancellationAssetVisibility(tx, assetId, ownerId) {
     return ['ACTIVE', 'PAUSED'].includes(asset.moderation) ? 'visible' : 'hidden';
 }
 
+async function hasInconsistentSessionReferences(tx, assetId) {
+    // Both branches can use asset/clip indexes and cover all sessions, not just the requested page.
+    const rows = await tx.$queryRaw`
+        SELECT 1 FROM upload_sessions s JOIN clips c ON c.id = s.clip_id
+        WHERE s.asset_id = ${assetId} AND c.asset_id <> ${assetId}
+        UNION ALL
+        SELECT 1 FROM clips c JOIN upload_sessions s ON s.clip_id = c.id
+        WHERE c.asset_id = ${assetId} AND s.asset_id <> ${assetId}
+        LIMIT 1`;
+    return rows.length !== 0;
+}
+
 export default async function uploadSessionRoutes(fastify, {
     db = prisma,
     storage,
@@ -387,6 +399,7 @@ export default async function uploadSessionRoutes(fastify, {
             if (!intent.assetId) return { assetId: null, sessionIds: [] };
             const visibility = await cancellationAssetVisibility(tx, intent.assetId, ownerId);
             if (visibility !== 'visible') return { [visibility]: true };
+            if (await hasInconsistentSessionReferences(tx, intent.assetId)) return { inconsistent: true };
             const sessions = await tx.uploadSession.findMany({
                 where: { assetId: intent.assetId },
                 select: { id: true, ownerId: true },
@@ -443,6 +456,9 @@ export default async function uploadSessionRoutes(fastify, {
             const visibility = await cancellationAssetVisibility(tx, intent.assetId, ownerId);
             if (visibility === 'hidden') throw new UploadSessionError('NOT_FOUND', 'Asset not found');
             if (visibility === 'inconsistent') {
+                throw new UploadSessionError('INTENT_INCONSISTENT', 'Original upload intent cannot be verified');
+            }
+            if (await hasInconsistentSessionReferences(tx, intent.assetId)) {
                 throw new UploadSessionError('INTENT_INCONSISTENT', 'Original upload intent cannot be verified');
             }
             const sessions = await tx.uploadSession.findMany({
