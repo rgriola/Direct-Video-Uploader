@@ -158,6 +158,44 @@ audited recovery procedures are in [the upload-session API guide](docs/UPLOAD_SE
 Do not confirm an absent Mux asset or closed read without independently
 verifying it.
 
+### Manual upload recovery with intake and Mux ingest off
+
+Keep `UPLOAD_SESSIONS_ENABLED=false` and `MUX_ORIGINAL_INGEST_ENABLED=false`.
+Inspection, cancellation, and read-only history are always registered; they
+require the same active owner's JWT, are bounded and IP-rate-limited, and return
+`Cache-Control: no-store`. No storage, upload-signing, capacity, or Mux
+configuration is needed for these routes.
+
+1. Back up the database, apply the existing migrations (including cancellation
+   indexes), and update **every** server instance. This handler move adds no
+   migration or flag; older instances may not expose or enforce recovery.
+2. Use the same account and server and the saved client request UUID. Inspect
+   `GET /api/original-upload-recovery/:clientRequestId` first; do not replay asset
+   or session creation. Missing or bounded results do not prove freshness.
+3. If cancellation is intended, manually send the bodyless
+   `POST /api/assets/original-uploads/:clientRequestId/cancel` with that owner's
+   JWT and no `Content-Type` header. A 200 contains `assetId` (possibly null)
+   and at most 100 session IDs. It guarantees neither task termination nor
+   deletion. An unknown UUID creates only a quota-controlled durable tombstone,
+   not an asset, session, or media.
+4. On 503 `INTENT_SESSION_LIMIT`, the fence has committed. Read
+   `GET /api/assets/original-uploads/:clientRequestId/sessions` without a cursor,
+   then pass each `nextCursor` unchanged as `after` until null (at most 100
+   sessions per page). History is read-only, not cleanup proof.
+5. On 429, honor `Retry-After`. A 404 is ambiguous, including hidden data or an
+   old instance in a mixed deployment. Updated cancellation handlers commit
+   the fence before hidden, inconsistent, or overflow responses, but errors
+   do not prove successful cleanup. Preserve originals, staged data, and
+   recovery records for reconciliation on hidden/inconsistent errors; do not
+   blindly retry or delete data to clear them.
+
+Never log signed URLs. Intake-off recovery does not enable individual session
+abort, expiry, completion recovery, or cleanup. Independent worker configuration
+and validation requirements below remain unchanged. This manual procedure does
+not change durable client retries or authorize iOS integration: trusted
+installation enrollment, a durable retry ledger, epoch policy, and event/task
+reconciliation are still required before reopening the iOS gate.
+
 ## Opt-in upload-session cleanup
 
 `UPLOAD_SESSION_CLEANUP_ENABLED` defaults to `false` and is independent of

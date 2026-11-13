@@ -199,6 +199,30 @@ JWT, `Cache-Control: no-store`) and offer store-first uploads only when it
 returns `{ "originalUploads": true }`. The flag reflects
 `UPLOAD_SESSIONS_ENABLED`; it does not report free space or Mux handoff state.
 
+### Intake-independent recovery availability
+
+All three recovery routes below are always registered by the
+`original-upload-recovery` plugin, including when both upload intake and Mux
+ingest are disabled. They require the same active owner's bearer JWT, use
+`Cache-Control: no-store`, and are bounded and IP-rate-limited. They need no
+storage, upload-signing, capacity, or Mux configuration.
+
+| Route | Availability |
+| --- | --- |
+| `GET /api/original-upload-recovery/:clientRequestId` (inspection) | Always registered; read-only |
+| `POST /api/assets/original-uploads/:clientRequestId/cancel` | Always registered; durable cancellation fence |
+| `GET /api/assets/original-uploads/:clientRequestId/sessions` (history) | Always registered; read-only |
+| Original reservation/session creation, individual session GET/sign/PUT/complete/DELETE | Gated by `UPLOAD_SESSIONS_ENABLED` |
+| Mux-original ingest/source routes | Require both `UPLOAD_SESSIONS_ENABLED` and `MUX_ORIGINAL_INGEST_ENABLED` |
+
+Legacy direct-to-Mux remains available and does not use either original feature flag.
+
+This availability change moves the existing cancellation and history handlers
+without changing their logic, adding a flag, or adding a migration. Apply the
+existing cancellation migrations and indexes on every instance and update all
+instances before relying on the fence. This is not enrollment, freshness proof,
+or authorization to reopen the iOS gate.
+
 ### 0. Reserve an original-upload asset
 
 `POST /api/assets/original-uploads` is registered only when upload sessions
@@ -239,9 +263,11 @@ most 100). The operation records a durable owner-scoped cancellation even if
 the reservation never arrived. Retrying it returns the existing asset and
 sessions without creating either. A previously removed, uncancelled intent
 still returns 410. If a linked asset is flagged or removed, the fence is
-recorded but the response is 404 without asset or session IDs. The route is also
-unavailable when upload intake is disabled, so a 404 never confirms that a
-fence was recorded or that cleanup completed.
+recorded but the response is 404 without asset or session IDs. A 404 remains
+ambiguous: it can reflect hidden data or an older instance in a mixed deployment,
+not proof that no work exists. For hidden, inconsistent, or over-limit history,
+the cancellation fence commits before the error response; callers cannot infer
+successful cleanup from that response (or assume an older instance fenced).
 
 An active owner can inspect a known request ID with
 `GET /api/original-upload-recovery/:clientRequestId`, including while upload
@@ -256,11 +282,16 @@ not exist, or that background work is terminal. The snapshot can change after
 the response. It is not an enrollment or authorization to resume uploads.
 
 For an unknown request ID, at most 100 unreserved cancellation fences per
-owner are admitted in a rolling 24-hour window. A 429
+owner are admitted in a rolling 24-hour window. Cancellation creates only a
+quota-controlled durable tombstone, not an asset, session, or media. It proves
+neither cleanup nor background-task termination. A 429
 `INTENT_CANCELLATION_QUOTA` includes `Retry-After` in seconds and does not
-record a fence; park and retry. Existing intents and fence retries bypass this
-quota but remain subject to the IP rate limit. Cancelled intents whose assets
-were later deleted also count in the window. Accepted fences do not expire;
+record a fence; honor `Retry-After` rather than blindly retrying. Honor
+`Retry-After` on rate-limit 429 responses too. This server availability change
+does not add or change durable client retry handling. Existing intents and
+fence retries bypass this quota but remain subject to the IP rate limit.
+Cancelled intents whose assets were later deleted also count in the window.
+Accepted fences do not expire;
 the quota limits admission rate, not lifetime storage. If more than 100
 sessions exist for an asset, the fence is recorded but the endpoint returns 503
 `INTENT_SESSION_LIMIT` without a partial list. Do not remove the fence,
@@ -350,7 +381,10 @@ session remains idempotent. Deploy the migrations and cancellation-aware code
 to every server instance before clients rely on these guarantees; older
 instances ignore the fence. The fence does **not** abort sessions, stop
 in-flight transfers, cryptographically revoke already issued part URLs, or
-delete stored originals. Stop local tasks and inspect and abort each unfinished
+delete stored originals. Intake-off recovery does not enable individual abort,
+expiry, completion recovery, or cleanup; the independent cleanup worker's
+configuration and validation requirements are unchanged. Stop local tasks and,
+when the relevant routes are enabled, inspect and abort each unfinished
 session with the same owner's current credentials; retry cleanup if needed.
 An earlier creation response or notification may still arrive after the fence,
 so clients must reject stale results and reconcile the returned IDs. Inspecting

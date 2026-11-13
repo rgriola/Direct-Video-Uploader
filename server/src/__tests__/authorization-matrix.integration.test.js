@@ -173,6 +173,8 @@ integration('role and organization endpoint matrix', () => {
     }
 
     beforeAll(async () => {
+        vi.stubEnv('UPLOAD_SESSIONS_ENABLED', 'false');
+        vi.stubEnv('MUX_ORIGINAL_INGEST_ENABLED', 'false');
         process.env.MUX_WEBHOOK_SECRET = 'matrix-webhook-secret';
         const database = await import('../lib/prisma.js');
         prisma = database.default;
@@ -309,6 +311,7 @@ integration('role and organization endpoint matrix', () => {
                 } finally {
                     if (previousWebhookSecret === undefined) delete process.env.MUX_WEBHOOK_SECRET;
                     else process.env.MUX_WEBHOOK_SECRET = previousWebhookSecret;
+                    vi.unstubAllEnvs();
                 }
             }
         }
@@ -331,6 +334,52 @@ integration('role and organization endpoint matrix', () => {
             route: 'GET /api/original-upload-recovery/:clientRequestId', method: 'GET',
             url: '/api/original-upload-recovery/00000000-0000-4000-8000-000000000001',
             statuses: [401, 404, 404, 404, 404, 404, 404, 404],
+        },
+        {
+            route: 'POST /api/assets/original-uploads/:clientRequestId/cancel', method: 'POST',
+            url: '/api/assets/original-uploads/00000000-0000-4000-8000-000000000002/cancel',
+            statuses: ALL,
+            check: async (response, actor) => {
+                if (!actor.id) return;
+                expect(response.headers['cache-control']).toBe('no-store');
+                // Unknown requests create only this owner's tombstone, even for admins.
+                expect(response.json()).toEqual({ assetId: null, sessionIds: [] });
+                const intents = await prisma.originalUploadIntent.findMany({
+                    where: { clientRequestId: '00000000-0000-4000-8000-000000000002' },
+                });
+                expect(intents).toHaveLength(1);
+                expect(intents[0]).toMatchObject({
+                    userId: actor.id, assetId: null, cancelledAt: expect.any(Date),
+                });
+            },
+            after: async actor => {
+                if (actor.id) await prisma.originalUploadIntent.deleteMany({
+                    where: { userId: actor.id, clientRequestId: '00000000-0000-4000-8000-000000000002' },
+                });
+            },
+        },
+        {
+            route: 'GET /api/assets/original-uploads/:clientRequestId/sessions', method: 'GET',
+            url: '/api/assets/original-uploads/00000000-0000-4000-8000-000000000003/sessions',
+            statuses: ALL,
+            before: async actor => {
+                if (actor.id) await prisma.originalUploadIntent.create({
+                    data: {
+                        userId: actor.id, clientRequestId: '00000000-0000-4000-8000-000000000003',
+                        cancelledAt: new Date(),
+                    },
+                });
+            },
+            check: async (response, actor) => {
+                if (!actor.id) return;
+                expect(response.headers['cache-control']).toBe('no-store');
+                expect(response.json()).toEqual({ assetId: null, sessionIds: [], nextCursor: null });
+            },
+            after: async actor => {
+                if (actor.id) await prisma.originalUploadIntent.deleteMany({
+                    where: { userId: actor.id, clientRequestId: '00000000-0000-4000-8000-000000000003' },
+                });
+            },
         },
         {
             route: 'POST /api/assets', method: 'POST', url: '/api/assets', statuses: ALL,

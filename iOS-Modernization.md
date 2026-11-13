@@ -759,9 +759,18 @@ sequenceDiagram
   database. See [upload-session API](docs/UPLOAD_SESSION_API.md) for the contract.
 - [x] Permit read-only inspection of a known original-upload intent while intake is off;
   absence and bounded results do not establish freshness or authorize resumption.
+- [x] Keep owner-authenticated cancellation and read-only session history available
+  with intake and Mux ingest off, alongside inspection; retain existing fencing,
+  quotas, response bounds, and rate limits without enabling upload or cleanup.
 - [ ] Keep the feature **off on production and the shared home server** until backups,
   proactive monitoring, cleanup validation, and isolated real-Mux validation are complete.
 - [ ] Add client integration.
+
+Intake-independent recovery does not enable session abort or cleanup, prove
+background tasks terminal, or reopen the iOS gate. Trusted installation
+enrollment, durable retry recovery, epoch fencing, and event/task reconciliation
+remain prerequisites for iOS integration. Apply the existing cancellation
+migrations and update every server instance before relying on the fence.
 
 ### 4.2c Experimental Server-Only Mux Handoff
 
