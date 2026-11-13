@@ -604,12 +604,20 @@ in `CONFLICT`, hides/revokes playback, and requires investigation; do not clear
 references to force a retry. Removed assets are reconciled against every retained
 Mux reference.
 
-Hard-deleting the owner also deletes the attempt records after cleanup. A
-contradictory webhook arriving afterward is logged and rejected with 503, but
-its reference cannot be retained locally. A mistaken absence confirmation can
-therefore leave an orphaned Mux asset. Durable post-deletion correlation has not
-been implemented and remains a rollout blocker; absence confirmation must not
-be treated as a substitute for proving the remote request is finished.
+Hard-deleting the owner retains each ingest operation ID and its previously
+linked Mux asset ID, but no account or local asset identifiers, in
+`mux_retired_ingest_attempts`. A signed webhook for that operation records its
+Mux asset ID in `mux_retired_ingest_events`, logs an error, and returns 503.
+Repeated deliveries of the same reference are deduplicated. Operators must
+investigate the logged operation and Mux asset IDs with Mux; these records are
+not yet included in the media-issues API and do not automatically remove remote
+media. Unknown operations still return 503 without creating records.
+
+These minimal identifiers are retained without an automatic expiry until a
+safe retention policy is established. They cannot recover correlations for
+accounts deleted before every server handling deletion was upgraded.
+Post-deletion cleanup and alerting remain rollout blockers, and absence
+confirmation must not be treated as proof that a remote request is finished.
 
 Each new local original key is bound to the `.dvu-storage-id` marker in its
 storage root. A missing or different marker prevents cleanup from being
