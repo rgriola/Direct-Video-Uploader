@@ -539,17 +539,20 @@ final class OriginalUploadCancellationGate {
 
     private let now: @Sendable () -> ContinuousClock.Instant
     private var inFlight = false
-    private var blocked = false
+    private var blocked: Bool
     private var retryNotBefore: ContinuousClock.Instant?
     private var localChecks: Set<UUID> = []
 
     private init() {
         now = { ContinuousClock.now }
+        // A restart cannot establish whether an earlier request left an unknown retry delay.
+        blocked = true
     }
 
     #if DEBUG
     init(testingNow: @escaping @Sendable () -> ContinuousClock.Instant = { ContinuousClock.now }) {
         now = testingNow
+        blocked = false
     }
     #endif
 

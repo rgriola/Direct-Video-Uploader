@@ -4453,6 +4453,177 @@ struct OriginalUploadAPITests {
 
     @Test
     @MainActor
+    func defaultCancellationGateStopsFenceAndPagesAcrossClientsAndScopes() async throws {
+        let firstDirectory = try fixture()
+        let secondDirectory = try fixture()
+        defer { cleanup(firstDirectory); cleanup(secondDirectory) }
+        let (_, access, journal, job) = try await prepareCancelledJob(directory: firstDirectory)
+        let server = URL(string: "https://other.example.test")!
+        let otherAuth = AuthService(storage: .memory, serverURL: { server })
+        otherAuth.token = "other-token"
+        otherAuth.currentUser = User(
+            id: "user-2", phoneNumber: "5550101", name: "Reporter", email: nil, team: nil,
+            status: "ACTIVE", companyCode: nil, companyName: nil)
+        let otherAccess = try OriginalUploadAccess(
+            auth: otherAuth, allowedOrigins: ["https://other.example.test"])
+        let (otherJournal, otherPending) = try await prepareJob(access: otherAccess, directory: secondDirectory)
+        let otherJob = try otherJournal.requestCancellation(for: otherPending, access: otherAccess)
+        let requests = Mutex<[URLRequest]>([])
+        let transport: @Sendable (URLRequest) async throws -> (Data, URLResponse) = { request in
+            requests.withLock { $0.append(request) }
+            throw URLError(.badServerResponse)
+        }
+        let first = try OriginalUploadAPI(access: access, journal: journal, transport: transport)
+        let second = try OriginalUploadAPI(access: access, journal: journal, transport: transport)
+        let other = try OriginalUploadAPI(access: otherAccess, journal: otherJournal, transport: transport)
+        var callbacks = 0
+        for (api, pending) in [(first, job), (second, job), (other, otherJob)] {
+            await #expect(throws: OriginalUploadCancellationCoordinatorError.reconciliationRequired) {
+                try await api.cancelIntent(
+                    for: pending, onResponse: { _, _ in callbacks += 1 }, onDispatch: { callbacks += 1 })
+            }
+            await #expect(throws: OriginalUploadCancellationCoordinatorError.reconciliationRequired) {
+                try await api.cancellationSessions(
+                    for: pending, onResponse: { _, _ in callbacks += 1 }, onDispatch: { callbacks += 1 })
+            }
+            let traversal = try OriginalUploadCancellationTraversal(api: api, job: pending)
+            for _ in 0..<2 {
+                await #expect(throws: OriginalUploadCancellationCoordinatorError.reconciliationRequired) {
+                    try await traversal.nextPage(
+                        onResponse: { _, _ in callbacks += 1 }, onDispatch: { callbacks += 1 })
+                }
+            }
+            #expect(try traversal.completedEnumeration() == nil)
+        }
+        #expect(callbacks == 0)
+        #expect(requests.withLock { $0.isEmpty })
+        #expect(try journal.read(id: job.id, access: access) == job)
+        #expect(try otherJournal.read(id: otherJob.id, access: otherAccess) == otherJob)
+        #expect(try Data(contentsOf: journal.originalURL(for: job, access: access)) == Data("native original".utf8))
+        #expect(try Data(contentsOf: otherJournal.originalURL(for: otherJob, access: otherAccess))
+            == Data("native original".utf8))
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    @MainActor
+    func defaultCoordinatorKeepsLocalCancellationWhenTheGateIsParked() async throws {
+        let directory = try fixture()
+        let rawDirectory = try fixture()
+        defer { cleanup(directory); cleanup(rawDirectory) }
+        let server = URL(string: "https://isolated.example.test")!
+        let auth = AuthService(storage: .memory, serverURL: { server })
+        auth.token = "test-token"
+        auth.currentUser = User(
+            id: "user-1", phoneNumber: "5550100", name: "Reporter", email: nil, team: nil,
+            status: "ACTIVE", companyCode: nil, companyName: nil)
+        let access = try OriginalUploadAccess(auth: auth, allowedOrigins: ["https://isolated.example.test"])
+        let taskFence = OriginalUploadTaskFence()
+        let (journal, initialJob) = try await prepareJob(
+            access: access, directory: directory, assetId: UUID().uuidString,
+            sessionId: sessionId, taskFence: taskFence)
+        let prepared = try await journal.preparePart(for: initialJob, number: 1, access: access)
+        let attempt = try #require(prepared.job.attempts.first)
+        let job = try journal.scheduleReadyPart(
+            for: prepared.job, attemptId: attempt.id, verifiedPart: prepared.part, access: access,
+            createTask: { _ in (handle: 17, identifier: 17) }, startTask: { _ in }, cancelTask: { _ in })
+        let original = try journal.originalURL(for: job, access: access)
+        let bytes = try Data(contentsOf: original)
+        let partBytes = try Data(contentsOf: prepared.part.url)
+        let scope = try OriginalUploadJournal.scopeIdentifier(job.scope)
+        let matching = OriginalBackgroundTaskSnapshot(
+            identifier: 17, tag: OriginalBackgroundTaskTag(
+                scope: scope, jobId: job.id, jobIncarnation: job.incarnation, attemptId: attempt.id))
+        let unrelated = OriginalBackgroundTaskSnapshot(
+            identifier: 19, tag: OriginalBackgroundTaskTag(
+                scope: scope, jobId: UUID(), jobIncarnation: UUID(), attemptId: UUID()))
+        let unidentified = OriginalBackgroundTaskSnapshot(identifier: 18, tag: nil)
+        let (rawJournal, rawPending) = try await prepareJob(access: access, directory: rawDirectory)
+        let rawJob = try rawJournal.requestCancellation(for: rawPending, access: access)
+        let requests = Mutex<[URLRequest]>([])
+        let transport: @Sendable (URLRequest) async throws -> (Data, URLResponse) = { request in
+            requests.withLock { $0.append(request) }
+            throw URLError(.badServerResponse)
+        }
+        let coordinator = try OriginalUploadCancellationCoordinator(
+            job: job, access: access, journal: journal, taskFence: taskFence, transport: transport)
+        let raw = try OriginalUploadAPI(access: access, journal: rawJournal, transport: transport)
+        let entered = AsyncStream<Void>.makeStream()
+        let release = AsyncStream<Void>.makeStream()
+        var cancelled: [Int] = []
+        let running = Task {
+            defer { entered.continuation.finish() }
+            return try await coordinator.start(tasks: {
+                entered.continuation.yield()
+                var iterator = release.stream.makeAsyncIterator()
+                _ = await iterator.next()
+                return [matching, unrelated, unidentified]
+            }, snapshot: { $0 }, cancel: { cancelled.append($0.identifier) })
+        }
+        defer {
+            release.continuation.yield()
+            release.continuation.finish()
+            running.cancel()
+        }
+        var iterator = entered.stream.makeAsyncIterator()
+        guard await iterator.next() != nil else {
+            Issue.record("The coordinator did not reach local task inventory")
+            return
+        }
+        #expect(try journal.read(id: job.id, access: access).cancellationRequested)
+        var callbacks = 0
+        await #expect(throws: OriginalUploadCancellationCoordinatorError.reconciliationRequired) {
+            try await raw.cancelIntent(
+                for: rawJob, onResponse: { _, _ in callbacks += 1 }, onDispatch: { callbacks += 1 })
+        }
+        #expect(callbacks == 0)
+        #expect(requests.withLock { $0.isEmpty })
+        release.continuation.yield()
+        await #expect(throws: OriginalUploadCancellationCoordinatorError.reconciliationRequired) {
+            try await running.value
+        }
+        let pending = try journal.read(id: job.id, access: access)
+        #expect(pending.cancellationRequested)
+        #expect(pending.state == job.state)
+        #expect(pending.attempts == job.attempts)
+        #expect(cancelled == [17])
+        #expect(try taskFence.isCancellationBlocked(for: pending))
+        #expect(requests.withLock { $0.isEmpty })
+        #expect(try Data(contentsOf: original) == bytes)
+        #expect(try Data(contentsOf: prepared.part.url) == partBytes)
+        await #expect(throws: OriginalUploadCancellationCoordinatorError.alreadyStarted) {
+            try await coordinator.start(
+                tasks: { [OriginalBackgroundTaskSnapshot]() }, snapshot: { $0 }, cancel: { _ in })
+        }
+    }
+
+    @Test
+    @MainActor
+    func defaultCancellationGateDoesNotBlockOrdinaryReservation() async throws {
+        let directory = try fixture()
+        defer { cleanup(directory) }
+        let server = URL(string: "https://isolated.example.test")!
+        let auth = AuthService(storage: .memory, serverURL: { server })
+        auth.token = "test-token"
+        auth.currentUser = User(
+            id: "user-1", phoneNumber: "5550100", name: "Reporter", email: nil, team: nil,
+            status: "ACTIVE", companyCode: nil, companyName: nil)
+        let access = try OriginalUploadAccess(auth: auth, allowedOrigins: ["https://isolated.example.test"])
+        let (journal, job) = try await prepareJob(access: access, directory: directory)
+        let assetId = UUID().uuidString
+        let response = Data(
+            #"{"asset":{"id":"\#(assetId)","status":"UPLOADING","uploadMode":"ORIGINAL"}}"#.utf8)
+        let requests = Mutex<[String]>([])
+        let api = try OriginalUploadAPI(access: access, journal: journal, transport: { request in
+            requests.withLock { $0.append("\(request.httpMethod ?? "") \(request.url?.path ?? "")") }
+            return (response, HTTPURLResponse(
+                url: request.url!, statusCode: 201, httpVersion: nil, headerFields: nil)!)
+        })
+        #expect(try await api.reserve(job).id == assetId)
+        #expect(requests.withLock { $0 } == ["POST /api/assets/original-uploads"])
+    }
+
+    @Test
+    @MainActor
     func sharedCancellationGateParksOnlyAfterUnknownDispatch() async throws {
         for failure in 0..<6 {
             let fenceFirst = failure >= 4
