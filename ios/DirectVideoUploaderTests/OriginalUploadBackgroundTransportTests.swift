@@ -160,6 +160,14 @@ struct OriginalUploadBackgroundTransportTests {
             httpStatus: 200, transportErrorCode: nil)
     }
 
+    private func unidentifiedEvent(
+        id: UUID = UUID(), taskIdentifier: Int = 17
+    ) -> OriginalBackgroundCompletion {
+        OriginalBackgroundCompletion(
+            id: id, taskIdentifier: taskIdentifier, tag: nil,
+            httpStatus: nil, transportErrorCode: -1)
+    }
+
     private func canonicalURL(for event: OriginalBackgroundCompletion, in directory: URL) -> URL {
         directory.appendingPathComponent("event-\(event.id.uuidString).json")
     }
@@ -2058,6 +2066,189 @@ struct OriginalUploadBackgroundTransportTests {
         try inbox.remove(known)
         #expect(try inbox.events(scope: scope).isEmpty)
         #expect(try inbox.unidentifiedEvents() == [unknown])
+    }
+
+    @Test
+    func quarantineRejectsTaggedAlteredAndUnknownCompletions() throws {
+        let directory = try fixture()
+        defer { cleanup(directory) }
+        let inboxDirectory = directory.appendingPathComponent("inbox")
+        let inbox = OriginalUploadEventInbox(directory: inboxDirectory)
+        let pump = OriginalBackgroundEventPump(inbox: inbox)
+        let unknown = unidentifiedEvent()
+        let tagged = event()
+        try inbox.persist(unknown)
+        try inbox.persist(tagged)
+        let originalUnknownBytes = try Data(contentsOf: canonicalURL(for: unknown, in: inboxDirectory))
+
+        #expect(throws: OriginalUploadStorageError.invalidRecord) {
+            try pump.quarantineUnidentifiedEvent(tagged)
+        }
+        let altered = unidentifiedEvent(id: unknown.id, taskIdentifier: unknown.taskIdentifier + 1)
+        #expect(throws: OriginalUploadStorageError.invalidRecord) {
+            try pump.quarantineUnidentifiedEvent(altered)
+        }
+        #expect(throws: OriginalUploadStorageError.invalidRecord) {
+            try pump.quarantineUnidentifiedEvent(unidentifiedEvent())
+        }
+
+        #expect(try inbox.events() == [unknown, tagged])
+        #expect(try Data(contentsOf: canonicalURL(for: unknown, in: inboxDirectory)) == originalUnknownBytes)
+        #expect(try pump.quarantinedEvents().isEmpty)
+    }
+
+    @Test
+    func quarantinePersistsExactEventSeparatelyAndIsIdempotentAfterRestart() throws {
+        let directory = try fixture()
+        defer { cleanup(directory) }
+        let inboxDirectory = directory.appendingPathComponent("inbox")
+        let inbox = OriginalUploadEventInbox(directory: inboxDirectory)
+        let pump = OriginalBackgroundEventPump(inbox: inbox)
+        let unknown = unidentifiedEvent()
+        let known = event()
+        try inbox.persist(unknown)
+        try inbox.persist(known)
+
+        try pump.quarantineUnidentifiedEvent(unknown)
+        #expect(try inbox.events() == [known])
+        #expect(try inbox.events(scope: try #require(known.tag?.scope)) == [known])
+        #expect(try inbox.unidentifiedEvents().isEmpty)
+        #expect(try pump.quarantinedEvents() == [unknown])
+        #expect(try OriginalUploadEventInbox(directory: inbox.quarantineDirectory).events() == [unknown])
+
+        try pump.quarantineUnidentifiedEvent(unknown)
+        #expect(try OriginalUploadEventInbox(directory: inboxDirectory).events() == [known])
+        #expect(try OriginalUploadEventInbox(directory: inbox.quarantineDirectory).events() == [unknown])
+    }
+
+    @Test
+    func quarantineRejectsConflictingQuarantinedEventWithSameID() throws {
+        let directory = try fixture()
+        defer { cleanup(directory) }
+        let inbox = OriginalUploadEventInbox(directory: directory.appendingPathComponent("inbox"))
+        let event = unidentifiedEvent()
+        let conflictingEvent = unidentifiedEvent(id: event.id, taskIdentifier: event.taskIdentifier + 1)
+        try inbox.persist(event)
+
+        let quarantine = OriginalUploadEventInbox(directory: inbox.quarantineDirectory)
+        try quarantine.persist(conflictingEvent)
+        let pump = OriginalBackgroundEventPump(inbox: inbox, quarantineInbox: quarantine)
+
+        #expect(throws: OriginalUploadStorageError.invalidRecord) {
+            try pump.quarantineUnidentifiedEvent(event)
+        }
+        #expect(try inbox.events() == [event])
+        #expect(try quarantine.events() == [conflictingEvent])
+    }
+
+    @Test
+    func failedQuarantineWriteLeavesActiveCompletionUntouched() throws {
+        let directory = try fixture()
+        defer { cleanup(directory) }
+        let inboxDirectory = directory.appendingPathComponent("inbox")
+        let quarantineDirectory = directory.appendingPathComponent("BackgroundEventQuarantine")
+        let event = unidentifiedEvent()
+        let active = OriginalUploadEventInbox(directory: inboxDirectory)
+        try active.persist(event)
+        let originalBytes = try Data(contentsOf: canonicalURL(for: event, in: inboxDirectory))
+        var injectedFailure = false
+        let quarantineCanonical = canonicalURL(for: event, in: quarantineDirectory)
+        let quarantine = OriginalUploadEventInbox(
+            directory: quarantineDirectory,
+            synchronizeDirectory: { candidate in
+                if candidate.resolvingSymlinksInPath().standardizedFileURL.path
+                    == quarantineDirectory.resolvingSymlinksInPath().standardizedFileURL.path,
+                   FileManager.default.fileExists(atPath: quarantineCanonical.path) {
+                    injectedFailure = true
+                    throw POSIXError(.EIO)
+                }
+                try DurableFile.synchronize(candidate, directory: true)
+            })
+        let pump = OriginalBackgroundEventPump(inbox: active, quarantineInbox: quarantine)
+
+        #expect(throws: (any Error).self) {
+            try pump.quarantineUnidentifiedEvent(event)
+        }
+        #expect(injectedFailure)
+        #expect(try active.events() == [event])
+        #expect(try Data(contentsOf: canonicalURL(for: event, in: inboxDirectory)) == originalBytes)
+        #expect(try OriginalUploadEventInbox(directory: quarantineDirectory).events() == [event])
+    }
+
+    @Test
+    func failedRemovalKeepsBothCopiesAndRetryCompletes() throws {
+        let directory = try fixture()
+        defer { cleanup(directory) }
+        let inboxDirectory = directory.appendingPathComponent("inbox")
+        let event = unidentifiedEvent()
+        var allowRemoval = false
+        let active = OriginalUploadEventInbox(
+            directory: inboxDirectory,
+            beforeUnlink: {
+                guard allowRemoval else { throw POSIXError(.EIO) }
+            })
+        let pump = OriginalBackgroundEventPump(inbox: active)
+        try active.persist(event)
+
+        #expect(throws: (any Error).self) {
+            try pump.quarantineUnidentifiedEvent(event)
+        }
+        #expect(try active.events() == [event])
+        #expect(try pump.quarantinedEvents() == [event])
+
+        allowRemoval = true
+        try pump.quarantineUnidentifiedEvent(event)
+        #expect(try OriginalUploadEventInbox(directory: inboxDirectory).events().isEmpty)
+        #expect(try pump.quarantinedEvents() == [event])
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func pendingSameIDPumpPersistenceBlocksQuarantine() async throws {
+        let directory = try fixture()
+        defer { cleanup(directory) }
+        let inboxDirectory = directory.appendingPathComponent("inbox")
+        let unknown = unidentifiedEvent()
+        let canonical = canonicalURL(for: unknown, in: inboxDirectory)
+        let sleeping = AsyncStream<Void>.makeStream()
+        let release = AsyncStream<Void>.makeStream()
+        defer {
+            sleeping.continuation.finish()
+            release.continuation.finish()
+        }
+        var allowSynchronization = true
+        let inbox = OriginalUploadEventInbox(directory: inboxDirectory) { candidate in
+            if candidate.resolvingSymlinksInPath().standardizedFileURL.path
+                == inboxDirectory.resolvingSymlinksInPath().standardizedFileURL.path,
+               FileManager.default.fileExists(atPath: canonical.path),
+               !allowSynchronization {
+                throw POSIXError(.EIO)
+            }
+            try DurableFile.synchronize(candidate, directory: true)
+        }
+        try inbox.persist(unknown)
+        allowSynchronization = false
+        let pump = OriginalBackgroundEventPump(inbox: inbox, sleep: { _ in
+            sleeping.continuation.yield()
+            var iterator = release.stream.makeAsyncIterator()
+            _ = await iterator.next()
+        })
+
+        pump.accept(unknown)
+        try #require(pump.hasPersistenceError)
+        var sleepIterator = sleeping.stream.makeAsyncIterator()
+        try #require(await sleepIterator.next() != nil)
+        #expect(throws: OriginalUploadStorageError.busy) {
+            try pump.quarantineUnidentifiedEvent(unknown)
+        }
+        allowSynchronization = true
+        #expect(try inbox.events() == [unknown])
+        #expect(try pump.quarantinedEvents().isEmpty)
+
+        pump.retry()
+        #expect(!pump.hasPersistenceError)
+        try pump.quarantineUnidentifiedEvent(unknown)
+        #expect(try inbox.events().isEmpty)
+        #expect(try pump.quarantinedEvents() == [unknown])
     }
 
     @Test

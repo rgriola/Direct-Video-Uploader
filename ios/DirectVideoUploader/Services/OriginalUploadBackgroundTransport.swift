@@ -98,6 +98,7 @@ final class OriginalUploadEventInbox {
     private let initialInventoryDidScan: (() throws -> Void)?
     private let recoveryPreflightDidComplete: (() throws -> Void)?
     private let stageDidRevalidate: (() throws -> Void)?
+    private let beforeUnlink: (() throws -> Void)?
     private let synchronizeDirectory: (URL) throws -> Void
 
     init(
@@ -105,6 +106,7 @@ final class OriginalUploadEventInbox {
         synchronizeDirectory: @escaping (URL) throws -> Void = {
             try DurableFile.synchronize($0, directory: true)
         },
+        beforeUnlink: (() throws -> Void)? = nil,
         inventoryDidOpen: (() throws -> Void)? = nil,
         initialInventoryDidScan: (() throws -> Void)? = nil,
         recoveryPreflightDidComplete: (() throws -> Void)? = nil,
@@ -116,7 +118,13 @@ final class OriginalUploadEventInbox {
         self.initialInventoryDidScan = initialInventoryDidScan
         self.recoveryPreflightDidComplete = recoveryPreflightDidComplete
         self.stageDidRevalidate = stageDidRevalidate
+        self.beforeUnlink = beforeUnlink
         self.synchronizeDirectory = synchronizeDirectory
+    }
+
+    var quarantineDirectory: URL {
+        directory.deletingLastPathComponent()
+            .appendingPathComponent("BackgroundEventQuarantine", isDirectory: true)
     }
 
     func persist(_ event: OriginalBackgroundCompletion) throws {
@@ -151,6 +159,42 @@ final class OriginalUploadEventInbox {
         try events().filter { $0.tag == nil }
     }
 
+    func quarantine(_ event: OriginalBackgroundCompletion, into quarantineInbox: OriginalUploadEventInbox) throws {
+        guard event.isValid, event.tag == nil else { throw OriginalUploadStorageError.invalidRecord }
+        try prepare()
+        try quarantineInbox.prepare()
+
+        let activeStatus = try withInventoryDirectory { try directoryStatus($0) }
+        let quarantineStatus = try quarantineInbox.withInventoryDirectory {
+            try quarantineInbox.directoryStatus($0)
+        }
+        guard FileIdentity(activeStatus) != FileIdentity(quarantineStatus) else {
+            throw OriginalUploadStorageError.invalidScope
+        }
+
+        let activeRecords = try readRecords(matching: event)
+        let quarantinedRecords = try quarantineInbox.readRecords(matching: event)
+        let activeEvent = activeRecords.first(where: { $0.event.id == event.id })?.event
+        let quarantinedEvent = quarantinedRecords.first(where: { $0.event.id == event.id })?.event
+        guard quarantinedEvent == nil || quarantinedEvent == event else {
+            throw OriginalUploadStorageError.invalidRecord
+        }
+
+        if activeEvent == nil {
+            guard quarantinedEvent == event else { throw OriginalUploadStorageError.invalidRecord }
+            try quarantineInbox.persist(event)
+            return
+        }
+        guard activeEvent == event else { throw OriginalUploadStorageError.invalidRecord }
+
+        let durableSource = try read(eventURL(event.id), synchronizing: true)
+        guard durableSource.record.event == event else { throw OriginalUploadStorageError.invalidRecord }
+        try synchronizeDirectory(directory)
+
+        try quarantineInbox.persist(event)
+        try remove(event)
+    }
+
     func remove(_ event: OriginalBackgroundCompletion) throws {
         guard event.isValid else { throw OriginalUploadStorageError.invalidRecord }
         try prepare()
@@ -162,6 +206,7 @@ final class OriginalUploadEventInbox {
         let destination = eventURL(event.id)
         let current = try read(destination)
         guard current.record == record else { throw OriginalUploadStorageError.invalidRecord }
+        try beforeUnlink?()
         try unlinkFile(destination, expected: current.status)
     }
 
@@ -1144,6 +1189,7 @@ enum OriginalBackgroundCancellation {
 @MainActor
 final class OriginalBackgroundEventPump {
     private let inbox: OriginalUploadEventInbox
+    private let quarantineInbox: OriginalUploadEventInbox
     private let sleep: @Sendable (Duration) async throws -> Void
     private var pending: [OriginalBackgroundCompletion] = []
     private var processing = false
@@ -1155,9 +1201,11 @@ final class OriginalBackgroundEventPump {
 
     init(
         inbox: OriginalUploadEventInbox,
+        quarantineInbox: OriginalUploadEventInbox? = nil,
         sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
     ) {
         self.inbox = inbox
+        self.quarantineInbox = quarantineInbox ?? OriginalUploadEventInbox(directory: inbox.quarantineDirectory)
         self.sleep = sleep
     }
 
@@ -1172,6 +1220,17 @@ final class OriginalBackgroundEventPump {
             throw OriginalUploadStorageError.busy
         }
         try inbox.remove(event)
+    }
+
+    func quarantineUnidentifiedEvent(_ event: OriginalBackgroundCompletion) throws {
+        guard !pending.contains(where: { $0.id == event.id }) else {
+            throw OriginalUploadStorageError.busy
+        }
+        try inbox.quarantine(event, into: quarantineInbox)
+    }
+
+    func quarantinedEvents() throws -> [OriginalBackgroundCompletion] {
+        try quarantineInbox.events()
     }
 
     func retry() {
@@ -1267,7 +1326,9 @@ final class OriginalUploadBackgroundTransport {
             .appendingPathComponent("OriginalUploads", isDirectory: true)
         let inbox = OriginalUploadEventInbox(
             directory: root.appendingPathComponent("BackgroundEvents", isDirectory: true))
-        let pump = OriginalBackgroundEventPump(inbox: inbox)
+        let quarantineInbox = OriginalUploadEventInbox(
+            directory: root.appendingPathComponent("BackgroundEventQuarantine", isDirectory: true))
+        let pump = OriginalBackgroundEventPump(inbox: inbox, quarantineInbox: quarantineInbox)
         let events = AsyncStream<OriginalBackgroundCompletion>.makeStream()
         let delegate = OriginalBackgroundSessionDelegate(continuation: events.continuation)
         let queue = OperationQueue()
@@ -1312,6 +1373,14 @@ final class OriginalUploadBackgroundTransport {
 
     func unidentifiedEvents() throws -> [OriginalBackgroundCompletion] {
         try inbox.unidentifiedEvents()
+    }
+
+    func quarantinedEvents() throws -> [OriginalBackgroundCompletion] {
+        try pump.quarantinedEvents()
+    }
+
+    func quarantineUnidentifiedEvent(_ event: OriginalBackgroundCompletion) throws {
+        try pump.quarantineUnidentifiedEvent(event)
     }
 
     func acknowledgeReconciledEvent(
