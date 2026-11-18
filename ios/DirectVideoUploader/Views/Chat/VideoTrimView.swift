@@ -332,19 +332,9 @@ final class TrimViewModel {
             defer { onFinished() }
             guard !Task.isCancelled else { return }
 
-            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-                Self.audioSessionQueue.async {
-                    do {
-                        let session = AVAudioSession.sharedInstance()
-                        try session.setCategory(.playback)
-                        try session.setActive(true)
-                    } catch {
-                        Log.error("Trim audio activation failed: \(Log.describe(error))", logger: Log.media)
-                    }
-                    continuation.resume()
-                }
-            }
-            guard !Task.isCancelled else { return }
+            // Fire-and-forget: don't let audio session negotiation gate the
+            // player/filmstrip pipeline (symmetric with cleanup()'s deactivation).
+            Self.activateAudioSession()
 
             let item = AVPlayerItem(asset: asset)
             player.replaceCurrentItem(with: item)
@@ -381,6 +371,20 @@ final class TrimViewModel {
             // Default to paused — user taps play when ready
             player.pause()
             isPlaying = false
+        }
+    }
+
+    // Fire-and-forget audio session activation, mirroring cleanup()'s
+    // deactivation: never block/gate the caller on route negotiation.
+    nonisolated private static func activateAudioSession() {
+        audioSessionQueue.async {
+            do {
+                let session = AVAudioSession.sharedInstance()
+                try session.setCategory(.playback)
+                try session.setActive(true)
+            } catch {
+                Log.error("Trim audio activation failed: \(Log.describe(error))", logger: Log.media)
+            }
         }
     }
 
