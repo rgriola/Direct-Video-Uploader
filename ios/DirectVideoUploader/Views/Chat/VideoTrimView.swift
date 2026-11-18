@@ -325,6 +325,7 @@ final class TrimViewModel {
 
     func load(url: URL, onFinished: @escaping @MainActor () -> Void = {}) {
         loadTask?.cancel()
+        Log.debug("[Trim] load() start url=\(url.lastPathComponent)", logger: Log.media)
         let asset = AVURLAsset(url: url)
         self.asset = asset
 
@@ -338,6 +339,16 @@ final class TrimViewModel {
 
             let item = AVPlayerItem(asset: asset)
             player.replaceCurrentItem(with: item)
+            Log.debug("[Trim] replaceCurrentItem attached item", logger: Log.media)
+
+            // AVPlayerLayer will not render any frame (not even a paused poster
+            // frame) until the player is "kicked" by a seek or play/pause cycle
+            // once the item becomes ready. AVPlayer internally queues this seek
+            // until the item is ready to play, so it's safe to fire immediately
+            // without awaiting/gating the rest of the load pipeline on it.
+            player.seek(to: .zero, toleranceBefore: .zero, toleranceAfter: .zero) { finished in
+                Log.debug("[Trim] seek(to: .zero) completion finished=\(finished) — forces first-frame render", logger: Log.media)
+            }
 
             // Load duration
             let cmDur = try? await asset.load(.duration)
@@ -346,6 +357,7 @@ final class TrimViewModel {
                 let dur = CMTimeGetSeconds(cmDur)
                 duration = dur
                 trimEnd = dur
+                Log.debug("[Trim] duration resolved=\(dur)", logger: Log.media)
             }
 
             // Load aspect ratio from video track
@@ -359,12 +371,14 @@ final class TrimViewModel {
                 let w = abs(transformed.width)
                 let h = abs(transformed.height)
                 if h > 0 { videoAspect = w / h }
+                Log.debug("[Trim] aspect resolved=\(videoAspect)", logger: Log.media)
             }
 
             // Generate thumbnails
             guard !Task.isCancelled else { return }
             await generateThumbnails(asset: asset)
             guard !Task.isCancelled else { return }
+            Log.debug("[Trim] thumbnails resolved count=\(thumbnails.count)", logger: Log.media)
 
             // Set up looping observer (but don't auto-play)
             setupLooping()
@@ -512,8 +526,23 @@ private struct PlayerView: UIViewRepresentable {
             playerLayer.player = player
             playerLayer.videoGravity = .resizeAspect
             backgroundColor = .black
+            Log.debug("[Trim] PlayerUIView created", logger: Log.media)
+            // Force an initial layout pass rather than waiting for SwiftUI's
+            // next layout cycle, so the AVPlayerLayer has valid bounds as
+            // early as possible before first paint.
+            setNeedsLayout()
+            layoutIfNeeded()
         }
         required init?(coder: NSCoder) { fatalError() }
+
+        override func layoutSubviews() {
+            super.layoutSubviews()
+            // Defensive: keep the player layer's frame synced to bounds so
+            // there's no race where SwiftUI's layout pass hasn't yet applied
+            // non-zero geometry before the player is ready to render.
+            playerLayer.frame = bounds
+            Log.debug("[Trim] PlayerUIView.layoutSubviews bounds=\(bounds.debugDescription)", logger: Log.media)
+        }
     }
 }
 
