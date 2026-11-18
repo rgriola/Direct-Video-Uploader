@@ -258,6 +258,7 @@ struct VideoLibraryView: View {
                         cleanUpLoadedVideo()
                     }
                 )
+                .id(trimID)
                 .ignoresSafeArea()
             }
         }
@@ -399,6 +400,9 @@ struct VideoLibraryView: View {
             }
             activeTrimID = UUID()
             showTrimSheet = true
+            Log.debug(
+                "[Trim] opening trim sheet trimID=\(activeTrimID?.uuidString ?? "nil") url=\(loadedVideoURL?.lastPathComponent ?? "nil")",
+                logger: Log.media)
         } else if isLoadingMetadata || loadedVideoURL == nil {
             pendingConfirm = true
             if !isLoadingMetadata, let item = selectedItems.first {
