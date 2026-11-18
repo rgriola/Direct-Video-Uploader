@@ -1378,6 +1378,56 @@ nonisolated private enum PhotoPreparationTestError: Error {
     case fingerprintFailed
 }
 
+// Payload invariants only; these tests do not reproduce device UI presentation.
+@Suite("Trim presentation payload")
+@MainActor
+struct TrimPresentationTests {
+    @Test("Presentation captures the source URL and original filename together")
+    func capturesSourceURLAndOriginalFileName() {
+        let url = URL(fileURLWithPath: "/tmp/picker-copy.mov")
+        let presentation = TrimPresentation(sourceURL: url, originalFileName: "IMG_1234.MOV")
+
+        #expect(presentation.sourceURL == url)
+        #expect(presentation.originalFileName == "IMG_1234.MOV")
+    }
+
+    @Test("Missing original filename falls back to the source basename")
+    func missingOriginalFileNameFallsBackToSourceBasename() {
+        let url = URL(fileURLWithPath: "/tmp/trim-source.mov")
+
+        #expect(TrimPresentation(sourceURL: url).originalFileName == "trim-source.mov")
+        #expect(TrimPresentation(sourceURL: url, originalFileName: nil).originalFileName == "trim-source.mov")
+    }
+
+    @Test("Repeated presentations of the same source have distinct identities")
+    func repeatedSourceHasDistinctPresentationIdentity() {
+        let url = URL(fileURLWithPath: "/tmp/trim-source.mov")
+        let first = TrimPresentation(sourceURL: url, originalFileName: "original.mov")
+        let second = TrimPresentation(sourceURL: url, originalFileName: "original.mov")
+
+        #expect(first.sourceURL == second.sourceURL)
+        #expect(first.originalFileName == second.originalFileName)
+        #expect(first.id != second.id)
+        #expect(first != second)
+    }
+
+    @Test("A new selection captures new values without changing the first payload")
+    func newSelectionLeavesFirstPayloadUnchanged() {
+        let firstURL = URL(fileURLWithPath: "/tmp/first-copy.mov")
+        let secondURL = URL(fileURLWithPath: "/tmp/second-copy.mov")
+        let first = TrimPresentation(sourceURL: firstURL, originalFileName: "first-original.mov")
+        let firstID = first.id
+        let second = TrimPresentation(sourceURL: secondURL, originalFileName: "second-original.mov")
+
+        #expect(second.sourceURL == secondURL)
+        #expect(second.originalFileName == "second-original.mov")
+        #expect(second.id != firstID)
+        #expect(first.id == firstID)
+        #expect(first.sourceURL == firstURL)
+        #expect(first.originalFileName == "first-original.mov")
+    }
+}
+
 @MainActor
 struct TrimSourceLeaseTests {
     @Test

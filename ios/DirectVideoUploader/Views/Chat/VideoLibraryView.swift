@@ -21,6 +21,18 @@ private struct PendingTrimResult {
     let outcome: TrimOutcome
 }
 
+struct TrimPresentation: Identifiable, Equatable {
+    let id: UUID
+    let sourceURL: URL
+    let originalFileName: String
+
+    init(sourceURL: URL, originalFileName: String? = nil) {
+        self.id = UUID()
+        self.sourceURL = sourceURL
+        self.originalFileName = originalFileName ?? sourceURL.lastPathComponent
+    }
+}
+
 enum VideoLibraryAutoConfirm: Equatable {
     case wait
     case stop
@@ -127,7 +139,7 @@ struct VideoLibraryView: View {
     @State private var isLoadingMetadata = false
     @State private var pendingConfirm = false
     @State private var loadError: String?
-    @State private var showTrimSheet = false
+    @State private var activeTrim: TrimPresentation?
     @State private var showPhotoAlert = false
     @State private var downloadProgress: Double?
     @State private var usedPickerCopy = false
@@ -139,7 +151,6 @@ struct VideoLibraryView: View {
     @State private var loadTask: Task<Void, Never>?
     /// Identifies the current load so a superseded one can't touch shared state.
     @State private var activeLoadID: UUID?
-    @State private var activeTrimID: UUID?
     @State private var pendingTrimResult: PendingTrimResult?
     @State private var trimHandoffID: UUID?
     @State private var trimHandoffTask: Task<Void, Never>?
@@ -222,43 +233,41 @@ struct VideoLibraryView: View {
         }
         // Swipe-to-dismiss skips the X button; presenting the trim cover also fires this, so skip it then.
         .onDisappear {
-            if !showTrimSheet {
-                activeTrimID = nil
+            if activeTrim == nil {
                 cancelTrimHandoff()
                 cleanUpLoadedVideo()
             }
         }
-        .fullScreenCover(isPresented: $showTrimSheet, onDismiss: finishTrimDismissal) {
-            if let url = loadedVideoURL, let trimID = activeTrimID {
-                VideoTrimView(
-                    videoURL: url,
-                    originalFileName: loadedFileName ?? url.lastPathComponent,
-                    sourceLeases: trimSourceLeases,
-                    onFinished: { outcome in
-                        guard activeTrimID == trimID, loadedVideoURL == url else {
-                            if case .trimmed(let trimmedURL) = outcome {
-                                deleteIfTemporary(trimmedURL)
-                            }
-                            return
+        .fullScreenCover(item: $activeTrim, onDismiss: finishTrimDismissal) { session in
+            VideoTrimView(
+                videoURL: session.sourceURL,
+                originalFileName: session.originalFileName,
+                sourceLeases: trimSourceLeases,
+                onFinished: { outcome in
+                    guard activeTrim?.id == session.id, loadedVideoURL == session.sourceURL else {
+                        if case .trimmed(let trimmedURL) = outcome {
+                            deleteIfTemporary(trimmedURL)
                         }
-                        activeTrimID = nil
-                        pendingTrimResult = PendingTrimResult(sourceURL: url, outcome: outcome)
-                        showTrimSheet = false
-                    },
-                    onCancel: {
-                        guard activeTrimID == trimID else { return }
-                        activeTrimID = nil
-                        showTrimSheet = false
-                    },
-                    onTeardown: {
-                        guard activeTrimID == trimID else { return }
-                        activeTrimID = nil
-                        showTrimSheet = false
-                        cancelTrimHandoff()
-                        cleanUpLoadedVideo()
+                        return
                     }
-                )
-                .ignoresSafeArea()
+                    pendingTrimResult = PendingTrimResult(sourceURL: session.sourceURL, outcome: outcome)
+                    activeTrim = nil
+                },
+                onCancel: {
+                    guard activeTrim?.id == session.id else { return }
+                    activeTrim = nil
+                },
+                onTeardown: {
+                    guard activeTrim?.id == session.id else { return }
+                    activeTrim = nil
+                    cancelTrimHandoff()
+                    cleanUpLoadedVideo()
+                }
+            )
+            .id(session.id)
+            .ignoresSafeArea()
+            .onAppear {
+                Log.debug("[Trim] cover appeared", logger: Log.media)
             }
         }
         .alert("Videos Only", isPresented: $showPhotoAlert) {
@@ -397,8 +406,9 @@ struct VideoLibraryView: View {
                 pendingConfirm = true
                 return
             }
-            activeTrimID = UUID()
-            showTrimSheet = true
+            guard let url = loadedVideoURL else { return }
+            activeTrim = TrimPresentation(sourceURL: url, originalFileName: loadedFileName)
+            Log.debug("[Trim] presentation requested", logger: Log.media)
         } else if isLoadingMetadata || loadedVideoURL == nil {
             pendingConfirm = true
             if !isLoadingMetadata, let item = selectedItems.first {
@@ -601,6 +611,7 @@ struct VideoLibraryView: View {
     }
 
     private func finishTrimDismissal() {
+        Log.debug("[Trim] cover dismissed", logger: Log.media)
         guard let result = pendingTrimResult else {
             pendingConfirmFocus = loadedVideoURL != nil
             resumeLibraryPresentation()
@@ -645,7 +656,7 @@ struct VideoLibraryView: View {
 
     private var canPresentTrim: Bool {
         VideoLibraryPresentationGate(presentationState: presentationState).canPresent(
-            showPhotoAlert: showPhotoAlert, showTrimSheet: showTrimSheet,
+            showPhotoAlert: showPhotoAlert, showTrimSheet: activeTrim != nil,
             hasPendingTrimResult: pendingTrimResult != nil)
     }
 
